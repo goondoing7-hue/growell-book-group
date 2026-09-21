@@ -10,7 +10,7 @@
 
 ## Vercel 연결 설정
 
-기존 Vercel 프로젝트의 Git 설정에서 `goondoing7-hue/growell-book-group`을 연결하고 Production Branch를 `main`으로 지정합니다. 프로젝트 루트가 앱 파일이 있는 저장소 루트인지 확인합니다.
+2026-09-21에 기존 Vercel 프로젝트를 `goondoing7-hue/growell-book-group`에 연결했으며 Production Branch는 `main`입니다. 프로젝트 루트는 앱 파일이 있는 저장소 루트입니다. 새 기기에서도 같은 저장소를 복제해 게시 명령을 사용할 수 있습니다.
 
 | 항목 | 값 |
 | --- | --- |
