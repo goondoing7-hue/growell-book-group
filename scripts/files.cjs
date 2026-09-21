@@ -1,0 +1,41 @@
+'use strict';
+
+// Public deployment and Git publishing both use explicit paths. Adding a file
+// to the directory alone must never publish a recovery file, secret, or fixture.
+const DEPLOY_FILES = Object.freeze([
+  'index.html', 'privateCrypto.js', 'manifest.json',
+  'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
+  'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
+  'covers/og-image-v2.jpg', 'covers/icon-16.png', 'covers/icon-32.png',
+  'covers/icon-180.png', 'covers/icon-192.png', 'covers/icon-512.png',
+  'covers/icon-maskable-192.png', 'covers/icon-maskable-512.png',
+  'covers/habit-templates/theme-1.jpg', 'covers/habit-templates/theme-2.jpg',
+  'covers/habit-templates/theme-3.jpg'
+]);
+
+const TEST_FILES = Object.freeze([
+  'tests/deployment.test.cjs', 'tests/drafts.test.cjs',
+  'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs',
+  'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs'
+]);
+
+const PUBLISH_FILES = Object.freeze([
+  ...DEPLOY_FILES, ...TEST_FILES,
+  'package.json', 'package-lock.json', 'vercel.json', '.gitignore',
+  '.github/workflows/verify.yml', 'README.md', 'DEPLOYMENT.md', 'AGENTS.md',
+  'scripts/files.cjs', 'scripts/check.cjs', 'scripts/test.cjs',
+  'scripts/build.cjs', 'scripts/publish.cjs'
+]);
+
+function isAllowedRemote(remote) {
+  return /^https:\/\/github\.com\/goondoing7-hue\/growell-book-group(?:\.git)?$/.test(remote)
+    || /^git@github\.com:goondoing7-hue\/growell-book-group(?:\.git)?$/.test(remote)
+    || /^ssh:\/\/git@github\.com\/goondoing7-hue\/growell-book-group(?:\.git)?$/.test(remote);
+}
+
+function selectPublishPaths(paths) {
+  const allowed = new Set(PUBLISH_FILES);
+  return [...new Set(paths)].filter(file => allowed.has(file)).sort();
+}
+
+module.exports = { DEPLOY_FILES, TEST_FILES, PUBLISH_FILES, isAllowedRemote, selectPublishPaths };
