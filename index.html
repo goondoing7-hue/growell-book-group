@@ -3290,14 +3290,15 @@ function memberHomeHtml(){
   var habits=user ? homeHabits() : [], habitStatus=user ? memberDataStatusHtml('habits') : '';
   var completed=habits.filter(function(h){return h.checkedDates.indexOf(today)>=0;}).length;
   var page=user && book ? Math.max(0,Math.min(Number(myCurrentPage(book.id))||0,book.totalPages)) : 0;
-  var reading=book ? '<h2 class="home-book-title">'+esc(book.title)+'</h2>' +
+  var cover=book && book.cover ? '<img class="home-book-cover" src="'+esc(book.cover)+'" alt="'+esc(book.title)+' 표지" width="96" height="148" decoding="async">' : '';
+  var reading=book ? '<div class="home-reading-book">'+cover+'<div class="home-reading-copy"><h2 class="home-book-title">'+esc(book.title)+'</h2>' +
     '<div class="home-reading-meta">'+page+' / '+book.totalPages+'쪽</div>' +
     '<div class="home-progress" role="progressbar" aria-label="읽은 분량" aria-valuenow="'+page+'" aria-valuemin="0" aria-valuemax="'+book.totalPages+'"><span style="width:'+(page/book.totalPages*100)+'%"></span></div>' +
-    '<p class="home-next-page">'+(page>=book.totalPages?'끝까지 읽었어요.':(page+1)+'쪽부터 이어 읽어요.')+'</p>' +
+    '<p class="home-next-page">'+(page>=book.totalPages?'끝까지 읽었어요.':(page+1)+'쪽부터 이어 읽어요.')+'</p></div></div>' +
     '<a class="home-primary" href="#/book/'+book.id+'/mine">'+(page>=book.totalPages?'독서 기록 보기':'이어서 읽기')+'</a>' : '<p class="home-empty">아직 열린 책이 없어요. 모임 안내를 확인해주세요.</p>';
-  if(!user && book) reading='<h2 class="home-book-title">'+esc(book.title)+'</h2>' +
+  if(!user && book) reading='<div class="home-reading-book">'+cover+'<div class="home-reading-copy"><h2 class="home-book-title">'+esc(book.title)+'</h2>' +
     '<div class="home-reading-meta">함께 읽는 책 · '+book.totalPages+'쪽</div>' +
-    '<p class="home-guest-hint">로그인하면 읽던 쪽부터 이어갈 수 있어요.</p>' +
+    '<p class="home-guest-hint">로그인하면 읽던 쪽부터 이어갈 수 있어요.</p></div></div>' +
     '<a class="home-primary" href="#/login">로그인하고 이어 읽기</a>';
   var habitBooks=Array.from(new Set(habits.map(function(h){return h.bookId;})));
   if(!habitBooks.length && book) habitBooks.push(book.id);
