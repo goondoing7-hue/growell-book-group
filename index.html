@@ -3213,7 +3213,9 @@ function homeHabits(){
   return GrowellHome.activeHabits(STATE.habits, SESSION && SESSION.userId, homeUnlockedIds(), ymd(new Date())).map(habitWithPendingChecks);
 }
 function homeRecentPosts(limit){
-  return GrowellHome.selectRecentPosts(STATE.posts, SESSION && SESSION.userId, homeUnlockedIds(), limit);
+  return SESSION
+    ? GrowellHome.selectRecentPosts(STATE.posts, SESSION.userId, homeUnlockedIds(), limit)
+    : GrowellHome.selectPublicPosts(STATE.posts, homeUnlockedIds(), limit);
 }
 function homePostExcerpt(post){
   if(post.noteType==='insight') return INSIGHT_QUESTIONS.map(function(q){ return post[q.key]||''; }).join(' ').replace(/\s+/g,' ').trim();
@@ -3244,17 +3246,17 @@ function homePostsStatusHtml(){
   return '';
 }
 function refreshHomePosts(){
-  if(!SESSION || sharedPostsLoadState==='loading') return;
-  var owner=SESSION.userId, epoch=saveSessionEpoch;
+  if(sharedPostsLoadState==='loading') return;
+  var owner=SESSION && SESSION.userId, epoch=saveSessionEpoch;
   sharedPostsLoadState='loading'; render();
   return sb.from('posts').select('*').then(function(result){
-    if(!SESSION || SESSION.userId!==owner || epoch!==saveSessionEpoch) return;
+    if((SESSION && SESSION.userId)!==owner || epoch!==saveSessionEpoch) return;
     if(result.error) throw result.error;
     var posts={};
     (result.data||[]).forEach(function(row){ var post=mapPostRow(row,STATE.users); posts[post.id]=post; });
     STATE.posts=posts; sharedPostsLoadState='ready'; render();
   }).catch(function(){
-    if(!SESSION || SESSION.userId!==owner || epoch!==saveSessionEpoch) return;
+    if((SESSION && SESSION.userId)!==owner || epoch!==saveSessionEpoch) return;
     sharedPostsLoadState='error'; render();
   });
 }
@@ -3283,29 +3285,34 @@ function refreshHomeHabits(){
   if(count) count.textContent=habits.filter(function(h){return h.checkedDates.indexOf(today)>=0;}).length+' / '+habits.length+' 완료';
 }
 function memberHomeHtml(){
-  var user=currentUser(), book=homeReadingBook(), today=ymd(new Date());
+  var user=SESSION && currentUser(), book=homeReadingBook(), today=ymd(new Date());
   var a=STATE.announcement, meetingBook=bookById(a.reading.bookId);
-  var habits=homeHabits(), habitStatus=memberDataStatusHtml('habits');
+  var habits=user ? homeHabits() : [], habitStatus=user ? memberDataStatusHtml('habits') : '';
   var completed=habits.filter(function(h){return h.checkedDates.indexOf(today)>=0;}).length;
-  var page=book ? Math.max(0,Math.min(Number(myCurrentPage(book.id))||0,book.totalPages)) : 0;
+  var page=user && book ? Math.max(0,Math.min(Number(myCurrentPage(book.id))||0,book.totalPages)) : 0;
   var reading=book ? '<h2 class="home-book-title">'+esc(book.title)+'</h2>' +
     '<div class="home-reading-meta">'+page+' / '+book.totalPages+'쪽</div>' +
     '<div class="home-progress" role="progressbar" aria-label="읽은 분량" aria-valuenow="'+page+'" aria-valuemin="0" aria-valuemax="'+book.totalPages+'"><span style="width:'+(page/book.totalPages*100)+'%"></span></div>' +
     '<p class="home-next-page">'+(page>=book.totalPages?'끝까지 읽었어요.':(page+1)+'쪽부터 이어 읽어요.')+'</p>' +
     '<a class="home-primary" href="#/book/'+book.id+'/mine">'+(page>=book.totalPages?'독서 기록 보기':'이어서 읽기')+'</a>' : '<p class="home-empty">아직 열린 책이 없어요. 모임 안내를 확인해주세요.</p>';
+  if(!user && book) reading='<h2 class="home-book-title">'+esc(book.title)+'</h2>' +
+    '<div class="home-reading-meta">함께 읽는 책 · '+book.totalPages+'쪽</div>' +
+    '<p class="home-guest-hint">로그인하면 읽던 쪽부터 이어갈 수 있어요.</p>' +
+    '<a class="home-primary" href="#/login">로그인하고 이어 읽기</a>';
   var habitBooks=Array.from(new Set(habits.map(function(h){return h.bookId;})));
   if(!habitBooks.length && book) habitBooks.push(book.id);
   var habitLinks=habitBooks.map(function(id){return '<a class="home-link" href="#/book/'+id+'/habit">'+(habitBooks.length>1 ? esc(bookById(id).title)+' 습관' : '습관 관리')+' →</a>';}).join('');
+  if(!user) habitLinks='<a class="home-link" href="#/login">로그인하고 습관 시작하기 →</a>';
   var latest=homeRecentPosts(3), postsStatus=homePostsStatusHtml();
   return '<div class="home-dashboard wrap">' +
-    '<div class="home-welcome"><p class="home-date">'+esc(new Date().toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'long'}))+'</p><h1>오늘은 여기서 이어가요.</h1><p class="home-greeting">'+esc(user.name)+'님, 독서와 작은 습관을 하나씩 이어가요.</p></div>' +
+    '<div class="home-welcome"><p class="home-date">'+esc(new Date().toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'long'}))+'</p><h1>오늘은 여기서 이어가요.</h1><p class="home-greeting">'+(user?esc(user.name)+'님, 독서와 작은 습관을 하나씩 이어가요.':'GROWELL에서 독서와 작은 습관을 함께 이어가요.')+'</p></div>' +
     '<div class="home-grid">' +
-      '<section class="home-card home-reading" aria-label="이어서 읽기"><p class="home-label">'+svgIcon(I_BOOKMARK)+' 이어서 읽기</p>'+reading+'</section>' +
-      '<section class="home-card home-habits" aria-label="오늘의 습관"><div class="home-card-head"><h2>오늘의 습관</h2>'+(!habitStatus?'<span class="home-habit-count" data-home-habit-count aria-live="polite">'+completed+' / '+habits.length+' 완료</span>':'')+'</div>' +
-      (habitStatus || (habits.length ? '<ul class="home-habit-list">'+homeHabitRowsHtml(habits)+'</ul>' : '<p class="home-empty">오늘 실천할 습관을 만들어 보세요.</p>')) +
+      '<section class="home-card home-reading" aria-label="'+(user?'이어서 읽기':'함께 읽는 책')+'"><p class="home-label">'+svgIcon(I_BOOKMARK)+(user?' 이어서 읽기':' 함께 읽는 책')+'</p>'+reading+'</section>' +
+      '<section class="home-card home-habits" aria-label="오늘의 습관"><div class="home-card-head"><h2>오늘의 습관</h2>'+(user && !habitStatus?'<span class="home-habit-count" data-home-habit-count aria-live="polite">'+completed+' / '+habits.length+' 완료</span>':'')+'</div>' +
+      (!user ? '<p class="home-guest-hint">책에서 배운 작은 실천을 매일 체크해요.<br>로그인하면 나의 습관이 여기에 보여요.</p>' : (habitStatus || (habits.length ? '<ul class="home-habit-list">'+homeHabitRowsHtml(habits)+'</ul>' : '<p class="home-empty">오늘 실천할 습관을 만들어 보세요.</p>'))) +
       '<div class="home-actions">'+habitLinks+'</div></section>' +
       '<section class="home-card home-note"><div class="home-note-summary"><h2>'+svgIcon(I_LOCK)+' 나만 보는 기록</h2><small>마음에 남은 한 줄을 남겨요.</small></div>' +
-      (book?'<button class="home-link" type="button" data-home-write="'+book.id+'">한 줄 남기기 →</button>':'')+'</section>' +
+      (!user?'<a class="home-link" href="#/login">로그인하고 쓰기 →</a>':(book?'<button class="home-link" type="button" data-home-write="'+book.id+'">한 줄 남기기 →</button>':''))+'</section>' +
       '<section class="home-card home-meeting"><div class="home-meeting-summary"><h2>이번 모임</h2><p class="home-meeting-time">'+esc([a.next.date,a.next.time].filter(Boolean).join(' · ')||'일정을 준비하고 있어요')+'</p>' +
       '<p class="home-meeting-range">'+esc([a.reading.chapter,a.reading.range].filter(Boolean).join(' · ')||'읽을 범위는 곧 안내해요')+'</p>' +
       (meetingBook && (!book || book.id!==meetingBook.id)?'<small>'+esc(meetingBook.title)+'</small>':'')+'</div><button class="home-link" type="button" data-home-meeting>준비 보기 →</button></section>' +
@@ -3315,9 +3322,8 @@ function memberHomeHtml(){
       (postsStatus || (latest.length ? '<ul class="home-posts">'+homePostsHtml(latest)+'</ul>' : '<p class="home-empty">다른 모임원이 나눈 글이 아직 없어요.</p>'))+'</section>' +
     '<div class="home-actions"><a class="home-link" href="#/about">모임 안내 · 전체 독서 여정 →</a></div></div>';
 }
-function homeHtml(){ return SESSION && currentUser() ? memberHomeHtml() : welcomeHomeHtml(); }
+function homeHtml(){ return memberHomeHtml(); }
 function homeCommunityHtml(route){
-  if(!SESSION) return '<div class="wrap">'+loginGateHtml('모임원의 글을 보려면 로그인해주세요.')+'</div>';
   var posts=homeRecentPosts(), pageSize=20;
   var body=homePostsStatusHtml();
   var back='<a class="home-link" href="#/">← 홈으로</a>';
@@ -3327,7 +3333,7 @@ function homeCommunityHtml(route){
     if(!body) body=selected ? sharePostCardHtml(bookById(selected.bookId),selected) : '<p class="home-empty">이 글을 볼 수 없거나 삭제되었어요.</p>';
   } else if(!body){
     var total=Math.max(1,Math.ceil(posts.length/pageSize)), page=Math.min(route.page||1,total);
-    body='<div class="home-section-head"><div><h1>모임에서 나눈 이야기</h1><p>다른 모임원의 공유 글 · 최신순</p></div></div>' +
+    body='<div class="home-section-head"><div><h1>모임에서 나눈 이야기</h1><p>'+(SESSION?'다른 모임원의':'모임원의')+' 공유 글 · 최신순</p></div></div>' +
       (posts.length ? '<ul class="home-posts home-feed">'+homePostsHtml(posts.slice((page-1)*pageSize,page*pageSize))+'</ul>' : '<p class="home-empty">다른 모임원이 나눈 글이 아직 없어요.</p>') +
       (total>1?'<nav class="home-pager" aria-label="글 목록 페이지">'+(page>1?'<a class="home-link" href="#/community/'+(page-1)+'">← 이전</a>':'')+'<span>'+page+' / '+total+'</span>'+(page<total?'<a class="home-link" href="#/community/'+(page+1)+'">다음 →</a>':'')+'</nav>':'');
   }

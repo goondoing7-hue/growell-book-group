@@ -71,12 +71,11 @@
 
   // Pass STATE.posts (or its values) explicitly. This never walks other state
   // collections; encrypted private rows and worksheet-shaped rows are rejected.
-  function selectRecentPosts(posts, userId, unlockedIds, limit){
-    if(!validId(userId)) return [];
+  function selectPosts(posts, unlockedIds, excludedUserId, limit){
     var allowed=idSet(unlockedIds);
     var result=values(posts).filter(function(post){
       return post && validId(post.id) && validId(post.bookId) && validId(post.userId)
-        && post.userId!==userId && allowed.has(post.bookId)
+        && post.userId!==excludedUserId && allowed.has(post.bookId)
         && !Object.prototype.hasOwnProperty.call(post,'iv')
         && !Object.prototype.hasOwnProperty.call(post,'data')
         && !Object.prototype.hasOwnProperty.call(post,'activityKey');
@@ -85,6 +84,13 @@
     var count=Number(limit);
     if(!Number.isFinite(count) || count<=0) return [];
     return result.slice(0,Math.floor(count));
+  }
+  function selectPublicPosts(posts, unlockedIds, limit){
+    return selectPosts(posts,unlockedIds,null,limit);
+  }
+  function selectRecentPosts(posts, userId, unlockedIds, limit){
+    if(!validId(userId)) return [];
+    return selectPosts(posts,unlockedIds,userId,limit);
   }
 
   function activeHabits(habits, userId, unlockedIds, todayYmd){
@@ -101,5 +107,5 @@
     }).slice().sort(function(a,b){ return compareTime(a,b,'createdAt',false); });
   }
 
-  return {selectReadingBook:selectReadingBook,selectRecentPosts:selectRecentPosts,activeHabits:activeHabits,parseTimestamp:parseTimestamp};
+  return {selectReadingBook:selectReadingBook,selectPublicPosts:selectPublicPosts,selectRecentPosts:selectRecentPosts,activeHabits:activeHabits,parseTimestamp:parseTimestamp};
 });

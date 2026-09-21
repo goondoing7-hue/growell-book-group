@@ -69,6 +69,38 @@ test('recent posts without a limit retain the complete feed for later pagination
   assert.equal(all.length,47);assert.equal(all[0].id,'p46');assert.equal(all[46].id,'p0');
 });
 
+test('guest public posts include all authors while retaining locked, private and malformed row exclusions',()=>{
+  const own=post('own',200,{userId:'me'}), other=post('other',100);
+  const rows=[own,other,post('locked',999,{bookId:'body'}),post('unknown',999,{bookId:'missing'}),
+    post('encrypted',999,{iv:'iv',data:'ciphertext'}),post('private-data',999,{data:'private'}),
+    post('worksheet',999,{activityKey:'response'}),post('',999),post('no-owner',999,{userId:null}),
+    post('no-book',999,{bookId:''}),{},null];
+  assert.deepEqual(home.selectPublicPosts(rows,unlocked),[own,other]);
+  assert.deepEqual(home.selectRecentPosts(rows,'me',unlocked),[other],'member feed still excludes its own author');
+  assert.deepEqual(home.selectRecentPosts(rows,null,unlocked),[],'member-only selector still requires a login');
+  assert.deepEqual(home.selectPublicPosts(rows,[]),[],'no unlocked book grants no public rows');
+});
+
+test('guest feed uses the same ISO/epoch ordering and applies the limit after filtering',()=>{
+  const rows=[post('invalid','bad-date'),post('b','2026-09-21T09:00:00+09:00'),
+    post('a',Date.parse('2026-09-21T00:00:00Z')),post('latest','2026-09-21T00:01:00Z'),
+    post('locked','2026-09-22T00:00:00Z',{bookId:'body'})];
+  const original=JSON.stringify(rows);
+  assert.deepEqual(home.selectPublicPosts(rows,new Set(unlocked)).map(row=>row.id),['latest','a','b','invalid']);
+  assert.deepEqual(home.selectPublicPosts(rows,unlocked,2).map(row=>row.id),['latest','a']);
+  assert.equal(home.selectPublicPosts(rows,unlocked,Infinity).length,4);
+  for(const limit of [0,-1,NaN]) assert.deepEqual(home.selectPublicPosts(rows,unlocked,limit),[]);
+  assert.equal(JSON.stringify(rows),original);
+});
+
+test('guest selector accepts an explicit posts dictionary but never traverses whole app state',()=>{
+  const shared=post('shared',100);
+  const posts=Object.freeze({shared:Object.freeze(shared)});
+  assert.deepEqual(home.selectPublicPosts(posts,unlocked),[shared]);
+  assert.deepEqual(home.selectPublicPosts({posts,privateEntries:{hidden:post('hidden',999,{data:'cipher',iv:'iv'})}},unlocked),[]);
+  assert.deepEqual(home.selectPublicPosts(null,unlocked),[]);
+});
+
 test('active habits use the current owner, unlocked books, and inclusive start/end dates',()=>{
   const rows=[habit('both',{startDate:'2026-09-21',endDate:'2026-09-21'}),
     habit('future',{startDate:'2026-09-22'}),habit('ended',{endDate:'2026-09-20'}),
@@ -110,6 +142,7 @@ test('the same module exposes GrowellHome to a browser without CommonJS',()=>{
   const context=vm.createContext({});
   vm.runInContext(fs.readFileSync(path.join(__dirname,'..','homeDomain.js'),'utf8'),context);
   assert.equal(typeof context.GrowellHome.selectReadingBook,'function');
+  assert.equal(typeof context.GrowellHome.selectPublicPosts,'function');
   assert.equal(typeof context.GrowellHome.selectRecentPosts,'function');
   assert.equal(typeof context.GrowellHome.activeHabits,'function');
   assert.equal(context.GrowellHome.parseTimestamp('0'),0);
