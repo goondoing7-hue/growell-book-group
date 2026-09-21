@@ -31,7 +31,7 @@ npm.cmd ci --ignore-scripts
 npm.cmd run build
 ```
 
-순서는 스크립트 문법과 자산 연결 검사 → 임시 데이터 테스트 → `dist/` 생성입니다. `dist/`에는 `index.html`, `privateCrypto.js`, `manifest.json`, 지정한 `covers/` 파일만 들어갑니다. 코드가 참조하는 새 이미지나 자산을 추가하면 `scripts/files.cjs`의 공개 파일 목록에도 정확한 파일 경로를 추가합니다. 새 테스트는 같은 파일의 `TEST_FILES`에 등록합니다.
+순서는 스크립트 문법과 자산 연결 검사 → 임시 데이터 테스트 → `dist/` 생성입니다. `dist/`에는 `index.html`, `privateCrypto.js`, `homeDomain.js`, `home.css`, `manifest.json`, 지정한 `covers/` 파일만 들어갑니다. 코드가 참조하는 새 이미지나 자산을 추가하면 `scripts/files.cjs`의 공개 파일 목록에도 정확한 파일 경로를 추가합니다. 새 테스트는 같은 파일의 `TEST_FILES`에 등록합니다.
 
 ## 미리 보기와 운영 반영
 

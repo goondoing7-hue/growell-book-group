@@ -32,7 +32,10 @@ function verifySource(root = PROJECT_ROOT) {
     const src = attributes.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
     if (src) {
       if (src[1] === 'privateCrypto.js' || src[1] === './privateCrypto.js') cryptoScriptFound = true;
-      if (!/^(?:https?:)?\/\//i.test(src[1])) verifyReference(root, src[1]);
+      if (!/^(?:https?:)?\/\//i.test(src[1])) {
+        verifyReference(root, src[1]);
+        new vm.Script(fs.readFileSync(path.join(root, src[1]), 'utf8'), { filename: src[1] });
+      }
       continue;
     }
     const type = attributes.match(/\btype\s*=\s*["']([^"']+)["']/i);

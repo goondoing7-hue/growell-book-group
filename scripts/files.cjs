@@ -3,7 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
-  'index.html', 'privateCrypto.js', 'manifest.json',
+  'index.html', 'privateCrypto.js', 'homeDomain.js', 'home.css', 'manifest.json',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
   'covers/og-image-v2.jpg', 'covers/icon-16.png', 'covers/icon-32.png',
@@ -16,7 +16,7 @@ const DEPLOY_FILES = Object.freeze([
 const TEST_FILES = Object.freeze([
   'tests/deployment.test.cjs', 'tests/drafts.test.cjs',
   'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs',
-  'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs'
+  'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs', 'tests/home-domain.test.cjs', 'tests/home-ui.test.cjs'
 ]);
 
 const PUBLISH_FILES = Object.freeze([

@@ -43,7 +43,8 @@
 <meta name="theme-color" content="#F3F1EC">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css">
 <style id="app-style">
   :root{
     --bg:#F3F1EC; --surface:#FFFFFF; --surface-2:#EAE6DC; --surface-3:#E1DCCF;
@@ -65,8 +66,8 @@
     --nt-question:#7A5AC9; --nt-question-soft:#E9E1F7; --nt-question-ink:#5C3FA0;
     --nt-insight:#B5486B; --nt-insight-soft:#F5DEE3; --nt-insight-ink:#8A3650;
     --highlight:#FBE28A;
-    --font-display:'Hahmlet','Noto Serif KR',serif;
-    --font-body:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+    --font-display:'Pretendard Variable',Pretendard,'Malgun Gothic',sans-serif;
+    --font-body:'Pretendard Variable',Pretendard,'Malgun Gothic',sans-serif;
     --font-mono:'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
   }
   @media (prefers-color-scheme: dark){
@@ -115,10 +116,10 @@
   html{-webkit-text-size-adjust:100%;}
   body{
     margin:0; background:var(--bg); color:var(--ink);
-    font-family:var(--font-body); font-size:16px; line-height:1.65;
+    font-family:var(--font-body); font-size:16px; font-weight:500; line-height:1.65;
     -webkit-font-smoothing:antialiased;
   }
-  h1,h2,h3,h4{font-family:var(--font-display); font-weight:600; margin:0; text-wrap:balance; color:var(--ink);}
+  h1,h2,h3,h4{font-family:var(--font-display); font-weight:700; margin:0; text-wrap:balance; color:var(--ink);}
   p{margin:0;}
   a{color:inherit;}
   button,input,textarea,select{font-family:inherit; font-size:inherit; color:inherit;}
@@ -1046,6 +1047,8 @@
     .rt-btn{width:34px; height:34px;}
   }
 </style>
+<link rel="stylesheet" href="home.css">
+<script src="homeDomain.js"></script>
 </head>
 <body>
 <!-- 초기 로딩 화면(boot-splash)을 JS가 아니라 정적 HTML에 처음부터 박아 넣음(요청 반영) — 예전엔
@@ -1514,6 +1517,8 @@ var STATE = {
   readingMeta:{}, readingLogs:{}, comments:{}, bookLocks:{},
   announcement:{ next:{date:'', time:'', place:'', note:''}, reading:{bookId:'emotion', meetingNo:'', chapter:'', range:'', concept:'', note:''} }
 };
+var sharedPostsLoadState = 'loading';
+var homeMeetingOpen = false;
 
 var SESSION = null; // {userId, name, keyB64}
 var CURRENT_KEY = null; // CryptoKey, resolved from SESSION.keyB64
@@ -1542,6 +1547,7 @@ function bootApp(){
     ]).then(function(results){
       var profilesRes=results[0], postsRes=results[1], commentsRes=results[2], matRes=results[3],
           wsRes=results[4], rmRes=results[5], rlRes=results[6], blRes=results[7], annRes=results[8];
+      sharedPostsLoadState = postsRes.error ? 'error' : 'ready';
       [profilesRes,postsRes,commentsRes,matRes,wsRes,rmRes,rlRes,blRes].forEach(function(r){
         if(r && r.error) console.error('growell: load failed', r.error);
       });
@@ -1858,6 +1864,10 @@ function currentRoute(){
     return br;
   }
   if(parts[0]==='login'){ return {view:'login'}; }
+  if(parts[0]==='about'){ return {view:'about'}; }
+  if(parts[0]==='community'){
+    return {view:'community', postId:parts[1]==='post' ? parts[2] : null, page:Math.max(1, parseInt(parts[1],10)||1)};
+  }
   if(parts[0]==='admin' && parts[1]==='users'){ return {view:'admin-users'}; }
   if(parts[0]==='profile' && parts[1]==='edit'){ return {view:'profile-edit'}; }
   return {view:'home'};
@@ -1915,6 +1925,7 @@ function clearMemberSession(){
   SESSION = null; CURRENT_KEY = null; CURRENT_KEY_OWNER = null; CURRENT_KEY_MATERIAL = null;
   STATE.privateEntries = {}; STATE.habits = {};
   memberLoadState = {privateEntries:'idle', habits:'idle'};
+  if(typeof sharedPostsLoadState!=='undefined' && sharedPostsLoadState==='loading') sharedPostsLoadState='error';
   if(typeof resetShareComposer==='function') resetShareComposer();
   if(typeof resetMineComposer==='function') resetMineComposer();
   if(typeof resetMaterialsComposer==='function') resetMaterialsComposer();
@@ -2890,6 +2901,7 @@ function refreshHabitSaveUI(habitId){
     var status = card.querySelector('[data-habit-save-status]');
     if(status) status.innerHTML = habitSaveStatusHtml(habitId);
   });
+  if(typeof refreshHomeHabits==='function') refreshHomeHabits();
 }
 function queueHabitCheck(habitId, dateStr, checked){
   var version = ++habitSaveVersion;
@@ -3190,7 +3202,163 @@ function announceEditHtml(){
     '<div class="composer-foot"><span class="hint">모임 멤버 모두에게 보여요</span><button class="btn btn-primary" id="btn-save-announcement" type="button">저장</button></div>' +
   '</div>';
 }
-function homeHtml(){
+function homeUnlockedIds(){
+  return BOOKS.filter(function(book){ return !isBookLocked(book); }).map(function(book){ return book.id; });
+}
+function homeReadingBook(){
+  return GrowellHome.selectReadingBook(BOOKS, STATE.readingMeta, SESSION && SESSION.userId,
+    STATE.announcement.reading.bookId, homeUnlockedIds());
+}
+function homeHabits(){
+  return GrowellHome.activeHabits(STATE.habits, SESSION && SESSION.userId, homeUnlockedIds(), ymd(new Date())).map(habitWithPendingChecks);
+}
+function homeRecentPosts(limit){
+  return GrowellHome.selectRecentPosts(STATE.posts, SESSION && SESSION.userId, homeUnlockedIds(), limit);
+}
+function homePostExcerpt(post){
+  if(post.noteType==='insight') return INSIGHT_QUESTIONS.map(function(q){ return post[q.key]||''; }).join(' ').replace(/\s+/g,' ').trim();
+  // Template content remains inert: previewing text never loads embedded media.
+  var template = document.createElement('template');
+  template.innerHTML = String(post.html||'');
+  template.content.querySelectorAll('script,style,noscript,iframe,object,embed,template,svg,math').forEach(function(node){node.remove();});
+  return (template.content.textContent||'').replace(/\s+/g,' ').trim();
+}
+function homePostsHtml(posts){
+  return posts.map(function(post){
+    var book = bookById(post.bookId);
+    var excerpt = homePostExcerpt(post);
+    var title = (post.title||'').trim() || (post.noteType==='insight' ? ((post.meetingNo ? post.meetingNo+'번째 ' : '')+'통찰 정리') : excerpt.slice(0,60)) || (post.photo ? '사진으로 나눈 기록' : '함께 나눈 기록');
+    var author = (STATE.users[post.userId]||{}).name || post.userName || '모임원';
+    var created = GrowellHome.parseTimestamp(post.createdAt);
+    var date = created===null ? '' : new Date(created).toLocaleDateString('ko-KR',{month:'long',day:'numeric'});
+    return '<li><a class="home-post" href="#/community/post/'+encodeURIComponent(post.id)+'">' +
+      '<span class="home-post-meta">'+esc(author)+(date?' · '+esc(date):'')+'</span>' +
+      '<strong class="home-post-title">'+esc(title)+'</strong>' +
+      (excerpt ? '<span class="home-post-excerpt">'+esc(excerpt.slice(0,240))+'</span>' : '') +
+      '<span class="home-post-book">'+esc(book.title)+'</span></a></li>';
+  }).join('');
+}
+function homePostsStatusHtml(){
+  if(sharedPostsLoadState==='loading') return '<p class="home-empty" role="status">모임원의 글을 불러오는 중이에요.</p>';
+  if(sharedPostsLoadState==='error') return '<div class="home-error" role="alert">모임원의 글을 불러오지 못했어요. <button class="home-link" type="button" data-home-retry-posts>다시 불러오기</button></div>';
+  return '';
+}
+function refreshHomePosts(){
+  if(!SESSION || sharedPostsLoadState==='loading') return;
+  var owner=SESSION.userId, epoch=saveSessionEpoch;
+  sharedPostsLoadState='loading'; render();
+  return sb.from('posts').select('*').then(function(result){
+    if(!SESSION || SESSION.userId!==owner || epoch!==saveSessionEpoch) return;
+    if(result.error) throw result.error;
+    var posts={};
+    (result.data||[]).forEach(function(row){ var post=mapPostRow(row,STATE.users); posts[post.id]=post; });
+    STATE.posts=posts; sharedPostsLoadState='ready'; render();
+  }).catch(function(){
+    if(!SESSION || SESSION.userId!==owner || epoch!==saveSessionEpoch) return;
+    sharedPostsLoadState='error'; render();
+  });
+}
+function homeHabitRowsHtml(habits){
+  var today=ymd(new Date());
+  var showBook=Array.from(new Set(habits.map(function(h){return h.bookId;}))).length>1;
+  return habits.map(function(habit){
+    var book=bookById(habit.bookId), checked=habit.checkedDates.indexOf(today)>=0;
+    var pending=Object.keys(habitSaveIntents[habit.id]||{}).length>0;
+    return '<li data-home-habit-card="'+esc(habit.id)+'"><label class="home-habit">' +
+      '<input type="checkbox" data-home-habit="'+esc(habit.id)+'"'+(checked?' checked':'')+'>' +
+      '<span>'+esc(habit.name)+(showBook?'<small>'+esc(book.title)+'</small>':'')+'</span></label>' +
+      '<p class="home-habit-status" data-home-habit-status role="status">'+(pending?habitSaveStatusHtml(habit.id):'')+'</p></li>';
+  }).join('');
+}
+function refreshHomeHabits(){
+  if(!SESSION) return;
+  var habits=homeHabits(), today=ymd(new Date());
+  document.querySelectorAll('[data-home-habit-card]').forEach(function(row){
+    var habit=habits.find(function(item){ return item.id===row.getAttribute('data-home-habit-card'); });
+    if(!habit) return;
+    row.querySelector('[data-home-habit]').checked=habit.checkedDates.indexOf(today)>=0;
+    row.querySelector('[data-home-habit-status]').innerHTML=Object.keys(habitSaveIntents[habit.id]||{}).length ? habitSaveStatusHtml(habit.id) : '';
+  });
+  var count=document.querySelector('[data-home-habit-count]');
+  if(count) count.textContent=habits.filter(function(h){return h.checkedDates.indexOf(today)>=0;}).length+' / '+habits.length+' 완료';
+}
+function memberHomeHtml(){
+  var user=currentUser(), book=homeReadingBook(), today=ymd(new Date());
+  var a=STATE.announcement, meetingBook=bookById(a.reading.bookId);
+  var habits=homeHabits(), habitStatus=memberDataStatusHtml('habits');
+  var completed=habits.filter(function(h){return h.checkedDates.indexOf(today)>=0;}).length;
+  var page=book ? Math.max(0,Math.min(Number(myCurrentPage(book.id))||0,book.totalPages)) : 0;
+  var reading=book ? '<h2 class="home-book-title">'+esc(book.title)+'</h2>' +
+    '<div class="home-reading-meta">'+page+' / '+book.totalPages+'쪽</div>' +
+    '<div class="home-progress" role="progressbar" aria-label="읽은 분량" aria-valuenow="'+page+'" aria-valuemin="0" aria-valuemax="'+book.totalPages+'"><span style="width:'+(page/book.totalPages*100)+'%"></span></div>' +
+    '<p class="home-next-page">'+(page>=book.totalPages?'끝까지 읽었어요.':(page+1)+'쪽부터 이어 읽어요.')+'</p>' +
+    '<a class="home-primary" href="#/book/'+book.id+'/mine">'+(page>=book.totalPages?'독서 기록 보기':'이어서 읽기')+'</a>' : '<p class="home-empty">아직 열린 책이 없어요. 모임 안내를 확인해주세요.</p>';
+  var habitBooks=Array.from(new Set(habits.map(function(h){return h.bookId;})));
+  if(!habitBooks.length && book) habitBooks.push(book.id);
+  var habitLinks=habitBooks.map(function(id){return '<a class="home-link" href="#/book/'+id+'/habit">'+(habitBooks.length>1 ? esc(bookById(id).title)+' 습관' : '습관 관리')+' →</a>';}).join('');
+  var latest=homeRecentPosts(3), postsStatus=homePostsStatusHtml();
+  return '<div class="home-dashboard wrap">' +
+    '<div class="home-welcome"><p class="home-date">'+esc(new Date().toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'long'}))+'</p><h1>오늘은 여기서 이어가요.</h1><p class="home-greeting">'+esc(user.name)+'님, 독서와 작은 습관을 하나씩 이어가요.</p></div>' +
+    '<div class="home-grid">' +
+      '<section class="home-card home-reading" aria-label="이어서 읽기"><p class="home-label">'+svgIcon(I_BOOKMARK)+' 이어서 읽기</p>'+reading+'</section>' +
+      '<section class="home-card home-habits" aria-label="오늘의 습관"><div class="home-card-head"><h2>오늘의 습관</h2>'+(!habitStatus?'<span class="home-habit-count" data-home-habit-count aria-live="polite">'+completed+' / '+habits.length+' 완료</span>':'')+'</div>' +
+      (habitStatus || (habits.length ? '<ul class="home-habit-list">'+homeHabitRowsHtml(habits)+'</ul>' : '<p class="home-empty">오늘 실천할 습관을 만들어 보세요.</p>')) +
+      '<div class="home-actions">'+habitLinks+'</div></section>' +
+      '<section class="home-card home-note"><div class="home-note-summary"><h2>'+svgIcon(I_LOCK)+' 나만 보는 기록</h2><small>마음에 남은 한 줄을 남겨요.</small></div>' +
+      (book?'<button class="home-link" type="button" data-home-write="'+book.id+'">한 줄 남기기 →</button>':'')+'</section>' +
+      '<section class="home-card home-meeting"><div class="home-meeting-summary"><h2>이번 모임</h2><p class="home-meeting-time">'+esc([a.next.date,a.next.time].filter(Boolean).join(' · ')||'일정을 준비하고 있어요')+'</p>' +
+      '<p class="home-meeting-range">'+esc([a.reading.chapter,a.reading.range].filter(Boolean).join(' · ')||'읽을 범위는 곧 안내해요')+'</p>' +
+      (meetingBook && (!book || book.id!==meetingBook.id)?'<small>'+esc(meetingBook.title)+'</small>':'')+'</div><button class="home-link" type="button" data-home-meeting>준비 보기 →</button></section>' +
+    '</div>' +
+    (homeMeetingOpen ? '<section class="home-meeting-details" id="home-meeting-details"><div class="home-actions"><button class="home-link" type="button" data-home-close-meeting>안내 닫기</button></div>'+(editingAnnouncement && isAdmin()?announceEditHtml():announceViewHtml())+'</section>' : '') +
+    '<section class="home-community" aria-labelledby="home-community-title"><div class="home-section-head"><div><h2 id="home-community-title">모임원의 새 글</h2><p>최근 공유 글 3개</p></div><a class="home-link" href="#/community">전체 보기 →</a></div>' +
+      (postsStatus || (latest.length ? '<ul class="home-posts">'+homePostsHtml(latest)+'</ul>' : '<p class="home-empty">다른 모임원이 나눈 글이 아직 없어요.</p>'))+'</section>' +
+    '<div class="home-actions"><a class="home-link" href="#/about">모임 안내 · 전체 독서 여정 →</a></div></div>';
+}
+function homeHtml(){ return SESSION && currentUser() ? memberHomeHtml() : welcomeHomeHtml(); }
+function homeCommunityHtml(route){
+  if(!SESSION) return '<div class="wrap">'+loginGateHtml('모임원의 글을 보려면 로그인해주세요.')+'</div>';
+  var posts=homeRecentPosts(), pageSize=20;
+  var body=homePostsStatusHtml();
+  var back='<a class="home-link" href="#/">← 홈으로</a>';
+  if(route.postId){
+    var selected=posts.find(function(post){return encodeURIComponent(post.id)===route.postId;});
+    back='<a class="home-link" href="#/community">← 모임 글 목록</a>';
+    if(!body) body=selected ? sharePostCardHtml(bookById(selected.bookId),selected) : '<p class="home-empty">이 글을 볼 수 없거나 삭제되었어요.</p>';
+  } else if(!body){
+    var total=Math.max(1,Math.ceil(posts.length/pageSize)), page=Math.min(route.page||1,total);
+    body='<div class="home-section-head"><div><h1>모임에서 나눈 이야기</h1><p>다른 모임원의 공유 글 · 최신순</p></div></div>' +
+      (posts.length ? '<ul class="home-posts home-feed">'+homePostsHtml(posts.slice((page-1)*pageSize,page*pageSize))+'</ul>' : '<p class="home-empty">다른 모임원이 나눈 글이 아직 없어요.</p>') +
+      (total>1?'<nav class="home-pager" aria-label="글 목록 페이지">'+(page>1?'<a class="home-link" href="#/community/'+(page-1)+'">← 이전</a>':'')+'<span>'+page+' / '+total+'</span>'+(page<total?'<a class="home-link" href="#/community/'+(page+1)+'">다음 →</a>':'')+'</nav>':'');
+  }
+  return '<div class="home-dashboard wrap">'+back+body+'</div>';
+}
+function bindHomeEvents(){
+  document.querySelectorAll('[data-home-habit]').forEach(function(input){
+    input.addEventListener('change',function(){
+      var id=input.getAttribute('data-home-habit'), today=ymd(new Date());
+      if(!SESSION || !homeHabits().some(function(h){return h.id===id;})) return;
+      queueHabitCheck(id,today,input.checked);
+    });
+  });
+  document.querySelectorAll('[data-home-write]').forEach(function(button){
+    button.addEventListener('click',function(){
+      var bookId=button.getAttribute('data-home-write'), target='#/book/'+bookId+'/mine', owner=SESSION && SESSION.userId;
+      if(!owner || !bookById(bookId) || isBookLocked(bookById(bookId))) return;
+      location.hash=target;
+      openComposerWithDraft('mine',bookId,null,function(){
+        if(!SESSION || SESSION.userId!==owner || location.hash!==target) return;
+        mineComposerOpenFor=bookId; mineEditingId=null; mineEditingPayload=null; render();
+        var composer=document.getElementById('note-editor'); if(composer) composer.focus();
+      });
+    });
+  });
+  document.querySelectorAll('[data-home-meeting],[data-home-close-meeting]').forEach(function(button){
+    button.addEventListener('click',function(){homeMeetingOpen=button.hasAttribute('data-home-meeting');render();var panel=document.getElementById('home-meeting-details');if(panel)panel.scrollIntoView({block:'start'});});
+  });
+  document.querySelectorAll('[data-home-retry-posts]').forEach(function(button){button.addEventListener('click',refreshHomePosts);});
+}
+function welcomeHomeHtml(){
   var heroCovers = [
     {book:BOOKS[0], style:'width:210px; height:290px; top:-12%; left:-3%; transform:rotate(-7deg);', secondary:false},
     {book:BOOKS[3], style:'width:180px; height:250px; bottom:-14%; right:-2%; transform:rotate(6deg);', secondary:false},
@@ -4809,6 +4977,10 @@ function render(){
     html += adminUsersHtml();
   } else if(route.view==='profile-edit'){
     html += SESSION ? profileEditHtml() : '<div class="wrap">'+loginGateHtml('프로필을 수정하려면 로그인해주세요.')+'</div>';
+  } else if(route.view==='community'){
+    html += homeCommunityHtml(route);
+  } else if(route.view==='about'){
+    html += welcomeHomeHtml();
   } else {
     html += homeHtml();
   }
@@ -4830,6 +5002,7 @@ function restoreDraftIfAny(route){
 /* ---------------- events (delegated) ---------------- */
 function bindEvents(route){
   bindPrivateRecovery();
+  bindHomeEvents();
   // 위임한 한 번의 리스너는 체크 상태만 갱신하면서 생성한 재시도 버튼도 처리한다.
   if(!document._growellRetryBound){
     document._growellRetryBound = true;
