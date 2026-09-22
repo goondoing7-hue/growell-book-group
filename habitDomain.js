@@ -6,8 +6,8 @@
   'use strict';
   var DAY=86400000;
   function behaviorType(habit){return habit&&habit.behaviorType==='avoid'?'avoid':'do';}
-  function behaviorLabel(habit){return behaviorType(habit)==='avoid'?'하지 않는 습관':'하는 습관';}
-  function behaviorHint(habit){return behaviorType(habit)==='avoid'?'하지 않고 지킨 날을 성공으로 체크해요.':'실천한 날을 성공으로 체크해요.';}
+  function behaviorLabel(habit){return behaviorType(habit)==='avoid'?'절제할 습관':'실천할 습관';}
+  function behaviorHint(habit){return behaviorType(habit)==='avoid'?'절제한 날을 성공으로 체크해요.':'실천한 날을 성공으로 체크해요.';}
   function validDate(value){
     if(typeof value!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
     var p=value.split('-').map(Number), leap=p[0]%4===0&&(p[0]%100!==0||p[0]%400===0);

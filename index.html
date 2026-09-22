@@ -1604,7 +1604,10 @@ function bootApp(){
     });
   }).catch(function(error){
     if(flow===authFlowEpoch && error.message!=='auth-flow-cancelled'){
-      SESSION=null;sharedPostsLoadState='idle';oauthMessage=error.message==='oauth-cancelled'?'간편 로그인을 취소했어요. 다시 선택할 수 있어요.':'로그인 연결을 마치지 못했어요. 다시 로그인해주세요.';
+      SESSION=null;sharedPostsLoadState='idle';
+      oauthMessage=error.message==='oauth-cancelled'?'간편 로그인을 취소했어요. 다시 선택할 수 있어요.':
+        error.message==='oauth-provider-failed'?'간편 로그인 서비스에 연결하지 못했어요. 잠시 후 다시 시도해주세요.':
+        '로그인 연결을 마치지 못했어요. 다시 로그인해주세요.';
     }
   }).then(function(){BOOTING=false;});
 }
@@ -3795,14 +3798,25 @@ function loadOAuthProviderSettings(){
   });
 }
 function cleanOAuthCallbackUrl(){
-  var url=new URL(location.href);
+  var url=new URL(location.href),fragment=new URLSearchParams(url.hash.slice(1));
   ['code','error','error_code','error_description'].forEach(function(key){url.searchParams.delete(key);});
-  if(/(?:^#|&)(?:access_token|refresh_token|error)=/.test(url.hash))url.hash='#/login';
+  if(['access_token','refresh_token','error','error_code','error_description'].some(function(key){return fragment.has(key);}))url.hash='#/login';
   history.replaceState(null,'',url.pathname+url.search+url.hash);
 }
 function finishOAuthCallback(){
-  var url=new URL(location.href),code=url.searchParams.get('code');
-  if(url.searchParams.has('error')||/^#error=/.test(url.hash)){cleanOAuthCallbackUrl();return Promise.reject(new Error('oauth-cancelled'));}
+  var url=new URL(location.href),code=url.searchParams.get('code'),fragment=new URLSearchParams(url.hash.slice(1));
+  var params=[url.searchParams,fragment],errors=[],errorCodes=[],hasFailure=false;
+  params.forEach(function(part){
+    errors=errors.concat(part.getAll('error'));errorCodes=errorCodes.concat(part.getAll('error_code'));
+    if(part.has('error')||part.has('error_code')||part.has('error_description'))hasFailure=true;
+  });
+  if(hasFailure){
+    // Only an explicit, unambiguous access_denied response means cancellation.
+    // Provider descriptions/codes are never displayed, persisted, or logged.
+    var cancelled=errors.length>0 && errors.concat(errorCodes).every(function(value){return value==='access_denied';});
+    cleanOAuthCallbackUrl();
+    return Promise.reject(new Error(cancelled?'oauth-cancelled':'oauth-provider-failed'));
+  }
   if(!code)return Promise.resolve();
   cleanOAuthCallbackUrl();
   return sb.auth.exchangeCodeForSession(code).then(function(result){if(result.error)throw new Error('oauth-exchange-failed');});
@@ -3853,7 +3867,11 @@ async function startOAuth(provider,button){
     await pending;if(flow!==authFlowEpoch)return;
     try{sessionStorage.setItem('growell_oauth_return',/^#\/book\/[a-z]+\/(share|mine|worksheet|materials|habit)$/.test(location.hash)?location.hash:'#/');}catch(e){}
     var redirect=new URL(location.href);redirect.search='';redirect.hash='';
-    var result=await sb.auth.signInWithOAuth({provider:provider,options:{redirectTo:redirect.href,skipBrowserRedirect:true}});
+    var options={redirectTo:redirect.href,skipBrowserRedirect:true};
+    // Kakao's default scopes include email/photo. Provider scope overrides them;
+    // options.scopes would only append to those defaults (see AUTH_SETUP.md).
+    if(provider==='kakao')options.queryParams={scope:'profile_nickname'};
+    var result=await sb.auth.signInWithOAuth({provider:provider,options:options});
     if(flow!==authFlowEpoch)return;
     if(result.error||!result.data||!result.data.url)throw new Error('oauth-start-failed');
     var target=new URL(result.data.url);
@@ -4790,7 +4808,13 @@ function habitMonthSummaryHtml(habit,y,m){
 function habitCalendarLegendHtml(){
   return '<div class="habit-hist-legend"><span class="legend-success">✓ 성공</span><span class="legend-fail">− 실패</span><span>○ 오늘</span><span>· 예정</span></div>';
 }
-function habitKindBadgeHtml(habit){return '<span class="habit-kind-badge is-'+GrowellHabits.behaviorType(habit)+'">'+GrowellHabits.behaviorLabel(habit)+'</span>';}
+function habitKindIconHtml(habit){
+  var shape=GrowellHabits.behaviorType(habit)==='avoid'
+    ? '<path d="M18 11V7a2 2 0 0 0-4 0v1M14 10V5a2 2 0 0 0-4 0v5M10 9.5V7a2 2 0 0 0-4 0v7M18 8a2 2 0 0 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-1.5-6-3.5l-3.6-4.8a2 2 0 0 1 3.2-2.4L6 14"/>'
+    : '<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>';
+  return '<svg class="habit-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+shape+'</svg>';
+}
+function habitKindBadgeHtml(habit){return '<span class="habit-kind-badge is-'+GrowellHabits.behaviorType(habit)+'">'+habitKindIconHtml(habit)+GrowellHabits.behaviorLabel(habit)+'</span>';}
 function habitCardHtml(habit){
   var today=new Date(),todayStr=ymd(today),weekDates=weekDatesOf(mondayOf(today)),prog=habitWeekProgress(habit,weekDates);
   var complete=prog.total>0&&prog.done===prog.total,stats=GrowellHabits.stats(habit,todayStr);
@@ -4805,7 +4829,7 @@ function habitCardHtml(habit){
     '<div>'+habitKindBadgeHtml(habit)+'<h4 class="habit-name"><button type="button" class="habit-title-button" data-habit-history="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+esc(habit.name)+'</button></h4></div>'+
     '<div class="habit-card-actions"><button type="button" class="habit-icon-btn" data-edit-habit="'+esc(habit.id)+'" title="습관 수정" aria-label="'+esc(habit.name)+' 수정">'+svgIcon(I_EDIT)+'</button>'+
     '<button type="button" class="habit-icon-btn" data-delete-habit="'+esc(habit.id)+'" title="습관 삭제" aria-label="'+esc(habit.name)+' 삭제">'+svgIcon(I_TRASH)+'</button></div></div>'+
-    habitFactsHtml(habit)+'<p class="habit-kind-hint">'+GrowellHabits.behaviorHint(habit)+'</p>'+calendar+
+    habitFactsHtml(habit)+calendar+
     '<div class="habit-card-summary"><span data-habit-card-summary="'+esc(habit.id)+'">지금까지 '+stats.success+'번 실천 · '+stats.streak+'일 연속</span><button type="button" class="habit-detail-link" data-habit-history="'+esc(habit.id)+'">진행 상황 '+svgIcon(I_BACK)+'</button></div>'+
     '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitSaveStatusHtml(habit.id)+'</p>'+download+'</article>';
 }
@@ -4821,7 +4845,7 @@ function habitFormHtml(book,editingHabit){
     ['end-date','목표일','date',h.endDate,'',0]];
   return '<div class="card habit-form" id="habit-form" data-book="'+esc(book.id)+'">'+
     '<div class="composer-head"><h4>'+(editingHabit?'나에게 맞게 습관 수정':'작게 시작하는 나의 습관')+'</h4><button type="button" class="icon-btn" id="btn-close-habit-form" aria-label="습관 설정 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
-    '<fieldset class="habit-kind-picker"><legend>습관 종류</legend><div class="habit-kind-options">'+['do','avoid'].map(function(value){return '<label class="habit-kind-option"><input type="radio" name="habit-behavior-type" value="'+value+'"'+(kind===value?' checked':'')+'><span>'+GrowellHabits.behaviorLabel({behaviorType:value})+'</span></label>';}).join('')+'</div><p class="habit-kind-hint" id="habit-kind-hint">'+GrowellHabits.behaviorHint(h)+'</p></fieldset>'+
+    '<fieldset class="habit-kind-picker"><legend>습관 종류</legend><div class="habit-kind-options">'+['do','avoid'].map(function(value){return '<label class="habit-kind-option"><input type="radio" name="habit-behavior-type" value="'+value+'"'+(kind===value?' checked':'')+'><span>'+habitKindIconHtml({behaviorType:value})+GrowellHabits.behaviorLabel({behaviorType:value})+'</span></label>';}).join('')+'</div><p class="habit-kind-hint" id="habit-kind-hint">'+GrowellHabits.behaviorHint(h)+'</p></fieldset>'+
     '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row"><label for="habit-'+f[0]+'">'+f[1]+'</label><input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+'></div>';}).join('')+'</div>'+
     '<p class="habit-form-hint">목표 기간에는 매일 한 번 체크해요. 목표일을 비워두면 계속 실천할 수 있어요. 기간을 바꿔도 이전 체크 기록은 보관됩니다.</p>'+
     '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button></div>';
@@ -4899,7 +4923,6 @@ function habitHistoryModalHtml(habit){
   return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
     '<div class="composer-head"><div><p class="habit-dialog-kicker">나의 작은 성취</p>'+habitKindBadgeHtml(habit)+'<h4 id="habit-dialog-title">'+esc(habit.name)+'</h4></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 진행 상황 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
     '<p class="habit-dialog-period">'+habitPeriodLabel(habit)+(habit.goal?' · '+esc(habit.goal):'')+'</p>'+
-    '<p class="habit-kind-hint">'+GrowellHabits.behaviorHint(habit)+'</p>'+
     '<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+
     '<div class="habit-hist-month-nav"><button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><span class="habit-hist-month-label">'+view.y+'년 '+(view.m+1)+'월</span><button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>'+
     habitHistoryCalendarHtml(habit,view.y,view.m)+habitCalendarLegendHtml()+

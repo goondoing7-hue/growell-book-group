@@ -6,8 +6,9 @@ const sample=extra=>({id:'h1',userId:'u1',startDate:'2026-09-18',endDate:'2026-0
 
 test('legacy habits default to doing; avoiding habits keep the same promise-kept success rule',()=>{
   assert.equal(habits.behaviorType({}),'do');assert.equal(habits.behaviorType({behaviorType:'unknown'}),'do');
-  assert.equal(habits.behaviorLabel({behaviorType:'avoid'}),'하지 않는 습관');
-  assert.match(habits.behaviorHint({behaviorType:'avoid'}),/하지 않고 지킨 날/);
+  assert.equal(habits.behaviorLabel({behaviorType:'avoid'}),'절제할 습관');
+  assert.equal(habits.behaviorLabel({}),'실천할 습관');
+  assert.match(habits.behaviorHint({behaviorType:'avoid'}),/절제한 날/);
   assert.deepEqual(habits.stats(sample({behaviorType:'avoid'}),today),habits.stats(sample({behaviorType:'do'}),today));
   assert.equal(habits.status(sample({behaviorType:'avoid'}),'2026-09-21',today),'success');
 });

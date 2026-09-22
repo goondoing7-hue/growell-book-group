@@ -13,8 +13,9 @@
 ## 연결한 제공자 설정
 
 - Google Cloud 프로젝트: **GROWELL Book Group** (`growell-book-group`). 웹 OAuth 클라이언트 **GROWELL Book Web**을 생성하여 Supabase Google 제공자에 연결했다. 동의 화면에 저장한 범위는 `openid`, `userinfo.email`, `userinfo.profile` 세 가지뿐이다. 앱 공개 게시 후 ‘프로덕션 단계’ 상태를 확인했다.
-- Google 브랜딩의 개인정보처리방침 주소에는 `https://growell-book.vercel.app/privacy.html`을 등록했다. 이 파일은 로그인 없이 열리는 정적 문서이며 앱 배포 파일에 포함된다. 배포 후 문서 접근 확인은 별도로 필요하다.
+- Google 브랜딩의 개인정보처리방침 주소에는 `https://growell-book.vercel.app/privacy.html`을 등록했다. 이 파일은 로그인 없이 열리는 정적 문서이며 앱 배포 파일에 포함된다. 2026-09-23 운영 주소에서 로그인 없이 정상 표시되는 것을 확인했다.
 - Kakao Developers 앱 ID: `1586025`. 닉네임은 선택 동의이며 프로필 사진 범위는 껐다. 이메일 권한이 없는 구성으로 Supabase의 **Allow users without email**을 켰고, Kakao 제공자를 활성화했다. 소셜 프로필 사진을 자동으로 가져오지 않고 회원이 앱에서 직접 선택한다.
+- 카카오 로그인 요청은 `options.queryParams.scope = 'profile_nickname'`로 닉네임만 지정한다. `options.scopes`는 [Supabase Kakao 구현](https://github.com/supabase/auth/blob/master/internal/api/provider/kakao.go)의 기본 이메일·사진 범위에 추가되므로 대체 용도로 쓰지 않는다. [Auth JS](https://github.com/supabase/auth-js/blob/master/src/GoTrueClient.ts)는 `queryParams`를 `/authorize` 쿼리에 넣고, [Auth 서버](https://github.com/supabase/auth/blob/master/internal/api/external.go)는 `scope`를 제공자 URL 옵션으로 전달한다. [Go OAuth2](https://github.com/golang/oauth2/blob/master/oauth2.go)의 `AuthCodeURL`은 이 옵션을 기본 범위 뒤에 적용한다. 따라서 앱은 이메일·사진 동의를 추가로 요청하지 않으며, Google 요청에는 이 설정을 넣지 않는다.
 - 제공자 비밀 키는 Supabase 설정에만 보관한다. 소스, 프런트엔드 번들과 Git에 넣지 않는다.
 
 등록 주소는 다음과 같다. 와일드카드로 다른 사이트의 복귀 주소를 허용하지 않는다.
@@ -42,7 +43,8 @@
 - `server/oauth-members.sql`: 운영 적용 성공. Google·카카오 첫 등록/재조회, 재시도, 계정 분리, 기존 일반 회원 보존, 익명·이메일 전용 사용자 거부와 키 보관함 권한을 `server/oauth-verification.sql`의 임시 데이터로 검증했다. 결과는 `ok: true`, 롤백 후 `synthetic_rows_remaining: 0`이다.
 - `server/recovery-owner.sql`: 운영 적용 성공. 비로그인 일반 회원의 복구 파일과 계정 식별 정보가 정확히 일치하는지 Boolean으로만 확인한다. 비밀번호 재설정 권한을 부여하거나 기록·키·힌트 등을 반환하지 않는다. 기존 `reset-password` Edge Function의 힌트 검증은 별도로 유지한다. `server/recovery-owner-verification.sql` 검증 결과는 `ok: true`, 롤백 후 `synthetic_rows_remaining: 0`이다.
 - `server/habit-kind.sql`: 2026-09-23 운영 적용 성공. `habits.behavior_type`은 `text`, `NOT NULL`, 기본값 `do`이며 제약 검증은 `validated: true`, 잘못된 값은 `invalid_rows: 0`으로 확인했다. 임시 데이터 화면에서 하지 않는 습관 선택·수정·목표 저장과 기존 실천 체크 1회 보존도 확인했다.
-- 위 SQL 결과는 서버 계약 검증이다. Google 공개 게시 상태는 제공자 화면에서 별도로 확인했으며, 실제 제공자 동의 화면을 거친 가입·재로그인과 운영 사이트 배포 완료까지 SQL 검증만으로 확정하지 않는다.
+- Google은 실제 제공자 인증 콜백이 성공하고 GROWELL의 신규 가입 화면(별명·개인 기록 비밀번호 설정)에 도달한 것을 확인했다. 개인 기록 비밀번호를 입력하거나 가입 완료·재로그인을 진행하지 않았으므로 이 단계까지 성공했다고 확대해 안내하지 않는다.
+- 카카오는 실제 동의 화면에서 미설정 범위 `account_email`, `profile_image`에 대한 `KOE205`를 확인한 뒤 위 닉네임 전용 요청으로 수정했다. 수정 후 실제 동의·콜백 및 가입 화면은 별도 재검증이 필요하다. SQL 검증과 앱의 요청 옵션 테스트만으로 실제 카카오 가입 성공을 확정하지 않는다.
 - 기존 `signup`, `grant-admin`, `reset-password`, `delete-account` Edge Function 원본은 이 저장소에 없으므로 원본까지 검토했다고 안내하지 않는다.
 
 ## 회원 전용 공개 범위

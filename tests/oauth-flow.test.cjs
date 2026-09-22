@@ -7,7 +7,8 @@ const profile={id:'u-social',auth_user_id:authId,login_id:'social_test',name:'�
 const user={id:authId,identities:[{provider:'google'}],app_metadata:{providers:['google']}};
 function section(a,b){const start=html.indexOf(a),end=html.indexOf(b,start);assert.ok(start>=0&&end>start);return html.slice(start,end);}
 function harness(options={}){
-  const memory=new Map(),calls=[],nodes={},c={Promise,URL,JSON,Date,setTimeout,clearTimeout,console,Uint8Array,atob,
+  const memory=new Map(),calls=[],logs=[],nodes={},c={Promise,URL,URLSearchParams,JSON,Date,setTimeout,clearTimeout,
+    console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,
     STATE:{users:{},posts:{},comments:{},privateEntries:{},habits:{},readingMeta:{},readingLogs:{},worksheets:{},materialNotes:{}},SESSION:null,
     authFlowEpoch:0,saveSessionEpoch:0,sharedPostsLoadState:'idle',BOOTING:true,BOOT_FAILED:false,
     GrowellOAuth:OAuth,keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
@@ -25,14 +26,14 @@ function harness(options={}){
       onAuthStateChange(callback){c.authCallback=callback;return {data:{subscription:{unsubscribe(){}}}};},
       exchangeCodeForSession:async code=>{calls.push(['exchange',code]);return {error:null};},
       signOut:async()=>{calls.push(['signout']);return {};},
-      signInWithOAuth:async input=>{calls.push(['oauth',input]);return {data:{url:'https://project.supabase.co/auth/v1/authorize?provider=google'}};}
+      signInWithOAuth:async input=>{calls.push(['oauth',input]);return {data:{url:'https://project.supabase.co/auth/v1/authorize?provider='+input.provider}};}
     },from(table){const query={select(){return query;},eq(key,value){calls.push(['read',table,key,value]);return query;},maybeSingle:async()=>({data:options.profile===undefined?profile:options.profile,error:null})};return query;},
     rpc:async(name,args)=>{calls.push(['rpc',name,args]);if(options.rpc)return options.rpc(name,args);return {data:{status:'new',profile:null,envelope:null}};}}
   };
   vm.createContext(c);
   vm.runInContext(section('/* ---------------- OAuth login and private-space unlock ---------------- */','/* ---------------- render: login ---------------- */'),c);
   vm.runInContext(section('function bootApp(){','function currentUser(){'),c);
-  return {c,memory,calls,nodes};
+  return {c,memory,calls,nodes,logs};
 }
 test('guest boot never reads member tables or verifies an absent Auth session',async()=>{
   const {c,calls,memory}=harness({guest:true});memory.set('growell_session','{"userId":"stale"}');await c.bootApp();
@@ -49,6 +50,41 @@ test('unverified cached Auth session cannot restore membership or read profiles'
 test('PKCE callback is exchanged exactly once and code is removed from visible URL',async()=>{
   const {c,calls}=harness({href:'https://app.example/?code=one-time-code',profile:null});await c.bootApp();
   assert.equal(calls.filter(v=>v[0]==='exchange').length,1);assert.ok(calls.some(v=>v[0]==='clean-url'&&!v[1].includes('code=')));assert.equal(c.oauthPending.status,'new');
+});
+
+test('only explicit access_denied callbacks show cancellation, for query or reordered fragment parameters',async()=>{
+  for(const suffix of ['?error=access_denied&error_code=access_denied&error_description=private-detail',
+    '#error_description=private-detail&error_code=access_denied&error=access_denied']){
+    const {c,calls,logs,memory}=harness({href:'https://app.example/'+suffix});
+    await c.bootApp();
+    assert.equal(c.oauthMessage,'간편 로그인을 취소했어요. 다시 선택할 수 있어요.');
+    assert.equal(c.SESSION,null);assert.equal(c.BOOTING,false);
+    assert.ok(!calls.some(call=>['exchange','read','rpc','load-member'].includes(call[0])));
+    const cleaned=calls.find(call=>call[0]==='clean-url');assert.ok(cleaned);
+    assert.doesNotMatch(cleaned[1],/error|private-detail/);
+    assert.equal(logs.length,0);assert.equal(memory.size,0);
+  }
+});
+
+test('provider failures show a safe connection message and discard descriptions and codes without exchange or member reads',async()=>{
+  for(const suffix of [
+    '?error=server_error&error_code=unexpected_failure&error_description=private-provider-detail&code=do-not-exchange',
+    '#error_description=private-provider-detail&error_code=unexpected_failure&error=server_error',
+    '?error=access_denied&error_code=provider_disabled&error_description=private-provider-detail',
+    '?error_code=unexpected_failure&error_description=private-provider-detail',
+    '#error_description=private-provider-detail',
+    '#%65rror_description=private-provider-detail&%65rror=server_error',
+    '?error=access_denied#error=server_error&error_description=private-provider-detail'
+  ]){
+    const {c,calls,logs,memory}=harness({href:'https://app.example/'+suffix});
+    await c.bootApp();
+    assert.equal(c.oauthMessage,'간편 로그인 서비스에 연결하지 못했어요. 잠시 후 다시 시도해주세요.');
+    assert.equal(c.SESSION,null);assert.equal(c.BOOTING,false);
+    assert.ok(!calls.some(call=>['exchange','read','rpc','load-member'].includes(call[0])));
+    assert.ok(calls.some(call=>call[0]==='clean-url'));
+    assert.doesNotMatch(JSON.stringify(calls)+c.oauthMessage,/private-provider-detail|do-not-exchange|server_error|unexpected_failure|provider_disabled/);
+    assert.equal(logs.length,0);assert.equal(memory.size,0);
+  }
 });
 test('new social member sends only an encrypted vault, then unlocks the returned envelope',async()=>{
   let payload;const {c,calls}=harness({rpc:async(name,args)=>{payload=args;return {data:{status:'ready',profile,envelope:args.p_envelope}};}});
@@ -76,6 +112,22 @@ test('the same user token refresh does not clear private keys or cancel writing'
 test('provider status controls launch and returned redirect stays on configured Supabase',async()=>{
   const {c,calls}=harness();await c.loadOAuthProviderSettings();await c.startOAuth('kakao');assert.ok(!calls.some(v=>v[0]==='oauth'));await c.startOAuth('google');
   assert.ok(calls.some(v=>v[0]==='redirect'&&v[1].startsWith('https://project.supabase.co/auth/v1/authorize')));
+});
+
+test('Kakao overrides provider scope to nickname only while Google keeps its original OAuth options',async()=>{
+  for(const provider of ['kakao','google']){
+    const {c,calls}=harness({href:'https://app.example/?obsolete=discard#/book/emotion/share'});
+    c.oauthProviders={state:'ready',google:true,kakao:true};
+    await c.startOAuth(provider);
+    const requests=calls.filter(call=>call[0]==='oauth');assert.equal(requests.length,1);
+    const requested=JSON.parse(JSON.stringify(requests[0][1]));
+    const expected={provider,options:{redirectTo:'https://app.example/',skipBrowserRedirect:true}};
+    if(provider==='kakao')expected.options.queryParams={scope:'profile_nickname'};
+    assert.deepEqual(requested,expected);
+    assert.ok(!Object.hasOwn(requested.options,'scopes'),'additive scopes must not reintroduce defaults');
+    assert.doesNotMatch(JSON.stringify(requested),/account_email|profile_image/);
+    assert.ok(calls.some(call=>call[0]==='redirect'&&call[1].endsWith('provider='+provider)));
+  }
 });
 
 test('verified provider metadata suggests an escaped bounded nickname without replacing an existing profile or granting roles',async()=>{
