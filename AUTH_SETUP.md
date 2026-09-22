@@ -42,9 +42,10 @@
 
 - `server/oauth-members.sql`: 운영 적용 성공. Google·카카오 첫 등록/재조회, 재시도, 계정 분리, 기존 일반 회원 보존, 익명·이메일 전용 사용자 거부와 키 보관함 권한을 `server/oauth-verification.sql`의 임시 데이터로 검증했다. 결과는 `ok: true`, 롤백 후 `synthetic_rows_remaining: 0`이다.
 - `server/recovery-owner.sql`: 운영 적용 성공. 비로그인 일반 회원의 복구 파일과 계정 식별 정보가 정확히 일치하는지 Boolean으로만 확인한다. 비밀번호 재설정 권한을 부여하거나 기록·키·힌트 등을 반환하지 않는다. 기존 `reset-password` Edge Function의 힌트 검증은 별도로 유지한다. `server/recovery-owner-verification.sql` 검증 결과는 `ok: true`, 롤백 후 `synthetic_rows_remaining: 0`이다.
-- `server/habit-kind.sql`: 2026-09-23 운영 적용 성공. `habits.behavior_type`은 `text`, `NOT NULL`, 기본값 `do`이며 제약 검증은 `validated: true`, 잘못된 값은 `invalid_rows: 0`으로 확인했다. 임시 데이터 화면에서 하지 않는 습관 선택·수정·목표 저장과 기존 실천 체크 1회 보존도 확인했다.
+- `server/habit-kind.sql`: 2026-09-23 운영 적용 성공. `habits.behavior_type`은 `text`, `NOT NULL`, 기본값 `do`이며 제약 검증은 `validated: true`, 잘못된 값은 `invalid_rows: 0`으로 확인했다. 임시 데이터 화면에서 절제할 습관 선택·수정·목표 저장과 기존 실천 체크 1회 보존도 확인했다. 실천할 습관은 체크 아이콘, 절제할 습관은 손바닥 아이콘으로 설정·목록·진행 상황에 표시한다. 모바일 선택 화면과 운영 배포 파일 반영을 확인했다.
 - Google은 실제 제공자 인증 콜백이 성공하고 GROWELL의 신규 가입 화면(별명·개인 기록 비밀번호 설정)에 도달한 것을 확인했다. 개인 기록 비밀번호를 입력하거나 가입 완료·재로그인을 진행하지 않았으므로 이 단계까지 성공했다고 확대해 안내하지 않는다.
-- 카카오는 실제 동의 화면에서 미설정 범위 `account_email`, `profile_image`에 대한 `KOE205`를 확인한 뒤 위 닉네임 전용 요청으로 수정했다. 수정 후 실제 동의·콜백 및 가입 화면은 별도 재검증이 필요하다. SQL 검증과 앱의 요청 옵션 테스트만으로 실제 카카오 가입 성공을 확정하지 않는다.
+- 카카오는 기본 범위로 인한 `KOE205`를 닉네임 전용 요청으로 해결했다. 2026-09-23 운영 배포 후 실제 동의 화면에 닉네임만 표시되는 것과 인증 콜백 성공, GROWELL 신규 가입 화면(별명·개인 기록 비밀번호 설정) 도달을 확인했다. 개인 기록 비밀번호 입력·회원 등록 완료·재로그인은 수행하지 않았다.
+- 기능 배포 `7934b81`은 회귀 테스트 189개를 통과했고, Vercel Production Ready와 `https://growell-book.vercel.app/`의 최신 습관 아이콘·카카오 요청 설정 반영을 확인했다.
 - 기존 `signup`, `grant-admin`, `reset-password`, `delete-account` Edge Function 원본은 이 저장소에 없으므로 원본까지 검토했다고 안내하지 않는다.
 
 ## 회원 전용 공개 범위
