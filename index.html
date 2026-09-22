@@ -4115,25 +4115,25 @@ function rtToolbarHtml(){
         return '<button type="button" class="rt-color-swatch'+(selected?' is-sel':'')+'" data-rt-color-kind="'+kind+'" data-rt-color="'+option.value+'" aria-label="'+option.label+' '+rtColorLabel(kind)+' 선택" title="'+option.label+'" aria-pressed="'+selected+'"><span aria-hidden="true" style="--rt-color:'+option.value+'"></span></button>';
       }).join('') + '</div><p class="rt-color-help">색을 고른 뒤 본문에서 글을 선택하고 '+rtColorLabel(kind)+' 아이콘을 눌러주세요.</p></div>';
   }).join('');
-  return '<div class="rt-controls"><div class="rt-toolbar" role="toolbar" aria-label="글쓰기 서식 · 좌우로 넘겨 모든 도구 보기">' +
-    btn('undo','실행 취소', svgIcon(I_UNDO)) +
-    btn('redo','다시 실행', svgIcon(I_REDO)) +
-    '<span class="rt-sep"></span>' +
+  return '<div class="rt-controls"><div class="rt-toolbar" role="toolbar" aria-label="글쓰기 서식">' +
+    '<div class="rt-toolbar-row" role="group" aria-label="글자 서식과 색상">' +
     btn('bold','굵게','B') +
     btn('italic','기울임','I','rt-i') +
     btn('underline','밑줄','U','rt-u') +
     btn('strike','취소선','S','rt-s') +
     colorSplit('text','<span class="rt-color-letter" aria-hidden="true">A</span>') +
     colorSplit('highlight',svgIcon(I_MARKER)) +
+    '</div><div class="rt-toolbar-row rt-toolbar-row--edit" role="group" aria-label="편집과 문단 서식">' +
+    btn('undo','실행 취소', svgIcon(I_UNDO)) +
+    btn('redo','다시 실행', svgIcon(I_REDO)) +
     btn('fontsize','글자 크기','가') +
-    '<span class="rt-sep"></span>' +
     btn('ol','번호 목록','1.') +
     btn('ul','글머리 기호','•') +
     btn('quote','인용구','&ldquo;') +
     btn('code','코드','&lt;/&gt;') +
     btn('link','링크', svgIcon(I_LINK)) +
     btn('clear','서식 지우기', svgIcon(I_ERASE)) +
-  '</div><p class="rt-toolbar-hint">도구를 좌우로 밀면 모든 서식을 사용할 수 있어요.</p>' + palettes + '</div>';
+  '</div></div>' + palettes + '</div>';
 }
 function bindRichTextToolbar(noteEditor){
   if(rtToolbarCleanup){ rtToolbarCleanup(); rtToolbarCleanup=null; }
