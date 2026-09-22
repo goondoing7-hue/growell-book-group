@@ -1,0 +1,125 @@
+/* The timer shares GROWELL's paper surfaces and readable type on every screen. */
+.reading-timer-card, .reading-save-card {
+  --timer-green: #355b47;
+  --timer-soft: #edf3ec;
+  --timer-ink: #244b37;
+  font-size: 16px;
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.reading-timer-card { text-align: center; padding: 24px; border-top: 4px solid var(--timer-green); }
+.reading-timer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.reading-timer-head .btn { min-height: 40px; padding: 10px 14px; }
+.reading-timer-status { color: var(--ink-soft); font-size: 14px; font-weight: 600; }
+.reading-timer-label { margin-top: 36px; color: var(--ink-soft); font-size: 15px; font-weight: 500; }
+.reading-timer-card .reading-timer-display { margin: 8px 0 22px; font-family: var(--font-body); font-size: clamp(38px, 8vw, 64px); font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; letter-spacing: .01em; color: var(--ink); }
+.reading-timer-main-control { width: 108px; height: 108px; border: 8px solid var(--timer-soft); border-radius: 50%; background: var(--timer-green); color: #fff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1px var(--line); }
+.reading-timer-main-control svg { width: 36px; height: 36px; }
+.reading-timer-main-control:hover { filter: brightness(1.08); }
+.reading-control-label { margin: 8px 0 24px; font-size: 14px; font-weight: 600; color: var(--ink-soft); }
+.reading-countdown-left { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 0 0 14px; color: var(--ink-soft); }
+.reading-countdown-left strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.reading-countdown-open { min-height: 44px; }
+.reading-countdown-settings { max-width: 400px; margin: 20px auto 0; padding: 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); text-align: left; }
+.reading-countdown-settings h4 { margin: 0 0 16px; font-size: 16px; font-weight: 700; }
+.reading-countdown-presets { display: flex; gap: 8px; margin-bottom: 14px; }
+.reading-countdown-presets .btn { flex: 1; min-height: 40px; }
+.reading-countdown-inputs { display: flex; gap: 12px; }
+.reading-countdown-inputs label { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; }
+.reading-countdown-inputs input { width: 100%; min-width: 0; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 10px; font-size: 20px; font-weight: 600; text-align: center; }
+.reading-countdown-settings p { margin: 14px 0; font-size: 13px; color: var(--ink-soft); }
+.reading-countdown-selection { display: block; padding: 10px 0 22px; text-align: center; font-size: 28px; font-weight: 750; color: var(--timer-ink); font-variant-numeric: tabular-nums; }
+.reading-countdown-sliders { display: grid; gap: 5px; }
+.reading-countdown-sliders label { display: flex; justify-content: space-between; gap: 12px; font-size: 15px; font-weight: 650; }
+.reading-countdown-sliders label span { color: var(--ink-soft); font-size: 13px; font-weight: 500; }
+.reading-countdown-sliders input[type="range"],.reading-page-slider-row input[type="range"] { width: 100%; min-width: 0; height: 44px; padding: 0; margin: 0; accent-color: var(--timer-green); cursor: pointer; }
+.reading-countdown-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.reading-countdown-actions .btn { flex: 1; min-height: 42px; white-space: nowrap; }
+.reading-timer-book { display: flex; align-items: center; gap: 18px; max-width: 440px; margin: 30px auto 0; padding: 18px; background: var(--timer-soft); border: 1px solid var(--line); border-radius: 16px; text-align: left; }
+.reading-timer-book .reading-cover { width: 64px; flex: 0 0 64px; }
+.reading-timer-book .reading-cover img { width: 100%; height: auto; max-height: 106px; object-fit: contain; display: block; }
+.reading-timer-book > div:last-child { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.reading-timer-book strong { font-size: 16px; font-weight: 700; color: var(--ink); }
+.reading-timer-book span { font-size: 13px; color: var(--ink-soft); }
+.reading-timer-book a { display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; min-height: 40px; margin-top: 4px; font-size: 14px; font-weight: 650; color: var(--timer-ink); text-decoration: underline; text-underline-offset: 3px; }
+.reading-timer-book a svg { width: 17px; height: 17px; }
+.reading-continuity { margin: 20px auto 8px; max-width: 440px; font-size: 13px; color: var(--ink-soft); }
+.reading-discard { padding: 10px; min-height: 40px; background: transparent; border: 0; color: var(--ink-soft); font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.reading-save-card { padding: 24px; }
+.reading-save-card .composer-head { gap: 12px; flex-wrap: wrap; }
+.reading-save-card h3 { font-size: 21px; font-weight: 700; }
+.reading-save-book { margin: 12px 0 20px; color: var(--ink-soft); }
+.reading-save-duration { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 20px; margin-bottom: 20px; border-radius: 14px; background: var(--timer-soft); color: var(--timer-ink); }
+.reading-save-duration strong { font-family: var(--font-body); font-size: 30px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.reading-finish-options { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
+.reading-finish-options .btn { min-height: 44px; line-height: 1.4; }
+.reading-finish-options .btn[aria-pressed="true"] { background: var(--timer-green); color: #fff; border-color: var(--timer-green); }
+.reading-save-card .field-label { font-size: 16px; font-weight: 650; }
+.reading-save-card .field-label .hint { display: block; margin-top: 4px; font-size: 13px; font-weight: 500; }
+.reading-page-entry { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; }
+.reading-page-entry input { width: 140px; max-width: 65%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 10px 14px; font-size: 25px; font-weight: 650; }
+.reading-page-entry { justify-content: space-between; flex-wrap: wrap; margin-bottom: 18px; }
+.reading-page-number { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.reading-page-number input { width: 112px; box-sizing: border-box; }
+.reading-page-number span { color: var(--ink-soft); white-space: nowrap; }
+.reading-page-percentage { color: var(--timer-ink); font-size: 30px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.reading-page-slider-row { display: grid; grid-template-columns: 44px minmax(0,1fr) 44px; align-items: center; gap: 12px; }
+.reading-page-slider-row .btn { min-width: 44px; min-height: 44px; padding: 0; font-size: 24px; }
+.reading-note-open { display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; margin-top: 8px; min-height: 44px; padding: 9px 12px; border: 1px solid var(--timer-green); border-radius: 10px; background: var(--surface); color: var(--timer-ink); font-family: inherit; font-size: 15px; font-weight: 650; }
+.reading-note-open svg { width: 19px; height: 19px; }
+.reading-note-dialog { width: min(460px,calc(100% - 32px)); box-sizing: border-box; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); color: var(--ink); padding: 26px; box-shadow: 0 20px 80px #172b2533; }
+.reading-note-dialog::backdrop { background: #102a2359; backdrop-filter: blur(3px); }
+.reading-note-dialog-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.reading-note-dialog-head h3 { margin: 0; font-size: 23px; font-weight: 750; }
+.reading-note-dialog-head .icon-btn { flex: none; min-width: 40px; min-height: 40px; }
+.reading-note-dialog > p { color: var(--ink-soft); font-size: 15px; line-height: 1.7; margin: 16px 0 22px; }
+.reading-note-destinations { display: grid; gap: 12px; }
+.reading-note-destinations button { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 18px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; color: var(--ink); font-family: inherit; }
+.reading-note-destinations button:hover { border-color: var(--ink-soft); }
+.reading-note-destinations button > svg { width: 24px; height: 24px; flex: none; }
+.reading-note-destinations strong,.reading-note-destinations small { display: block; }
+.reading-note-destinations strong { font-size: 17px; font-weight: 700; }
+.reading-note-destinations small { color: var(--ink-soft); font-size: 13px; line-height: 1.6; margin-top: 4px; }
+.reading-note-paused { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px; margin-bottom: 18px; font-size: 14px; }
+.reading-note-paused > span { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 170px; }
+.reading-note-paused svg { width: 18px; height: 18px; flex: none; }
+.reading-note-paused strong { font-variant-numeric: tabular-nums; }
+.reading-note-paused .btn { min-height: 40px; }
+.reading-page-delta { min-height: 26px; margin-bottom: 20px; color: var(--timer-ink); font-size: 14px; font-weight: 600; }
+.reading-save-error { margin: 16px 0; padding: 14px; background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 10px; font-size: 14px; }
+.reading-save-card .composer-foot { gap: 16px; flex-wrap: wrap; }
+.reading-save-card .composer-foot .btn { min-height: 46px; font-size: 15px; }
+.home-dashboard .home-primary[data-reading-start] { width: 100%; box-sizing: border-box; font-family: inherit; font-size: 16px; cursor: pointer; }
+.home-dashboard .home-primary[data-reading-start] svg { width: 20px; height: 20px; }
+.home-dashboard .reading-home-stats { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 12px 0 16px; font-size: 14px; color: var(--ink-soft); }
+.home-dashboard .reading-home-stats strong { margin-left: 6px; color: var(--ink); font-weight: 700; }
+.home-dashboard .reading-home-active { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--home-accent-soft); color: var(--home-accent); font-size: 14px; }
+.home-dashboard .reading-home-active svg { width: 18px; height: 18px; }
+.home-dashboard .reading-home-active strong { margin-left: auto; font-variant-numeric: tabular-nums; }
+.home-dashboard .reading-home-record-link { display: block; text-align: center; padding-top: 12px; font-size: 14px; }
+.reading-active-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 18px; margin: 16px auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font-size: 14px; }
+.reading-active-strip > span { flex: 1; min-width: 140px; display: flex; align-items: center; gap: 8px; }
+.reading-active-strip svg { width: 18px; height: 18px; flex: none; }
+.reading-active-strip strong { font-variant-numeric: tabular-nums; }
+.reading-active-strip .btn { min-height: 40px; }
+:root[data-theme="dark"] :is(.reading-timer-card,.reading-save-card) { --timer-green: #365e48; --timer-soft: #26382d; --timer-ink: #c7e5cf; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) :is(.reading-timer-card,.reading-save-card) { --timer-green: #365e48; --timer-soft: #26382d; --timer-ink: #c7e5cf; }
+}
+@media (max-width: 480px) {
+  .reading-timer-card,.reading-save-card { padding: 18px 14px; }
+  .reading-timer-head { gap: 6px; }
+  .reading-timer-head .btn { padding: 10px; font-size: 13px; }
+  .reading-timer-status { font-size: 12px; }
+  .reading-timer-label { margin-top: 28px; }
+  .reading-timer-book { padding: 14px; gap: 12px; }
+  .reading-timer-book .reading-cover { width: 52px; flex-basis: 52px; }
+  .reading-countdown-settings { padding: 16px 12px; }
+  .reading-note-dialog { padding: 22px 18px; }
+  .reading-note-dialog-head h3 { font-size: 21px; }
+  .reading-page-slider-row { gap: 8px; }
+  .reading-save-duration { padding: 16px; }
+  .reading-save-card .composer-foot .btn { width: 100%; }
+  .reading-active-strip { margin: 12px 16px; }
+}

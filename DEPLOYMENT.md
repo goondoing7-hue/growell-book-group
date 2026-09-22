@@ -31,7 +31,7 @@ npm.cmd ci --ignore-scripts
 npm.cmd run build
 ```
 
-순서는 스크립트 문법과 자산 연결 검사 → 임시 데이터 테스트 → `dist/` 생성입니다. `dist/`에는 `index.html`, `privateCrypto.js`, `homeDomain.js`, `home.css`, `manifest.json`, 지정한 `covers/` 파일만 들어갑니다. 코드가 참조하는 새 이미지나 자산을 추가하면 `scripts/files.cjs`의 공개 파일 목록에도 정확한 파일 경로를 추가합니다. 새 테스트는 같은 파일의 `TEST_FILES`에 등록합니다.
+순서는 스크립트 문법과 자산 연결 검사 → 임시 데이터 테스트 → `dist/` 생성입니다. `dist/`에는 `scripts/files.cjs`의 `DEPLOY_FILES`에 명시된 파일만 복사합니다. 새 이미지·스타일·스크립트·공개 문서를 추가하면 이 목록에 정확한 경로를 등록하고, 새 테스트는 `TEST_FILES`에 등록합니다. Git 게시 범위는 같은 파일의 `PUBLISH_FILES`를 따르며 SQL·운영 문서를 공개 웹 배포 파일로 복사하지 않습니다.
 
 ## 미리 보기와 운영 반영
 
@@ -80,6 +80,17 @@ v33에서 저장·변환한 개인 기록은 v2 암호화 형식입니다. v32 �
 - 개인 기록의 본문 키와 로그인 비밀번호를 분리했습니다. 프로필의 **복구 파일 저장**을 먼저 이용한 뒤, 비밀번호 찾기에서 그 파일을 선택합니다. 파일은 서버로 전송하지 않습니다. 복구 과정은 본인 인증 후 같은 기록 ID의 암호문만 갱신하며, 다른 기기에서 수정된 기록은 IV 비교로 보호합니다.
 - 복구 파일은 첫 기록 전에도 만들 수 있습니다. 비밀번호를 재설정하면 파일의 안정된 기록 키로 기존 기록을 정리하여 다음 기기·다음 재설정에서도 이용할 수 있게 합니다. 비밀번호 변경 후 복구 파일을 다시 저장해 두면 해당 비밀번호로 작성한 로컬 초안 복구에도 도움이 됩니다.
 - 이미 비밀번호와 복구 수단을 모두 잃어버린 과거 기록을 소급해서 해독할 수는 없습니다. 복구가 실패한 기록이나 초안은 삭제하지 않습니다.
-- 제공된 GitHub 저장소에는 서버 함수 원본이 없었습니다. 기존 Supabase `signup`, `reset-password` 등의 함수와 RLS는 수정하지 않았습니다. 앱은 기존 테이블과 API를 이용하므로 새 SQL 마이그레이션이나 서버 비밀키가 필요하지 않습니다.
+- 최초 v33 기록 보호 작업은 기존 테이블·API를 사용했으며, 당시 Supabase 함수와 RLS를 수정하거나 새 SQL을 적용하지 않았습니다. 이는 초기 작업 당시의 상태이며 아래 소셜 가입·회원 전용 기능을 포함한 현재 배포에는 별도 서버 SQL이 필요합니다. 기존 `signup`, `reset-password` 등 Edge Function 원본은 저장소에 포함되어 있지 않습니다.
+
+## 현재 기능의 서버 준비
+
+현재 스키마·정책을 확인한 뒤 데이터베이스 소유자 권한으로 다음 순서의 SQL과 해당 검증을 완료하고 프런트엔드를 배포합니다. 운영 적용 여부와 제공자 설정은 [AUTH_SETUP.md](AUTH_SETUP.md)의 기록을 먼저 확인하여 이미 완료한 작업을 무조건 반복하지 않습니다.
+
+1. `server/oauth-members.sql`: 소셜 회원 프로필과 암호화 키 보관함 연결. `server/oauth-verification.sql`로 검증합니다.
+2. `server/recovery-owner.sql`: 비로그인 복구 파일의 계정 소유 정보 일치 확인. `server/recovery-owner-verification.sql`로 검증합니다.
+3. `server/member-read-policy.sql`: 9개 테이블의 회원 조회 조건과 프로필 직접 등록 조건. `server/member-read-verification.sql`로 검증합니다. 재적용 전 기존 정책을 비교합니다.
+4. `server/habit-kind.sql`: 습관 종류를 보관하는 `behavior_type` 열과 기존 습관을 위한 기본값 `do`. 적용 성공을 확인한 후 이 필드를 쓰는 앱을 배포합니다.
+
+서버 검증에는 실제 회원 기록 대신 롤백 가능한 임시 데이터를 사용하고 잔여 데이터가 없는지 확인합니다. 정책 스냅샷·QA 자료·서버 비밀 키는 Git과 공개 배포에 포함하지 않습니다. SQL 성공과 Google·카카오 제공자 설정, 실제 가입·저장 동작 및 Vercel 배포 완료는 각각 확인합니다.
 
 암호화 API 동작은 [MDN AES-GCM 매개변수](https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams)와 [키 감싸기 설명](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/wrapKey)을 참고했습니다. 실제 운영 데이터에 쓰기 테스트를 하지는 않습니다.

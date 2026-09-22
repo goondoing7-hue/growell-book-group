@@ -68,6 +68,8 @@ function harness({read, write, signIn, signup} = {}) {
     }
   };
   vm.createContext(context);
+  vm.runInContext(section('function readingMetaKey(', 'function mapProfileRow('), context);
+  vm.runInContext(section('function mapReadingMetaRow(', 'function mapBookLockRow('), context);
   vm.runInContext(section('function mapHabitRow(', '\nvar STATE ='), context);
   vm.runInContext(section('var saving = false;', '/* ---------------- toast'), context);
   vm.runInContext(section('function habitWithPendingChecks(', '/* ---------------- 나의 공간: 독서 진행률'), context);
@@ -144,13 +146,15 @@ test('a collection loaded during a save is preserved when that save completes',a
   assert.equal(c.STATE.privateEntries.pe.data,'loaded');
 });
 
-test('login fetches existing habits and private notes before welcoming the user', async()=>{
+test('login fetches own habits, private notes, reading logs and progress before welcoming the user', async()=>{
   let recoveryCalled=false;
   const {context:c,reads}=harness({read:r=>r.table==='profiles'
     ? {data:{id:'u2',name:'새 회원',pbkdf2_salt:'salt',auth_user_id:'auth2'}}
     : r.table==='habits' ? {data:[{id:'h2',user_id:'u2',checked_dates:['2026-09-20']}]}
+    : r.table==='reading_logs' ? {data:[{id:'r2',book_id:'emotion',user_id:'u2',seconds:600,page:42,start_page:30,created_at:100}]}
+    : r.table==='reading_meta' ? {data:[{book_id:'emotion',user_id:'u2',current_page:42,updated_at:100}]}
     : {data:[{id:'p2',user_id:'u2',data:'cipher'}]}});
-  c.completePendingPrivateRecovery=()=>{ recoveryCalled=true; assert.ok(c.STATE.habits.h2); assert.ok(c.STATE.privateEntries.p2); return Promise.resolve(false); };
+  c.completePendingPrivateRecovery=()=>{ recoveryCalled=true; assert.ok(c.STATE.habits.h2); assert.ok(c.STATE.privateEntries.p2); assert.ok(c.STATE.readingLogs.r2); assert.equal(c.STATE.readingMeta.emotion_u2.currentPage,42); return Promise.resolve(false); };
   await c.doLogin(' member ','password',{});
   assert.equal(c.SESSION.userId,'u2');
   assert.equal(c.CURRENT_KEY,null);
@@ -159,6 +163,9 @@ test('login fetches existing habits and private notes before welcoming the user'
   assert.equal(c.STATE.habits.h1,undefined);
   assert.equal(recoveryCalled,true);
   assert.ok(reads.some(r=>r.table==='habits' && r.filters.some(([k,v])=>k==='user_id' && v==='u2')));
+  assert.ok(reads.some(r=>r.table==='reading_logs' && r.filters.some(([k,v])=>k==='user_id' && v==='u2')));
+  assert.ok(reads.some(r=>r.table==='reading_meta' && r.filters.some(([k,v])=>k==='user_id' && v==='u2')));
+  assert.equal(c.memberLoadState.readingLogs,'ready');assert.equal(c.memberLoadState.readingMeta,'ready');
 });
 
 test('failed member fetch is shown as a load error and does not erase existing records',async()=>{

@@ -3,7 +3,8 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
-  'index.html', 'privateCrypto.js', 'homeDomain.js', 'home.css', 'manifest.json',
+  'index.html', 'privacy.html', 'privateCrypto.js', 'homeDomain.js', 'home.css', 'community.css',
+  'habitDomain.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
   'covers/og-image-v2.jpg', 'covers/icon-16.png', 'covers/icon-32.png',
@@ -16,13 +17,17 @@ const DEPLOY_FILES = Object.freeze([
 const TEST_FILES = Object.freeze([
   'tests/deployment.test.cjs', 'tests/drafts.test.cjs',
   'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs',
-  'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs', 'tests/home-domain.test.cjs', 'tests/home-ui.test.cjs'
+  'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs', 'tests/home-domain.test.cjs', 'tests/home-ui.test.cjs',
+  'tests/editor-colors.test.cjs', 'tests/editor-sanitize.test.cjs', 'tests/reading-timer.test.cjs', 'tests/reading-save.test.cjs', 'tests/reading-integration.test.cjs',
+  'tests/profile.test.cjs', 'tests/habit-domain.test.cjs', 'tests/habit-edit.test.cjs', 'tests/community-load.test.cjs', 'tests/oauth-domain.test.cjs', 'tests/oauth-flow.test.cjs'
 ]);
 
 const PUBLISH_FILES = Object.freeze([
   ...DEPLOY_FILES, ...TEST_FILES,
   'package.json', 'package-lock.json', 'vercel.json', '.gitignore',
-  '.github/workflows/verify.yml', 'README.md', 'DEPLOYMENT.md', 'AGENTS.md',
+  '.github/workflows/verify.yml', 'README.md', 'DEPLOYMENT.md', 'AGENTS.md', 'AUTH_SETUP.md', 'server/member-read-policy.sql', 'server/oauth-members.sql', 'server/oauth-interface.md',
+  'server/oauth-verification.sql', 'server/recovery-owner.sql', 'server/recovery-owner-verification.sql', 'server/member-read-verification.sql',
+  'server/habit-kind.sql',
   'scripts/files.cjs', 'scripts/check.cjs', 'scripts/test.cjs',
   'scripts/build.cjs', 'scripts/publish.cjs'
 ]);

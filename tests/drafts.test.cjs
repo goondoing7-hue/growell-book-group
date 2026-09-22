@@ -9,6 +9,7 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const cryptoSource = html.slice(html.indexOf('function randomSaltHex(){'), html.indexOf('/* ---------------- icons'));
 const draftSource = html.slice(html.indexOf('var composerDrafts ='), html.indexOf('/* 컴포저(작성/수정 창)'));
 const composerSource = html.slice(html.indexOf('function noteComposerHtml('), html.indexOf('function noteCtaHtml('));
+const photoSource = html.slice(html.indexOf('function safePhotoUrl('), html.indexOf('function photoFromUrl('));
 const keyB64 = Buffer.alloc(32, 17).toString('base64');
 function storage(){
   const data = new Map();
@@ -17,7 +18,7 @@ function storage(){
 }
 function setup(saved=storage()){
   let active=null;
-  const ctx={crypto:webcrypto, TextEncoder, TextDecoder, Uint8Array, Promise, Date, JSON, console,
+  const ctx={crypto:webcrypto, TextEncoder, TextDecoder, Uint8Array, Promise, Date, JSON, console, URL,
     bytesToB64:v=>Buffer.from(v).toString('base64'), b64ToBytes:v=>new Uint8Array(Buffer.from(v,'base64')),
     localStorage:saved, sessionStorage:storage(), SESSION:{userId:'member-a',keyB64},
     shareEditingId:null, mineEditingId:null, materialsEditingId:null,
@@ -27,9 +28,9 @@ function setup(saved=storage()){
     esc:v=>String(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'),
     checkinPickerHtml:(book,value)=>'<span data-check="'+value+'"></span>', rtToolbarHtml:()=>'',
     bgColorPickerHtml:v=>'<span data-bg="'+v+'"></span>', fontSizePickerHtml:v=>'<span data-size="'+v+'"></span>',
-    insightFieldsHtml:v=>'<textarea>'+v.q1+'</textarea>', insightBgPickerHtml:()=>'', svgIcon:()=>'', I_CLOSE:'', I_IMG:'',
+    insightFieldsHtml:v=>'<textarea>'+v.q1+'</textarea>', insightBgPickerHtml:()=>'', svgIcon:()=>'', I_CLOSE:'', I_IMG:'', I_COMMENT:'', I_LOCK:'',
     matComposerExtraHtml:v=>JSON.stringify(v.driveLinks||[])};
-  vm.createContext(ctx); vm.runInContext(cryptoSource+draftSource+composerSource,ctx);
+  vm.createContext(ctx); vm.runInContext(cryptoSource+draftSource+photoSource+composerSource,ctx);
   function mount(type='share',mode='standard',bookId='book-a',editId=null,fields={}){
     const attrs={'data-draft-key':ctx.composerDraftKey(type,bookId,editId,ctx.SESSION.userId),
       'data-draft-user':ctx.SESSION.userId, 'data-draft-type':type, 'data-draft-mode':mode,

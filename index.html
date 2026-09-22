@@ -436,7 +436,7 @@
   .page-badge{font-family:var(--font-mono); font-size:10.5px; color:var(--ink-faint); background:var(--surface-2); padding:4px 8px; border-radius:999px;}
 
   /* rich toolbar + editor */
-  .rt-toolbar{display:flex; align-items:center; gap:2px; overflow-x:auto; padding:4px 2px 8px; margin-bottom:2px; -webkit-overflow-scrolling:touch;}
+  .rt-toolbar{display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:4px 2px 8px; margin-bottom:2px;}
   .rt-toolbar::-webkit-scrollbar{display:none;}
   .rt-sep{width:1px; align-self:stretch; margin:4px 4px; background:var(--line); flex:none;}
   .rt-btn{flex:none; width:32px; height:32px; border-radius:8px; border:none; background:none; color:var(--ink-soft); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700;}
@@ -446,9 +446,29 @@
   .rt-btn.rt-u{text-decoration:underline;}
   .rt-btn.rt-s{text-decoration:line-through;}
   .rt-btn.is-active{color:#262319; box-shadow:inset 0 0 0 1px var(--line-strong);}
-  .hl-swatches{display:flex; align-items:center; gap:7px; padding:0 2px 10px;}
-  .hl-swatch{width:19px; height:19px; border-radius:50%; border:2px solid transparent; padding:0; cursor:pointer;}
-  .hl-swatch.is-sel{border-color:var(--ink);}
+  .rt-color-split{display:inline-flex; align-items:center; flex:none; border:1px solid var(--line); border-radius:8px; overflow:hidden;}
+  .rt-color-split .rt-btn{border-radius:0;}
+  .rt-color-apply{color:var(--rt-color, var(--ink));}
+  .rt-color-apply[data-rt-apply="highlight"] svg{fill:var(--rt-color); stroke:var(--ink-soft); stroke-width:1.5;}
+  .rt-color-apply[data-rt-apply="highlight"]{border-bottom:3px solid var(--rt-color);}
+  .rt-color-letter{font-size:17px; line-height:1; text-decoration:underline; text-decoration-thickness:3px; text-underline-offset:3px;}
+  .rt-color-toggle{width:24px; border-left:1px solid var(--line); font-size:13px;}
+  .rt-color-toggle[aria-expanded="true"]{background:var(--surface-2); color:var(--ink);}
+  .rt-color-panel{padding:12px; margin:0 2px 10px; border:1px solid var(--line); border-radius:10px; background:var(--surface);}
+  .rt-color-panel[hidden]{display:none;}
+  .rt-color-label{font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:8px;}
+  .rt-color-swatches{display:flex; align-items:center; flex-wrap:wrap; gap:6px;}
+  .rt-color-swatch{display:flex; align-items:center; justify-content:center; width:34px; height:34px; padding:5px; border:2px solid transparent; border-radius:8px; background:var(--surface); cursor:pointer;}
+  .rt-color-swatch span{display:block; width:22px; height:22px; border-radius:50%; background:var(--rt-color); border:1px solid var(--line-strong);}
+  .rt-color-swatch.is-sel{border-color:var(--accent-c, var(--primary)); background:var(--surface-2);}
+  .rt-color-help{font-size:11.5px; line-height:1.6; color:var(--ink-faint); margin:8px 0 0;}
+  @media(max-width:640px){
+    .rt-toolbar{gap:4px;}
+    .rt-btn{width:40px; height:40px;}
+    .rt-color-toggle{width:32px;}
+    .rt-color-swatch{width:40px; height:40px;}
+    .rt-sep{margin:4px 2px;}
+  }
   .bg-color-row{display:flex; align-items:center; gap:10px; margin:14px 0 4px; flex-wrap:wrap;}
   .bg-color-label{font-size:12.5px; font-weight:600; color:var(--ink-soft);}
   .bg-swatches{display:flex; align-items:center; gap:7px;}
@@ -1044,11 +1064,20 @@
     /* 35번 라운드 이후로는 모든 nt-pill이 항상 글자만으로 표시되므로(아이콘 자체를 안 그림),
        예전에 여기 있던 "모바일에서 아이콘만 남기고 글자 숨기기" 규칙은 더 이상 필요 없다. */
     .nt-pill{padding:7px 11px;}
-    .rt-btn{width:34px; height:34px;}
+    .rt-btn{width:40px; height:40px;}
+    .rt-color-toggle{width:32px;}
   }
 </style>
 <link rel="stylesheet" href="home.css">
+<link rel="stylesheet" href="community.css">
+<link rel="stylesheet" href="habits.css">
+<link rel="stylesheet" href="readingTimer.css">
+<link rel="stylesheet" href="profile.css">
+<script src="profile.js"></script>
+<script src="oauthDomain.js"></script>
 <script src="homeDomain.js"></script>
+<script src="habitDomain.js"></script>
+<script src="readingTimerDomain.js"></script>
 </head>
 <body>
 <!-- 초기 로딩 화면(boot-splash)을 JS가 아니라 정적 HTML에 처음부터 박아 넣음(요청 반영) — 예전엔
@@ -1086,6 +1115,16 @@ function fmtDate(ts){
   var h=d.getHours(); var ampm=h<12?'오전':'오후'; var h12=h%12; if(h12===0)h12=12;
   var mm=String(d.getMinutes()).padStart(2,'0');
   return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0')+'('+days[d.getDay()]+') '+ampm+' '+h12+':'+mm;
+}
+function fmtPostDate(ts,reference){
+  var date=new Date(ts),today=reference===undefined?new Date():new Date(reference);
+  if(!Number.isFinite(date.getTime()) || !Number.isFinite(today.getTime()))return '날짜 없음';
+  function sameDay(a,b){return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();}
+  if(sameDay(date,today))return '오늘';
+  var yesterday=new Date(today.getFullYear(),today.getMonth(),today.getDate()-1);
+  if(sameDay(date,yesterday))return '어제';
+  if(date.getFullYear()!==today.getFullYear())return date.getFullYear()+'.'+String(date.getMonth()+1).padStart(2,'0')+'.'+String(date.getDate()).padStart(2,'0');
+  return (date.getMonth()+1)+'월 '+date.getDate()+'일';
 }
 function initials(name){ return (name||'?').trim().slice(0,1); }
 
@@ -1125,8 +1164,10 @@ function rtSanitizeNode(node){
   if(tag==='FONT'){
     var size = node.getAttribute('size');
     if(size && /^[1-7]$/.test(size)) el.setAttribute('size', size);
+    var color = (node.getAttribute('color')||'').trim();
+    if(color && !/[;:]/.test(color) && rtSafeStyle('color:'+color)==='color:'+color) el.setAttribute('color', color);
   }
-  if(tag==='SPAN' || tag==='DIV'){
+  if(tag==='SPAN' || tag==='DIV' || tag==='FONT'){
     var style = node.getAttribute('style');
     if(style){ var safe = rtSafeStyle(style); if(safe) el.setAttribute('style', safe); }
   }
@@ -1251,6 +1292,7 @@ var I_BACK='<path d="M15 5 8 12l7 7" stroke-linecap="round" stroke-linejoin="rou
 var I_SEARCH='<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20 15.2 15.2" stroke-linecap="round"/>';
 var I_PLAY='<path d="M8 5.5v13l11-6.5-11-6.5Z" stroke-linejoin="round"/>';
 var I_PAUSE='<path d="M7 5.5h3.4v13H7ZM13.6 5.5H17v13h-3.4Z" stroke-linejoin="round"/>';
+var I_TIMER='<circle cx="12" cy="14" r="8"/><path d="M9 2h6M12 2v4M18 6l2-2M12 10v5" stroke-linecap="round"/>';
 var I_CHECK='<path d="M5 12.5l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/>';
 var I_EDIT='<path d="M14.7 4.6 19.4 9.3 8.2 20.5H3.5v-4.7Z" stroke-linejoin="round"/><path d="M12.6 6.7l4.7 4.7" stroke-linecap="round"/>';
 var I_SPARK='<path d="M12 3.2c.45 2.75 1.15 4.6 2.35 5.8 1.2 1.2 3.05 1.9 5.8 2.35-2.75.45-4.6 1.15-5.8 2.35-1.2 1.2-1.9 3.05-2.35 5.8-.45-2.75-1.15-4.6-2.35-5.8-1.2-1.2-3.05-1.9-5.8-2.35 2.75-.45 4.6-1.15 5.8-2.35 1.2-1.2 1.9-3.05 2.35-5.8Z" stroke-linejoin="round"/>';
@@ -1457,7 +1499,7 @@ function checkinOptFor(book, key){
 var SUPABASE_URL = 'https://oxaeecawijnetwmvggjs.supabase.co';
 var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94YWVlY2F3aWpuZXR3bXZnZ2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyODQ4NDEsImV4cCI6MjEwMzg2MDg0MX0.TXOCq4lgPZRcWDncN0qlZkkKymXJS_sl5LlCauP_DGk';
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage }
+  auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage, flowType:'pkce', detectSessionInUrl:false }
   /* 세션 저장소를 sessionStorage(탭을 닫으면 로그아웃)에서 localStorage로 변경 — 한 번 로그인하면
      브라우저/탭을 껐다 켜도, 심지어 기기를 재부팅해도 로그인 상태가 계속 유지된다(요청 반영).
      autoRefreshToken:true라서 access token이 만료돼도(기본 1시간) refresh token으로 자동 갱신되고,
@@ -1467,6 +1509,14 @@ var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 // 운영자 코드는 클라이언트에 보관하지 않으며 서버 함수에서만 검증한다.
 
+function safePhotoUrl(value){
+  if(typeof value!=='string') return null;
+  var url=value.trim();
+  if(!url || /[\u0000-\u0020<>"'`\\]/.test(url)) return null;
+  if(/^data:image\/(?:jpeg|png|webp|gif);base64,[a-z0-9+/]+={0,2}$/i.test(url)) return url;
+  if(!/^https?:\/\//i.test(url)) return null;
+  try{var parsed=new URL(url);return (parsed.protocol==='https:' || parsed.protocol==='http:') && parsed.hostname && !parsed.username && !parsed.password?url:null;}catch(e){return null;}
+}
 function photoFromUrl(url){ return url ? {dataUrl:url, mimeType:''} : null; }
 function urlFromPhoto(photo){ return (photo && photo.dataUrl) ? photo.dataUrl : null; }
 function readingMetaKey(bookId, userId){ return bookId+'_'+userId; }
@@ -1508,7 +1558,7 @@ function mapReadingLogRow(r){
 function mapBookLockRow(r){ return {locked:!!r.locked, note:r.note||''}; }
 function mapHabitRow(r){
   return {id:r.id, bookId:r.book_id, userId:r.user_id, name:r.name||'', place:r.place||'', time:r.time||'',
-    goal:r.goal||'', startDate:r.start_date||'', endDate:r.end_date||'',
+    goal:r.goal||'', behaviorType:r.behavior_type==='avoid'?'avoid':'do', startDate:r.start_date||'', endDate:r.end_date||'',
     checkedDates:r.checked_dates||[], createdAt:r.created_at, updatedAt:r.updated_at||undefined};
 }
 
@@ -1530,61 +1580,78 @@ var BOOT_FAILED = false;
 /* 부팅: Supabase에서 각 테이블을 병렬로 읽어 STATE를 조립한다. 나의 공간(privateEntries)은
    RLS가 본인 것만 돌려주므로 로그인 상태일 때만 함께 불러온다. */
 function bootApp(){
-  return sb.auth.getSession().then(function(sessRes){
-    var authSession = sessRes && sessRes.data && sessRes.data.session;
-    var restored = null;
-    try{ var raw = localStorage.getItem('growell_session'); if(raw) restored = JSON.parse(raw); }catch(e){}
-    return Promise.all([
-      sb.from('profiles').select('*'),
-      sb.from('posts').select('*'),
-      sb.from('comments').select('*'),
-      sb.from('material_notes').select('*'),
-      sb.from('worksheets').select('*'),
-      sb.from('reading_meta').select('*'),
-      sb.from('reading_logs').select('*'),
-      sb.from('book_locks').select('*'),
-      sb.from('announcement').select('*').eq('book_id','global').maybeSingle()
-    ]).then(function(results){
-      var profilesRes=results[0], postsRes=results[1], commentsRes=results[2], matRes=results[3],
-          wsRes=results[4], rmRes=results[5], rlRes=results[6], blRes=results[7], annRes=results[8];
-      sharedPostsLoadState = postsRes.error ? 'error' : 'ready';
-      [profilesRes,postsRes,commentsRes,matRes,wsRes,rmRes,rlRes,blRes].forEach(function(r){
-        if(r && r.error) console.error('growell: load failed', r.error);
-      });
-      var profilesById = {};
-      (profilesRes.data||[]).forEach(function(r){ var u=mapProfileRow(r); STATE.users[u.id]=u; profilesById[r.id]=u; });
-      (postsRes.data||[]).forEach(function(r){ var p=mapPostRow(r, profilesById); STATE.posts[p.id]=p; });
-      (commentsRes.data||[]).forEach(function(r){ var c=mapCommentRow(r, profilesById); STATE.comments[c.id]=c; });
-      (matRes.data||[]).forEach(function(r){ var m=mapMaterialNoteRow(r, profilesById); STATE.materialNotes[m.id]=m; });
-      (wsRes.data||[]).forEach(function(r){ var w=mapWorksheetRow(r, profilesById); STATE.worksheets[w.id]=w; });
-      (rmRes.data||[]).forEach(function(r){ var m=mapReadingMetaRow(r, profilesById); STATE.readingMeta[readingMetaKey(r.book_id,r.user_id)]=m; });
-      (rlRes.data||[]).forEach(function(r){ var l=mapReadingLogRow(r); STATE.readingLogs[l.id]=l; });
-      (blRes.data||[]).forEach(function(r){ STATE.bookLocks[r.book_id]=mapBookLockRow(r); });
-      if(annRes && annRes.data){
-        var a=annRes.data;
-        STATE.announcement = {
-          next:{date:a.next_date||'', time:a.next_time||'', place:a.next_place||'', note:a.next_note||''},
-          reading:{bookId:a.reading_book_id||'emotion', meetingNo:a.reading_meeting_no||'', chapter:a.reading_chapter||'', range:a.reading_range||'', concept:a.reading_concept||'', note:a.reading_note||''}
-        };
+  var flow=authFlowEpoch;
+  loadOAuthProviderSettings();bindOAuthAuthWatcher();
+  function guard(){if(flow!==authFlowEpoch)throw new Error('auth-flow-cancelled');}
+  return finishOAuthCallback().then(function(){guard();return sb.auth.getSession();}).then(function(result){
+    guard();
+    if(!result.data || !result.data.session){SESSION=null;sharedPostsLoadState='idle';try{localStorage.removeItem('growell_session');}catch(e){}return null;}
+    return sb.auth.getUser().then(function(verified){guard();if(verified.error||!verified.data||!verified.data.user)throw new Error('auth-verification-failed');return verified.data.user;});
+  }).then(function(user){
+    guard();if(!user)return;
+    return sb.from('profiles').select('*').eq('auth_user_id',user.id).maybeSingle().then(async function(result){
+      guard();if(result.error)throw new Error('profile-load-failed');
+      var row=result.data,restored=null;
+      try{restored=JSON.parse(localStorage.getItem('growell_session')||'null');}catch(e){}
+      if(row && row.auth_user_id===user.id && !row.is_deleted && restored && restored.userId===row.id && typeof restored.keyB64==='string'){
+        try{await keyFromB64(restored.keyB64);}catch(e){restored=null;}
+        guard();
+        if(restored){var profile=mapProfileRow(row);STATE.users[profile.id]=profile;SESSION={userId:profile.id,name:profile.name,keyB64:restored.keyB64,authKind:restored.authKind==='oauth'?'oauth':'password'};sharedPostsLoadState='idle';await loadMemberData();guard();return;}
       }
-      if(authSession && restored && STATE.users[restored.userId] && STATE.users[restored.userId].authUserId===authSession.user.id){
-        SESSION = restored;
-        return loadMemberData();
-      } else if(restored){
-        /* 저장된 로그인 정보가 있는데 실제 인증 세션이 없거나(토큰 만료) 계정을 못 찾으면 정리한다. */
-        try{ localStorage.removeItem('growell_session'); }catch(e){}
-        SESSION = null;
-      }
+      SESSION=null;sharedPostsLoadState='idle';
+      try{localStorage.removeItem('growell_session');}catch(e){}
+      if(hasSocialIdentity(user))await prepareOAuthMember(user,flow);
     });
-  }).catch(function(err){
-    console.error('growell: boot failed', err);
-    BOOT_FAILED = true;
-  }).then(function(){
-    BOOTING = false;
-  });
+  }).catch(function(error){
+    if(flow===authFlowEpoch && error.message!=='auth-flow-cancelled'){
+      SESSION=null;sharedPostsLoadState='idle';oauthMessage=error.message==='oauth-cancelled'?'간편 로그인을 취소했어요. 다시 선택할 수 있어요.':'로그인 연결을 마치지 못했어요. 다시 로그인해주세요.';
+    }
+  }).then(function(){BOOTING=false;});
 }
 
 function currentUser(){ return SESSION && STATE.users[SESSION.userId] || null; }
+/* A community read may finish after a saved post/profile edit. Compare against
+   request-time contents, including in-place edits, instead of replacing newer
+   local rows. Missing keys in the current map are deliberate local deletions. */
+function communityCollectionSnapshot(collection){
+  var snapshot=Object.create(null);
+  Object.keys(collection||{}).forEach(function(id){snapshot[id]=JSON.stringify(collection[id]);});
+  return snapshot;
+}
+function mergeCommunityCollection(remote,current,snapshot){
+  var merged=Object.assign({},remote),owns=Object.prototype.hasOwnProperty;
+  Object.keys(snapshot).forEach(function(id){if(!owns.call(current,id))delete merged[id];});
+  Object.keys(current).forEach(function(id){
+    if(!owns.call(snapshot,id)||JSON.stringify(current[id])!==snapshot[id])merged[id]=current[id];
+  });
+  return merged;
+}
+function loadCommunityForCurrentMember(){
+  if(!SESSION||sharedPostsLoadState==='loading')return;
+  var owner=SESSION.userId,epoch=saveSessionEpoch;sharedPostsLoadState='loading';
+  var keys=['users','posts','comments','materialNotes','worksheets','bookLocks','announcement'],snapshots={};
+  keys.forEach(function(key){snapshots[key]=communityCollectionSnapshot(STATE[key]);});
+  var tables=['profiles','posts','comments','material_notes','worksheets','book_locks','announcement'];
+  return Promise.all(tables.map(function(table){return sb.from(table).select('*');})).then(function(results){
+    if(!SESSION||SESSION.userId!==owner||saveSessionEpoch!==epoch)return;
+    if(results.some(function(r){return !r||r.error||!Array.isArray(r.data);})){throw new Error('community-load-failed');}
+    var users={};results[0].data.forEach(function(row){var user=mapProfileRow(row);users[user.id]=user;});
+    users=mergeCommunityCollection(users,STATE.users,snapshots.users);
+    var posts={},comments={},materials={},worksheets={},locks={};
+    results[1].data.forEach(function(r){posts[r.id]=mapPostRow(r,users);});
+    results[2].data.forEach(function(r){comments[r.id]=mapCommentRow(r,users);});
+    results[3].data.forEach(function(r){materials[r.id]=mapMaterialNoteRow(r,users);});
+    results[4].data.forEach(function(r){worksheets[r.id]=mapWorksheetRow(r,users);});
+    results[5].data.forEach(function(r){locks[r.book_id]=mapBookLockRow(r);});
+    var a=results[6].data.find(function(r){return r.book_id==='global';});
+    var announcement=a?{next:{date:a.next_date||'',time:a.next_time||'',place:a.next_place||'',note:a.next_note||''},reading:{bookId:a.reading_book_id||'emotion',meetingNo:a.reading_meeting_no||'',chapter:a.reading_chapter||'',range:a.reading_range||'',concept:a.reading_concept||'',note:a.reading_note||''}}:STATE.announcement;
+    var merged={users:users,posts:mergeCommunityCollection(posts,STATE.posts,snapshots.posts),comments:mergeCommunityCollection(comments,STATE.comments,snapshots.comments),
+      materialNotes:mergeCommunityCollection(materials,STATE.materialNotes,snapshots.materialNotes),worksheets:mergeCommunityCollection(worksheets,STATE.worksheets,snapshots.worksheets),
+      bookLocks:mergeCommunityCollection(locks,STATE.bookLocks,snapshots.bookLocks),announcement:mergeCommunityCollection(announcement,STATE.announcement,snapshots.announcement)};
+    keys.forEach(function(key){STATE[key]=merged[key];});
+    sharedPostsLoadState='ready';render();
+  }).catch(function(){if(SESSION&&SESSION.userId===owner&&saveSessionEpoch===epoch){sharedPostsLoadState='error';render();}});
+}
 function isAdmin(){ var u = currentUser(); return !!(u && u.isAdmin); }
 function bookLockInfo(book){
   var custom = STATE.bookLocks[book.id];
@@ -1606,6 +1673,8 @@ var habitFormOpenFor = null; // bookId whose 습관 만들기 추가/수정 폼�
 var habitEditingId = null; // 수정 중인 habit id, 새로 만드는 중이면 null
 var habitHistoryOpenFor = null; // 지난 기록 팝업이 열려있는 habit id (없으면 null)
 var habitHistoryMonth = null; // 팝업에서 보고 있는 달 {y, m}(m은 0=1월 기준) — 열 때마다 이번 달로 초기화
+var habitCalendarMode = 'week';
+var habitCalendarMonth = null;
 /* 생각 나눔(나눔 공간) 컴포저에서만 쓰는 상태 — '통찰 정리'를 고르면 컴포저 구성 자체가
    바뀌기 때문에(체크인 없음, 몇 번째 모임 + 질문 3개) 다시 그려야 한다. */
 var shareComposerNoteType = null;
@@ -1819,11 +1888,20 @@ function closeStaleComposersForRoute(r){
    실행 중이라는 사실 자체는 DOM이 아니라 이 모듈 변수들에 살아있어야 렌더를 다시 해도
    끊기지 않는다. readingTimer가 있으면 mineTabHtml이 실행/일시정지 화면을 그리고,
    bindEvents가 매 렌더마다 표시용 setInterval을 다시 건다(이전 것은 그때그때 정리). */
-var readingTimer = null; // {bookId, startedAt(ms epoch, null=paused), elapsedMs(누적), running}
+var readingTimer = null; // GrowellReadingTimer session, isolated and persisted per member on this device.
 var readingTimerIntervalId = null;
 var readingSavePanelOpen = false; // 완료를 눌러 "저장" 화면으로 전환된 상태인지
 var readingEditOpenFor = null; // bookId whose 현재 페이지 수정 폼이 열려있는지 (총 페이지는 책마다 고정값이라 더 이상 여기서 다루지 않음)
 var readingHistoryOpenFor = null; // bookId whose "읽은 기록" 목록이 펼쳐져 있는지
+var readingTimerRestoreOwner = null;
+var readingSaveAttempt = null;
+var readingSaveBusy = false;
+var readingCountdownOpen = false;
+var readingFinishKind = 'finish';
+var readingEndPage = null;
+var readingTimerMemoryWarning = false;
+var readingSaveError = false;
+var readingNoteReturn = null; // Only timer identity and destination; note contents use the existing encrypted draft.
 var worksheetOpenFor = {}; // activity key -> boolean, 활동지 각 항목이 펼쳐져 있는지 (키가 책마다 고유해서 flat object로 충분)
 var shareFeedFilter = {}; // bookId -> note type key ('all' or one of NOTE_TYPES)
 var matFeedFilter = {}; // bookId -> 자료실 카테고리 key ('all' or one of MATERIAL_CATS)
@@ -1904,7 +1982,7 @@ var activeSave = null;
 var saveSessionEpoch = 0;
 var authFlowEpoch = 0;
 var authTransition = Promise.resolve();
-var memberLoadState = {privateEntries:'idle', habits:'idle'};
+var memberLoadState = {privateEntries:'idle', habits:'idle', readingLogs:'idle', readingMeta:'idle'};
 var habitSaveIntents = {};
 var habitSaveVersion = 0;
 
@@ -1921,10 +1999,13 @@ function finishSaveButton(opts){
   if(opts.button){ opts.button.disabled=false; opts.button.textContent=opts.originalLabel||'저장'; }
 }
 function clearMemberSession(){
+  sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
+  if(typeof pendingProfileAvatar!=='undefined') pendingProfileAvatar=undefined;
+  if(typeof pauseReadingBeforeLogout==='function') pauseReadingBeforeLogout();
   SESSION = null; CURRENT_KEY = null; CURRENT_KEY_OWNER = null; CURRENT_KEY_MATERIAL = null;
-  STATE.privateEntries = {}; STATE.habits = {};
-  memberLoadState = {privateEntries:'idle', habits:'idle'};
+  STATE.privateEntries = {}; STATE.habits = {}; STATE.readingLogs = {}; STATE.readingMeta = {};
+  memberLoadState = {privateEntries:'idle', habits:'idle', readingLogs:'idle', readingMeta:'idle'};
   if(typeof sharedPostsLoadState!=='undefined' && sharedPostsLoadState==='loading') sharedPostsLoadState='error';
   if(typeof resetShareComposer==='function') resetShareComposer();
   if(typeof resetMineComposer==='function') resetMineComposer();
@@ -1947,14 +2028,19 @@ function memberDataStatusHtml(key){
 function loadMemberData(){
   if(!SESSION) return Promise.resolve(false);
   var expected = {userId:SESSION.userId, epoch:saveSessionEpoch};
-  memberLoadState = {privateEntries:'loading', habits:'loading'};
-  var specs = [{key:'privateEntries', table:'private_entries', map:mapPrivateEntryRow}, {key:'habits', table:'habits', map:mapHabitRow}];
+  memberLoadState = {privateEntries:'loading', habits:'loading', readingLogs:'loading', readingMeta:'loading'};
+  var specs = [
+    {key:'privateEntries', table:'private_entries', map:mapPrivateEntryRow},
+    {key:'habits', table:'habits', map:mapHabitRow},
+    {key:'readingLogs', table:'reading_logs', map:mapReadingLogRow},
+    {key:'readingMeta', table:'reading_meta', map:function(row){return mapReadingMetaRow(row,STATE.users);}, itemKey:function(item){return readingMetaKey(item.bookId,item.userId);}}
+  ];
   return Promise.all(specs.map(function(spec){
     return Promise.resolve().then(function(){ return sb.from(spec.table).select('*').eq('user_id', expected.userId); }).then(function(res){
       if(!saveSessionMatches(expected)) return false;
       if(!res || res.error || !Array.isArray(res.data)) throw new Error('member-data-load-failed');
       var next = {};
-      res.data.forEach(function(row){ var item=spec.map(row); if(item.userId===expected.userId) next[item.id]=item; });
+      res.data.forEach(function(row){ var item=spec.map(row); if(item.userId===expected.userId) next[spec.itemKey ? spec.itemKey(item) : item.id]=item; });
       STATE[spec.key] = next;
       memberLoadState[spec.key] = 'ready';
       return true;
@@ -1991,7 +2077,7 @@ var GENERIC_COLLECTIONS = {
     /* start_date/end_date는 Postgres date 컬럼이라 빈 문자열을 그대로 보내면 저장에 실패한다
        (날짜로 해석할 수 없어서) — 값이 없을 땐 반드시 null로 보내야 한다. */
     toRow: function(h){ return {id:h.id, book_id:h.bookId, user_id:h.userId, name:h.name||'', place:h.place||'',
-      time:h.time||'', goal:h.goal||'', start_date:h.startDate||null, end_date:h.endDate||null,
+      time:h.time||'', goal:h.goal||'', behavior_type:h.behaviorType==='avoid'?'avoid':'do', start_date:h.startDate||null, end_date:h.endDate||null,
       checked_dates:h.checkedDates||[], created_at:h.createdAt, updated_at:h.updatedAt||null}; } }
 };
 
@@ -2055,6 +2141,28 @@ function drainSaveQueue(){
     drainSaveQueue();
   });
 }
+function matchingReadingLog(actual,expected){
+  if(!actual || actual.id!==expected.id || actual.book_id!==expected.book_id || actual.user_id!==expected.user_id) return false;
+  var sameNumber=function(a,b){return a!=null && b!=null && Number.isFinite(Number(a)) && Number.isFinite(Number(b)) && Number(a)===Number(b);};
+  return sameNumber(actual.seconds,expected.seconds) && sameNumber(actual.page,expected.page) && sameNumber(actual.created_at,expected.created_at)
+    && (actual.start_page==null && expected.start_page==null || sameNumber(actual.start_page,expected.start_page));
+}
+/* A reading session keeps its ID across retries. Inserts remain immutable; a lost
+   response or later metadata failure may leave this exact row already committed. */
+function insertReadingLogOnce(row,guard){
+  return Promise.resolve().then(function(){
+    guard();
+    return sb.from('reading_logs').insert(row);
+  }).then(function(result){
+    if(!result || result.error) throw result && result.error || new Error('reading-log-insert-failed');
+  }).catch(function(insertError){
+    guard();
+    return sb.from('reading_logs').select('*').eq('id',row.id).eq('user_id',row.user_id).maybeSingle().then(function(result){
+      guard();
+      if(!result || result.error || !matchingReadingLog(result.data,row)) throw insertError;
+    });
+  });
+}
 function performSave(job){
   var opts = job.opts;
   function guard(){ if(!saveSessionMatches(job)) throw new Error('save-session-changed'); }
@@ -2102,6 +2210,7 @@ function performSave(job){
         guard();
         if(isNew){
           if(spec.noInsert) return;
+          if(key==='readingLogs') return insertReadingLogOnce(spec.toRow(row),guard);
           return sb.from(spec.table).insert(spec.toRow(row)).then(function(res){ if(res.error) throw res.error; });
         }
         if(spec.noUpdate) return;
@@ -2232,6 +2341,7 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
   name = name.trim();
   hint = (hint||'').trim();
   if(!name || !id || !pw){ showToast('별명, 아이디, 비밀번호를 모두 입력해주세요.', true); return; }
+  if(name.length>30){ showToast('별명은 30자 이내로 입력해주세요.', true); return; }
   /* 아이디는 내부적으로 "아이디@growell.internal" 이메일로 바뀌어 Supabase Auth에 등록되는데,
      이메일 로컬 파트에 한글 등 비ASCII 문자가 들어가면 "invalid format"으로 매번 거절당한다 —
      그래서 영문/숫자/밑줄/하이픈만 허용하도록 미리 걸러서 안내한다. */
@@ -2283,7 +2393,7 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
           STATE.users[u.id] = u;
           SESSION = {userId:u.id, name:u.name, keyB64:keyB64};
           try{ localStorage.setItem('growell_session', JSON.stringify(SESSION)); }catch(e){}
-          memberLoadState = {privateEntries:'ready', habits:'ready'};
+          memberLoadState = {privateEntries:'ready', habits:'ready', readingLogs:'ready', readingMeta:'ready'};
           pendingSignupAvatar = null;
           showToast(u.name+'님, 환영해요.');
           var r = currentRoute();
@@ -2375,6 +2485,7 @@ function doLogout(){
 function doDeleteAccount(targetUserId){
   if(!SESSION) return;
   var isSelf = !targetUserId || targetUserId===SESSION.userId;
+  if(isSelf && SESSION.authKind==='oauth'){showToast('간편가입 계정의 탈퇴는 관리자에게 요청해주세요. Google·카카오 비밀번호를 입력하지 마세요.');return;}
   var msg = isSelf
     ? '정말 계정을 삭제할까요? 나의 공간 일기, 활동지, 독서 기록이 모두 사라지고 되돌릴 수 없어요. (작성하신 나눔 글은 남아요)'
     : '이 회원의 계정을 삭제할까요? 나의 공간, 활동지, 독서 기록이 모두 사라지고 되돌릴 수 없어요.';
@@ -2425,37 +2536,49 @@ function doEditProfile(name, avatarChange, btn){
   if(!SESSION) return;
   name = (name||'').trim();
   if(!name){ showToast('별명을 입력해주세요.', true); return; }
+  if(name.length>30){ showToast('별명은 30자 이내로 입력해주세요.', true); return; }
+  if(typeof avatarChange==='string' && !GrowellProfile.safeAvatarUrl(avatarChange)){ showToast('사진을 다시 선택해주세요.', true); return; }
   if(btn){ btn.disabled = true; btn.textContent = '저장 중…'; }
-  var cur = STATE.users[SESSION.userId] || {};
+  var owner=SESSION.userId, epoch=saveSessionEpoch;
+  var cur = STATE.users[owner] || {};
   var authUserId = cur.authUserId;
+  function guard(){if(!SESSION || SESSION.userId!==owner || saveSessionEpoch!==epoch) throw new Error('profile-session-changed');}
   var uploadWork;
   if(avatarChange === undefined){
     uploadWork = Promise.resolve(cur.avatar || null);
   } else if(avatarChange === null){
     uploadWork = Promise.resolve(null);
   } else {
-    uploadWork = uploadPhotoIfNeeded('avatars', authUserId || SESSION.userId, SESSION.userId, {dataUrl:avatarChange})
+    uploadWork = uploadPhotoIfNeeded('avatars', authUserId || owner, owner, {dataUrl:avatarChange})
       .then(function(photo){ return photo.dataUrl; });
   }
-  uploadWork.then(function(avatarUrl){
-    saveState(function(next){
-      var u = next.users[SESSION.userId];
-      if(!u) return;
+  return uploadWork.then(function(avatarUrl){
+    guard();
+    return saveState(function(next){
+      guard();
+      var u = next.users[owner];
+      if(!u) throw new Error('profile-not-found');
       u.name = name;
       u.avatar = avatarUrl;
     }, {
       button:btn, originalLabel:'저장', savingLabel:'저장 중…',
       onSuccess: function(){
+        guard();
         pendingProfileAvatar = undefined;
         SESSION.name = name;
+        ['posts','comments','materialNotes','worksheets','readingMeta'].forEach(function(key){
+          Object.keys(STATE[key]||{}).forEach(function(id){var record=STATE[key][id];if(record.userId===owner) record.userName=name;});
+        });
         try{ localStorage.setItem('growell_session', JSON.stringify(SESSION)); }catch(e){}
         showToast('프로필을 수정했어요.');
         location.hash = '#/';
       }
     });
-  }).catch(function(){
+  }).catch(function(err){
     if(btn){ btn.disabled=false; btn.textContent='저장'; }
+    if(err && err.message==='profile-session-changed') return false;
     showToast('사진을 올리지 못했어요. 다시 시도해주세요.', true);
+    return false;
   });
 }
 function ensureKey(){
@@ -2631,7 +2754,8 @@ function doUpdateHint(hint, btn){
 /* 비밀번호 찾기 — 아이디 + 가입 때 등록한 힌트가 일치하면 새 비밀번호로 바꿔준다.
    실제 이메일이 없는 앱이라 Supabase의 표준 "이메일로 재설정" 흐름을 쓸 수 없어서
    만든 대체 경로(reset-password Edge Function, 서버에서 힌트를 대조). */
-function doForgotPassword(id, hint, pw, pw2, btn){
+async function doForgotPassword(id, hint, pw, pw2, btn){
+  if(doForgotPassword.busy)return false;
   id = (id||'').trim().toLowerCase();
   hint = (hint||'').trim();
   if(!id || !hint){ showToast('아이디와 힌트를 모두 입력해주세요.', true); return; }
@@ -2639,27 +2763,47 @@ function doForgotPassword(id, hint, pw, pw2, btn){
   if(pw!==pw2){ showToast('비밀번호가 서로 달라요. 다시 확인해주세요.', true); return; }
   if(!selectedResetRecovery){showToast('개인 기록을 보호하려면 먼저 복구 파일을 선택해주세요. 기존 로그인 기기의 프로필에서 저장할 수 있어요.',true);return;}
   if(selectedResetRecovery.loginId!==id){showToast('입력한 아이디의 복구 파일이 아니에요.',true);return;}
-  var resetKit=selectedResetRecovery;
-  var knownProfile=Object.values(STATE.users).find(function(u){return u.loginId===id;});
-  if(!knownProfile){showToast('회원 정보를 확인하지 못했어요. 아이디를 확인하고 새로고침 후 다시 시도해주세요.',true);return;}
-  try{GrowellPrivateCrypto.assertOwner(resetKit,knownProfile);}catch(err){showToast(err.message,true);return;}
+  var selection=selectedResetRecovery,flow=authFlowEpoch,owner=SESSION&&SESSION.userId;
+  function resetGuard(){
+    if(flow!==authFlowEpoch || selectedResetRecovery!==selection || (SESSION&&SESSION.userId)!==owner)
+      throw new Error('recovery-reset-cancelled');
+  }
+  doForgotPassword.busy=true;
   if(btn){ btn.disabled=true; btn.textContent='확인 중…'; }
-  callEdgeFunction('reset-password', {loginId:id, hint:hint, newPassword:pw})
-    .then(function(res){
-      if(btn){ btn.disabled=false; btn.textContent='비밀번호 바꾸기'; }
-      if(!res || res.__status!==200 || !res.ok){
-        /* 아이디가 없든, 힌트가 틀렸든 항상 같은 문구 — 계정 존재 여부가 밖으로 새지 않게. */
-        showToast('아이디 또는 힌트가 일치하지 않아요.', true);
-        return;
-      }
-      pendingPrivateRecovery=resetKit;
-      showToast('비밀번호를 바꿨어요. 개인 기록을 복구하고 있어요.');
-      authMode = 'login';
-      return doLogin(id,pw,btn);
-    }).catch(function(){
-      if(btn){ btn.disabled=false; btn.textContent='비밀번호 바꾸기'; }
-      showToast('비밀번호 재설정에 실패했어요. 다시 시도해주세요.', true);
+  try{
+    /* Revalidate the keys locally. Only the three account identifiers leave the
+       browser; guest clients cannot read member profiles to verify ownership. */
+    var resetKit=await GrowellPrivateCrypto.parseRecovery(JSON.stringify(selection));
+    resetGuard();
+    if(typeof resetKit.authUserId!=='string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(resetKit.authUserId)){
+      showToast('계정 확인 정보가 없는 복구 파일이에요. 로그인된 기기의 프로필에서 복구 파일을 다시 저장해주세요.',true);
+      return false;
+    }
+    var ownership=await sb.rpc('growell_recovery_owner_matches',{
+      p_login_id:id,p_user_id:resetKit.userId,p_auth_user_id:resetKit.authUserId
     });
+    resetGuard();
+    if(ownership.error)throw new Error('recovery-owner-unavailable');
+    if(ownership.data!==true){showToast('아이디와 복구 파일의 계정 정보가 일치하지 않아요.',true);return false;}
+    var res=await callEdgeFunction('reset-password',{loginId:id,hint:hint,newPassword:pw});
+    resetGuard();
+    if(!res || res.__status!==200 || !res.ok){
+      /* Keep the existing server-side hint check and its uniform failure message. */
+      showToast('아이디 또는 힌트가 일치하지 않아요.',true);
+      return false;
+    }
+    pendingPrivateRecovery=resetKit;
+    showToast('비밀번호를 바꿨어요. 개인 기록을 복구하고 있어요.');
+    authMode='login';
+    return await doLogin(id,pw,btn);
+  }catch(err){
+    if(err.message!=='recovery-reset-cancelled' && flow===authFlowEpoch)
+      showToast('복구 파일 확인 또는 비밀번호 재설정에 실패했어요. 다시 시도해주세요.',true);
+    return false;
+  }finally{
+    doForgotPassword.busy=false;
+    if(btn){btn.disabled=false;btn.textContent='비밀번호 바꾸기';}
+  }
 }
 
 /* ---------------- content actions ---------------- */
@@ -2703,7 +2847,8 @@ function submitSharePost(bookId, checkinVal, payload, btn){
        render()를 먼저 호출한 뒤 이 onSuccess를 부르므로, 닫힌 상태를 화면에 반영하려면 여기서
        상태를 리셋한 다음 render()를 한 번 더 불러야 한다(닫기 버튼 핸들러와 동일한 리셋). */
     shareComposerOpenFor = null; shareEditingId = null;
-    shareComposerNoteType = null; shareComposerInsightMode = false; render();
+    shareComposerNoteType = null; shareComposerInsightMode = false;
+    completeReadingNote('share',bookId);render();
   }});
 }
 /* 나눔공간 글 수정 — 본인 글만, id는 그대로 두고 내용만 덮어쓴다(작성 시각도 유지) */
@@ -2769,7 +2914,7 @@ function submitPrivateEntry(bookId, payload, btn){
       return saveState(function(next){
         next.privateEntries[id] = {id:id, bookId:bookId, userId:ownerId, iv:enc.iv, data:enc.data, createdAt:Date.now()};
       }, {button:btn, originalLabel:'기록하기', savingLabel:'저장 중…',onSuccess:function(){
-        if(finishComposerDraft('mine',bookId,null,ownerId,draftToken))resetMineComposer();render();
+        if(finishComposerDraft('mine',bookId,null,ownerId,draftToken)){resetMineComposer();completeReadingNote('mine',bookId);}render();
       }});
     });
   }).catch(function(err){if(btn){btn.disabled=false;btn.textContent='기록하기';}showToast(err.message||'기록을 암호화하지 못했어요. 다시 시도해주세요.',true);});
@@ -2815,13 +2960,11 @@ function deletePrivateEntry(entryId, btn){
    있을 일이 없지만, 혹시 지워졌을 때의 안전장치), 목표일은 정했을 때만 시작일보다 앞서지
    않는지 확인한다. */
 function validateHabitPeriod(payload){
-  var startDate = (payload.startDate||'').trim() || ymd(new Date());
-  var endDate = (payload.endDate||'').trim();
-  if(endDate && endDate<startDate) return {ok:false, msg:'목표일은 시작일보다 앞설 수 없어요.'};
-  return {ok:true, startDate:startDate, endDate:endDate};
+  return GrowellHabits.validate(payload,ymd(new Date()));
 }
 function submitHabit(bookId, payload, btn){
   if(!SESSION) return;
+  if(memberLoadState.habits!=='ready'){showToast('습관을 먼저 불러온 뒤 다시 시도해주세요.',true);return;}
   var name = (payload.name||'').trim();
   if(!name){ showToast('습관 이름을 적어주세요.', true); return; }
   var period = validateHabitPeriod(payload);
@@ -2830,13 +2973,14 @@ function submitHabit(bookId, payload, btn){
   saveState(function(next){
     next.habits[id] = {id:id, bookId:bookId, userId:SESSION.userId, name:name,
       place:(payload.place||'').trim(), time:(payload.time||'').trim(), goal:(payload.goal||'').trim(),
-      startDate:period.startDate, endDate:period.endDate, checkedDates:[], createdAt:Date.now()};
+      behaviorType:GrowellHabits.behaviorType(payload), startDate:period.startDate, endDate:period.endDate, checkedDates:[], createdAt:Date.now()};
   }, {button:btn, originalLabel:'만들기', savingLabel:'만드는 중…', onSuccess:function(){
     habitFormOpenFor = null; habitEditingId = null; render();
   }});
 }
 function editHabit(habitId, payload, btn){
   if(!SESSION) return;
+  if(memberLoadState.habits!=='ready'){showToast('습관을 먼저 불러온 뒤 다시 시도해주세요.',true);return;}
   var existing = STATE.habits[habitId];
   if(!existing || existing.userId!==SESSION.userId) return;
   var name = (payload.name||'').trim();
@@ -2846,10 +2990,11 @@ function editHabit(habitId, payload, btn){
   saveState(function(next){
     var latest = next.habits[habitId];
     if(!latest || latest.userId!==SESSION.userId) return;
-    next.habits[habitId] = {id:habitId, bookId:existing.bookId, userId:existing.userId, name:name,
+    next.habits[habitId] = Object.assign({},latest,{id:habitId, bookId:existing.bookId, userId:existing.userId, name:name,
       place:(payload.place||'').trim(), time:(payload.time||'').trim(), goal:(payload.goal||'').trim(),
+      behaviorType:GrowellHabits.behaviorType(payload.behaviorType===undefined?latest:payload),
       startDate:period.startDate, endDate:period.endDate,
-      checkedDates:latest.checkedDates||[], createdAt:existing.createdAt, updatedAt:Date.now()};
+      checkedDates:latest.checkedDates||[], createdAt:existing.createdAt, updatedAt:Date.now()});
   }, {button:btn, originalLabel:'수정하기', savingLabel:'수정 중…', onSuccess:function(){
     habitFormOpenFor = null; habitEditingId = null; render();
   }});
@@ -2880,27 +3025,35 @@ function habitSaveStatusHtml(habitId){
     : pending ? '체크 저장 중…' : '모든 체크가 저장됐어요.';
 }
 function refreshHabitSaveUI(habitId){
-  var raw = STATE.habits[habitId];
-  if(!raw) return;
-  var habit = habitWithPendingChecks(raw);
+  var raw=STATE.habits[habitId];
+  if(!raw || !SESSION || raw.userId!==SESSION.userId) return;
+  if(!document.querySelectorAll('[data-habit-card], [data-habit-stats-panel]').length){if(typeof refreshHomeHabits==='function') refreshHomeHabits();return;}
+  var habit=habitWithPendingChecks(raw),today=ymd(new Date()),stats=GrowellHabits.stats(habit,today);
+  document.querySelectorAll('[data-habit-day]').forEach(function(button){
+    var parts=button.getAttribute('data-habit-day').split('|');
+    if(parts[0]!==habitId) return;
+    var status=GrowellHabits.status(habit,parts[1],today),checked=status==='success',symbol=checked?'✓':status==='fail'?'−':status==='pending'?'○':'';
+    var calendar=button.classList.contains('habit-hist-cell'),mark=calendar?button.querySelector('[data-habit-cell-mark]'):button;
+    if(mark) mark.textContent=calendar?symbol:checked?'✓':status==='fail'?'−':'';
+    button.setAttribute('aria-pressed',checked?'true':'false');button.setAttribute('aria-label',parts[1]+' '+habitStatusLabel(status)+' · 체크 변경');
+    var element=calendar?button:button.parentElement;
+    ['success','pending','fail','future','outside'].forEach(function(s){element.classList.toggle('is-'+s,status===s);});
+    if(!calendar) element.classList.toggle('is-checked',checked);
+  });
   document.querySelectorAll('[data-habit-card]').forEach(function(card){
     if(card.getAttribute('data-habit-card')!==habitId) return;
-    card.querySelectorAll('[data-habit-day]').forEach(function(button){
-      var date = button.getAttribute('data-habit-day').split('|')[1];
-      var checked = habit.checkedDates.indexOf(date)>=0;
-      button.textContent = checked ? '✓' : '';
-      button.setAttribute('aria-pressed', checked ? 'true' : 'false');
-      button.parentElement.classList.toggle('is-checked', checked);
-    });
-    var progress = habitWeekProgress(habit, weekDatesOf(mondayOf(new Date())));
-    var progressEl = card.querySelector('.habit-progress');
-    if(progressEl){
-      progressEl.classList.toggle('is-done', progress.done>=progress.total);
-      progressEl.textContent = progress.done>=progress.total ? '이번 주 완료 🎉' : progress.done+'/'+progress.total+'일 완료 · '+(progress.total-progress.done)+'일 남음';
-    }
-    var status = card.querySelector('[data-habit-save-status]');
-    if(status) status.innerHTML = habitSaveStatusHtml(habitId);
+    var progress=habitWeekProgress(habit,weekDatesOf(mondayOf(new Date()))),el=card.querySelector('.habit-progress');
+    if(el){el.classList.toggle('is-done',progress.total>0&&progress.done===progress.total);el.textContent=progress.total?progress.done+'/'+progress.total+'일 실천':'이번 주 목표 기간 없음';}
+    var summary=card.querySelector('[data-habit-card-summary]');if(summary) summary.textContent='지금까지 '+stats.success+'번 실천 · '+stats.streak+'일 연속';
+    var status=card.querySelector('[data-habit-save-status]');if(status) status.innerHTML=habitSaveStatusHtml(habitId);
   });
+  document.querySelectorAll('[data-habit-stats-panel]').forEach(function(panel){if(panel.getAttribute('data-habit-stats-panel')===habitId) panel.innerHTML=habitStatsPanelHtml(habit);});
+  document.querySelectorAll('[data-habit-month-summary]').forEach(function(summary){
+    if(summary.getAttribute('data-habit-month-summary')!==habitId) return;
+    var now=new Date(),view=(summary.hasAttribute('data-habit-popup-summary')?habitHistoryMonth:habitCalendarMonth)||{y:now.getFullYear(),m:now.getMonth()};
+    summary.textContent=habitMonthSummaryHtml(habit,view.y,view.m);
+  });
+  document.querySelectorAll('[data-habit-popup-status]').forEach(function(status){if(status.getAttribute('data-habit-popup-status')===habitId) status.innerHTML=habitSaveStatusHtml(habitId);});
   if(typeof refreshHomeHabits==='function') refreshHomeHabits();
 }
 function queueHabitCheck(habitId, dateStr, checked){
@@ -2939,6 +3092,7 @@ function toggleHabitDate(habitId, dateStr){
   if(!SESSION) return;
   var h = STATE.habits[habitId];
   if(!h || h.userId!==SESSION.userId) return;
+  if(typeof GrowellHabits!=='undefined'&&!GrowellHabits.canCheck(h,dateStr,GrowellHabits.todayDate())) return;
   return queueHabitCheck(habitId, dateStr, habitWithPendingChecks(h).checkedDates.indexOf(dateStr)<0);
 }
 /* ---------------- 나의 공간: 독서 진행률 · 타이머 기록 ---------------- */
@@ -2966,7 +3120,7 @@ function myReadingLogs(bookId){
 }
 /* 그 책을 읽느라 쓴 총 시간 — 지금까지 저장된 모든 독서 세션(readingLogs)의 시간을 더한 값 */
 function totalReadSeconds(bookId){
-  return myReadingLogs(bookId).reduce(function(sum, l){ return sum + (l.seconds||0); }, 0);
+  return myReadingLogs(bookId).reduce(function(sum, l){ var seconds=Number(l.seconds); return sum + (Number.isFinite(seconds)&&seconds>0?seconds:0); }, 0);
 }
 /* 각 독서 기록을 "이전에 읽은 위치 ~ 이번에 읽은 위치" 범위로 보여주기 위해 시작 페이지를
    계산한다. 이번 라운드부터 저장되는 기록은 submitReadingLog에서 startPage를 함께 저장하지만,
@@ -2993,16 +3147,29 @@ function saveCurrentPage(bookId, currentPage, btn){
 /* 완료 버튼으로 저장하는 독서 세션 — 기록을 남기는 동시에 "현재 페이지"를 갱신한다.
    읽는 중/완독 표시와 총 읽은 시간은 저장된 기록으로부터 매번 자동으로 다시 계산된다. */
 function submitReadingLog(bookId, seconds, page, btn){
-  if(!SESSION) return;
-  if(!(seconds>0)){ showToast('타이머를 먼저 실행해주세요.', true); return; }
-  if(!page){ showToast('읽은 페이지를 입력해주세요.', true); return; }
-  var key = readingMetaKey(bookId, SESSION.userId);
-  var logId = uid('rl');
-  var startPage = myCurrentPage(bookId); // 저장 직전까지의 현재 페이지 — 이번 기록의 시작 지점
-  saveState(function(next){
-    next.readingLogs[logId] = {id:logId, bookId:bookId, userId:SESSION.userId, seconds:seconds, page:page, startPage:startPage, createdAt:Date.now()};
-    next.readingMeta[key] = {bookId:bookId, userId:SESSION.userId, userName:SESSION.name, currentPage:page, updatedAt:Date.now()};
-  }, {button:btn, originalLabel:'저장', savingLabel:'저장 중…'});
+  if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || readingTimer.bookId!==bookId || readingSaveBusy) return;
+  if(!readingDataReady()){ showToast('독서 기록을 먼저 불러와 주세요.',true); return; }
+  var book=bookById(bookId), validation=GrowellReadingTimer.validatePages(readingTimer.startPage,page,book.totalPages);
+  if(!validation.ok){ showToast(validation.error,true); return; }
+  seconds=Math.floor(readingTimerElapsedMs()/1000);
+  if(!(seconds>0)){ showToast('1초 이상 읽은 뒤 저장해주세요.',true); return; }
+  // Freeze the immutable log once. A retry, including after reload, uses the same ID and payload.
+  if(!readingSaveAttempt) readingSaveAttempt={id:readingTimer.id,bookId:bookId,userId:SESSION.userId,seconds:seconds,page:validation.page,startPage:readingTimer.startPage,createdAt:Date.now()};
+  var snapshot=Object.assign({},readingSaveAttempt), owner=SESSION.userId, key=readingMetaKey(bookId,owner), name=SESSION.name;
+  readingSaveBusy=true; readingSaveError=false; persistReadingTimer();
+  return saveState(function(next){
+    next.readingLogs[snapshot.id]=snapshot;
+    var knownProgress=next.readingMeta[key];
+    if(!knownProgress || Number(knownProgress.updatedAt)<=snapshot.createdAt) next.readingMeta[key]={bookId:bookId,userId:owner,userName:name,currentPage:snapshot.page,updatedAt:snapshot.createdAt};
+  }, {button:btn,originalLabel:'읽은 기록 저장',savingLabel:'저장 중…',render:false,
+    onSuccess:function(){
+      if(!SESSION || SESSION.userId!==owner) return;
+      readingSaveBusy=false; readingSaveError=false;
+      if(readingTimer && readingTimer.id===snapshot.id){readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingCountdownOpen=false;persistReadingTimer();}
+      readingHistoryOpenFor=bookId;render();showToast('읽은 시간과 '+snapshot.page+'쪽까지 읽은 기록을 저장했어요.');
+    },
+    onFailure:function(){if(SESSION && SESSION.userId===owner){readingSaveBusy=false;readingSaveError=true;persistReadingTimer();render();}}
+  });
 }
 function deleteReadingLog(logId, btn){
   if(!SESSION) return;
@@ -3012,14 +3179,13 @@ function deleteReadingLog(logId, btn){
   saveState(function(next){ delete next.readingLogs[logId]; }, {button:btn});
 }
 function readingTimerElapsedMs(){
-  if(!readingTimer) return 0;
-  return readingTimer.elapsedMs + (readingTimer.running && readingTimer.startedAt ? (Date.now()-readingTimer.startedAt) : 0);
+  return readingTimer ? GrowellReadingTimer.elapsed(readingTimer,Date.now()) : 0;
 }
 function fmtElapsed(ms){
   var s = Math.max(0, Math.floor(ms/1000));
   var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
   var mm = String(m).padStart(2,'0'), ss = String(sec).padStart(2,'0');
-  return h>0 ? (h+':'+mm+':'+ss) : ('00:'+mm+':'+ss);
+  return String(h).padStart(2,'0')+':'+mm+':'+ss;
 }
 /* "총 읽은 시간"을 사람이 읽기 편한 형태로 — 예) 2시간 14분 / 14분 / 36초 */
 function fmtDurationHuman(totalSeconds){
@@ -3028,6 +3194,211 @@ function fmtDurationHuman(totalSeconds){
   if(h>0) return m>0 ? (h+'시간 '+m+'분') : (h+'시간');
   if(m>0) return m+'분';
   return s+'초';
+}
+function readingDataReady(){return memberLoadState.readingMeta==='ready' && memberLoadState.readingLogs==='ready';}
+function readingTimerStorageKey(owner){return 'growell_reading_timer_v1:'+encodeURIComponent(owner);}
+function persistReadingTimer(){
+  if(!SESSION) return;
+  try{
+    var key=readingTimerStorageKey(SESSION.userId);
+    if(readingTimer && readingTimer.userId===SESSION.userId) localStorage.setItem(key,JSON.stringify({v:1,timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn}));
+    else localStorage.removeItem(key);
+    readingTimerMemoryWarning=false;
+  }catch(e){readingTimerMemoryWarning=true;}
+}
+function syncReadingTimer(){
+  if(!SESSION) return;
+  if(readingTimerRestoreOwner!==SESSION.userId){
+    readingTimerRestoreOwner=SESSION.userId;readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingSaveBusy=false;readingEndPage=null;readingNoteReturn=null;
+    try{
+      var stored=JSON.parse(localStorage.getItem(readingTimerStorageKey(SESSION.userId))||'null');
+      readingTimer=GrowellReadingTimer.restore(stored && stored.timer,SESSION.userId,BOOKS.map(function(b){return b.id;}),Date.now());
+      if(readingTimer){
+        readingNoteReturn=GrowellReadingTimer.restoreNoteHandoff(stored.noteReturn,readingTimer);
+        readingSavePanelOpen=readingTimer.phase==='save';readingFinishKind=stored.finishKind==='complete'?'complete':'finish';
+        var attempt=stored.attempt, book=bookById(readingTimer.bookId);
+        if(stored.endPage!==null && stored.endPage!==undefined && GrowellReadingTimer.validatePages(readingTimer.startPage,stored.endPage,book.totalPages).ok) readingEndPage=Number(stored.endPage);
+        if(attempt && readingTimer.phase==='save' && attempt.id===readingTimer.id && attempt.userId===SESSION.userId && attempt.bookId===book.id && attempt.startPage===readingTimer.startPage && Number.isSafeInteger(attempt.seconds) && attempt.seconds>0 && attempt.seconds===Math.floor(GrowellReadingTimer.elapsed(readingTimer,Date.now())/1000) && Number.isSafeInteger(attempt.createdAt) && attempt.createdAt>=0 && GrowellReadingTimer.validatePages(attempt.startPage,attempt.page,book.totalPages).ok){
+          readingSaveAttempt={id:attempt.id,userId:attempt.userId,bookId:attempt.bookId,startPage:attempt.startPage,page:attempt.page,seconds:attempt.seconds,createdAt:attempt.createdAt};
+          readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());readingTimer.phase='save';readingSavePanelOpen=true;
+        }
+      }
+    }catch(e){/* Keep an unreadable stored session intact so it is never silently overwritten on load. */}
+  }
+  if(readingTimer){
+    var reached=readingTimer.goalReached;
+    readingTimer=GrowellReadingTimer.settle(readingTimer,Date.now());
+    if(readingTimer.goalReached && readingTimer.phase!=='save'){
+      readingTimer.phase='save';readingSavePanelOpen=true;readingCountdownOpen=false;readingNoteReturn=null;persistReadingTimer();
+      if(!reached)showToast('정한 독서 시간을 채웠어요. 어디까지 읽었는지 남겨주세요.');
+    }
+  }
+}
+function pauseReadingBeforeLogout(){
+  if(SESSION && readingTimer && readingTimer.userId===SESSION.userId){readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());persistReadingTimer();}
+  readingTimerRestoreOwner=null;readingSaveAttempt=null;readingSaveBusy=false;readingSaveError=false;readingCountdownOpen=false;readingEndPage=null;readingNoteReturn=null;
+}
+function startReading(bookId){
+  if(!SESSION){location.hash='#/login';return;}
+  syncReadingTimer();
+  var book=bookById(bookId);
+  if(!book || isBookLocked(book)) return;
+  if(!readingDataReady()){showToast('독서 진도를 불러온 뒤 시작해주세요.',true);return;}
+  if(readingTimer){
+    if(readingTimer.bookId!==bookId) showToast('읽고 있던 책을 먼저 이어서 읽거나 마무리해주세요.');
+    location.hash='#/book/'+readingTimer.bookId+'/mine';render();return;
+  }
+  readingTimer=GrowellReadingTimer.create({id:uid('rl'),userId:SESSION.userId,bookId:bookId,startPage:myCurrentPage(bookId)},Date.now());
+  readingTimerRestoreOwner=SESSION.userId;readingSavePanelOpen=false;readingSaveAttempt=null;readingSaveError=false;readingFinishKind='finish';readingEndPage=null;readingNoteReturn=null;
+  persistReadingTimer();location.hash='#/book/'+bookId+'/mine';render();
+}
+function todayReadSeconds(bookId){
+  var today=ymd(new Date());
+  return myReadingLogs(bookId).reduce(function(total,log){var seconds=Number(log.seconds);return total+(ymd(new Date(log.createdAt))===today && Number.isFinite(seconds) && seconds>0?seconds:0);},0);
+}
+function readingTimerSummaryHtml(book){
+  var active=readingTimer && SESSION && readingTimer.userId===SESSION.userId && readingTimer.bookId===book.id;
+  return '<div class="reading-home-stats"><span>오늘 <strong>'+fmtDurationHuman(todayReadSeconds(book.id))+'</strong></span><span>누적 <strong>'+fmtDurationHuman(totalReadSeconds(book.id))+'</strong></span></div>'+
+    (active?'<p class="reading-home-active">'+svgIcon(I_TIMER)+'<span>'+(readingSavePanelOpen?'저장할 독서 기록':readingTimer.running?'지금 읽는 중':'잠시 멈춤')+'</span><strong class="mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong></p>':'');
+}
+function activeReadingStripHtml(route){
+  if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || route.view==='home' || (route.view==='book' && route.bookId===readingTimer.bookId && route.tab==='mine' && !route.postId)) return '';
+  var book=bookById(readingTimer.bookId);if(!book)return '';
+  return '<aside class="reading-active-strip wrap" aria-label="진행 중인 독서"><span>'+svgIcon(I_TIMER)+esc(book.title)+(readingNoteReturn?' · 기록 중 잠시 멈춤':'')+'</span><strong class="mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong>'+(readingNoteReturn?'<button class="btn btn-sm" type="button" data-reading-return>타이머로 돌아가기</button>':'<a class="btn btn-sm" href="#/book/'+book.id+'/mine">'+(readingSavePanelOpen?'기록 저장하기':'타이머로 돌아가기')+'</a>')+'</aside>';
+}
+function readingCountdownHtml(){
+  var left=GrowellReadingTimer.remaining(readingTimer,Date.now()),minutes=left===null?20:Math.max(1,Math.min(1439,Math.ceil(left/60000)));
+  var h=Math.floor(minutes/60),m=minutes%60;
+  return '<div class="reading-countdown-settings"><h4>지금부터 얼마 동안 읽을까요?</h4><div class="reading-countdown-presets">'+[10,20,30].map(function(min){return '<button class="btn btn-sm" data-reading-minutes="'+min+'" type="button">'+min+'분</button>';}).join('')+'</div>'+
+    '<output class="reading-countdown-selection" id="reading-countdown-selection" for="reading-countdown-hours reading-countdown-minutes" aria-live="polite">'+h+'시간 '+m+'분</output>'+
+    '<div class="reading-countdown-sliders"><label for="reading-countdown-hours">시간 <span>0–23시간</span></label><input id="reading-countdown-hours" type="range" min="0" max="23" step="1" value="'+h+'" aria-valuetext="'+h+'시간"><label for="reading-countdown-minutes">분 <span>0–59분</span></label><input id="reading-countdown-minutes" type="range" min="0" max="59" step="1" value="'+m+'" aria-valuetext="'+m+'분"></div>'+
+    '<p>슬라이드를 움직여 시간을 정해요. 시간이 끝나면 읽은 쪽수를 선택할 수 있어요.</p><div class="reading-countdown-actions"><button class="btn btn-sm" id="btn-reading-countdown-clear" type="button">시간 제한 없이</button><button class="btn btn-primary btn-sm" id="btn-reading-countdown-save" type="button">설정하기</button></div></div>';
+}
+function readingNoteDialogHtml(){
+  return '<dialog class="reading-note-dialog" id="reading-note-dialog" aria-labelledby="reading-note-title"><div class="reading-note-dialog-head"><h3 id="reading-note-title">어디에 기록할까요?</h3><button class="icon-btn" id="btn-reading-note-close" type="button" aria-label="기록할 공간 선택 닫기">'+svgIcon(I_CLOSE)+'</button></div><p>작성하는 동안 타이머는 잠시 멈춰요.<br>저장하면 읽던 타이머로 돌아와요.</p><div class="reading-note-destinations"><button type="button" data-reading-destination="share">'+svgIcon(I_EDIT)+'<span><strong>나눔 공간</strong><small>모임원과 함께 나누는 이야기</small></span></button><button type="button" data-reading-destination="mine">'+svgIcon(I_LOCK)+'<span><strong>나의 공간</strong><small>나에게만 보이는 개인 기록</small></span></button></div></dialog>';
+}
+function openReadingNote(type){
+  if(!SESSION || !readingTimer || readingSaveBusy || readingSaveAttempt || readingNoteReturn)return;
+  var owner=SESSION.userId,timerId=readingTimer.id,bookId=readingTimer.bookId;
+  if(type==='mine' && memberLoadState.privateEntries!=='ready'){showToast('개인 기록을 먼저 불러온 뒤 다시 열어주세요.',true);return;}
+  var handoff=GrowellReadingTimer.beginNote(readingTimer,type,Date.now());
+  if(!handoff){syncReadingTimer();render();return;}
+  readingTimer=handoff.timer;readingNoteReturn=handoff.handoff;readingCountdownOpen=false;persistReadingTimer();
+  var opened=false;
+  return openComposerWithDraft(type,bookId,null,function(draft){
+    if(!SESSION || SESSION.userId!==owner || !readingTimer || readingTimer.id!==timerId)return;
+    if(!GrowellReadingTimer.restoreNoteHandoff(readingNoteReturn,readingTimer))return;
+    opened=true;
+    if(type==='mine'){mineComposerOpenFor=bookId;mineEditingId=null;mineEditingPayload=null;}
+    else{shareComposerOpenFor=bookId;shareEditingId=null;shareComposerInsightMode=!!(draft && draft.activeMode==='insight');var fields=draft && draft.variants[draft.activeMode];shareComposerNoteType=fields?fields.noteType:null;}
+    location.hash='#/book/'+bookId+'/'+type;render();
+    var editor=document.getElementById('note-editor');if(editor){editor.scrollIntoView({block:'center'});editor.focus();}
+  }).then(function(){
+    if(!opened && SESSION && SESSION.userId===owner && readingTimer && readingTimer.id===timerId){
+      var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());if(resumed)readingTimer=resumed;
+      readingNoteReturn=null;persistReadingTimer();render();
+    }
+  });
+}
+/* Call after a confirmed note save and draft completion, never when a save failed. */
+function completeReadingNote(type,bookId){
+  if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || !readingNoteReturn || readingNoteReturn.type!==type || readingNoteReturn.bookId!==bookId)return false;
+  var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());
+  if(!resumed)return false;
+  readingTimer=resumed;readingNoteReturn=null;persistReadingTimer();location.hash='#/book/'+bookId+'/mine';return true;
+}
+function returnToReadingTimer(){
+  if(!readingNoteReturn)return;
+  var type=readingNoteReturn.type,bookId=readingNoteReturn.bookId;
+  captureComposerDraft();
+  if(completeReadingNote(type,bookId)){if(type==='mine')resetMineComposer();else resetShareComposer();render();}
+}
+function tickReadingTimer(){
+  if(!readingTimer || !SESSION) return;
+  var running=readingTimer.running;syncReadingTimer();
+  if(!readingTimer)return;
+  if(running && !readingTimer.running){render();return;}
+  document.querySelectorAll('[data-reading-elapsed]').forEach(function(el){el.textContent=fmtElapsed(readingTimerElapsedMs());});
+  document.querySelectorAll('[data-reading-remaining]').forEach(function(el){el.textContent=fmtElapsed(GrowellReadingTimer.remaining(readingTimer,Date.now()));});
+}
+function bindReadingTimerEvents(){
+  var app=document.getElementById('app');
+  function on(id,fn){var el=document.getElementById(id);if(el)el.addEventListener('click',fn);}
+  app.querySelectorAll('[data-reading-start]').forEach(function(b){b.addEventListener('click',function(){startReading(b.getAttribute('data-reading-start'));});});
+  on('btn-reading-toggle-pause',function(){
+    if(!readingTimer || readingSaveBusy)return;
+    readingNoteReturn=null;
+    readingTimer=readingTimer.running?GrowellReadingTimer.pause(readingTimer,Date.now()):GrowellReadingTimer.resume(readingTimer,Date.now());
+    persistReadingTimer();render();
+  });
+  on('btn-reading-cancel',function(){
+    if(!readingTimer || readingSaveBusy || readingSaveAttempt)return;
+    if(!confirm('이번 독서를 취소할까요? 저장한 이전 기록은 유지되지만, 이번에 읽은 시간은 남지 않아요.'))return;
+    readingTimer=null;readingSavePanelOpen=false;readingCountdownOpen=false;readingSaveAttempt=null;readingNoteReturn=null;persistReadingTimer();render();
+  });
+  on('btn-reading-done',function(){
+    if(!readingTimer)return;
+    readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());readingTimer.phase='save';readingSavePanelOpen=true;readingCountdownOpen=false;readingNoteReturn=null;
+    persistReadingTimer();render();
+  });
+  on('btn-reading-save-back',function(){
+    if(!readingTimer || readingSaveAttempt)return;
+    readingTimer=GrowellReadingTimer.resume(readingTimer,Date.now());readingSavePanelOpen=false;persistReadingTimer();render();
+  });
+  on('btn-reading-countdown',function(){readingCountdownOpen=!readingCountdownOpen;render();});
+  function updateCountdownSelection(){
+    var hours=document.getElementById('reading-countdown-hours'),minutes=document.getElementById('reading-countdown-minutes');if(!hours || !minutes)return;
+    var h=Number(hours.value),m=Number(minutes.value);
+    document.getElementById('reading-countdown-selection').textContent=h+'시간 '+m+'분';hours.setAttribute('aria-valuetext',h+'시간');minutes.setAttribute('aria-valuetext',m+'분');
+    document.getElementById('btn-reading-countdown-save').disabled=GrowellReadingTimer.countdownDuration(hours.value,minutes.value)===null;
+  }
+  app.querySelectorAll('#reading-countdown-hours,#reading-countdown-minutes').forEach(function(el){el.addEventListener('input',updateCountdownSelection);});
+  app.querySelectorAll('[data-reading-minutes]').forEach(function(b){b.addEventListener('click',function(){document.getElementById('reading-countdown-hours').value='0';document.getElementById('reading-countdown-minutes').value=b.getAttribute('data-reading-minutes');updateCountdownSelection();});});
+  on('btn-reading-countdown-save',function(){
+    var h=document.getElementById('reading-countdown-hours').value.trim(),m=document.getElementById('reading-countdown-minutes').value.trim();
+    var duration=GrowellReadingTimer.countdownDuration(h,m);
+    if(duration===null){showToast('1분에서 23시간 59분 사이로 설정해주세요.',true);return;}
+    var next=GrowellReadingTimer.setCountdown(readingTimer,duration,Date.now());
+    if(!next)return;readingTimer=next;readingCountdownOpen=false;persistReadingTimer();render();
+  });
+  on('btn-reading-countdown-clear',function(){readingTimer=GrowellReadingTimer.clearCountdown(readingTimer,Date.now());readingCountdownOpen=false;persistReadingTimer();render();});
+  app.querySelectorAll('[data-reading-finish]').forEach(function(b){b.addEventListener('click',function(){if(readingSaveAttempt)return;readingFinishKind=b.getAttribute('data-reading-finish');persistReadingTimer();render();});});
+  var pageInput=document.getElementById('reading-log-page-input');
+  var pageSlider=document.getElementById('reading-log-page-slider');
+  function updateReadingPage(value){
+    if(!readingTimer || readingSaveAttempt)return;
+    var total=bookById(readingTimer.bookId).totalPages,result=GrowellReadingTimer.pageProgress(readingTimer.startPage,value,total);
+    document.getElementById('reading-page-delta').textContent=result.ok?readingTimer.startPage+' → '+result.page+'쪽 · 이번에 '+result.pagesRead+'쪽 읽음':result.error;
+    document.getElementById('btn-reading-log-save').disabled=!result.ok || readingSaveBusy;
+    if(result.ok){readingEndPage=result.page;readingFinishKind=result.page===bookById(readingTimer.bookId).totalPages?'complete':'finish';
+      if(pageSlider){pageSlider.value=String(result.page);pageSlider.setAttribute('aria-valuetext',result.page+'쪽, 전체의 '+result.percent+'퍼센트');}
+      pageInput.value=String(result.page);document.getElementById('reading-page-percentage').textContent=result.percent+'%';
+      app.querySelectorAll('[data-reading-page-step]').forEach(function(b){b.disabled=Number(b.getAttribute('data-reading-page-step'))<0?result.page<=readingTimer.startPage:result.page>=total;});
+      app.querySelectorAll('[data-reading-finish]').forEach(function(b){b.setAttribute('aria-pressed',String(b.getAttribute('data-reading-finish')===readingFinishKind));});
+      persistReadingTimer();}
+  }
+  if(pageInput)pageInput.addEventListener('input',function(){updateReadingPage(pageInput.value);});
+  if(pageSlider)pageSlider.addEventListener('input',function(){updateReadingPage(pageSlider.value);});
+  app.querySelectorAll('[data-reading-page-step]').forEach(function(b){b.addEventListener('click',function(){var total=bookById(readingTimer.bookId).totalPages;updateReadingPage(Math.max(readingTimer.startPage,Math.min(total,Number(pageSlider.value)+Number(b.getAttribute('data-reading-page-step')))));});});
+  on('btn-reading-log-save',function(){var btn=document.getElementById('btn-reading-log-save');submitReadingLog(btn.getAttribute('data-book'),0,pageInput.value,btn);});
+  app.querySelectorAll('[data-reading-note]').forEach(function(b){b.addEventListener('click',function(e){
+    e.preventDefault();if(readingNoteReturn)returnToReadingTimer();var dialog=document.getElementById('reading-note-dialog');if(dialog && !dialog.open)dialog.showModal();
+  });});
+  on('btn-reading-note-close',function(){document.getElementById('reading-note-dialog').close();});
+  app.querySelectorAll('[data-reading-destination]').forEach(function(b){b.addEventListener('click',function(){var dialog=document.getElementById('reading-note-dialog');if(dialog)dialog.close();openReadingNote(b.getAttribute('data-reading-destination'));});});
+  app.querySelectorAll('[data-reading-return]').forEach(function(b){b.addEventListener('click',returnToReadingTimer);});
+  app.querySelectorAll('#btn-close-share-composer,#btn-close-mine-composer').forEach(function(b){b.addEventListener('click',function(){if(readingNoteReturn)returnToReadingTimer();});});
+  if(readingTimerIntervalId)clearInterval(readingTimerIntervalId);
+  readingTimerIntervalId=readingTimer?setInterval(tickReadingTimer,1000):null;
+  if(!document._readingLifecycleBound){
+    document._readingLifecycleBound=true;
+    document.addEventListener('visibilitychange',function(){if(document.hidden)persistReadingTimer();else tickReadingTimer();});
+    window.addEventListener('pagehide',persistReadingTimer);
+    window.addEventListener('storage',function(e){
+      if(!SESSION||readingSaveBusy||e.key!==readingTimerStorageKey(SESSION.userId))return;
+      readingTimerRestoreOwner=null;syncReadingTimer();render();
+    });
+  }
 }
 function submitWorksheet(bookId, activityKey, data, btn, originalLabel){
   if(!SESSION){ showToast('먼저 로그인해주세요.', true); return; }
@@ -3092,6 +3463,7 @@ function footerHtml(){
   return '<footer class="footer"><div class="wrap">' +
     '<span>읽고 나누고 생각하며 자라는 우리<br>DBKS GROWELL 독서모임</span>' +
     '<span>관리자 정기성 전도사 · 010-7319-7580</span>' +
+    '<a href="privacy.html">개인정보처리방침</a>' +
   '</div></footer>';
 }
 
@@ -3102,8 +3474,9 @@ function adminUsersHtml(){
   }
   var users = Object.values(STATE.users).sort(function(a,b){ return b.createdAt-a.createdAt; });
   var rows = users.map(function(u){
-    var avatar = u.avatar
-      ? '<div class="avatar avatar-img"><img src="'+u.avatar+'" alt=""></div>'
+    var avatarUrl=GrowellProfile.safeAvatarUrl(u.avatar);
+    var avatar = avatarUrl
+      ? '<div class="avatar avatar-img"><img src="'+esc(avatarUrl)+'" alt=""></div>'
       : '<div class="avatar" style="background:var(--surface-2); color:var(--ink-faint)">'+esc(initials(u.name))+'</div>';
     var isSelf = SESSION && u.id===SESSION.userId;
     var action = u.isDeleted
@@ -3206,6 +3579,7 @@ function homeUnlockedIds(){
   return BOOKS.filter(function(book){ return !isBookLocked(book); }).map(function(book){ return book.id; });
 }
 function homeReadingBook(){
+  if(SESSION && typeof readingTimer!=='undefined' && readingTimer && readingTimer.userId===SESSION.userId){var activeBook=bookById(readingTimer.bookId);if(activeBook && !isBookLocked(activeBook))return activeBook;}
   return GrowellHome.selectReadingBook(BOOKS, STATE.readingMeta, SESSION && SESSION.userId,
     STATE.announcement.reading.bookId, homeUnlockedIds());
 }
@@ -3295,11 +3669,12 @@ function memberHomeHtml(){
     '<div class="home-reading-meta">'+page+' / '+book.totalPages+'쪽</div>' +
     '<div class="home-progress" role="progressbar" aria-label="읽은 분량" aria-valuenow="'+page+'" aria-valuemin="0" aria-valuemax="'+book.totalPages+'"><span style="width:'+(page/book.totalPages*100)+'%"></span></div>' +
     '<p class="home-next-page">'+(page>=book.totalPages?'끝까지 읽었어요.':(page+1)+'쪽부터 이어 읽어요.')+'</p></div></div>' +
-    '<a class="home-primary" href="#/book/'+book.id+'/mine">'+(page>=book.totalPages?'독서 기록 보기':'이어서 읽기')+'</a>' : '<p class="home-empty">아직 열린 책이 없어요. 모임 안내를 확인해주세요.</p>';
+    (user ? readingTimerSummaryHtml(book)+'<button class="home-primary" type="button" data-reading-start="'+book.id+'"'+(!readingDataReady()?' disabled':'')+'>'+svgIcon(I_TIMER)+(readingTimer?'타이머로 돌아가기':'타이머로 읽기 시작')+'</button><a class="home-link reading-home-record-link" href="#/book/'+book.id+'/mine">나의 독서 기록 →</a>' : '') : '<p class="home-empty">아직 열린 책이 없어요. 모임 안내를 확인해주세요.</p>';
   if(!user && book) reading='<div class="home-reading-book">'+cover+'<div class="home-reading-copy"><h2 class="home-book-title">'+esc(book.title)+'</h2>' +
     '<div class="home-reading-meta">함께 읽는 책 · '+book.totalPages+'쪽</div>' +
     '<p class="home-guest-hint">로그인하면 읽던 쪽부터 이어갈 수 있어요.</p></div></div>' +
     '<a class="home-primary" href="#/login">로그인하고 이어 읽기</a>';
+  if(user && !readingDataReady()) reading=memberDataStatusHtml('readingMeta')+memberDataStatusHtml('readingLogs')+'<p class="home-guest-hint">독서 진도를 불러오면 타이머로 바로 읽을 수 있어요.</p>';
   var habitBooks=Array.from(new Set(habits.map(function(h){return h.bookId;})));
   if(!habitBooks.length && book) habitBooks.push(book.id);
   var habitLinks=habitBooks.map(function(id){return '<a class="home-link" href="#/book/'+id+'/habit">'+(habitBooks.length>1 ? esc(bookById(id).title)+' 습관' : '습관 관리')+' →</a>';}).join('');
@@ -3405,9 +3780,151 @@ function welcomeHomeHtml(){
   '</section>';
 }
 
+/* ---------------- OAuth login and private-space unlock ---------------- */
+var oauthProviders={state:'loading',google:false,kakao:false};
+var oauthPending=null,oauthBusy=false,oauthMessage='',oauthWatcherBound=false;
+function hasSocialIdentity(user){
+  return !!(user && ((user.identities||[]).some(function(i){return i.provider==='google'||i.provider==='kakao';}) || ((user.app_metadata||{}).providers||[]).some(function(p){return p==='google'||p==='kakao';})));
+}
+function loadOAuthProviderSettings(){
+  return fetch(SUPABASE_URL+'/auth/v1/settings',{headers:{apikey:SUPABASE_ANON_KEY}}).then(function(r){if(!r.ok)throw new Error('provider-settings');return r.json();}).then(function(settings){
+    oauthProviders={state:'ready',google:!!(settings.external&&settings.external.google),kakao:!!(settings.external&&settings.external.kakao)};
+  }).catch(function(){oauthProviders={state:'error',google:false,kakao:false};}).then(function(){
+    var node=document.querySelector('[data-oauth-providers]');
+    if(node){node.outerHTML=socialSignupStatusHtml();bindOAuthEvents();}
+  });
+}
+function cleanOAuthCallbackUrl(){
+  var url=new URL(location.href);
+  ['code','error','error_code','error_description'].forEach(function(key){url.searchParams.delete(key);});
+  if(/(?:^#|&)(?:access_token|refresh_token|error)=/.test(url.hash))url.hash='#/login';
+  history.replaceState(null,'',url.pathname+url.search+url.hash);
+}
+function finishOAuthCallback(){
+  var url=new URL(location.href),code=url.searchParams.get('code');
+  if(url.searchParams.has('error')||/^#error=/.test(url.hash)){cleanOAuthCallbackUrl();return Promise.reject(new Error('oauth-cancelled'));}
+  if(!code)return Promise.resolve();
+  cleanOAuthCallbackUrl();
+  return sb.auth.exchangeCodeForSession(code).then(function(result){if(result.error)throw new Error('oauth-exchange-failed');});
+}
+function bindOAuthAuthWatcher(){
+  if(oauthWatcherBound || typeof sb.auth.onAuthStateChange!=='function')return;
+  oauthWatcherBound=true;
+  sb.auth.onAuthStateChange(function(event,session){
+    var expected=SESSION && STATE.users[SESSION.userId] && STATE.users[SESSION.userId].authUserId || oauthPending && oauthPending.authUserId;
+    if(event!=='SIGNED_OUT' && (!expected || session && session.user && session.user.id===expected))return;
+    var flow=authFlowEpoch;
+    // Supabase holds an Auth lock inside this callback; never await another Auth call here.
+    setTimeout(function(){
+      if(flow!==authFlowEpoch)return;
+      ++authFlowEpoch;resetSaveSession();clearMemberSession();oauthPending=null;oauthBusy=false;
+      oauthMessage=event==='SIGNED_OUT'?'로그아웃되었어요. 다시 로그인해주세요.':'다른 계정으로 로그인되어 기록 화면을 잠갔어요.';
+      if(!BOOTING)render();
+    },0);
+  });
+}
+async function prepareOAuthMember(user,flow){
+  var result=await sb.rpc('growell_oauth_profile');
+  if(flow!==authFlowEpoch)throw new Error('auth-flow-cancelled');
+  if(result.error||!result.data||!['new','legacy','ready'].includes(result.data.status))throw new Error('oauth-profile-failed');
+  var data=result.data;
+  if(data.profile && (data.profile.auth_user_id!==user.id||data.profile.is_deleted))throw new Error('oauth-profile-mismatch');
+  if(data.status!=='new'&&!data.profile)throw new Error('oauth-profile-missing');
+  if(data.status==='ready')GrowellOAuth.validateEnvelope(data.envelope,user.id);
+  var suggestedName='';
+  if(data.profile)suggestedName=data.profile.name;
+  else{
+    // Display suggestion only. Provider metadata never decides membership or administrator rights.
+    var metadata=user.user_metadata||{},nameFields=['preferred_username','full_name','name','nickname'];
+    for(var i=0;i<nameFields.length;i++){
+      var candidate=metadata[nameFields[i]];
+      if(typeof candidate==='string' && candidate.trim()){suggestedName=candidate.trim().slice(0,30);break;}
+    }
+  }
+  oauthPending={authUserId:user.id,status:data.status,profile:data.profile,envelope:data.envelope,name:suggestedName};
+  oauthMessage='';
+  return oauthPending;
+}
+async function startOAuth(provider,button){
+  if(oauthBusy||!['google','kakao'].includes(provider)||!oauthProviders[provider])return;
+  oauthBusy=true;oauthMessage='';if(button){button.disabled=true;button.textContent='로그인 화면으로 이동 중…';}
+  var flow=++authFlowEpoch,pending=resetSaveSession();clearMemberSession();oauthPending=null;
+  try{
+    await pending;if(flow!==authFlowEpoch)return;
+    try{sessionStorage.setItem('growell_oauth_return',/^#\/book\/[a-z]+\/(share|mine|worksheet|materials|habit)$/.test(location.hash)?location.hash:'#/');}catch(e){}
+    var redirect=new URL(location.href);redirect.search='';redirect.hash='';
+    var result=await sb.auth.signInWithOAuth({provider:provider,options:{redirectTo:redirect.href,skipBrowserRedirect:true}});
+    if(flow!==authFlowEpoch)return;
+    if(result.error||!result.data||!result.data.url)throw new Error('oauth-start-failed');
+    var target=new URL(result.data.url);
+    if(target.origin!==new URL(SUPABASE_URL).origin||target.pathname!=='/auth/v1/authorize')throw new Error('oauth-redirect-invalid');
+    location.assign(target.href);
+  }catch(e){if(flow===authFlowEpoch){oauthBusy=false;oauthMessage='간편 로그인 화면을 열지 못했어요. 잠시 후 다시 시도해주세요.';render();}}
+}
+async function completeOAuthMember(name,password,confirmation,button){
+  if(!oauthPending||oauthBusy)return false;
+  var pending=oauthPending,flow=authFlowEpoch;
+  function guard(){if(flow!==authFlowEpoch||oauthPending!==pending)throw new Error('auth-flow-cancelled');}
+  if(pending.status==='legacy'){oauthMessage='이 계정은 기존 아이디로 로그인해주세요.';return false;}
+  name=(name||'').trim();
+  if(pending.status==='new' && (!name||name.length>30)){showToast('별명은 1~30자로 입력해주세요.',true);return false;}
+  if(!password||password.length<8){showToast('개인 기록 비밀번호는 8자 이상으로 입력해주세요.',true);return false;}
+  if(pending.status==='new' && password!==confirmation){showToast('개인 기록 비밀번호가 서로 달라요.',true);return false;}
+  oauthBusy=true;if(button){button.disabled=true;button.textContent='기록을 준비하고 있어요…';}
+  try{
+    var verified=await sb.auth.getUser();guard();
+    if(verified.error||!verified.data||!verified.data.user||verified.data.user.id!==pending.authUserId)throw new Error('oauth-session-mismatch');
+    var response={status:pending.status,profile:pending.profile,envelope:pending.envelope};
+    if(pending.status==='new'){
+      var salt=GrowellOAuth.newSalt(),made=await GrowellOAuth.createVault(password,salt,pending.authUserId);guard();
+      var result=await sb.rpc('growell_oauth_register',{p_name:name,p_salt:salt,p_envelope:made.envelope});guard();
+      if(result.error||!result.data)throw new Error('oauth-register-failed');response=result.data;
+    }
+    if(response.status==='legacy'){pending.status='legacy';pending.profile=response.profile;throw new Error('oauth-legacy');}
+    if(response.status!=='ready'||!response.profile||response.profile.auth_user_id!==pending.authUserId||response.profile.is_deleted)throw new Error('oauth-profile-mismatch');
+    var keyB64=await GrowellOAuth.unlockVault(password,response.envelope,pending.authUserId);guard();
+    var profile=mapProfileRow(response.profile);STATE.users[profile.id]=profile;
+    SESSION={userId:profile.id,name:profile.name,keyB64:keyB64,authKind:'oauth'};
+    try{localStorage.setItem('growell_session',JSON.stringify(SESSION));}catch(e){}
+    await loadMemberData();guard();
+    oauthPending=null;oauthMessage='';oauthBusy=false;sharedPostsLoadState='idle';
+    var destination='#/';try{var saved=sessionStorage.getItem('growell_oauth_return');if(/^#\/book\/[a-z]+\/(share|mine|worksheet|materials|habit)$/.test(saved))destination=saved;sessionStorage.removeItem('growell_oauth_return');}catch(e){}
+    location.hash=destination;render();showToast(profile.name+'님, 환영해요.');return true;
+  }catch(error){
+    if(flow!==authFlowEpoch)return false;
+    oauthBusy=false;
+    oauthMessage=error.message==='oauth-legacy'?'기존 회원은 아이디와 비밀번호로 로그인해주세요.':/개인 기록|열쇠|비밀번호/.test(error.message)?error.message:'간편 가입을 마치지 못했어요. 입력한 기록은 변경하지 않았으니 다시 시도해주세요.';
+    var status=document.getElementById('oauth-status');if(status)status.textContent=oauthMessage;
+    if(button){button.disabled=false;button.textContent=pending.status==='new'?'가입하고 시작하기':'내 기록 열기';}
+    if(pending.status==='legacy')render();return false;
+  }
+}
+async function cancelOAuth(){
+  ++authFlowEpoch;var pending=resetSaveSession();clearMemberSession();oauthPending=null;oauthBusy=false;oauthMessage='';
+  await pending;await sb.auth.signOut().catch(function(){});authMode='login';location.hash='#/login';render();
+}
+function oauthMemberHtml(){
+  var pending=oauthPending,newMember=pending.status==='new';
+  if(pending.status==='legacy')return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>기존 아이디로 이어가세요</h2><p class="sub">이미 연결된 일반 회원 기록이 있어요. 기존 아이디와 비밀번호로 로그인하면 그대로 이어갈 수 있어요.</p><button class="btn btn-primary btn-block" data-oauth-cancel type="button">아이디 로그인으로 돌아가기</button></section></div></div>';
+  return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>'+(newMember?'마지막으로, 나만의 기록을 준비해요':'나의 기록을 열어주세요')+'</h2><p class="sub">'+(newMember?'별명과 개인 기록 비밀번호를 정하면 가입이 완료돼요.':'간편 로그인은 완료됐어요. 개인 기록 비밀번호로 나의 공간을 열어주세요.')+'</p>'+
+    (newMember?'<label class="field-label" for="oauth-name">별명</label><input id="oauth-name" maxlength="30" autocomplete="nickname" value="'+esc(pending.name||'')+'">':'<p class="profile-account-note">'+esc(pending.profile.name)+'님의 기록</p>')+
+    '<label class="field-label" for="oauth-password">개인 기록 비밀번호 (8자 이상)</label><input id="oauth-password" type="password" autocomplete="'+(newMember?'new-password':'current-password')+'">'+
+    (newMember?'<label class="field-label" for="oauth-confirm">개인 기록 비밀번호 확인</label><input id="oauth-confirm" type="password" autocomplete="new-password">':'')+
+    '<p class="profile-photo-help">Google·카카오 비밀번호와는 별개예요. 다른 기기에서도 이 비밀번호로 기록을 열어요. 가입 후 프로필에서 복구 파일을 보관해주세요.</p>'+
+    '<p id="oauth-status" class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button id="btn-oauth-complete" class="btn btn-primary btn-block" type="button">'+(newMember?'가입하고 시작하기':'내 기록 열기')+'</button><button class="btn btn-ghost btn-block" data-oauth-cancel type="button">다른 방법으로 로그인</button></section></div></div>';
+}
+function bindOAuthEvents(){
+  document.querySelectorAll('[data-oauth-provider]').forEach(function(button){if(button.dataset.oauthBound)return;button.dataset.oauthBound='1';button.addEventListener('click',function(){startOAuth(button.dataset.oauthProvider,button);});});
+  document.querySelectorAll('[data-oauth-cancel]').forEach(function(button){if(button.dataset.oauthBound)return;button.dataset.oauthBound='1';button.addEventListener('click',cancelOAuth);});
+  var button=document.getElementById('btn-oauth-complete');
+  if(button&&!button.dataset.oauthBound){button.dataset.oauthBound='1';button.addEventListener('click',function(){var name=document.getElementById('oauth-name'),confirmation=document.getElementById('oauth-confirm');completeOAuthMember(name?name.value:'',document.getElementById('oauth-password').value,confirmation?confirmation.value:'',button);});}
+  ['oauth-password','oauth-confirm'].forEach(function(id){var input=document.getElementById(id);if(input&&!input.dataset.oauthBound){input.dataset.oauthBound='1';input.addEventListener('keydown',function(event){if(event.key==='Enter'&&!event.isComposing){event.preventDefault();if(button)button.click();}});}});
+}
+
 /* ---------------- render: login ---------------- */
 var authMode = 'login';
 function loginHtml(){
+  if(oauthPending)return oauthMemberHtml();
   /* 비밀번호 찾기 화면은 로그인/가입 탭 밖의 별도 흐름이라 탭 바 없이 카드만 보여준다. */
   if(authMode==='forgot'){
     return '<div class="wrap"><div class="auth-wrap"><div class="card auth-card">'+forgotPasswordFormHtml()+'</div></div></div>';
@@ -3415,31 +3932,43 @@ function loginHtml(){
   return '<div class="wrap"><div class="auth-wrap">' +
     '<div class="auth-tabs">' +
       '<button type="button" data-auth-tab="login" class="'+(authMode==='login'?'is-active':'')+'">로그인</button>' +
-      '<button type="button" data-auth-tab="signup" class="'+(authMode==='signup'?'is-active':'')+'">아이디 만들기</button>' +
+      '<button type="button" data-auth-tab="signup" class="'+(authMode==='signup'?'is-active':'')+'">일반 회원가입</button>' +
     '</div>' +
-    '<div class="card auth-card">' +
+    '<div class="card auth-card">' +(oauthMessage?'<p class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p>':'')+
       (authMode==='login' ? loginFormHtml() : signupFormHtml()) +
     '</div>' +
   '</div></div>';
 }
 function loginFormHtml(){
-  return '<h2>반가워요</h2><p class="sub">아이디와 비밀번호로 로그인해주세요.</p>' +
+  return '<h2>다시 만나 반가워요</h2><p class="sub">로그인하고 독서모임과 나의 기록을 이어가세요.</p>' +
+    socialSignupStatusHtml()+'<div class="auth-email-heading">아이디로 로그인</div>' +
     '<label class="field-label" for="li-id">아이디</label><input type="text" id="li-id" autocomplete="username">' +
     '<label class="field-label" for="li-pw">비밀번호</label><input type="password" id="li-pw" autocomplete="current-password">' +
     '<button class="btn btn-primary btn-block" style="margin-top:18px" id="btn-do-login" type="button">로그인</button>' +
     '<button type="button" class="btn btn-ghost btn-block btn-sm" style="margin-top:8px" id="link-forgot-password">비밀번호를 잊으셨나요?</button>';
 }
+function socialSignupStatusHtml(){
+  return '<div class="auth-provider-list" data-oauth-providers aria-label="간편 로그인">'+['google','kakao'].map(function(provider){
+    var enabled=oauthProviders.state==='ready'&&oauthProviders[provider];
+    return '<button class="auth-provider'+(provider==='kakao'?' auth-provider-kakao':'')+'" data-oauth-provider="'+provider+'" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>'+(provider==='google'?'Google':'카카오')+'로 계속하기'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button>';
+  }).join('')+'<p class="auth-provider-note">'+(oauthProviders.google||oauthProviders.kakao?'처음이면 간편 가입으로, 이미 가입했다면 로그인으로 이어져요.':'간편 가입 연결을 준비하고 있어요. 일반 회원가입도 이용할 수 있어요.')+'</p></div>';
+}
+function profilePhotoPickerHtml(prefix, avatar){
+  var safe=GrowellProfile.safeAvatarUrl(avatar);
+  return '<div class="profile-photo-block"><div class="avatar-pick-row">'+
+    '<div class="avatar avatar-pick-preview" id="'+prefix+'-avatar-preview">'+(safe?'<img src="'+esc(safe)+'" alt="프로필 사진 미리보기">':svgIcon(I_IMG))+'</div>'+
+    '<button type="button" class="btn btn-sm" id="btn-'+prefix+'-avatar-pick">사진 선택</button>'+
+    '<button type="button" class="btn btn-ghost btn-sm" id="btn-'+prefix+'-avatar-clear"'+(safe?'':' hidden')+'>지우기</button>'+
+    '<input type="file" id="'+prefix+'-avatar-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden></div>'+
+    '<p class="profile-photo-help">사진은 둥글게 표시돼요. JPG·PNG·WEBP·GIF, 최대 15MB<br>선택한 사진의 가운데를 맞추고 가볍게 줄여서 저장해요.</p>'+
+    '<p class="profile-photo-status" id="'+prefix+'-avatar-status" role="status" aria-live="polite"></p></div>';
+}
 function signupFormHtml(){
-  var preview = pendingSignupAvatar ? '<img src="'+pendingSignupAvatar+'" alt="프로필 미리보기">' : svgIcon(I_IMG);
-  return '<h2>처음이신가요?</h2><p class="sub">별명과 간단한 아이디·비밀번호만 있으면 바로 시작할 수 있어요.</p>' +
+  return '<h2>함께 읽기 시작해요</h2><p class="sub">나눔 공간에는 생각을, 나의 공간에는 나만의 기록을 남겨보세요.</p>' +
+    socialSignupStatusHtml()+'<div class="auth-email-heading">일반 회원가입 · 아이디 만들기</div>' +
     '<label class="field-label" style="margin-top:0">프로필 사진 <span style="font-weight:400;color:var(--ink-faint)">(선택)</span></label>' +
-    '<div class="avatar-pick-row">' +
-      '<div class="avatar avatar-pick-preview" id="su-avatar-preview">'+preview+'</div>' +
-      '<button type="button" class="btn btn-sm" id="btn-su-avatar-pick">사진 선택</button>' +
-      (pendingSignupAvatar ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-su-avatar-clear">지우기</button>' : '') +
-      '<input type="file" id="su-avatar-input" accept="image/*" style="display:none">' +
-    '</div>' +
-    '<label class="field-label" for="su-name">별명 (나눔 글에 표시돼요)</label><input type="text" id="su-name" autocomplete="name">' +
+    profilePhotoPickerHtml('su',pendingSignupAvatar) +
+    '<label class="field-label" for="su-name">별명 (나눔 글에 표시돼요)</label><input type="text" id="su-name" autocomplete="name" maxlength="30">' +
     '<label class="field-label" for="su-id">아이디 <span style="font-weight:400;color:var(--ink-faint)">(영문·숫자로 만들어주세요)</span></label><input type="text" id="su-id" autocomplete="username" placeholder="예) growell01" pattern="[A-Za-z0-9_-]+">' +
     '<label class="field-label" for="su-pw">비밀번호 (8자 이상)</label><input type="password" id="su-pw" autocomplete="new-password">' +
     '<label class="field-label" for="su-pw2">비밀번호 확인</label><input type="password" id="su-pw2" autocomplete="new-password">' +
@@ -3464,28 +3993,24 @@ function forgotPasswordFormHtml(){
 function profileEditHtml(){
   var u = STATE.users[SESSION.userId] || {};
   var avatarSrc = pendingProfileAvatar!==undefined ? pendingProfileAvatar : (u.avatar||null);
-  var preview = avatarSrc ? '<img src="'+esc(avatarSrc)+'" alt="프로필 미리보기">' : svgIcon(I_IMG);
   return '<div class="wrap"><div class="auth-wrap">' +
     '<div class="card auth-card">' +
-      '<h2>프로필 수정</h2><p class="sub">별명과 프로필 사진을 바꿀 수 있어요.</p>' +
+      '<h2>내 프로필</h2><p class="sub">나를 표현하는 사진과 별명을 설정해요. 나눔 글과 댓글에도 함께 표시돼요.</p>' +
       '<label class="field-label" style="margin-top:0">프로필 사진 <span style="font-weight:400;color:var(--ink-faint)">(선택)</span></label>' +
-      '<div class="avatar-pick-row">' +
-        '<div class="avatar avatar-pick-preview" id="pe-avatar-preview">'+preview+'</div>' +
-        '<button type="button" class="btn btn-sm" id="btn-pe-avatar-pick">사진 선택</button>' +
-        (avatarSrc ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-pe-avatar-clear">지우기</button>' : '') +
-        '<input type="file" id="pe-avatar-input" accept="image/*" style="display:none">' +
-      '</div>' +
-      '<label class="field-label" for="pe-name">별명</label><input type="text" id="pe-name" value="'+esc(u.name||'')+'" autocomplete="name">' +
+      profilePhotoPickerHtml('pe',avatarSrc) +
+      '<label class="field-label" for="pe-name">별명</label><input type="text" id="pe-name" value="'+esc(u.name||'')+'" autocomplete="name" maxlength="30">' +
+      '<p class="profile-account-note"><strong>@'+esc(u.loginId||'')+'</strong> · '+(u.isAdmin?'관리자':'일반 회원')+'<br>사진과 별명을 저장하면 다른 기기에서도 같은 프로필로 보여요.</p>' +
       '<div style="display:flex; gap:8px; margin-top:18px">' +
         '<a href="#/" class="btn btn-ghost btn-block">취소</a>' +
         '<button class="btn btn-primary btn-block" id="btn-pe-save" type="button">저장</button>' +
       '</div>' +
       '<hr style="margin:22px 0; border:none; border-top:1px solid var(--line)">' +
+      (SESSION.authKind==='oauth'?'<p class="profile-account-note">간편가입 계정이에요. 개인 기록 비밀번호는 Google·카카오 비밀번호와 별개이며, 현재 변경·초기화 기능은 제공하지 않아요. 복구 파일을 먼저 보관해주세요.</p>':
       '<label class="field-label" style="margin-top:0" for="pe-hint">비밀번호 힌트 새로 등록/변경</label>' +
       '<p class="sub" style="margin-top:0; font-size:12.5px">보안을 위해 기존 힌트는 화면에 다시 표시되지 않아요. 바꾸고 싶을 때만 새로 입력해주세요.</p>' +
       '<input type="text" id="pe-hint" autocomplete="off" placeholder="비밀번호를 잊었을 때 본인 확인용">' +
-      '<button class="btn btn-block" style="margin-top:10px" id="btn-pe-hint-save" type="button">힌트 저장</button>' +
-      recoveryPanelHtml() +
+      '<button class="btn btn-block" style="margin-top:10px" id="btn-pe-hint-save" type="button">힌트 저장</button>') +
+      (SESSION.authKind==='oauth'?'<section class="card" style="padding:18px;margin-top:16px"><h3>개인 기록 복구 파일</h3><p class="sub">기록의 열쇠를 안전한 곳에 보관해주세요. 다른 사람에게 보내지 마세요.</p><button class="btn btn-block" id="btn-private-recovery-export" type="button">복구 파일 저장</button><p class="hint" id="private-recovery-status" role="status"></p></section>':recoveryPanelHtml()) +
     '</div>' +
   '</div></div>';
 }
@@ -3527,21 +4052,52 @@ function checkinPickerHtml(book, selected){
 /* ---------------- render: book share tab ---------------- */
 function avatarHtml(userId, name, accent){
   var u = userId && STATE.users[userId];
-  if(u && u.avatar){ return '<div class="avatar avatar-img"><img src="'+u.avatar+'" alt="'+esc(name)+'"></div>'; }
+  var avatarUrl=GrowellProfile.safeAvatarUrl(u && u.avatar);
+  if(avatarUrl){ return '<div class="avatar avatar-img"><img src="'+esc(avatarUrl)+'" alt="'+esc(name)+'" loading="lazy"></div>'; }
   return '<div class="avatar" style="background:var(--'+accent+'-soft); color:var(--'+accent+'-ink)">'+esc(initials(name))+'</div>';
 }
 /* 헤더 프로필 버튼용 아바타 — 특정 책의 accent 색이 아니라 중립 톤을 씀 */
 function headerAvatarHtml(){
   if(!SESSION) return '';
   var u = STATE.users[SESSION.userId];
-  if(u && u.avatar){ return '<span class="avatar avatar-img"><img src="'+u.avatar+'" alt="'+esc(SESSION.name)+'"></span>'; }
+  var avatarUrl=GrowellProfile.safeAvatarUrl(u && u.avatar);
+  if(avatarUrl){ return '<span class="avatar avatar-img"><img src="'+esc(avatarUrl)+'" alt="'+esc(SESSION.name)+'"></span>'; }
   return '<span class="avatar" style="background:var(--surface-2); color:var(--ink-soft)">'+esc(initials(SESSION.name))+'</span>';
 }
+/* 색 선택은 도구의 설정만 바꾸고, 주 아이콘을 눌렀을 때 선택한 본문에 적용한다. */
+var RT_TEXT_COLORS = [
+  {value:'#262319',label:'먹색'}, {value:'#A63A55',label:'빨강'},
+  {value:'#A4572D',label:'주황'}, {value:'#386344',label:'초록'},
+  {value:'#2D6694',label:'파랑'}, {value:'#7755A0',label:'보라'},
+  {value:'#737373',label:'회색'}, {value:'#FFFFFF',label:'흰색'}
+];
+var RT_SELECTED_COLORS = {text:RT_TEXT_COLORS[0].value, highlight:HL_COLORS[0]};
+var rtToolbarCleanup = null;
+function rtColorOptions(kind){
+  var names = ['노랑','민트','분홍','하늘','보라','살구'];
+  return kind==='highlight' ? HL_COLORS.map(function(value,i){ return {value:value,label:names[i]}; }) : RT_TEXT_COLORS;
+}
+function rtColorLabel(kind){ return kind==='highlight' ? '형광펜' : '글자색'; }
 function rtToolbarHtml(){
   function btn(cmd, label, content, extraClass){
-    return '<button type="button" class="rt-btn'+(extraClass?' '+extraClass:'')+'" data-rt-cmd="'+cmd+'" title="'+esc(label)+'">'+content+'</button>';
+    return '<button type="button" class="rt-btn'+(extraClass?' '+extraClass:'')+'" data-rt-cmd="'+cmd+'" title="'+esc(label)+'" aria-label="'+esc(label)+'">'+content+'</button>';
   }
-  return '<div class="rt-toolbar">' +
+  function colorSplit(kind,content){
+    var label=rtColorLabel(kind), color=RT_SELECTED_COLORS[kind];
+    return '<span class="rt-color-split" role="group" aria-label="'+label+'">' +
+      '<button type="button" class="rt-btn rt-color-apply" data-rt-apply="'+kind+'" style="--rt-color:'+color+'" title="선택한 글에 '+label+' 적용" aria-label="선택한 글에 '+label+' 적용">'+content+'</button>' +
+      '<button type="button" class="rt-btn rt-color-toggle" data-rt-palette="'+kind+'" aria-label="'+label+' 색 고르기" title="'+label+' 색 고르기" aria-expanded="false" aria-controls="rt-'+kind+'-palette">▾</button>' +
+    '</span>';
+  }
+  var palettes=['text','highlight'].map(function(kind){
+    return '<div class="rt-color-panel" id="rt-'+kind+'-palette" data-rt-color-panel="'+kind+'" role="group" aria-label="'+rtColorLabel(kind)+' 색상" hidden>' +
+      '<div class="rt-color-label">'+rtColorLabel(kind)+' 색상</div><div class="rt-color-swatches">' +
+      rtColorOptions(kind).map(function(option){
+        var selected=option.value===RT_SELECTED_COLORS[kind];
+        return '<button type="button" class="rt-color-swatch'+(selected?' is-sel':'')+'" data-rt-color-kind="'+kind+'" data-rt-color="'+option.value+'" aria-label="'+option.label+' '+rtColorLabel(kind)+' 선택" title="'+option.label+'" aria-pressed="'+selected+'"><span aria-hidden="true" style="--rt-color:'+option.value+'"></span></button>';
+      }).join('') + '</div><p class="rt-color-help">색을 고른 뒤 본문에서 글을 선택하고 '+rtColorLabel(kind)+' 아이콘을 눌러주세요.</p></div>';
+  }).join('');
+  return '<div class="rt-controls"><div class="rt-toolbar" role="toolbar" aria-label="글쓰기 서식 · 좌우로 넘겨 모든 도구 보기">' +
     btn('undo','실행 취소', svgIcon(I_UNDO)) +
     btn('redo','다시 실행', svgIcon(I_REDO)) +
     '<span class="rt-sep"></span>' +
@@ -3549,7 +4105,8 @@ function rtToolbarHtml(){
     btn('italic','기울임','I','rt-i') +
     btn('underline','밑줄','U','rt-u') +
     btn('strike','취소선','S','rt-s') +
-    btn('highlight','하이라이트 (다시 누르면 꺼져요)', svgIcon(I_MARKER)) +
+    colorSplit('text','<span class="rt-color-letter" aria-hidden="true">A</span>') +
+    colorSplit('highlight',svgIcon(I_MARKER)) +
     btn('fontsize','글자 크기','가') +
     '<span class="rt-sep"></span>' +
     btn('ol','번호 목록','1.') +
@@ -3558,10 +4115,109 @@ function rtToolbarHtml(){
     btn('code','코드','&lt;/&gt;') +
     btn('link','링크', svgIcon(I_LINK)) +
     btn('clear','서식 지우기', svgIcon(I_ERASE)) +
-  '</div>' +
-  '<div class="hl-swatches" id="hl-swatches" hidden>' + HL_COLORS.map(function(c,i){
-    return '<button type="button" class="hl-swatch'+(i===0?' is-sel':'')+'" data-hl-color="'+c+'" style="background:'+c+'" title="하이라이트 색"></button>';
-  }).join('') + '</div>';
+  '</div><p class="rt-toolbar-hint">도구를 좌우로 밀면 모든 서식을 사용할 수 있어요.</p>' + palettes + '</div>';
+}
+function bindRichTextToolbar(noteEditor){
+  if(rtToolbarCleanup){ rtToolbarCleanup(); rtToolbarCleanup=null; }
+  if(!noteEditor) return;
+  var controls=document.querySelector('.rt-controls');
+  if(!controls) return;
+  var savedRange=null, openPalette='', listeners=[];
+  function listen(target,type,fn){ target.addEventListener(type,fn); listeners.push(function(){target.removeEventListener(type,fn);}); }
+  function rememberSelection(){
+    var selection=window.getSelection();
+    if(selection && selection.rangeCount && noteEditor.contains(selection.anchorNode) && noteEditor.contains(selection.focusNode)) savedRange=selection.getRangeAt(0).cloneRange();
+  }
+  function restoreSelection(allowCaret){
+    rememberSelection();
+    var range=savedRange && noteEditor.contains(savedRange.startContainer) && noteEditor.contains(savedRange.endContainer) ? savedRange.cloneRange() : null;
+    if(!range){
+      if(!allowCaret) return null;
+      range=document.createRange(); range.selectNodeContents(noteEditor); range.collapse(false);
+    }
+    noteEditor.focus();
+    var selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    savedRange=range.cloneRange();
+    return selection;
+  }
+  function closePalette(){
+    openPalette='';
+    controls.querySelectorAll('[data-rt-color-panel]').forEach(function(el){ el.hidden=true; });
+    controls.querySelectorAll('[data-rt-palette]').forEach(function(button){ button.setAttribute('aria-expanded','false'); });
+  }
+  function updateColors(){
+    controls.querySelectorAll('[data-rt-apply]').forEach(function(button){
+      var kind=button.getAttribute('data-rt-apply'), color=RT_SELECTED_COLORS[kind];
+      var option=rtColorOptions(kind).filter(function(o){return o.value===color;})[0];
+      var label='선택한 글에 '+option.label+' '+rtColorLabel(kind)+' 적용';
+      button.style.setProperty('--rt-color',color); button.setAttribute('title',label); button.setAttribute('aria-label',label);
+    });
+    controls.querySelectorAll('[data-rt-color]').forEach(function(button){
+      var selected=button.getAttribute('data-rt-color')===RT_SELECTED_COLORS[button.getAttribute('data-rt-color-kind')];
+      button.classList.toggle('is-sel',selected); button.setAttribute('aria-pressed',String(selected));
+    });
+  }
+  function applyColor(kind){
+    var selection=restoreSelection(false);
+    if(!selection || selection.isCollapsed){ showToast('색을 적용할 글을 먼저 선택해주세요.',true); return; }
+    var cssMode=false, applied=false;
+    try{
+      if(document.queryCommandState) cssMode=!!document.queryCommandState('styleWithCSS');
+      // CSS 서식으로 적용하되, 이후 입력으로 생기는 FONT의 안전한 색상도 sanitizer가 보존한다.
+      document.execCommand('styleWithCSS',false,true);
+      applied=document.execCommand(kind==='highlight'?'hiliteColor':'foreColor',false,RT_SELECTED_COLORS[kind]);
+      if(applied===false && kind==='highlight') applied=document.execCommand('backColor',false,RT_SELECTED_COLORS[kind]);
+    }catch(err){ applied=false; }
+    finally{ try{document.execCommand('styleWithCSS',false,cssMode);}catch(err){} }
+    rememberSelection(); closePalette();
+    if(applied===false) showToast('색을 적용하지 못했어요. 글을 다시 선택해주세요.',true);
+    else captureComposerDraft();
+  }
+  function runCommand(cmd){
+    restoreSelection(true);
+    try{
+      if(cmd==='bold') document.execCommand('bold');
+      else if(cmd==='italic') document.execCommand('italic');
+      else if(cmd==='underline') document.execCommand('underline');
+      else if(cmd==='strike') document.execCommand('strikeThrough');
+      else if(cmd==='ol') document.execCommand('insertOrderedList');
+      else if(cmd==='ul') document.execCommand('insertUnorderedList');
+      else if(cmd==='quote') document.execCommand('formatBlock',false,'blockquote');
+      else if(cmd==='code') document.execCommand('formatBlock',false,'pre');
+      else if(cmd==='clear') document.execCommand('removeFormat');
+      else if(cmd==='undo') document.execCommand('undo');
+      else if(cmd==='redo') document.execCommand('redo');
+      else if(cmd==='fontsize') document.execCommand('fontSize',false,'5');
+      else if(cmd==='link'){
+        var url=window.prompt('연결할 링크 주소를 입력해주세요 (https://...)');
+        if(url){if(!/^https?:\/\//i.test(url)) url='https://'+url;restoreSelection(true);document.execCommand('createLink',false,url);}
+      }
+    }catch(err){}
+    rememberSelection(); closePalette(); captureComposerDraft();
+  }
+  listen(controls,'pointerdown',function(event){ if(event.target.closest('button')){rememberSelection();event.preventDefault();} });
+  listen(controls,'mousedown',function(event){ if(event.target.closest('button')){rememberSelection();event.preventDefault();} });
+  listen(controls,'click',function(event){
+    var button=event.target.closest('button'); if(!button || !controls.contains(button)) return;
+    if(button.hasAttribute('data-rt-palette')){
+      var kind=button.getAttribute('data-rt-palette'), opening=openPalette!==kind;
+      closePalette();
+      if(opening){openPalette=kind;controls.querySelector('[data-rt-color-panel="'+kind+'"]').hidden=false;button.setAttribute('aria-expanded','true');}
+    }else if(button.hasAttribute('data-rt-color')){
+      var selectedKind=button.getAttribute('data-rt-color-kind'), value=button.getAttribute('data-rt-color');
+      if(rtColorOptions(selectedKind).some(function(option){return option.value===value;})) RT_SELECTED_COLORS[selectedKind]=value;
+      updateColors(); closePalette();
+    }else if(button.hasAttribute('data-rt-apply')) applyColor(button.getAttribute('data-rt-apply'));
+    else if(button.hasAttribute('data-rt-cmd')) runCommand(button.getAttribute('data-rt-cmd'));
+  });
+  listen(document,'selectionchange',rememberSelection);
+  listen(document,'pointerdown',function(event){ if(!controls.contains(event.target)) closePalette(); });
+  listen(document,'keydown',function(event){
+    if(event.key==='Escape' && openPalette){var button=controls.querySelector('[data-rt-palette="'+openPalette+'"]');closePalette();event.preventDefault();if(button)button.focus();}
+  });
+  listen(noteEditor,'keyup',rememberSelection); listen(noteEditor,'mouseup',rememberSelection);
+  updateColors();
+  rtToolbarCleanup=function(){listeners.forEach(function(remove){remove();});};
 }
 /* 나눔 공간 / 나의 공간 글쓰기에서 텍스트 박스 배경색을 고르는 스와치 줄 */
 function bgColorPickerHtml(selected){
@@ -3645,12 +4301,13 @@ function noteComposerHtml(book, opts){
   if(opts.insightMode){
     bodyHtml = insightFieldsHtml(editing||{}) + insightBgPickerHtml(editing?editing.bgColor:'');
   } else {
-    var photoPreviewInner = (editing && editing.photo) ? ('<div class="thumb"><img src="'+editing.photo.dataUrl+'"><button type="button" id="btn-photo-remove">&times;</button></div>') : '';
+    var previewPhoto=safePhotoUrl(editing && editing.photo && editing.photo.dataUrl);
+    var photoPreviewInner = previewPhoto ? ('<div class="thumb"><img src="'+esc(previewPhoto)+'" alt="첨부 사진 미리보기"><button type="button" id="btn-photo-remove">&times;</button></div>') : '';
     bodyHtml =
       (opts.withCheckin ? checkinPickerHtml(book, editing?editing.checkin:null) : '') +
       (opts.editorLabel ? '<label class="field-label" for="note-editor">'+esc(opts.editorLabel)+'</label>' : '') +
       rtToolbarHtml() +
-      '<div class="note-editor" id="note-editor" contenteditable="true" data-placeholder="'+esc(opts.placeholder)+'">'+(editing?(editing.html||''):'')+'</div>' +
+      '<div class="note-editor" id="note-editor" contenteditable="true" role="textbox" aria-label="글 내용" aria-multiline="true" data-placeholder="'+esc(opts.placeholder||'마음에 남은 문장과 생각을 자유롭게 적어보세요.')+'">'+(editing?(editing.html||''):'')+'</div>' +
       '<div class="photo-attach" id="photo-attach">' +
         '<button type="button" class="btn btn-sm" id="btn-photo-pick">'+svgIcon(I_IMG)+' 사진 첨부</button>' +
         '<input type="file" id="note-photo-input" accept="image/*" style="display:none">' +
@@ -3661,6 +4318,7 @@ function noteComposerHtml(book, opts){
   }
 
   return '<div class="card composer" id="'+opts.containerId+'" data-book="'+book.id+'" data-draft-key="'+esc(draftKey)+'" data-draft-type="'+draftType+'" data-draft-edit="'+esc(draftEditId||'')+'" data-draft-user="'+esc(SESSION && SESSION.userId||'')+'" data-draft-mode="'+draftMode+'" style="--accent-c:var(--'+book.accent+'); --accent-soft:var(--'+book.accent+'-soft); --accent-ink:var(--'+book.accent+'-ink)">' +
+    '<div class="space-composer-label">'+svgIcon(draftType==='mine'?I_LOCK:I_COMMENT)+' '+esc(book.area)+' · '+(draftType==='mine'?'나의 공간 · 나에게만 공개':draftType==='materials'?'자료실 · 모임원에게 공개':'나눔 공간 · 모임원에게 공개')+'</div>' +
     '<div class="composer-head"><h3>'+esc(opts.heading)+'</h3><button type="button" class="composer-close" id="'+opts.closeId+'" title="닫기" aria-label="닫기">'+svgIcon(I_CLOSE)+'</button></div>' +
     titleFieldHtml +
     '<div class="note-meta">' + ntSetHtml + pageFieldHtml + '</div>' +
@@ -3740,7 +4398,8 @@ function noteBodyHtml(payload){
      this icon-only, note-type-only variant (no page badge) — the full badgesHtml (with the
      page badge) is reserved for the roomier detail view. */
   var badgesCompactHtml = ntBadge ? '<div class="post-badges post-badges-compact">'+ntBadge+'</div>' : '';
-  var hasPhoto = !!payload.photo;
+  var photoUrl=safePhotoUrl(payload.photo && payload.photo.dataUrl);
+  var hasPhoto = !!photoUrl;
   /* 나눔공간/나의 공간 글은 배경색을 직접 고를 수 있다(payload.bgColor) — 사진이 없을 때만
      보이는 이 텍스트 박스에 적용되고, 고르지 않았으면 예전처럼 기본 배경(--surface-2)을 쓴다.
      임의의 색 위에서도 글자가 항상 읽히도록 배경을 지정했을 때는 글자색을 고정 잉크색으로 둔다. */
@@ -3762,7 +4421,7 @@ function noteBodyHtml(payload){
      badges are rendered separately (badgesHtml) so callers can place them in the header
      row next to the name, instead of inside this media box. */
   var mediaHtml = hasPhoto
-    ? '<div class="post-media"><img src="'+payload.photo.dataUrl+'" alt="첨부 사진" loading="lazy"></div>'
+    ? '<div class="post-media"><img src="'+esc(photoUrl)+'" alt="첨부 사진" loading="lazy"></div>'
     : '<div class="post-media post-media-text'+(titleText?' has-title':'')+'"'+bgStyle+'>'+titleHtml+'<div class="'+textClass+'">'+bodyHtml+'</div></div>';
   return {
     ntKey: nt ? nt.key : '',
@@ -3820,7 +4479,6 @@ function applyFeedSearch(gridId){
 function feedToolbarHtml(book, filterKey, count){
   var chips = [{key:'all', label:'전체'}].concat(NOTE_TYPES.concat([NOTE_TYPE_INSIGHT]).map(function(t){ return {key:t.key, label:t.label}; }));
   return '<div class="feed-toolbar">' +
-    '<span class="feed-count"><strong>'+count+'</strong>개의 나눔</span>' +
     '<div class="feed-filters" id="feed-filters" data-book="'+book.id+'">' + chips.map(function(c){
       return '<button type="button" class="feed-filter'+(filterKey===c.key?' is-sel':'')+'" data-filter="'+c.key+'">'+esc(c.label)+'</button>';
     }).join('') + '</div>' +
@@ -3853,19 +4511,36 @@ function sharePostCardHtml(book, p){
   '</div>';
 }
 function sharePostTileHtml(book, p){
-  var nb = noteBodyHtml(p);
   var plain = p.noteType==='insight' ? INSIGHT_QUESTIONS.map(function(q){ return p[q.key]||''; }).join(' ') : (p.html!=null ? stripHtml(p.html) : '');
-  var searchText = (plain+' '+p.userName).toLowerCase();
+  var searchText = (p.title+' '+plain+' '+p.userName).toLowerCase();
   var commentCount = commentsForPost(p.id).length;
-  /* 타일 맨 아래의 "N번째 모임" 배지는 제거(요청 반영) — 이제 타일엔 제목만 보이고, 몇 번째
-     모임인지는 상세보기로 들어가면 제목/본문에서 확인할 수 있다. meetingBadgeHtml은 상세보기
-     쪽(sharePostCardHtml → postActionsHtml)에서는 그대로 쓰인다. */
-  var footItems = (commentCount ? '<span class="feed-tile-count">'+svgIcon(I_COMMENT)+commentCount+'</span>' : '');
-  return '<a class="card feed-tile'+(nb.ntKey?' nt-'+nb.ntKey:'')+'" href="#/book/'+book.id+'/share/post/'+p.id+'" data-search-text="'+esc(searchText)+'">' +
-    '<div class="feed-tile-head">'+avatarHtml(p.userId, p.userName, book.accent)+'<span class="feed-tile-name">'+esc(p.userName)+'</span>'+nb.badgesCompactHtml+'</div>' +
-    nb.mediaHtml +
-    (commentCount ? '<div class="feed-tile-foot">'+footItems+'</div>' : '') +
-  '</a>';
+  var href='#/book/'+book.id+'/share/post/'+p.id;
+  return '<article class="card feed-tile" data-search-text="'+esc(searchText)+'">' +
+    '<div class="feed-tile-head">'+avatarHtml(p.userId,p.userName,book.accent)+'<span class="feed-tile-name" title="'+esc(p.userName)+'">'+esc(p.userName)+'</span><span class="space-post-date" title="'+esc(fmtDate(p.createdAt))+'">'+esc(fmtPostDate(p.createdAt))+'</span>'+spaceNoteTypeHtml(p)+'</div>' +
+    spaceStoryHtml(p,href) +
+    '<div class="feed-tile-foot"><span class="feed-tile-count">'+svgIcon(I_COMMENT)+' 댓글 '+commentCount+'</span><a class="space-read-more" href="'+esc(href)+'" aria-label="'+esc(p.title||'나눔 글')+' 더 읽기">더 읽기 →</a></div>' +
+  '</article>';
+}
+function spaceNoteTypeHtml(payload){
+  var nt=payload.noteType==='insight'?NOTE_TYPE_INSIGHT:noteTypeOf(payload.noteType);
+  return nt?'<span class="space-note-type">'+esc(nt.label)+'</span>':'';
+}
+function spaceStoryHtml(payload,href){
+  var title=String(payload.title||'').trim()||(payload.noteType==='insight'?'함께 읽으며 정리한 통찰':'마음에 남은 기록');
+  var body=payload.html!=null?sanitizeHtml(payload.html):nlToBr(payload.text||'');
+  if(payload.noteType==='insight')body=INSIGHT_QUESTIONS.map(function(q,i){return payload[q.key]?'<div class="space-insight-row"><small>'+['느낀 점','통찰','적용'][i]+'</small><span>'+nlToBr(payload[q.key])+'</span></div>':'';}).join('');
+  var photo=safePhotoUrl(payload.photo && payload.photo.dataUrl),hasPhoto=!!photo;
+  var background=BG_COLORS.some(function(c){return c.key&&c.key===payload.bgColor;})?payload.bgColor:'';
+  var style=background&&!hasPhoto?' style="background:'+esc(background)+';color:#262319"':'';
+  return '<div class="space-story">'+(hasPhoto?'<div class="space-photo"><img src="'+esc(photo)+'" alt="'+esc(title)+' 첨부 사진" loading="lazy"><a class="space-photo-link" href="'+esc(href)+'">사진 크게 보기</a></div>':'')+'<div class="space-story-copy"'+style+'><h3>'+esc(title)+'</h3><div class="space-story-preview rich-content">'+body+'</div></div></div>';
+}
+function spaceHeadingHtml(book,type){
+  var privateSpace=type==='mine';
+  return '<div class="space-head"><div><h2>'+(privateSpace?'나를 위한 기록':'함께 나누는 이야기')+'</h2><p>'+(privateSpace?'나의 문장과 사진, 솔직한 마음을 차곡차곡.':'한 문장도, 한 장의 사진도 좋은 시작이에요.')+'</p></div><button class="btn btn-primary" type="button" id="btn-open-'+type+'-composer" data-book="'+book.id+'">'+svgIcon(I_EDIT)+' '+(privateSpace?'나의 기록 쓰기':'생각 나누기')+'</button></div>';
+}
+function spacePromptHtml(book){
+  var questions={emotion:'최근 내 마음에 이름을 붙여 준 순간이 있었나요?',thought:'책 속의 어떤 생각이 나의 시선을 바꾸었나요?',body:'오늘 몸이 나에게 보내는 신호는 무엇인가요?',action:'이번 주에 작게 실천해 보고 싶은 것은 무엇인가요?'};
+  return '<div class="space-prompt">'+svgIcon(I_COMMENT)+'<div><small>이번 책으로 함께 생각해요</small><strong>'+esc(questions[book.id]||book.checkin.prompt||'책을 읽으며 어떤 생각이 떠올랐나요?')+'</strong></div><button class="btn btn-ghost" type="button" data-space-prompt="'+book.id+'">내 생각 남기기 →</button></div>';
 }
 function shareTabHtml(book, postId){
   if(postId){
@@ -3884,21 +4559,23 @@ function shareTabHtml(book, postId){
           submitLabel: shareEditingPost?'수정하기':'나누기', withBgColor:true, withFontSize:true,
           extraNoteTypes:[NOTE_TYPE_INSIGHT], selectedNoteType:shareComposerNoteType, insightMode:shareComposerInsightMode,
           editingPost:shareEditingPost})
-      : noteCtaHtml(book, {openId:'btn-open-share-composer', icon:I_BULB, label:'생각 나눔', sub:'오늘 읽으며 느낀 점을 나눠보세요'});
+      : spaceHeadingHtml(book,'share')+spacePromptHtml(book);
   } else {
     composer = loginGateHtml('나눔 공간에 글을 쓰려면 로그인해주세요.');
   }
   var allPosts = Object.values(STATE.posts).filter(function(p){ return p.bookId===book.id; }).sort(function(a,b){ return b.createdAt-a.createdAt; });
+  if(sharedPostsLoadState==='loading')return composer+'<div class="empty" role="status">모임의 글을 불러오는 중이에요…</div>';
+  if(sharedPostsLoadState==='error')return composer+'<div class="empty" role="alert">글을 불러오지 못했어요. <button class="btn" type="button" data-retry-community>다시 불러오기</button></div>';
   var filterKey = shareFeedFilter[book.id] || 'all';
   var posts = filterKey==='all' ? allPosts : allPosts.filter(function(p){ return p.noteType===filterKey; });
-  var toolbar = allPosts.length ? feedToolbarHtml(book, filterKey, posts.length) : '';
+  var toolbar = feedToolbarHtml(book, filterKey, posts.length);
   var gridId = 'share-grid-'+book.id;
   var searchRow = allPosts.length ? feedSearchHtml(gridId, '나눔 글 검색') : '';
   var grid = posts.length
     ? '<div class="feed-grid" id="'+gridId+'">'+posts.map(function(p){ return sharePostTileHtml(book, p); }).join('')+'</div>' +
       '<div class="empty feed-empty-search" id="empty-'+gridId+'" style="display:none">검색 결과가 없어요.</div>'
     : (allPosts.length ? '<div class="empty">이 타입의 나눔이 아직 없어요.</div>' : '<div class="empty">아직 나눈 이야기가 없어요. 첫 번째 나눔을 남겨보세요.</div>');
-  return composer + toolbar + searchRow + grid;
+  return composer + '<div class="space-filter-row">'+toolbar+searchRow+'</div><p class="space-feed-count">최근 나눈 이야기 '+posts.length+'개 · 최신순</p>' + grid;
 }
 
 function loginGateHtml(msg){
@@ -3916,11 +4593,11 @@ function mineEntryDetailHtml(book, e){
   '</div>';
 }
 function mineEntryTileHtml(book, e){
-  return '<a class="card feed-tile" href="#/book/'+book.id+'/mine/post/'+e.id+'" data-mine-tile="'+e.id+'" data-search-text="">' +
-    '<div class="feed-tile-head" data-mine-tile-badges="'+e.id+'" style="justify-content:flex-end"></div>' +
-    '<div class="post-media" data-mine-tile-media><div class="tile-loading">불러오는 중…</div></div>' +
-    '<div class="feed-tile-foot"><span class="feed-tile-name mono">'+fmtDate(e.createdAt)+'</span></div>' +
-  '</a>';
+  return '<article class="card feed-tile" data-mine-tile="'+e.id+'" data-search-text="">' +
+    '<div class="feed-tile-head">'+avatarHtml(SESSION.userId,SESSION.name,book.accent)+'<span class="feed-tile-name">나의 기록</span><span class="space-post-date" title="'+esc(fmtDate(e.createdAt))+'">'+esc(fmtPostDate(e.createdAt))+'</span><span data-mine-tile-badges="'+e.id+'"></span></div>' +
+    '<div class="space-story-copy" data-mine-tile-media><div class="tile-loading">기록을 여는 중…</div></div>' +
+    '<div class="feed-tile-foot"><span>'+svgIcon(I_LOCK)+' 나에게만 공개</span><a class="space-read-more" href="#/book/'+book.id+'/mine/post/'+e.id+'">기록 열기 →</a></div>' +
+  '</article>';
 }
 /* ---------------- render: 나의 공간 독서 진행률 카드 ---------------- */
 function readingChevronHtml(open){
@@ -3973,18 +4650,28 @@ function readingStatusBodyHtml(book){
 }
 function readingCardHtml(book){
   if(!SESSION) return '';
+  if(!readingDataReady()) return '<div class="card reading-card">'+memberDataStatusHtml('readingMeta')+memberDataStatusHtml('readingLogs')+'</div>';
   var total = book.totalPages || 0;
   var current = myCurrentPage(book.id);
 
+  if(readingNoteReturn && readingTimer && readingTimer.bookId===book.id && mineComposerOpenFor===book.id){
+    return '<div class="card reading-note-paused"><span>'+svgIcon(I_TIMER)+' 기록 중에는 타이머가 잠시 멈춰요.</span><strong data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong><button type="button" class="btn btn-sm" data-reading-return>타이머로 돌아가기</button></div>';
+  }
   /* 완료 → 저장 화면: 경과 시간은 자동, 페이지만 확인/수정하고 저장 (총 페이지는 책마다 고정값) */
   if(readingSavePanelOpen && readingTimer && readingTimer.bookId===book.id){
     var elapsedSave = readingTimerElapsedMs();
+    var endPage=readingSaveAttempt?readingSaveAttempt.page:(readingFinishKind==='complete'?total:readingEndPage!==null?readingEndPage:Math.max(current,readingTimer.startPage));
+    var pageProgress=GrowellReadingTimer.pageProgress(readingTimer.startPage,endPage,total);
     return '<div class="card reading-card reading-save-card">' +
-      '<div class="composer-head"><h3>읽은 기록 저장</h3><button type="button" class="composer-close" id="btn-reading-save-back" title="닫기">'+svgIcon(I_CLOSE)+'</button></div>' +
-      '<div class="reading-save-time mono">'+fmtElapsed(elapsedSave)+'</div>' +
-      '<label class="field-label" for="reading-log-page-input">어디까지 읽으셨나요? <span class="hint">(총 '+total+'페이지)</span></label>' +
-      '<input type="text" inputmode="numeric" id="reading-log-page-input" placeholder="예) 56" value="'+(current?esc(String(current)):'')+'">' +
-      '<div class="composer-foot"><span class="hint">읽은 시간이 자동으로 함께 저장돼요</span><button type="button" class="btn btn-primary" id="btn-reading-log-save" data-book="'+book.id+'">저장</button></div>' +
+      '<div class="composer-head"><h3>읽은 기록 저장</h3><button type="button" class="btn btn-sm" id="btn-reading-save-back"'+(readingSaveAttempt?' disabled':'')+'>조금 더 읽기</button></div>' +
+      '<p class="reading-save-book">'+esc(book.title)+'</p><div class="reading-save-duration"><span>이번에 읽은 시간</span><strong class="mono">'+fmtElapsed(elapsedSave)+'</strong></div>' +
+      '<div class="reading-finish-options" role="group" aria-label="독서 마무리"><button class="btn btn-sm" data-reading-finish="finish" type="button" aria-pressed="'+(readingFinishKind==='finish')+'"'+(readingSaveAttempt?' disabled':'')+'>오늘은 여기까지</button><button class="btn btn-sm" data-reading-finish="complete" type="button" aria-pressed="'+(readingFinishKind==='complete')+'"'+(readingSaveAttempt?' disabled':'')+'>'+svgIcon(I_CHECK)+' 이 책 다 읽었어요</button></div>' +
+      '<label class="field-label" for="reading-log-page-slider">어디까지 읽으셨나요? <span class="hint">슬라이드를 움직이거나 숫자로 입력해주세요.</span></label>' +
+      '<div class="reading-page-entry"><label class="reading-page-number"><input type="number" min="'+readingTimer.startPage+'" max="'+total+'" step="1" inputmode="numeric" id="reading-log-page-input" aria-label="읽은 마지막 쪽수" value="'+endPage+'"'+(readingSaveAttempt?' readonly':'')+'><span>/ '+total+'쪽</span></label><strong class="reading-page-percentage" id="reading-page-percentage" aria-live="polite">'+pageProgress.percent+'%</strong></div>' +
+      '<div class="reading-page-slider-row"><button type="button" class="btn" data-reading-page-step="-1" aria-label="한 쪽 줄이기"'+(readingSaveAttempt || endPage<=readingTimer.startPage?' disabled':'')+'>−</button><input id="reading-log-page-slider" type="range" min="'+readingTimer.startPage+'" max="'+total+'" step="1" value="'+endPage+'" aria-valuetext="'+endPage+'쪽, 전체의 '+pageProgress.percent+'퍼센트"'+(readingSaveAttempt?' disabled':'')+'><button type="button" class="btn" data-reading-page-step="1" aria-label="한 쪽 늘리기"'+(readingSaveAttempt || endPage>=total?' disabled':'')+'>+</button></div>'+
+      '<p class="reading-page-delta" id="reading-page-delta" aria-live="polite">'+readingTimer.startPage+' → '+endPage+'쪽 · 이번에 '+(endPage-readingTimer.startPage)+'쪽 읽음</p>' +
+      (readingSaveError?'<p class="reading-save-error" role="alert">저장 완료를 확인하지 못했어요. 읽은 시간은 보관되어 있으니 같은 기록으로 다시 저장해주세요.</p>':'')+
+      '<div class="composer-foot"><span class="hint">저장하면 홈의 읽은 시간과 진도에 반영돼요.</span><button type="button" class="btn btn-primary" id="btn-reading-log-save" data-book="'+book.id+'"'+(readingSaveBusy?' disabled':'')+'>'+(readingSaveBusy?'저장 중…':'읽은 기록 저장')+'</button></div>' +
     '</div>';
   }
   /* 실행/일시정지 중인 타이머 */
@@ -3993,14 +4680,18 @@ function readingCardHtml(book){
     var running = !!readingTimer.running;
     return '<div class="card reading-card reading-timer-card">' +
       '<div class="reading-timer-head">' +
-        '<button type="button" class="icon-btn" id="btn-reading-cancel" title="취소">'+svgIcon(I_CLOSE)+'</button>' +
-        '<span class="reading-timer-status">'+(running?'읽고 있는 중…':'일시정지')+'</span>' +
+        '<a class="btn btn-sm" href="#/">'+svgIcon(I_BACK)+' 홈</a>' +
+        '<span class="reading-timer-status" role="status">'+(readingTimer.goalReached?'목표 시간을 채웠어요':running?'읽고 있는 중…':'잠시 멈춤')+'</span>' +
         '<button type="button" class="btn btn-primary btn-sm" id="btn-reading-done">'+svgIcon(I_CHECK)+' 완료</button>' +
       '</div>' +
-      '<div class="reading-timer-display mono" id="reading-timer-display">'+fmtElapsed(elapsedRun)+'</div>' +
-      '<button type="button" class="btn reading-timer-toggle" id="btn-reading-toggle-pause">'+(running?(svgIcon(I_PAUSE)+' 일시정지'):(svgIcon(I_PLAY)+' 계속'))+'</button>' +
-      '<div class="reading-timer-book"><div class="reading-cover reading-cover-sm"><img src="'+book.cover+'" alt=""></div><span>'+esc(book.title)+'</span></div>' +
-    '</div>';
+      '<div class="reading-timer-label">이번에 읽은 시간</div><div class="reading-timer-display mono" id="reading-timer-display" data-reading-elapsed>'+fmtElapsed(elapsedRun)+'</div>' +
+      '<button type="button" class="reading-timer-main-control" id="btn-reading-toggle-pause" aria-label="'+(running?'독서 타이머 일시정지':'독서 타이머 계속 읽기')+'">'+(running?svgIcon(I_PAUSE):svgIcon(I_PLAY))+'</button><p class="reading-control-label">'+(running?'잠시 멈춤':'계속 읽기')+'</p>'+
+      (readingTimer.targetMs!==null?'<p class="reading-countdown-left">남은 시간 <strong class="mono" data-reading-remaining>'+fmtElapsed(GrowellReadingTimer.remaining(readingTimer,Date.now()))+'</strong></p>':'')+
+      '<button class="btn reading-countdown-open" id="btn-reading-countdown" type="button" aria-expanded="'+readingCountdownOpen+'">'+svgIcon(I_TIMER)+' 카운트다운 '+(readingTimer.targetMs===null?'설정':'변경')+'</button>'+
+      (readingCountdownOpen?readingCountdownHtml():'')+
+      '<div class="reading-timer-book"><div class="reading-cover reading-cover-sm"><img src="'+book.cover+'" alt="'+esc(book.title)+' 표지"></div><div><strong>'+esc(book.title)+'</strong><span>'+esc(book.author||'')+'</span><span>'+readingTimer.startPage+' / '+total+'쪽부터 읽는 중</span><button class="reading-note-open" type="button" data-reading-note="'+book.id+'" aria-haspopup="dialog">'+svgIcon(I_EDIT)+' 노트 작성</button></div></div>' +
+      '<p class="reading-continuity">'+(readingTimerMemoryWarning?'이 기기에 시간을 보관하지 못했어요. 창을 닫기 전에 기록을 저장해주세요.':'화면을 이동해도 타이머는 이어져요. 일시정지한 시간은 제외해요.')+'</p><button class="reading-discard" type="button" id="btn-reading-cancel">이번 독서 취소</button>'+
+    '</div>'+readingNoteDialogHtml();
   }
   /* 현재 페이지 수정 폼 (총 페이지는 책마다 고정이라 더 이상 입력받지 않음) */
   if(readingEditOpenFor===book.id){
@@ -4025,7 +4716,7 @@ function readingCardHtml(book){
             '<div class="reading-pages mono">p. '+current+' / '+total+' <span class="reading-pct">· '+pct+'%</span></div>' +
             '<div class="reading-bar"><div class="reading-bar-fill" style="width:'+pct+'%"></div></div>' +
           '</div>' +
-          '<button type="button" class="icon-btn reading-play-btn" id="btn-reading-start" data-book="'+book.id+'" title="읽기 시작">'+svgIcon(I_PLAY)+'</button>' +
+          '<button type="button" class="icon-btn reading-play-btn" id="btn-reading-start" data-book="'+book.id+'" data-reading-start="'+book.id+'" aria-label="타이머로 읽기 시작" title="타이머로 읽기 시작">'+svgIcon(I_TIMER)+'</button>' +
           '<button type="button" class="icon-btn reading-edit-btn js-reading-edit-open" id="btn-reading-edit-open" data-book="'+book.id+'" title="현재 페이지 수정">'+svgIcon(I_EDIT)+'</button>' +
         '</div>' +
       '</div>' +
@@ -4064,110 +4755,92 @@ function weekDatesOf(monday){
    쓰는 간단한 방식이라 사용자가 보기에 자연스럽다. */
 function weekOfMonth(monday){ return Math.ceil(monday.getDate()/7); }
 function habitWeekProgress(habit, weekDates){
-  var checkedSet = {}; (habit.checkedDates||[]).forEach(function(d){ checkedSet[d]=true; });
-  var done = weekDates.filter(function(d){ return checkedSet[ymd(d)]; }).length;
-  return {done:done, total:weekDates.length, checkedSet:checkedSet};
+  var today=ymd(new Date()), checkedSet={};
+  GrowellHabits.checked(habit).forEach(function(date){checkedSet[date]=true;});
+  var eligible=weekDates.filter(function(d){return GrowellHabits.inPeriod(habit,ymd(d),today);});
+  return {done:eligible.filter(function(d){return ymd(d)<=today&&checkedSet[ymd(d)];}).length,total:eligible.length,checkedSet:checkedSet};
 }
+function habitStatusLabel(status){return {success:'성공',saved:'이전 기록',fail:'실패',pending:'오늘',future:'예정',outside:'기간 밖'}[status]||'';}
 function habitWeekGridHtml(habit, weekDates, checkedSet, todayStr){
-  var DOW = ['월','화','수','목','금','토','일'];
-  var cells = weekDates.map(function(d, i){
-    var dstr = ymd(d);
-    var isChecked = !!checkedSet[dstr];
-    var isFuture = dstr > todayStr;
-    var isToday = dstr === todayStr;
-    var cls = 'habit-wday' + ((isChecked && !isFuture)?' is-checked':'') + (isFuture?' is-future':'') + (isToday?' is-today':'');
-    var dot = isFuture
-      ? '<span class="habit-wday-dot"></span>'
-      : '<button type="button" class="habit-wday-dot" aria-label="'+dstr+' 습관 체크" aria-pressed="'+(isChecked?'true':'false')+'" data-habit-day="'+habit.id+'|'+dstr+'">'+(isChecked?'✓':'')+'</button>';
-    return '<div class="'+cls+'"><span class="habit-wday-label">'+DOW[i]+'</span><span class="habit-wday-date">'+pad2(d.getMonth()+1)+'/'+pad2(d.getDate())+'</span>'+dot+'</div>';
-  }).join('');
-  return '<div class="habit-week-grid">'+cells+'</div>';
+  var DOW=['월','화','수','목','금','토','일'];
+  return '<div class="habit-week-grid">'+weekDates.map(function(d,i){
+    var date=ymd(d),status=GrowellHabits.status(habit,date,todayStr),checked=status==='success'||status==='saved';
+    var cls='habit-wday'+(checked?' is-checked':'')+' is-'+status+(date===todayStr?' is-today':'');
+    var content=checked?'✓':status==='fail'?'−':'';
+    var dot=GrowellHabits.canCheck(habit,date,todayStr)
+      ? '<button type="button" class="habit-wday-dot" aria-label="'+date+' '+habitStatusLabel(status)+' · 체크 변경" aria-pressed="'+checked+'" data-habit-day="'+esc(habit.id)+'|'+date+'">'+content+'</button>'
+      : '<span class="habit-wday-dot" aria-label="'+date+' '+habitStatusLabel(status)+'">'+content+'</span>';
+    return '<div class="'+cls+'"><span class="habit-wday-label">'+DOW[i]+'</span><span class="habit-wday-date">'+(d.getMonth()+1)+'/'+d.getDate()+'</span>'+dot+'</div>';
+  }).join('')+'</div>';
 }
+function habitPeriodLabel(habit){
+  var start=GrowellHabits.start(habit,ymd(new Date()));
+  return esc(start.replace(/-/g,'. '))+' ~ '+(habit.endDate?esc(habit.endDate.replace(/-/g,'. ')):'계속 실천');
+}
+function habitFactsHtml(habit){
+  return '<dl class="habit-facts"><div><dt>장소</dt><dd>'+esc(habit.place||'아직 정하지 않았어요')+'</dd></div>'+
+    '<div><dt>시간</dt><dd>'+esc(habit.time||'편한 시간에')+'</dd></div>'+
+    '<div><dt>나의 목표</dt><dd>'+esc(habit.goal||'하루 한 번 실천하기')+'</dd></div>'+
+    '<div class="habit-fact-period"><dt>목표 기간</dt><dd>'+habitPeriodLabel(habit)+'</dd></div></dl>';
+}
+function habitMonthSummaryHtml(habit,y,m){
+  var stats=GrowellHabits.monthStats(habit,ymd(new Date()),y,m);
+  return '성공 '+stats.success+'일 · 실패 '+stats.fail+'일'+(stats.pending?' · 오늘 도전 중':'')+' · 성공률 '+(stats.rate===null?'집계 전':stats.rate+'%');
+}
+function habitCalendarLegendHtml(){
+  return '<div class="habit-hist-legend"><span class="legend-success">✓ 성공</span><span class="legend-fail">− 실패</span><span>○ 오늘</span><span>· 예정</span></div>';
+}
+function habitKindBadgeHtml(habit){return '<span class="habit-kind-badge is-'+GrowellHabits.behaviorType(habit)+'">'+GrowellHabits.behaviorLabel(habit)+'</span>';}
 function habitCardHtml(habit){
-  var today = new Date();
-  var monday = mondayOf(today);
-  var weekDates = weekDatesOf(monday);
-  var todayStr = ymd(today);
-  var prog = habitWeekProgress(habit, weekDates);
-  var wom = weekOfMonth(monday);
-  var meta = [];
-  if(habit.place) meta.push('<span class="habit-chip">📍 '+esc(habit.place)+'</span>');
-  if(habit.time) meta.push('<span class="habit-chip">🕒 '+esc(habit.time)+'</span>');
-  if(habit.goal) meta.push('<span class="habit-chip">🎯 '+esc(habit.goal)+'</span>');
-  var complete = prog.done>=prog.total;
-  var progressHtml = complete
-    ? '<span class="habit-progress is-done">이번 주 완료 🎉</span>'
-    : '<span class="habit-progress">'+prog.done+'/'+prog.total+'일 완료 · '+(prog.total-prog.done)+'일 남음</span>';
-  /* 다운로드 버튼은 이번 주 내내가 아니라 "이번 주의 일요일"에만 보인다 — 월요일부터 토요일
-     사이엔 미래 날짜라 체크할 수 없는 날이 남아 있어 카드가 아직 그 주를 온전히 대표하지
-     못하고, 다음 주 월요일이 되면 weekDates 자체가 새 주로 넘어가 버려 그 전 주 카드를 다시
-     받을 방법이 없기 때문 — 사실상 "그 주의 카드를 받을 수 있는 유일한 날"이 일요일이다.
-     7일을 다 못 채웠어도 일요일이면 그날그날 체크한 기록 그대로 받을 수 있다(35번 라운드
-     다음 요청 — "월요일 0시가 되면"/"일요일만 눌러도"는 같은 경계를 가리키므로 일요일 하루로
-     통일). 참고: weekDates[6]이 그 주의 일요일이라, todayStr이 거기 도달했다는 건 곧 오늘이
-     일요일이라는 뜻 — 그리고 7/7 완료도 마지막 날인 일요일이 와야만 가능하므로 complete는
-     항상 isSunday를 함의한다. */
-  var isSunday = todayStr===ymd(weekDates[6]);
-  var saveRow = isSunday
-    ? '<div class="habit-save-row">' +
-        '<button type="button" class="btn btn-primary habit-save-btn" data-save-habit="'+habit.id+'">'+(complete?'📸 이번 주 완료 카드 다운로드':'📸 오늘까지 기록으로 카드 다운로드')+'</button>' +
-        (complete ? '' : '<p class="habit-save-hint">7일을 다 채우지 못했어도 일요일인 오늘, 지금까지 체크한 기록 그대로 카드를 받을 수 있어요.</p>') +
-      '</div>'
-    : '';
-  return '<div class="card habit-card" data-habit-card="'+habit.id+'">' +
-    '<div class="habit-card-head">' +
-      '<h4 class="habit-name">'+esc(habit.name)+'</h4>' +
-      '<div class="habit-card-actions">' +
-        '<button type="button" class="habit-icon-btn" data-habit-history="'+habit.id+'" title="지난 기록">'+svgIcon(I_CAL)+'</button>' +
-        '<button type="button" class="habit-icon-btn" data-edit-habit="'+habit.id+'" title="수정">'+svgIcon(I_EDIT)+'</button>' +
-        '<button type="button" class="habit-icon-btn" data-delete-habit="'+habit.id+'" title="삭제">'+svgIcon(I_TRASH)+'</button>' +
-      '</div>' +
-    '</div>' +
-    (meta.length ? '<div class="habit-meta">'+meta.join('')+'</div>' : '') +
-    '<div class="habit-week-head"><span>'+(today.getMonth()+1)+'월 '+wom+'주차</span>'+progressHtml+'</div>' +
-    habitWeekGridHtml(habit, weekDates, prog.checkedSet, todayStr) +
-    '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitSaveStatusHtml(habit.id)+'</p>' +
-    saveRow +
-  '</div>';
+  var today=new Date(),todayStr=ymd(today),weekDates=weekDatesOf(mondayOf(today)),prog=habitWeekProgress(habit,weekDates);
+  var complete=prog.total>0&&prog.done===prog.total,stats=GrowellHabits.stats(habit,todayStr);
+  var view=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()};
+  var progress=prog.total?prog.done+'/'+prog.total+'일 실천':'이번 주 목표 기간 없음';
+  var calendar=habitCalendarMode==='month'
+    ? habitHistoryCalendarHtml(habit,view.y,view.m)+habitCalendarLegendHtml()+'<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>'
+    : '<div class="habit-week-head"><span>이번 주 · '+(weekDates[0].getMonth()+1)+'/'+weekDates[0].getDate()+' ~ '+(weekDates[6].getMonth()+1)+'/'+weekDates[6].getDate()+'</span><span class="habit-progress'+(complete?' is-done':'')+'">'+progress+'</span></div>'+habitWeekGridHtml(habit,weekDates,prog.checkedSet,todayStr);
+  var download=todayStr===ymd(weekDates[6])&&prog.total>0
+    ? '<div class="habit-save-row"><button type="button" class="btn btn-secondary habit-save-btn" data-save-habit="'+esc(habit.id)+'">이번 주 기록 카드 다운로드</button></div>':'';
+  return '<article class="card habit-card" data-habit-card="'+esc(habit.id)+'"><div class="habit-card-head">'+
+    '<div>'+habitKindBadgeHtml(habit)+'<h4 class="habit-name"><button type="button" class="habit-title-button" data-habit-history="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+esc(habit.name)+'</button></h4></div>'+
+    '<div class="habit-card-actions"><button type="button" class="habit-icon-btn" data-edit-habit="'+esc(habit.id)+'" title="습관 수정" aria-label="'+esc(habit.name)+' 수정">'+svgIcon(I_EDIT)+'</button>'+
+    '<button type="button" class="habit-icon-btn" data-delete-habit="'+esc(habit.id)+'" title="습관 삭제" aria-label="'+esc(habit.name)+' 삭제">'+svgIcon(I_TRASH)+'</button></div></div>'+
+    habitFactsHtml(habit)+'<p class="habit-kind-hint">'+GrowellHabits.behaviorHint(habit)+'</p>'+calendar+
+    '<div class="habit-card-summary"><span data-habit-card-summary="'+esc(habit.id)+'">지금까지 '+stats.success+'번 실천 · '+stats.streak+'일 연속</span><button type="button" class="habit-detail-link" data-habit-history="'+esc(habit.id)+'">진행 상황 '+svgIcon(I_BACK)+'</button></div>'+
+    '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitSaveStatusHtml(habit.id)+'</p>'+download+'</article>';
 }
-function habitFormHtml(book, editingHabit){
-  var h = editingHabit || {name:'', place:'', time:'', goal:'', startDate:'', endDate:''};
-  /* 기간(시작일/목표 종료일)을 새로 추가(38번 라운드 요청 — "새 습관 만들기 부분에 달력
-     형태로 설정할 수 있게") — type="date"는 브라우저가 기본으로 달력 UI를 띄워주므로 별도
-     달력 컴포넌트를 새로 만들 필요가 없다. 새로 만들 때는 시작일을 오늘로 미리 채워둬서
-     아무것도 안 건드려도 "오늘부터"로 자연스럽게 시작되게 한다. */
-  var startVal = h.startDate || (editingHabit ? habitCreatedStr(editingHabit) : ymd(new Date()));
-  return '<div class="card habit-form" id="habit-form" data-book="'+book.id+'">' +
-    '<div class="composer-head"><h4>'+(editingHabit?'습관 수정':'새 습관 만들기')+'</h4>' +
-      '<button type="button" class="icon-btn" id="btn-close-habit-form">'+svgIcon(I_CLOSE)+'</button></div>' +
-    '<div class="habit-form-row"><label>습관 이름</label><input type="text" id="habit-name" maxlength="40" placeholder="예: 아침 스트레칭" value="'+esc(h.name)+'"></div>' +
-    '<div class="habit-form-row"><label>장소</label><input type="text" id="habit-place" maxlength="30" placeholder="예: 거실" value="'+esc(h.place)+'"></div>' +
-    '<div class="habit-form-row"><label>시간</label><input type="text" id="habit-time" maxlength="30" placeholder="예: 아침 7시" value="'+esc(h.time)+'"></div>' +
-    '<div class="habit-form-row"><label>목표</label><input type="text" id="habit-goal" maxlength="40" placeholder="예: 매일 10분" value="'+esc(h.goal)+'"></div>' +
-    '<div class="habit-form-row"><label>시작일</label><input type="date" id="habit-start-date" value="'+esc(startVal)+'"></div>' +
-    '<div class="habit-form-row"><label>목표일</label><input type="date" id="habit-end-date" value="'+esc(h.endDate||'')+'"></div>' +
-    '<p class="habit-form-hint">목표(종료)일을 정해두면 "지난 기록"에서 목표까지 얼마나 왔는지 진행률로 보여드려요. 비워두면 기간 없이 계속하는 습관이 돼요.</p>' +
-    '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button>' +
-  '</div>';
+function habitFormHtml(book,editingHabit){
+  var h=editingHabit||{name:'',place:'',time:'',goal:'',startDate:ymd(new Date()),endDate:''};
+  var kind=GrowellHabits.behaviorType(h);
+  var start=h.startDate||habitCreatedStr(h),fields=[
+    ['name','습관 이름','text',h.name,'예: 잠들기 전 책 읽기',40],
+    ['place','장소','text',h.place,'예: 침실 독서 의자',30],
+    ['time','시간','text',h.time,'예: 매일 저녁 9시',30],
+    ['goal','목표','text',h.goal,'예: 매일 15분 읽기',40],
+    ['start-date','시작일','date',start,'',0],
+    ['end-date','목표일','date',h.endDate,'',0]];
+  return '<div class="card habit-form" id="habit-form" data-book="'+esc(book.id)+'">'+
+    '<div class="composer-head"><h4>'+(editingHabit?'나에게 맞게 습관 수정':'작게 시작하는 나의 습관')+'</h4><button type="button" class="icon-btn" id="btn-close-habit-form" aria-label="습관 설정 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
+    '<fieldset class="habit-kind-picker"><legend>습관 종류</legend><div class="habit-kind-options">'+['do','avoid'].map(function(value){return '<label class="habit-kind-option"><input type="radio" name="habit-behavior-type" value="'+value+'"'+(kind===value?' checked':'')+'><span>'+GrowellHabits.behaviorLabel({behaviorType:value})+'</span></label>';}).join('')+'</div><p class="habit-kind-hint" id="habit-kind-hint">'+GrowellHabits.behaviorHint(h)+'</p></fieldset>'+
+    '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row"><label for="habit-'+f[0]+'">'+f[1]+'</label><input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+'></div>';}).join('')+'</div>'+
+    '<p class="habit-form-hint">목표 기간에는 매일 한 번 체크해요. 목표일을 비워두면 계속 실천할 수 있어요. 기간을 바꿔도 이전 체크 기록은 보관됩니다.</p>'+
+    '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button></div>';
 }
 function habitsSectionHtml(book){
   if(!SESSION) return '';
-  var loadStatus = memberDataStatusHtml('habits');
+  var loadStatus=memberDataStatusHtml('habits');
   if(loadStatus) return loadStatus;
-  var habits = myHabits(book.id);
-  var editingHabit = habitEditingId ? habits.filter(function(h){ return h.id===habitEditingId; })[0] : null;
-  var form = (habitFormOpenFor===book.id) ? habitFormHtml(book, editingHabit)
-    : '<button type="button" class="habit-add-btn" id="btn-open-habit-form" data-book="'+book.id+'">+ 새 습관 만들기</button>';
-  var list = habits.length
-    ? '<div class="habit-list">'+habits.map(habitCardHtml).join('')+'</div>'
-    : '<div class="empty">아직 만든 습관이 없어요. 장소·시간·목표를 정해서 하나 시작해보세요.</div>';
-  var historyModal = '';
-  if(habitHistoryOpenFor){
-    var historyHabit = habits.filter(function(h){ return h.id===habitHistoryOpenFor; })[0];
-    if(historyHabit) historyModal = habitHistoryModalHtml(historyHabit);
-    else habitHistoryOpenFor = null; // 삭제된 습관이면 조용히 닫음
-  }
-  return '<div class="habit-section"><p class="habit-section-lead">이번 주 습관을 만들고 매일 체크해보세요. 7일을 모두 채우면 완료 카드 이미지를 바로 다운로드할 수 있어요.</p>' + form + list + '</div>' + historyModal;
+  var habits=myHabits(book.id),editingHabit=habitEditingId?habits.find(function(h){return h.id===habitEditingId;}):null;
+  var form=habitFormOpenFor===book.id?habitFormHtml(book,editingHabit):'<button type="button" class="habit-add-btn" id="btn-open-habit-form" data-book="'+esc(book.id)+'">+ 새 습관 만들기</button>';
+  var today=new Date(),view=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()};
+  var controls='<div class="habit-view-bar"><div class="habit-view-switch" role="group" aria-label="습관 표시 방식">'+
+    '<button type="button" data-habit-view="week" aria-pressed="'+(habitCalendarMode==='week')+'" class="'+(habitCalendarMode==='week'?'is-active':'')+'">이번 주</button>'+
+    '<button type="button" data-habit-view="month" aria-pressed="'+(habitCalendarMode==='month')+'" class="'+(habitCalendarMode==='month'?'is-active':'')+'">월별 달력</button></div>'+
+    (habitCalendarMode==='month'?'<div class="habit-month-controls"><button type="button" class="habit-hist-nav-btn" data-habit-calendar-shift="-1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><strong>'+view.y+'년 '+(view.m+1)+'월</strong><button type="button" class="habit-hist-nav-btn is-next" data-habit-calendar-shift="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>':'')+'</div>';
+  var list=habits.length?'<div class="habit-list">'+habits.map(habitCardHtml).join('')+'</div>':'<div class="empty">아직 만든 습관이 없어요. 장소·시간·목표를 정해서 하나 시작해보세요.</div>';
+  var historyHabit=habitHistoryOpenFor?habits.find(function(h){return h.id===habitHistoryOpenFor;}):null;
+  if(habitHistoryOpenFor&&!historyHabit) habitHistoryOpenFor=null;
+  return '<div class="habit-section"><p class="habit-section-lead">작은 실천을 쌓아 나만의 변화를 만들어 보세요.<br>습관을 누르면 목표 기간 동안의 성취와 다음 목표를 볼 수 있어요.</p>'+form+controls+list+'</div>'+(historyHabit?habitHistoryModalHtml(historyHabit):'');
 }
 function habitTabHtml(book){
   if(!SESSION){ return loginGateHtml('습관 만들기는 로그인한 본인만 볼 수 있어요.'); }
@@ -4177,149 +4850,80 @@ function habitTabHtml(book){
    habits.checkedDates는 지워지지 않고 계속 누적되므로(이번 주 화면만 그 창을 보여줄 뿐), 이 팝업은
    그 누적 데이터를 습관을 만든 날부터 오늘까지 월별 달력으로 다시 꺼내 보여준다. 색으로 성공/실패를
    구분하고, 전체 성공률과 보고 있는 달의 성공률을 함께 계산해 보여준다. */
-function parseYmd(s){ var p = s.split('-'); return new Date(+p[0], +p[1]-1, +p[2]); }
-function fmtMonthDay(ymdStr){ var d = parseYmd(ymdStr); return (d.getMonth()+1)+'월 '+d.getDate()+'일'; }
-function daysBetweenInclusive(aStr, bStr){
-  if(aStr>bStr) return 0;
-  return Math.round((parseYmd(bStr)-parseYmd(aStr))/86400000)+1;
-}
-function habitCreatedStr(habit){ return ymd(new Date(habit.createdAt)); }
-/* 습관 카드의 "시작일"(habit.startDate, 38번 라운드에 새로 추가) — 아직 시작일을 정한 적 없는
-   예전 습관은 지금까지처럼 습관을 만든 날을 시작일로 대신 쓴다. */
-function habitStartStr(habit){ return habit.startDate || habitCreatedStr(habit); }
-/* 통계/달력이 실제로 기준으로 삼는 "실질 시작일" — 습관을 만들기 전(또는 정한 시작일 이전)
-   날짜라도 이번 주 달력에서는 체크할 수 있어서(미래만 막혀 있음), 시작일보다 이른 날짜를
-   체크해두는 경우가 있다("독서" 습관을 9/10에 만들고 그 주 9/7~9/9도 체크한 사례로 실제
-   확인됨 — 38번 라운드). 그 체크가 "지난 기록" 달력·성공률에서 조용히 빠지는 게 버그였으므로,
-   실제로 체크된 가장 이른 날짜가 시작일보다 앞서 있으면 그 날짜까지 기준을 앞당겨서, 어떤
-   체크도 통계에서 누락되지 않게 한다. */
+function parseYmd(s){var p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+function fmtMonthDay(date){var d=parseYmd(date);return (d.getMonth()+1)+'월 '+d.getDate()+'일';}
+function daysBetweenInclusive(a,b){return GrowellHabits.days(a,b);}
+function habitCreatedStr(habit){return GrowellHabits.start(Object.assign({},habit,{startDate:null}),ymd(new Date()));}
+function habitStartStr(habit){return GrowellHabits.start(habit,ymd(new Date()));}
 function habitEffectiveStart(habit){
-  var explicit = habitStartStr(habit);
-  var dates = habit.checkedDates||[];
-  var minChecked = null;
-  for(var i=0;i<dates.length;i++){ if(minChecked===null || dates[i]<minChecked) minChecked = dates[i]; }
-  return (minChecked && minChecked<explicit) ? minChecked : explicit;
+  var start=habitStartStr(habit),first=GrowellHabits.checked(habit)[0];
+  return first&&first<start?first:start;
 }
-/* 습관을 만든 날부터 오늘까지 전체 기간 기준 성공률 — "성공"은 실제 체크한 날, "실패"는 그 사이
-   체크하지 않고 지나간 날(미래는 아직 지나지 않았으니 집계 대상이 아님). */
-function habitOverallStats(habit){
-  var startStr = habitEffectiveStart(habit), todayStr = ymd(new Date());
-  var elapsed = daysBetweenInclusive(startStr, todayStr);
-  var checkedSet = {}; (habit.checkedDates||[]).forEach(function(d){ checkedSet[d]=true; });
-  var success = 0;
-  for(var i=0;i<elapsed;i++){
-    var d = new Date(parseYmd(startStr).getFullYear(), parseYmd(startStr).getMonth(), parseYmd(startStr).getDate()+i);
-    if(checkedSet[ymd(d)]) success++;
+function habitOverallStats(habit){return GrowellHabits.stats(habit,ymd(new Date()));}
+function habitMonthStats(habit,y,m){return GrowellHabits.monthStats(habit,ymd(new Date()),y,m);}
+function habitHistoryCalendarHtml(habit,y,m){
+  var DOW=['월','화','수','목','금','토','일'],today=ymd(new Date()),first=new Date(y,m,1),lead=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
+  for(var i=0;i<lead;i++) cells.push('<div class="habit-hist-cell is-empty" aria-hidden="true"></div>');
+  for(var day=1;day<=days;day++){
+    var date=ymd(new Date(y,m,day)),status=GrowellHabits.status(habit,date,today),checked=status==='success'||status==='saved';
+    var cls='habit-hist-cell is-'+status+(date===today?' is-today':''),label=habitStatusLabel(status),symbol=checked?'✓':status==='fail'?'−':status==='pending'?'○':status==='future'?'·':'';
+    var content='<span>'+day+'</span><small data-habit-cell-mark>'+symbol+'</small>';
+    cells.push(GrowellHabits.canCheck(habit,date,today)
+      ? '<button type="button" class="'+cls+'" data-habit-day="'+esc(habit.id)+'|'+date+'" aria-pressed="'+checked+'" aria-label="'+date+' '+label+' · 체크 변경">'+content+'</button>'
+      : '<div class="'+cls+'" aria-label="'+date+' '+label+'">'+content+'</div>');
   }
-  var fail = Math.max(0, elapsed-success);
-  return {elapsed:elapsed, success:success, fail:fail, rate: elapsed>0 ? Math.round(success/elapsed*100) : 0};
+  while(cells.length%7!==0) cells.push('<div class="habit-hist-cell is-empty" aria-hidden="true"></div>');
+  return '<div class="habit-hist-grid" aria-label="'+y+'년 '+(m+1)+'월 습관 달력">'+DOW.map(function(w){return '<div class="habit-hist-dow">'+w+'</div>';}).join('')+cells.join('')+'</div>';
 }
-/* 특정 달(y, m 0-index) 기준 성공률 — 습관 생성일 이전이거나 아직 오지 않은 날은 그 달의 집계
-   범위(rangeStart~rangeEnd)에서 아예 제외해, "이 달 중 실제로 지나간 날"만으로 계산한다. */
-function habitMonthStats(habit, y, m){
-  var startStr = habitEffectiveStart(habit), todayStr = ymd(new Date());
-  var monthStartStr = ymd(new Date(y,m,1)), monthEndStr = ymd(new Date(y,m+1,0));
-  var rangeStart = monthStartStr>startStr ? monthStartStr : startStr;
-  var rangeEnd = monthEndStr<todayStr ? monthEndStr : todayStr;
-  var elapsed = daysBetweenInclusive(rangeStart, rangeEnd);
-  var checkedSet = {}; (habit.checkedDates||[]).forEach(function(d){ checkedSet[d]=true; });
-  var success = 0;
-  if(elapsed>0){
-    for(var i=0;i<elapsed;i++){
-      var d = new Date(parseYmd(rangeStart).getFullYear(), parseYmd(rangeStart).getMonth(), parseYmd(rangeStart).getDate()+i);
-      if(checkedSet[ymd(d)]) success++;
-    }
-  }
-  var fail = Math.max(0, elapsed-success);
-  return {elapsed:elapsed, success:success, fail:fail, rate: elapsed>0 ? Math.round(success/elapsed*100) : null};
-}
-function habitHistoryCalendarHtml(habit, y, m){
-  var DOW = ['월','화','수','목','금','토','일'];
-  var startStr = habitEffectiveStart(habit), todayStr = ymd(new Date());
-  var checkedSet = {}; (habit.checkedDates||[]).forEach(function(d){ checkedSet[d]=true; });
-  var first = new Date(y,m,1);
-  var startWeekday = first.getDay(); // 0=일 ... 6=토
-  var lead = (startWeekday===0) ? 6 : startWeekday-1; // 월요일 시작 기준 앞 여백 칸 수
-  var daysInMonth = new Date(y,m+1,0).getDate();
-  var cells = [];
-  for(var i=0;i<lead;i++){ cells.push('<div class="habit-hist-cell is-empty"></div>'); }
-  for(var day=1; day<=daysInMonth; day++){
-    var dstr = ymd(new Date(y,m,day));
-    var cls = 'habit-hist-cell';
-    if(dstr>=startStr && dstr<=todayStr){ cls += checkedSet[dstr] ? ' is-success' : ' is-fail'; }
-    if(dstr===todayStr) cls += ' is-today';
-    cells.push('<div class="'+cls+'">'+day+'</div>');
-  }
-  while(cells.length%7!==0){ cells.push('<div class="habit-hist-cell is-empty"></div>'); }
-  var dow = DOW.map(function(w){ return '<div class="habit-hist-dow">'+w+'</div>'; }).join('');
-  return '<div class="habit-hist-grid">'+dow+cells.join('')+'</div>';
-}
-/* 습관 시작일~목표 종료일(habit.endDate) 사이에서 오늘이 얼마나 지나왔는지 — "목표한 날까지
-   몇 퍼센트 도달했는지"를 시간(기간) 기준으로 보여준다(38번 라운드 요청). 목표 종료일을
-   아직 정하지 않은 습관은 계산할 기준이 없으므로 null을 돌려주고, 화면에서는 안내 문구로
-   대신한다. */
 function habitGoalProgress(habit){
-  var end = habit.endDate || '';
-  if(!end) return null;
-  var start = habitStartStr(habit);
-  var todayStr = ymd(new Date());
-  var totalDays = daysBetweenInclusive(start, end);
-  if(totalDays<=0) return null;
-  var elapsedDays;
-  if(todayStr<start) elapsedDays = 0;
-  else if(todayStr>end) elapsedDays = totalDays;
-  else elapsedDays = daysBetweenInclusive(start, todayStr);
-  return {pct:Math.round(elapsedDays/totalDays*100), elapsedDays:elapsedDays, totalDays:totalDays, end:end};
+  var stats=habitOverallStats(habit);
+  return stats.total===null?null:{pct:stats.periodPercent,elapsedDays:stats.elapsedDays,totalDays:stats.total,end:stats.end};
+}
+function habitStatsPanelHtml(habit){
+  var stats=habitOverallStats(habit),rate=stats.rate===null?'—':stats.rate+'%';
+  var goal=stats.total!==null
+    ? '<div class="habit-hist-stat-card is-goal"><div class="habit-hist-stat-head"><span class="habit-hist-stat-title">목표 달성률</span><strong class="habit-hist-stat-rate">'+stats.goalPercent+'%</strong></div>'+
+      '<div class="habit-hist-stat-bar-track" role="progressbar" aria-label="목표 달성률" aria-valuenow="'+stats.goalPercent+'" aria-valuemin="0" aria-valuemax="100"><div class="habit-hist-stat-bar-fill" style="width:'+stats.goalPercent+'%"></div></div>'+
+      '<p class="habit-hist-stat-detail">목표 '+stats.total+'일 중 <strong>'+stats.success+'일 실천</strong> · 실천할 수 있는 날 '+stats.remaining+'일 남음<br>기간 경과 '+stats.elapsedDays+'/'+stats.total+'일 ('+stats.periodPercent+'%)</p></div>'
+    : '<div class="habit-hist-stat-card"><span class="habit-hist-stat-title">나의 속도로 계속 실천 중</span><p class="habit-hist-stat-detail">습관 수정에서 목표일을 정하면 전체 목표에 대한 달성률도 볼 수 있어요.</p></div>';
+  return '<p class="habit-motivation">'+GrowellHabits.motivation(stats)+'</p>'+
+    '<div class="habit-stat-grid"><div class="habit-stat"><small>성공한 날</small><strong>'+stats.success+'<span>일</span></strong></div>'+
+    '<div class="habit-stat"><small>성공률</small><strong>'+rate+'</strong></div>'+
+    '<div class="habit-stat"><small>현재 연속</small><strong>'+stats.streak+'<span>일</span></strong></div>'+
+    '<div class="habit-stat"><small>최장 연속</small><strong>'+stats.bestStreak+'<span>일</span></strong></div></div>'+goal+
+    '<p class="habit-dialog-footnote">성공 '+stats.success+'일 · 실패 '+stats.fail+'일'+(stats.pending?' · 오늘은 아직 도전 중':'')+'<br>체크하지 않은 지난 날은 실패로 표시해요. 오늘의 미체크와 미래 날짜는 성공률 집계에서 제외해요.'+
+    (stats.archivedSuccess?'<br>변경한 목표 기간 밖의 이전 성공 '+stats.archivedSuccess+'일은 달력에 보관하며 현재 목표 통계에는 포함하지 않아요.':'')+'</p>';
 }
 function habitHistoryModalHtml(habit){
-  var today = new Date();
-  var view = habitHistoryMonth || {y:today.getFullYear(), m:today.getMonth()};
-  var y = view.y, m = view.m;
-  var created = parseYmd(habitEffectiveStart(habit));
-  var atMin = (y<created.getFullYear()) || (y===created.getFullYear() && m<=created.getMonth());
-  var atMax = (y>today.getFullYear()) || (y===today.getFullYear() && m>=today.getMonth());
-  var overall = habitOverallStats(habit);
-  var monthStat = habitMonthStats(habit, y, m);
-  var monthLabel = y+'년 '+(m+1)+'월';
-  var monthRateText = monthStat.rate===null ? '기록 없음' : monthStat.rate+'%';
-  var monthDetail = monthStat.elapsed>0
-    ? '성공 '+monthStat.success+'일 · 실패 '+monthStat.fail+'일'
-    : '이 달은 아직 기록이 없어요';
-  var goalProg = habitGoalProgress(habit);
-  var goalCardHtml = goalProg
-    ? '<div class="habit-hist-stat-card is-goal"><div class="habit-hist-stat-head"><span class="habit-hist-stat-title">목표 기간 진행률</span><span class="habit-hist-stat-rate">'+goalProg.pct+'%</span></div>' +
-        '<div class="habit-hist-stat-bar-track"><div class="habit-hist-stat-bar-fill" style="width:'+goalProg.pct+'%"></div></div>' +
-        '<div class="habit-hist-stat-detail">'+goalProg.elapsedDays+'/'+goalProg.totalDays+'일 지남 · 목표일 '+esc(fmtMonthDay(goalProg.end))+'</div></div>'
-    : '<div class="habit-hist-stat-card is-goal is-empty"><div class="habit-hist-stat-title">목표 기간 진행률</div>' +
-        '<div class="habit-hist-stat-detail">습관 수정에서 목표 종료일을 정하면 진행률이 표시돼요.</div></div>';
-  return '<div class="habit-hist-overlay" data-habit-history-close="1">' +
-      '<div class="habit-hist-modal" data-habit-history-stop="1">' +
-        '<div class="composer-head"><h4>'+esc(habit.name)+' · 지난 기록</h4>' +
-          '<button type="button" class="icon-btn" data-habit-history-close="1">'+svgIcon(I_CLOSE)+'</button></div>' +
-        '<div class="habit-hist-month-nav">' +
-          '<button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1"'+(atMin?' disabled':'')+' aria-label="이전 달">'+svgIcon(I_BACK)+'</button>' +
-          '<span class="habit-hist-month-label">'+monthLabel+'</span>' +
-          '<button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1"'+(atMax?' disabled':'')+' aria-label="다음 달">'+svgIcon(I_BACK)+'</button>' +
-        '</div>' +
-        habitHistoryCalendarHtml(habit, y, m) +
-        '<div class="habit-hist-legend"><span><i class="is-success"></i>성공</span><span><i class="is-fail"></i>실패</span></div>' +
-        '<div class="habit-hist-stats">' +
-          '<div class="habit-hist-stat-card"><div class="habit-hist-stat-head"><span class="habit-hist-stat-title">전체 성공률</span><span class="habit-hist-stat-rate">'+overall.rate+'%</span></div>' +
-            '<div class="habit-hist-stat-bar-track"><div class="habit-hist-stat-bar-fill" style="width:'+overall.rate+'%"></div></div>' +
-            '<div class="habit-hist-stat-detail">성공 '+overall.success+'일 · 실패 '+overall.fail+'일 · 시작한 지 '+overall.elapsed+'일째</div></div>' +
-          '<div class="habit-hist-stat-card"><div class="habit-hist-stat-head"><span class="habit-hist-stat-title">'+monthLabel+' 성공률</span><span class="habit-hist-stat-rate">'+monthRateText+'</span></div>' +
-            '<div class="habit-hist-stat-detail">'+monthDetail+'</div></div>' +
-          goalCardHtml +
-        '</div>' +
-      '</div>' +
-    '</div>';
+  var today=new Date(),view=habitHistoryMonth||{y:today.getFullYear(),m:today.getMonth()};
+  return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
+    '<div class="composer-head"><div><p class="habit-dialog-kicker">나의 작은 성취</p>'+habitKindBadgeHtml(habit)+'<h4 id="habit-dialog-title">'+esc(habit.name)+'</h4></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 진행 상황 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
+    '<p class="habit-dialog-period">'+habitPeriodLabel(habit)+(habit.goal?' · '+esc(habit.goal):'')+'</p>'+
+    '<p class="habit-kind-hint">'+GrowellHabits.behaviorHint(habit)+'</p>'+
+    '<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+
+    '<div class="habit-hist-month-nav"><button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><span class="habit-hist-month-label">'+view.y+'년 '+(view.m+1)+'월</span><button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>'+
+    habitHistoryCalendarHtml(habit,view.y,view.m)+habitCalendarLegendHtml()+
+    '<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'" data-habit-popup-summary="1">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>'+
+    '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+
+    '</div></div>';
 }
 function shiftHabitHistoryMonth(delta){
-  var today = new Date();
-  var cur = habitHistoryMonth || {y:today.getFullYear(), m:today.getMonth()};
-  var next = new Date(cur.y, cur.m+delta, 1);
-  habitHistoryMonth = {y:next.getFullYear(), m:next.getMonth()};
-  render();
+  var today=new Date(),cur=habitHistoryMonth||{y:today.getFullYear(),m:today.getMonth()},next=new Date(cur.y,cur.m+delta,1);
+  if(next.getFullYear()<1000||next.getFullYear()>9999) return;
+  habitHistoryMonth={y:next.getFullYear(),m:next.getMonth()};render();focusHabitDialog();
+}
+function openHabitProgress(habitId){
+  var habit=STATE.habits[habitId];
+  if(!SESSION||!habit||habit.userId!==SESSION.userId) return;
+  habitHistoryOpenFor=habitId;habitHistoryMonth=null;render();focusHabitDialog();
+}
+function focusHabitDialog(){
+  var modal=app.querySelector('.habit-hist-modal');
+  if(modal) modal.focus({preventScroll:true});
+}
+function closeHabitProgress(){
+  var id=habitHistoryOpenFor;habitHistoryOpenFor=null;habitHistoryMonth=null;render();
+  app.querySelectorAll('[data-habit-history]').forEach(function(b){if(b.getAttribute('data-habit-history')===id&&b.classList.contains('habit-title-button')) b.focus({preventScroll:true});});
 }
 /* ---------------- 습관 완료 카드 이미지 생성 ----------------
    사용자가 준 다이어리 템플릿 3종(covers/habit-templates/theme-N.jpg) 이미지를 그대로 배경으로
@@ -4426,7 +5030,7 @@ function generateHabitCompletionCard(habit){
 function mineTabHtml(book, postId){
   if(!SESSION){ return loginGateHtml('나의 공간은 로그인한 본인만 볼 수 있어요.'); }
   var loadStatus = memberDataStatusHtml('privateEntries');
-  if(loadStatus) return loadStatus;
+  if(loadStatus) return (postId?'':readingCardHtml(book))+loadStatus;
   var entries = Object.values(STATE.privateEntries).filter(function(e){ return e.bookId===book.id && e.userId===SESSION.userId; }).sort(function(a,b){ return b.createdAt-a.createdAt; });
   if(postId){
     var back = '<a class="post-detail-back" href="#/book/'+book.id+'/mine">'+svgIcon(I_BACK)+'목록으로</a>';
@@ -4443,7 +5047,7 @@ function mineTabHtml(book, postId){
         placeholder:'누구에게도 보이지 않아요. 솔직하게 적어보세요.', hint:'암호화되어 저장돼요. 프로필에서 복구 파일을 보관해주세요.',
         submitLabel: mineEditingPost?'수정하기':'기록하기', withBgColor:true, withFontSize:true, editingPost:mineEditingPost,
         selectedNoteType: mineEditingPost?mineEditingPost.noteType:null})
-    : noteCtaHtml(book, {openId:'btn-open-mine-composer', icon:I_LOCK, label:'오늘의 기록', sub:'나만 보는 솔직한 기록을 남겨보세요'});
+    : spaceHeadingHtml(book,'mine');
   var gridId = 'mine-grid-'+book.id;
   var searchRow = entries.length ? feedSearchHtml(gridId, '나의 기록 검색') : '';
   var grid = entries.length
@@ -4451,12 +5055,17 @@ function mineTabHtml(book, postId){
       '<div class="empty feed-empty-search" id="empty-'+gridId+'" style="display:none">검색 결과가 없어요.</div>'
     : '<div class="empty">아직 나의 공간에 남긴 기록이 없어요.</div>';
   setTimeout(function(){ decryptListInto(entries); }, 0);
-  return readingCard + composer + '<p class="hint" style="margin:12px 0"><a href="#/profile/edit">개인 기록 복구 파일 저장·복구</a></p>' + searchRow + grid;
+  var activeTimer=readingTimer&&readingTimer.userId===SESSION.userId&&readingTimer.bookId===book.id;
+  var readingSection=activeTimer?readingCard:'<details class="space-reading-wrap"><summary>독서 타이머 · 읽은 시간과 진도 보기</summary>'+readingCard+'</details>';
+  return composer + readingSection+'<p class="space-private-note">'+svgIcon(I_LOCK)+' 나의 기록은 암호화되어 나에게만 보여요. <a href="#/profile/edit">복구 파일 관리</a></p>' + searchRow + grid;
 }
 function decryptListInto(entries){
+  if(!SESSION)return;
+  var owner=SESSION.userId,keyMaterial=SESSION.keyB64,epoch=saveSessionEpoch;
+  function stillCurrent(){return SESSION&&SESSION.userId===owner&&SESSION.keyB64===keyMaterial&&saveSessionEpoch===epoch;}
   ensureKey().then(function(key){
-    if(!key) return;
-    var done = entries.map(function(e){
+    if(!key||!stillCurrent()) return;
+    var done = entries.filter(function(e){return e.userId===owner;}).map(function(e){
       var node = document.querySelector('[data-mine-body="'+e.id+'"]');
       var badgesEl = document.querySelector('[data-mine-badges="'+e.id+'"]');
       var tile = document.querySelector('[data-mine-tile="'+e.id+'"]');
@@ -4465,6 +5074,7 @@ function decryptListInto(entries){
       var card = document.querySelector('[data-mine-entry="'+e.id+'"]');
       if(!node && !tile) return Promise.resolve();
       return decryptPrivateRecord(e, key).then(function(text){
+        if(!stillCurrent())return;
         var payload;
         try{ payload = JSON.parse(text); }catch(err){ payload = {html:null, text:text}; }
         var nb = noteBodyHtml(payload);
@@ -4473,13 +5083,14 @@ function decryptListInto(entries){
         if(badgesEl) badgesEl.innerHTML = nb.badgesHtml;
         if(tile){
           if(nb.ntKey) tile.classList.add('nt-'+nb.ntKey);
-          if(tileMedia) tileMedia.outerHTML = nb.mediaHtml;
-          if(tileBadges) tileBadges.innerHTML = nb.badgesCompactHtml;
+          if(tileMedia) tileMedia.outerHTML = spaceStoryHtml(payload,'#/book/'+e.bookId+'/mine/post/'+e.id);
+          if(tileBadges) tileBadges.innerHTML = spaceNoteTypeHtml(payload);
           var plain = payload.html!=null ? stripHtml(payload.html) : (payload.text||'');
-          tile.setAttribute('data-search-text', plain.toLowerCase());
+          tile.setAttribute('data-search-text', (payload.title+' '+plain).toLowerCase());
           applyFeedSearch('mine-grid-'+e.bookId);
         }
       }).catch(function(){
+        if(!stillCurrent())return;
         if(node) node.innerHTML = '<a href="#/profile/edit">기록을 열 수 없어요. 프로필에서 복구 파일로 복구해주세요.</a>';
         if(tileMedia) tileMedia.textContent = '복구 파일로 기록을 열어주세요';
       });
@@ -4487,7 +5098,7 @@ function decryptListInto(entries){
     /* 나의 공간은 암호화돼 있어 복호화가 끝난 뒤에야 본문이 DOM에 채워진다 — render() 시점의
        enhanceLinkPreviews()는 아직 빈 내용만 보고 지나갔을 것이므로, 모든 항목의 복호화가
        끝나 본문이 실제로 채워진 뒤 다시 한 번 링크 카드 변환을 돌려준다. */
-    Promise.all(done).then(function(){ enhanceLinkPreviews(); });
+    Promise.all(done).then(function(){ if(stillCurrent())enhanceLinkPreviews(); });
   });
 }
 
@@ -4678,7 +5289,8 @@ function matLinksHtml(p){
 function materialNoteBodyBlockHtml(p){
   var bodyHtml = p.html!=null ? sanitizeHtml(p.html) : '';
   var hasText = !!stripHtml(bodyHtml||'').trim();
-  var photoHtml = p.photo ? '<div class="mat-detail-photo-wrap"><img class="mat-detail-photo" src="'+p.photo.dataUrl+'" alt="첨부 사진" loading="lazy"></div>' : '';
+  var photoUrl=safePhotoUrl(p.photo && p.photo.dataUrl);
+  var photoHtml = photoUrl ? '<div class="mat-detail-photo-wrap"><img class="mat-detail-photo" src="'+esc(photoUrl)+'" alt="첨부 사진" loading="lazy"></div>' : '';
   var titleText = (p.title||'').trim();
   var titleHtml = titleText ? '<div class="post-title-cover mat-detail-title">'+esc(titleText)+'</div>' : '';
   if(!hasText && !photoHtml && !titleHtml) return '';
@@ -4799,24 +5411,40 @@ function readFileAsDataURL(file){
 /* small square profile-photo thumbnail (resized+compressed client-side so a photo per
    member doesn't bloat the saved document; it's shown small everywhere it's used) */
 function resizeAvatarDataUrl(file, maxDim, quality){
-  maxDim = maxDim || 160; quality = quality || 0.82;
-  return readFileAsDataURL(file).then(function(dataUrl){
-    return new Promise(function(resolve, reject){
-      var img = new Image();
-      img.onload = function(){
-        try{
-          var side = Math.min(img.naturalWidth, img.naturalHeight);
-          var sx = (img.naturalWidth - side) / 2, sy = (img.naturalHeight - side) / 2;
-          var canvas = document.createElement('canvas');
-          canvas.width = maxDim; canvas.height = maxDim;
-          var ctx = canvas.getContext('2d');
-          ctx.drawImage(img, sx, sy, side, side, 0, 0, maxDim, maxDim);
-          resolve(canvas.toDataURL('image/jpeg', quality));
-        }catch(err){ reject(err); }
-      };
-      img.onerror = function(){ reject(new Error('image load failed')); };
-      img.src = dataUrl;
+  return GrowellProfile.resize(file,maxDim,quality);
+}
+function bindProfilePhotoPicker(prefix, update){
+  var input=document.getElementById(prefix+'-avatar-input'), pick=document.getElementById('btn-'+prefix+'-avatar-pick');
+  var preview=document.getElementById(prefix+'-avatar-preview'), clear=document.getElementById('btn-'+prefix+'-avatar-clear');
+  var status=document.getElementById(prefix+'-avatar-status'), save=document.getElementById(prefix==='su'?'btn-do-signup':'btn-pe-save');
+  if(!input || !pick || !preview || !clear) return;
+  var generation=0, owner=SESSION && SESSION.userId, epoch=authFlowEpoch;
+  function active(token){return preview.isConnected && token===generation && authFlowEpoch===epoch && (SESSION && SESSION.userId)===owner;}
+  function paint(value){
+    var safe=GrowellProfile.safeAvatarUrl(value);
+    preview.innerHTML=safe?'<img src="'+esc(safe)+'" alt="프로필 사진 미리보기">':svgIcon(I_IMG);
+    clear.hidden=!safe;
+  }
+  pick.addEventListener('click',function(){input.click();});
+  input.addEventListener('change',function(){
+    var file=input.files && input.files[0];
+    if(!file) return;
+    var token=++generation, error=GrowellProfile.validateFile(file);
+    input.value='';
+    if(error){status.textContent=error;showToast(error,true);return;}
+    if(save) save.disabled=true;
+    pick.disabled=true;clear.disabled=true;status.textContent='사진을 준비하고 있어요…';
+    resizeAvatarDataUrl(file).then(function(value){
+      if(!active(token)) return;
+      update(value);paint(value);status.textContent='사진을 골랐어요. 저장하면 프로필에 반영돼요.';
+    }).catch(function(err){
+      if(active(token)){status.textContent=err.message||'사진을 불러오지 못했어요.';showToast(status.textContent,true);}
+    }).finally(function(){
+      if(active(token)){if(save) save.disabled=false;pick.disabled=false;clear.disabled=false;}
     });
+  });
+  clear.addEventListener('click',function(){
+    ++generation;update(null);paint(null);status.textContent='저장하면 프로필 사진이 지워져요.';
   });
 }
 /* 나눔/나의 공간/자료실에 첨부하는 사진: 원본을 그대로 저장하면 문서가 무거워지는 것도
@@ -4942,39 +5570,41 @@ function bookPageHtml(book, tab, postId){
   var locked = isBookLocked(book);
   var adminPreview = isAdmin();
   var tabs = [['share','나눔 공간'],['mine','나의 공간'],['worksheet','활동지'],['materials','자료실'],['habit','습관']];
-  var tabBar = '<div class="book-tabs">' + tabs.map(function(t){
-    return '<button type="button" class="book-tab'+(tab===t[0]?' is-active':'')+'" data-book-tab="'+t[0]+'" data-book-id="'+book.id+'">'+t[1]+'</button>';
-  }).join('') + '</div>';
+  var tabBar = '<nav class="book-tabs" aria-label="'+esc(book.area)+' 책의 다섯 공간">' + tabs.map(function(t){
+    return '<button type="button" class="book-tab'+(tab===t[0]?' is-active':'')+'" aria-current="'+(tab===t[0]?'page':'false')+'" data-book-tab="'+t[0]+'" data-book-id="'+book.id+'">'+t[1]+'</button>';
+  }).join('') + '</nav>';
   var body = tab==='mine' ? mineTabHtml(book, postId) : tab==='worksheet' ? worksheetTabHtml(book) : tab==='materials' ? materialsTabHtml(book, postId) : tab==='habit' ? habitTabHtml(book) : shareTabHtml(book, postId);
-  return '<div class="wrap">' +
+  return '<div class="wrap book-page">' +
     '<div class="book-banner" style="--accent-soft:var(--'+book.accent+'-soft); background:var(--'+book.accent+'-soft)">' +
       '<div class="book-banner-inner">' +
         '<div class="book-banner-cover"><img src="'+book.cover+'" alt="'+esc(book.title)+' 표지"></div>' +
         '<div class="book-banner-text">' +
-          '<div class="eyebrow" style="color:var(--'+book.accent+'-ink)">'+esc(book.months)+' · '+esc(book.area)+' · '+esc(book.tagline)+'</div>' +
+          '<div class="eyebrow" style="color:var(--'+book.accent+'-ink)">'+esc(book.area)+' · 함께 읽는 책</div>' +
           '<h1 style="color:var(--'+book.accent+'-ink)">'+esc(book.title)+'</h1>' +
-          '<div class="byline" style="color:var(--'+book.accent+'-ink)">'+esc(book.author)+' 지음 · '+esc(book.publisher)+' &nbsp;|&nbsp; '+esc(book.subtitle)+'</div>' +
-          '<span class="concept-tag" style="color:var(--'+book.accent+'-ink)">핵심 개념 · '+esc(book.concept)+'</span>' +
-          '<ul class="book-summary" style="color:var(--'+book.accent+'-ink)">'+book.summary.map(function(s){ return '<li>'+esc(s)+'</li>'; }).join('')+'</ul>' +
+          '<div class="byline" style="color:var(--'+book.accent+'-ink)">'+esc(book.subtitle)+'</div>' +
         '</div>' +
       '</div>' +
     '</div>' +
     (adminPreview ? adminLockPanelHtml(book) : '') +
     (locked ? lockedBookGateHtml(book) :
-      ('<div class="book-mobile-title">'+esc(book.area)+' · '+esc(book.title)+'</div>' + tabBar + '<div id="book-tab-body">'+body+'</div>')) +
+      (tabBar + '<div id="book-tab-body">'+body+'</div>')) +
   '</div>';
 }
 
 /* ---------------- master render ---------------- */
 function render(){
   captureComposerDraft();
+  syncReadingTimer();
+  if(SESSION&&sharedPostsLoadState==='idle')loadCommunityForCurrentMember();
   var route = currentRoute();
   var app = document.getElementById('app');
   var theme = localStorage.getItem('growell_theme');
   if(theme==='dark') document.documentElement.setAttribute('data-theme','dark');
   else if(theme==='light') document.documentElement.setAttribute('data-theme','light');
-  var html = headerHtml(route) + '<main>';
-  if(route.view==='login'){
+  var html = headerHtml(route) + '<main>' + activeReadingStripHtml(route);
+  if(!SESSION&&route.view!=='about'){
+    html += loginHtml();
+  } else if(route.view==='login'){
     html += loginHtml();
   } else if(route.view==='book'){
     var book = bookById(route.bookId);
@@ -5008,6 +5638,7 @@ function restoreDraftIfAny(route){
 
 /* ---------------- events (delegated) ---------------- */
 function bindEvents(route){
+  bindOAuthEvents();
   bindPrivateRecovery();
   bindHomeEvents();
   // 위임한 한 번의 리스너는 체크 상태만 갱신하면서 생성한 재시도 버튼도 처리한다.
@@ -5028,6 +5659,9 @@ function bindEvents(route){
     });
   }
   var app = document.getElementById('app');
+
+  app.querySelectorAll('[data-space-prompt]').forEach(function(button){button.addEventListener('click',function(){var open=document.getElementById('btn-open-share-composer');if(open)open.click();});});
+  app.querySelectorAll('[data-retry-community]').forEach(function(button){button.addEventListener('click',function(){sharedPostsLoadState='idle';render();});});
 
   var themeBtn = document.getElementById('btn-theme');
   if(themeBtn){
@@ -5073,22 +5707,7 @@ function bindEvents(route){
   if(doLoginBtn) doLoginBtn.addEventListener('click', function(){
     doLogin(document.getElementById('li-id').value, document.getElementById('li-pw').value, doLoginBtn);
   });
-  var avatarPickBtn = document.getElementById('btn-su-avatar-pick');
-  var avatarInput = document.getElementById('su-avatar-input');
-  if(avatarPickBtn && avatarInput){
-    avatarPickBtn.addEventListener('click', function(){ avatarInput.click(); });
-    avatarInput.addEventListener('change', function(){
-      var f = avatarInput.files && avatarInput.files[0];
-      if(!f) return;
-      if(!/^image\//.test(f.type)){ showToast('사진 파일만 선택할 수 있어요.', true); return; }
-      resizeAvatarDataUrl(f).then(function(dataUrl){
-        pendingSignupAvatar = dataUrl;
-        render();
-      }).catch(function(){ showToast('사진을 불러오지 못했어요.', true); });
-    });
-  }
-  var avatarClearBtn = document.getElementById('btn-su-avatar-clear');
-  if(avatarClearBtn) avatarClearBtn.addEventListener('click', function(){ pendingSignupAvatar = null; render(); });
+  bindProfilePhotoPicker('su',function(value){pendingSignupAvatar=value;});
   var doSignupBtn = document.getElementById('btn-do-signup');
   if(doSignupBtn) doSignupBtn.addEventListener('click', function(){
     var codeEl = document.getElementById('su-admin-code');
@@ -5112,22 +5731,7 @@ function bindEvents(route){
   if(gotoProfileEdit) gotoProfileEdit.addEventListener('click', function(){ pendingProfileAvatar = undefined; });
 
   /* 프로필 수정 페이지 — 회원가입 사진 선택과 같은 방식(리사이즈 후 미리보기) */
-  var peAvatarPickBtn = document.getElementById('btn-pe-avatar-pick');
-  var peAvatarInput = document.getElementById('pe-avatar-input');
-  if(peAvatarPickBtn && peAvatarInput){
-    peAvatarPickBtn.addEventListener('click', function(){ peAvatarInput.click(); });
-    peAvatarInput.addEventListener('change', function(){
-      var f = peAvatarInput.files && peAvatarInput.files[0];
-      if(!f) return;
-      if(!/^image\//.test(f.type)){ showToast('사진 파일만 선택할 수 있어요.', true); return; }
-      resizeAvatarDataUrl(f).then(function(dataUrl){
-        pendingProfileAvatar = dataUrl;
-        render();
-      }).catch(function(){ showToast('사진을 불러오지 못했어요.', true); });
-    });
-  }
-  var peAvatarClearBtn = document.getElementById('btn-pe-avatar-clear');
-  if(peAvatarClearBtn) peAvatarClearBtn.addEventListener('click', function(){ pendingProfileAvatar = null; render(); });
+  bindProfilePhotoPicker('pe',function(value){pendingProfileAvatar=value;});
   var peSaveBtn = document.getElementById('btn-pe-save');
   if(peSaveBtn) peSaveBtn.addEventListener('click', function(){
     doEditProfile(document.getElementById('pe-name').value, pendingProfileAvatar, peSaveBtn);
@@ -5283,80 +5887,13 @@ function bindEvents(route){
 
   /* rich text toolbar */
   var noteEditor = document.getElementById('note-editor');
+  bindRichTextToolbar(noteEditor);
   if(noteEditor){
     noteEditor.addEventListener('input', function(){
       if(noteEditor.innerHTML==='<br>'||noteEditor.textContent.trim()===''&&noteEditor.querySelectorAll('img,ol,ul,blockquote,pre').length===0){
         if(noteEditor.textContent.trim()==='') noteEditor.innerHTML='';
       }
     });
-    var toolbar = document.querySelector('.rt-toolbar');
-    /* 하이라이트: 누르면 켜져서(다양한 색 중 골라) 입력하는 글자가 하이라이트되고, 다시
-       누르면 꺼져서 원래 글쓰기(하이라이트 없음)로 돌아온다 — 이전에 이미 칠해둔 하이라이트는
-       그대로 남고, 이후에 입력하는 글자에만 적용/해제되는 토글이다. */
-    var highlightActive = false;
-    var highlightColor = HL_COLORS[0];
-    var highlightBtn = toolbar ? toolbar.querySelector('[data-rt-cmd="highlight"]') : null;
-    var hlSwatches = document.getElementById('hl-swatches');
-    function setHighlightActive(on){
-      highlightActive = on;
-      if(highlightBtn) highlightBtn.classList.toggle('is-active', on);
-      if(highlightBtn) highlightBtn.style.background = on ? highlightColor : '';
-      if(hlSwatches) hlSwatches.hidden = !on;
-    }
-    if(hlSwatches){
-      hlSwatches.querySelectorAll('[data-hl-color]').forEach(function(sw){
-        sw.addEventListener('mousedown', function(e){ e.preventDefault(); });
-        sw.addEventListener('click', function(){
-          highlightColor = sw.getAttribute('data-hl-color');
-          hlSwatches.querySelectorAll('.hl-swatch').forEach(function(x){ x.classList.remove('is-sel'); });
-          sw.classList.add('is-sel');
-          if(highlightBtn) highlightBtn.style.background = highlightColor;
-          if(highlightActive){
-            try{ document.execCommand('hiliteColor', false, highlightColor); }catch(err){}
-          }
-        });
-      });
-    }
-    if(toolbar){
-      toolbar.querySelectorAll('[data-rt-cmd]').forEach(function(b){
-        b.addEventListener('mousedown', function(e){ e.preventDefault(); });
-        b.addEventListener('click', function(){
-          if(document.activeElement!==noteEditor){
-            noteEditor.focus();
-            var sel = window.getSelection();
-            var range = document.createRange();
-            range.selectNodeContents(noteEditor);
-            range.collapse(false);
-            sel.removeAllRanges(); sel.addRange(range);
-          }
-          var cmd = b.getAttribute('data-rt-cmd');
-          try{
-            if(cmd==='bold') document.execCommand('bold');
-            else if(cmd==='italic') document.execCommand('italic');
-            else if(cmd==='underline') document.execCommand('underline');
-            else if(cmd==='strike') document.execCommand('strikeThrough');
-            else if(cmd==='ol') document.execCommand('insertOrderedList');
-            else if(cmd==='ul') document.execCommand('insertUnorderedList');
-            else if(cmd==='quote') document.execCommand('formatBlock', false, 'blockquote');
-            else if(cmd==='code') document.execCommand('formatBlock', false, 'pre');
-            else if(cmd==='clear'){ document.execCommand('removeFormat'); setHighlightActive(false); }
-            else if(cmd==='undo') document.execCommand('undo');
-            else if(cmd==='redo') document.execCommand('redo');
-            else if(cmd==='fontsize') document.execCommand('fontSize', false, '5');
-            else if(cmd==='highlight'){
-              /* 켜짐/꺼짐 표시(버튼·스와치)는 execCommand 성공 여부와 무관하게 먼저 바꿔둔다 —
-                 브라우저에 따라 hiliteColor가 실패해도 다시 누르면 꺼지는 토글 자체는 항상 동작해야 한다. */
-              var turningOn = !highlightActive;
-              setHighlightActive(turningOn);
-              try{ document.execCommand('hiliteColor', false, turningOn ? highlightColor : 'transparent'); }catch(e2){}
-            } else if(cmd==='link'){
-              var url = window.prompt('연결할 링크 주소를 입력해주세요 (https://...)');
-              if(url){ if(!/^https?:\/\//i.test(url)) url='https://'+url; document.execCommand('createLink', false, url); }
-            }
-          }catch(err){}
-        });
-      });
-    }
   }
 
   /* photo attach — 수정 화면을 열 때는 기존 사진이 미리보기 마크업으로 이미 그려져 있으니,
@@ -5600,6 +6137,16 @@ function bindEvents(route){
   });
 
   /* 습관 만들기 */
+  app.querySelectorAll('[data-habit-view]').forEach(function(b){b.addEventListener('click',function(){habitCalendarMode=b.getAttribute('data-habit-view');render();});});
+  app.querySelectorAll('[data-habit-calendar-shift]').forEach(function(b){b.addEventListener('click',function(){
+    var today=new Date(),cur=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()},next=new Date(cur.y,cur.m+Number(b.getAttribute('data-habit-calendar-shift')),1);
+    if(next.getFullYear()<1000||next.getFullYear()>9999) return;
+    habitCalendarMonth={y:next.getFullYear(),m:next.getMonth()};render();
+  });});
+  app.querySelectorAll('[data-habit-card]').forEach(function(card){card.addEventListener('click',function(e){
+    if(e.target.closest('button,input,a,select,textarea,label')) return;
+    openHabitProgress(card.getAttribute('data-habit-card'));
+  });});
   var openHabitBtn = document.getElementById('btn-open-habit-form');
   if(openHabitBtn) openHabitBtn.addEventListener('click', function(){
     habitFormOpenFor = openHabitBtn.getAttribute('data-book'); habitEditingId = null; render();
@@ -5612,19 +6159,22 @@ function bindEvents(route){
     b.addEventListener('click', function(){
       var hid = b.getAttribute('data-edit-habit');
       var h = STATE.habits[hid];
-      if(!h) return;
-      habitEditingId = hid; habitFormOpenFor = h.bookId; render();
+      if(!h||!SESSION||h.userId!==SESSION.userId) return;
+      habitEditingId = hid; habitFormOpenFor = h.bookId; habitHistoryOpenFor=null; render();
+      var nameField=document.getElementById('habit-name');if(nameField) nameField.focus();
     });
   });
   app.querySelectorAll('[data-delete-habit]').forEach(function(b){
     b.addEventListener('click', function(){ deleteHabit(b.getAttribute('data-delete-habit'), b); });
   });
   var habitSubmit = document.getElementById('btn-habit-submit');
+  app.querySelectorAll('[name="habit-behavior-type"]').forEach(function(input){input.addEventListener('change',function(){var hint=document.getElementById('habit-kind-hint');if(hint)hint.textContent=GrowellHabits.behaviorHint({behaviorType:input.value});});});
   if(habitSubmit){
     habitSubmit.addEventListener('click', function(){
       var bookId = document.getElementById('habit-form').getAttribute('data-book');
       var payload = {
         name: (document.getElementById('habit-name')||{}).value || '',
+        behaviorType:(app.querySelector('[name="habit-behavior-type"]:checked')||{}).value||'do',
         place: (document.getElementById('habit-place')||{}).value || '',
         time: (document.getElementById('habit-time')||{}).value || '',
         goal: (document.getElementById('habit-goal')||{}).value || '',
@@ -5651,16 +6201,22 @@ function bindEvents(route){
   });
   app.querySelectorAll('[data-habit-history]').forEach(function(b){
     b.addEventListener('click', function(){
-      habitHistoryOpenFor = b.getAttribute('data-habit-history');
-      habitHistoryMonth = null;
-      render();
+      openHabitProgress(b.getAttribute('data-habit-history'));
     });
   });
   app.querySelectorAll('[data-habit-history-close]').forEach(function(b){
-    b.addEventListener('click', function(){ habitHistoryOpenFor = null; habitHistoryMonth = null; render(); });
+    b.addEventListener('click', function(){ closeHabitProgress(); });
   });
   app.querySelectorAll('[data-habit-history-stop]').forEach(function(b){
     b.addEventListener('click', function(e){ e.stopPropagation(); });
+    b.addEventListener('keydown',function(e){
+      if(e.key==='Escape'){e.preventDefault();closeHabitProgress();return;}
+      if(e.key!=='Tab') return;
+      var focusable=Array.from(b.querySelectorAll('button:not(:disabled),[href],input:not(:disabled),[tabindex="0"]')),first=focusable[0],last=focusable[focusable.length-1];
+      if(!first) return;
+      if(e.shiftKey&&(document.activeElement===first||document.activeElement===b)){e.preventDefault();last.focus();}
+      else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+    });
   });
   var histPrev = app.querySelector('[data-habit-history-prev]');
   if(histPrev && !histPrev.disabled) histPrev.addEventListener('click', function(){ shiftHabitHistoryMonth(-1); });
@@ -5685,76 +6241,10 @@ function bindEvents(route){
       saveCurrentPage(bookId, cur, readingEditSave);
     });
   }
-  var readingStartBtn = document.getElementById('btn-reading-start');
-  if(readingStartBtn){
-    readingStartBtn.addEventListener('click', function(){
-      var bookId = readingStartBtn.getAttribute('data-book');
-      readingTimer = {bookId:bookId, startedAt:Date.now(), elapsedMs:0, running:true};
-      readingSavePanelOpen = false;
-      render();
-    });
-  }
-  var readingTogglePause = document.getElementById('btn-reading-toggle-pause');
-  if(readingTogglePause){
-    readingTogglePause.addEventListener('click', function(){
-      if(!readingTimer) return;
-      if(readingTimer.running){
-        readingTimer.elapsedMs = readingTimerElapsedMs();
-        readingTimer.startedAt = null;
-        readingTimer.running = false;
-      } else {
-        readingTimer.startedAt = Date.now();
-        readingTimer.running = true;
-      }
-      render();
-    });
-  }
-  var readingCancelBtn = document.getElementById('btn-reading-cancel');
-  if(readingCancelBtn){
-    readingCancelBtn.addEventListener('click', function(){
-      if(!readingTimer) return;
-      var elapsed = readingTimerElapsedMs();
-      if(elapsed > 5000 && !confirm('타이머를 취소할까요? 지금까지 읽은 시간은 저장되지 않아요.')) return;
-      readingTimer = null;
-      readingSavePanelOpen = false;
-      render();
-    });
-  }
-  var readingDoneBtn = document.getElementById('btn-reading-done');
-  if(readingDoneBtn){
-    readingDoneBtn.addEventListener('click', function(){
-      if(!readingTimer) return;
-      readingTimer.elapsedMs = readingTimerElapsedMs();
-      readingTimer.startedAt = null;
-      readingTimer.running = false;
-      readingSavePanelOpen = true;
-      render();
-    });
-  }
-  var readingSaveBack = document.getElementById('btn-reading-save-back');
-  if(readingSaveBack) readingSaveBack.addEventListener('click', function(){ readingSavePanelOpen = false; render(); });
-  var readingLogSave = document.getElementById('btn-reading-log-save');
-  if(readingLogSave){
-    readingLogSave.addEventListener('click', function(){
-      var bookId = readingLogSave.getAttribute('data-book');
-      var pageRaw = parseInt((document.getElementById('reading-log-page-input')||{}).value, 10);
-      if(isNaN(pageRaw) || pageRaw<=0){ showToast('읽은 페이지를 숫자로 입력해주세요.', true); return; }
-      var seconds = Math.round(readingTimerElapsedMs()/1000);
-      submitReadingLog(bookId, seconds, pageRaw, readingLogSave);
-    });
-  }
+  bindReadingTimerEvents();
   app.querySelectorAll('[data-del-reading-log]').forEach(function(b){
     b.addEventListener('click', function(){ deleteReadingLog(b.getAttribute('data-del-reading-log'), b); });
   });
-  var readingTimerDisplay = document.getElementById('reading-timer-display');
-  if(readingTimerDisplay && readingTimer && readingTimer.running){
-    readingTimerIntervalId = setInterval(function(){
-      var d = document.getElementById('reading-timer-display');
-      if(!d || !readingTimer){ clearInterval(readingTimerIntervalId); readingTimerIntervalId=null; return; }
-      d.textContent = fmtElapsed(readingTimerElapsedMs());
-    }, 1000);
-  }
-
   /* 읽은 기록 — 눌러야 펼쳐지는 토글 (읽는 중/완독 상태 표시는 현재 페이지로 자동 계산되는
      값이라 더 이상 클릭 가능한 컨트롤이 아님) */
   var readingHistoryToggle = document.getElementById('btn-reading-history-toggle');
