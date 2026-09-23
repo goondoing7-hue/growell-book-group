@@ -182,7 +182,7 @@
 .space-list-copy{min-width:0;flex:1}
 .space-list-meta,.space-list-byline{display:block;color:var(--space-muted);font:500 12px/1.55 var(--font-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .space-list-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;font:700 16px/1.55 var(--font-body);letter-spacing:-.025em;margin:6px 0}
-.space-list-thumbnail{display:block;width:72px;height:72px;flex:0 0 72px;border-radius:10px;overflow:hidden;background:var(--space-photo)}
+.space-list-thumbnail{display:block;width:72px;height:72px;flex:0 0 72px;border-radius:10px;overflow:hidden;background:transparent}
 .space-list-thumbnail img{display:block;width:100%;height:100%;object-fit:contain}
 .space-list-footer{position:absolute;left:16px;bottom:16px;display:flex;align-items:center;gap:6px;max-width:calc(100% - 120px);color:var(--space-muted);font:500 12px/1.55 var(--font-body);white-space:nowrap}
 .space-list-footer>.community-author-control{gap:5px;min-width:0;font-size:12px;font-weight:600;line-height:1.55}
