@@ -7,7 +7,7 @@ const profile={id:'u-social',auth_user_id:authId,login_id:'social_test',name:'�
 const user={id:authId,identities:[{provider:'google'}],app_metadata:{providers:['google']}};
 function section(a,b){const start=html.indexOf(a),end=html.indexOf(b,start);assert.ok(start>=0&&end>start);return html.slice(start,end);}
 function harness(options={}){
-  const memory=new Map(),calls=[],logs=[],nodes={},c={Promise,URL,URLSearchParams,JSON,Date,setTimeout,clearTimeout,
+  const memory=options.memory||new Map(),sessionMemory=new Map(),authUser=options.user||user,calls=[],logs=[],nodes={},c={Promise,URL,URLSearchParams,JSON,Date,setTimeout,clearTimeout,
     console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,
     STATE:{users:{},posts:{},comments:{},privateEntries:{},habits:{},readingMeta:{},readingLogs:{},worksheets:{},materialNotes:{}},SESSION:null,
     authFlowEpoch:0,saveSessionEpoch:0,sharedPostsLoadState:'idle',BOOTING:true,BOOT_FAILED:false,
@@ -15,14 +15,14 @@ function harness(options={}){
     location:{href:options.href||'https://app.example/',hash:'#/',assign(url){calls.push(['redirect',url]);}},
     history:{replaceState(a,b,url){calls.push(['clean-url',url]);}},
     localStorage:{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)},
-    sessionStorage:{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)},
+    sessionStorage:{getItem:key=>sessionMemory.get(key)||null,setItem:(key,value)=>sessionMemory.set(key,value),removeItem:key=>sessionMemory.delete(key)},
     document:{querySelector(){return null;},querySelectorAll(){return [];},getElementById:id=>nodes[id]||null},
-    fetch:async()=>({ok:true,json:async()=>({external:{google:true,kakao:false}})}),
+    fetch:async()=>{calls.push(['provider-settings']);return {ok:true,json:async()=>({external:{google:true,kakao:false}})};},
     render(){calls.push(['render']);},showToast(message){calls.push(['toast',message]);},esc:value=>String(value),
     mapProfileRow:r=>({id:r.id,name:r.name,authUserId:r.auth_user_id,salt:r.pbkdf2_salt,isAdmin:r.is_admin,loginId:r.login_id}),
     resetSaveSession(){c.saveSessionEpoch++;return Promise.resolve();},clearMemberSession(){c.SESSION=null;c.STATE.privateEntries={};calls.push(['clear']);},
     loadMemberData:async()=>{calls.push(['load-member']);return true;},
-    sb:{auth:{getSession:async()=>({data:{session:options.guest?null:{user}}}),getUser:async()=>options.invalidAuth?{error:new Error('expired')}:{data:{user},error:null},
+    sb:{auth:{getSession:async()=>({data:{session:options.guest?null:{user:authUser}}}),getUser:async()=>options.invalidAuth?{error:new Error('expired')}:{data:{user:authUser},error:null},
       onAuthStateChange(callback){c.authCallback=callback;return {data:{subscription:{unsubscribe(){}}}};},
       exchangeCodeForSession:async code=>{calls.push(['exchange',code]);return {error:null};},
       signOut:async()=>{calls.push(['signout']);return {};},
@@ -35,6 +35,37 @@ function harness(options={}){
   vm.runInContext(section('function bootApp(){','function currentUser(){'),c);
   return {c,memory,calls,nodes,logs};
 }
+test('hidden social entry points make no provider probe or launch and leave only native login and signup',async()=>{
+  const {c,calls}=harness({guest:true});
+  vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
+  vm.runInContext(section('function signupFormHtml(){','function forgotPasswordFormHtml('),c);
+  c.profilePhotoPickerHtml=()=>'';c.pendingSignupAvatar=null;
+  await c.loadOAuthProviderSettings();
+  c.oauthProviders={state:'ready',google:true,kakao:true};
+  for(const provider of ['google','kakao'])await c.startOAuth(provider);
+  assert.equal(c.SOCIAL_AUTH_VISIBLE,false);
+  assert.equal(c.socialSignupStatusHtml(),'');
+  for(const mode of ['login','signup']){
+    c.authMode=mode;const markup=c.loginHtml();
+    assert.doesNotMatch(markup,/data-oauth-provider|간편|Google|카카오|일반 회원가입|auth-email-heading/);
+    assert.match(markup,/>회원가입<\/button>/);
+    assert.match(markup,mode==='login'?/id="li-pw"/:/id="su-pw"/);
+  }
+  assert.ok(!calls.some(call=>['provider-settings','oauth','redirect','signout','clear'].includes(call[0])));
+});
+
+test('native login restores from persistent storage in a fresh app with no tab session storage',async()=>{
+  const nativeUser={id:authId,identities:[{provider:'email'}],app_metadata:{providers:['email']}};
+  const first=harness({user:nativeUser}),keyB64=await Private.exportKey(await Private.newKey());
+  first.c.localStorage.setItem('growell_session',JSON.stringify({userId:profile.id,name:'old name',keyB64,authKind:'password'}));
+  const fresh=harness({user:nativeUser,memory:first.memory});
+  await fresh.c.bootApp();
+  assert.equal(fresh.c.SESSION.authKind,'password');
+  assert.equal(fresh.c.SESSION.keyB64,keyB64);
+  assert.equal(fresh.c.SESSION.name,profile.name);
+  assert.ok(fresh.calls.some(call=>call[0]==='load-member'));
+  assert.ok(!fresh.calls.some(call=>['oauth','provider-settings','signout'].includes(call[0])));
+});
 test('guest boot never reads member tables or verifies an absent Auth session',async()=>{
   const {c,calls,memory}=harness({guest:true});memory.set('growell_session','{"userId":"stale"}');await c.bootApp();
   assert.equal(c.SESSION,null);assert.equal(calls.filter(v=>v[0]==='read').length,0);assert.equal(memory.has('growell_session'),false);
@@ -110,13 +141,14 @@ test('the same user token refresh does not clear private keys or cancel writing'
   await new Promise(r=>setTimeout(r,5));assert.equal(c.SESSION.keyB64,'keep');assert.ok(!calls.some(v=>v[0]==='clear'));
 });
 test('provider status controls launch and returned redirect stays on configured Supabase',async()=>{
-  const {c,calls}=harness();await c.loadOAuthProviderSettings();await c.startOAuth('kakao');assert.ok(!calls.some(v=>v[0]==='oauth'));await c.startOAuth('google');
+  const {c,calls}=harness();c.SOCIAL_AUTH_VISIBLE=true;await c.loadOAuthProviderSettings();await c.startOAuth('kakao');assert.ok(!calls.some(v=>v[0]==='oauth'));await c.startOAuth('google');
   assert.ok(calls.some(v=>v[0]==='redirect'&&v[1].startsWith('https://project.supabase.co/auth/v1/authorize')));
 });
 
 test('Kakao overrides provider scope to nickname only while Google keeps its original OAuth options',async()=>{
   for(const provider of ['kakao','google']){
     const {c,calls}=harness({href:'https://app.example/?obsolete=discard#/book/emotion/share'});
+    c.SOCIAL_AUTH_VISIBLE=true;
     c.oauthProviders={state:'ready',google:true,kakao:true};
     await c.startOAuth(provider);
     const requests=calls.filter(call=>call[0]==='oauth');assert.equal(requests.length,1);

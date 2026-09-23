@@ -166,3 +166,59 @@
  .community-author-post h3{font-size:17px}
  .community-author-post p{font-size:14px}
 }
+
+/* Reading workspace: a quiet record list and a full reading/writing pane. */
+.space-workspace{display:grid;grid-template-columns:minmax(270px,.85fr) minmax(0,1.65fr);gap:24px;align-items:start;margin:18px 0 32px}
+.space-workspace.is-writing{grid-template-columns:minmax(0,1fr)}
+.space-workspace.is-writing>.space-workspace-list{display:none}
+.space-workspace-list,.space-workspace-detail{min-width:0}
+.space-record-list{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-content:start}
+.book-page .space-list-item{position:relative;border-radius:15px;transition:border-color .16s ease,background-color .16s ease;box-shadow:none;overflow:hidden}
+.book-page .space-list-item:hover{border-color:var(--space-green);box-shadow:none}
+.book-page .space-list-item.is-selected{border-color:var(--space-green);background:var(--space-soft)}
+.space-list-item[hidden]{display:none!important}
+.space-list-link{display:flex;align-items:center;gap:16px;box-sizing:border-box;min-width:0;min-height:116px;width:100%;padding:16px;color:var(--ink);text-decoration:none}
+.space-list-link:focus-visible{outline:2px solid var(--space-green);outline-offset:-4px;border-radius:14px}
+.space-list-copy{min-width:0;flex:1}
+.space-list-meta,.space-list-byline{display:block;color:var(--space-muted);font:500 12px/1.55 var(--font-body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.space-list-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;font:700 16px/1.55 var(--font-body);letter-spacing:-.025em;margin:6px 0}
+.space-list-thumbnail{display:block;width:72px;height:72px;flex:0 0 72px;border-radius:10px;overflow:hidden;background:var(--space-photo)}
+.space-list-thumbnail img{display:block;width:100%;height:100%;object-fit:contain}
+.space-list-footer{position:absolute;left:16px;bottom:16px;display:flex;align-items:center;gap:6px;max-width:calc(100% - 120px);color:var(--space-muted);font:500 12px/1.55 var(--font-body);white-space:nowrap}
+.space-list-footer>.community-author-control{gap:5px;min-width:0;font-size:12px;font-weight:600;line-height:1.55}
+.space-list-footer .avatar{width:20px;height:20px;font-size:10px}
+.space-list-footer>span{flex:none}
+.space-workspace-detail>.feed{max-width:none;width:100%;margin:0}
+.space-workspace-detail .card.post{margin:0;box-shadow:none;border:1px solid var(--line);border-radius:18px}
+.space-workspace-detail .post-head{padding:20px 22px 14px}
+.space-workspace-detail .post-body{padding:20px 22px 10px}
+.space-workspace-detail .post-media:not(.post-media-text){display:flex;align-items:center;justify-content:center}
+.space-workspace-detail .post-media img{width:100%;height:auto;max-height:480px;object-fit:contain}
+.space-workspace-detail .post-text{font-size:16px;line-height:1.9}
+.space-workspace-detail .post-actions{padding:10px 22px 20px}
+.space-workspace-detail .insight-body{padding:24px}
+.space-workspace-detail .insight-qa-text{font-size:16px;line-height:1.9}
+.book-page .space-workspace-detail .composer{margin:0;padding:24px;min-width:0}
+.space-workspace-detail .empty{background:var(--surface);border-radius:18px;padding:56px 26px;font-size:15px;line-height:1.8}
+.space-detail-back{display:none}
+@media(max-width:760px){
+ .space-workspace{grid-template-columns:minmax(0,1fr);gap:16px;margin:14px 0 28px}
+ .space-workspace:not(.is-detail):not(.is-writing)>.space-workspace-detail{display:none}
+ .space-workspace.is-detail>.space-workspace-list,.space-workspace.is-writing>.space-workspace-list{display:none}
+ .space-detail-back{display:inline-flex;align-items:center;gap:7px;min-height:40px;margin:0 0 12px;padding:6px 0;color:var(--space-green);font:650 14px/1.5 var(--font-body);text-decoration:none;background:none;border:0;cursor:pointer}
+ .space-detail-back svg{width:18px;height:18px;flex:none}
+ .space-detail-back:focus-visible{outline:2px solid var(--space-green);outline-offset:4px;border-radius:4px}
+ .space-list-title{font-size:16px}
+ .space-workspace-detail .post-head{padding:18px 18px 12px}
+ .space-workspace-detail .post-body{padding:18px 18px 8px}
+ .space-workspace-detail .post-media img{max-height:360px}
+ .space-workspace-detail .post-actions{padding:10px 18px 18px}
+ .space-workspace-detail .insight-body{padding:20px 18px}
+ .book-page .space-workspace-detail .composer{padding:18px 14px;margin:0}
+}
+@media(max-width:359px){
+ .space-list-link{gap:12px;padding:14px;min-height:112px}
+ .space-list-thumbnail{width:64px;height:64px;flex-basis:64px;border-radius:9px}
+ .space-list-title{font-size:15px}
+ .space-list-footer{left:14px;bottom:14px;max-width:calc(100% - 104px)}
+}

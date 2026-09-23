@@ -18,7 +18,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
-  'tests/deployment.test.cjs', 'tests/drafts.test.cjs',
+  'tests/deployment.test.cjs', 'tests/drafts.test.cjs', 'tests/studio-layout.test.cjs',
   'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs',
   'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs', 'tests/home-domain.test.cjs', 'tests/home-ui.test.cjs',
   'tests/editor-colors.test.cjs', 'tests/editor-sanitize.test.cjs', 'tests/reading-timer.test.cjs', 'tests/reading-save.test.cjs', 'tests/reading-integration.test.cjs',
