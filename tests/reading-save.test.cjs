@@ -11,14 +11,25 @@ const snapshot={id:'rl-fixed-session',bookId:'emotion',userId:'u1',seconds:600,p
 function logRow(log){return {id:log.id,book_id:log.bookId,user_id:log.userId,seconds:log.seconds,page:log.page,start_page:log.startPage,created_at:log.createdAt};}
 function harness(options={}){
   const remoteLogs=Object.fromEntries((options.logs||[]).map(row=>[row.id,clone(row)])),remoteMeta={},calls=[];
-  let metadataAttempts=0,insertAttempts=0;
+  let metadataAttempts=0,insertAttempts=0,refreshAttempts=0;
+  let authSession=options.authSession===undefined?{user:{id:'auth1'},access_token:'test-only',expires_at:4102444800}:options.authSession;
+  const failures=[];
   const c={Promise,Date,Number,JSON,console,setTimeout,clearInterval(){},
     SESSION:{userId:'u1',name:'회원',keyB64:'key'},CURRENT_KEY:null,CURRENT_KEY_OWNER:null,CURRENT_KEY_MATERIAL:null,
-    STATE:{users:{u1:{id:'u1',name:'회원'}},posts:{},comments:{},privateEntries:{},worksheets:{},materialNotes:{},habits:{},
+    STATE:{users:{u1:{id:'u1',name:'회원',authUserId:'auth1'}},posts:{},comments:{},privateEntries:{},worksheets:{},materialNotes:{},habits:{},
       readingLogs:{},readingMeta:{emotion_u1:{bookId:'emotion',userId:'u1',currentPage:30,updatedAt:50}},bookLocks:{},announcement:{next:{},reading:{}}},
     localStorage:{setItem(){},removeItem(){}},sessionStorage:{setItem(){}},location:{hash:'#/book/emotion/mine'},
     document:{querySelectorAll:()=>[]},render(){},showToast(){},esc:String,urlFromPhoto:()=>null,
-    sb:{from(table){
+    sb:{auth:{
+      getSession:async()=>({data:{session:authSession},error:null}),
+      refreshSession:async()=>{
+        refreshAttempts++;
+        if(options.refresh)return options.refresh();
+        if(options.refreshError)return {data:{session:null},error:options.refreshError};
+        authSession={user:{id:'auth1'},access_token:'refreshed-test-only',expires_at:4102444800};
+        return {data:{session:authSession},error:null};
+      }
+    },from(table){
       let operation='select',payload,filters=[],single=false;
       const query={
         select(){return query;},eq(key,value){filters.push([key,value]);return query;},maybeSingle(){single=true;return query;},
@@ -36,6 +47,7 @@ function harness(options={}){
           }
           if(table==='reading_logs'&&operation==='insert'){
             insertAttempts++;
+            if(options.authInsertFailure && (insertAttempts===1 || options.alwaysRejectAuth))return {data:null,error:{code:'42501',status:401}};
             if(remoteLogs[payload.id])return {data:null,error:{code:'23505',message:'duplicate key'}};
             if(options.rejectInsert)return {data:null,error:{message:'network failed before insert'}};
             remoteLogs[payload.id]=clone(payload);
@@ -43,6 +55,7 @@ function harness(options={}){
           }
           if(table==='reading_meta'&&operation==='upsert'){
             metadataAttempts++;
+            if(options.authMetaFailure&&metadataAttempts===1)return {data:null,error:{code:'42501',status:401}};
             if(options.failFirstMeta&&metadataAttempts===1)return {data:null,error:{message:'metadata temporarily offline'}};
             remoteMeta[payload.book_id+'_'+payload.user_id]=clone(payload);return {data:null,error:null};
           }
@@ -62,10 +75,61 @@ function harness(options={}){
     return c.saveState(next=>{
       next.readingLogs[frozen.id]=clone(frozen);
       next.readingMeta[frozen.bookId+'_'+frozen.userId]={bookId:frozen.bookId,userId:frozen.userId,userName:'회원',currentPage:frozen.page,updatedAt:frozen.createdAt};
-    },{render:false});
+    },{render:false,readingSession:!!options.verifyAuth,onFailure:err=>failures.push(err)});
   }
-  return {c,save,calls,remoteLogs,remoteMeta};
+  return {c,save,calls,remoteLogs,remoteMeta,failures,get refreshAttempts(){return refreshAttempts;}};
 }
+
+test('stale visible login cannot submit anonymously; a recoverable session is refreshed before writing',async()=>{
+  for(const authSession of [null,{user:{id:'auth1'},access_token:'expired-test',expires_at:1}]){
+    const h=harness({verifyAuth:true,authSession});
+    assert.equal(await h.save({...snapshot,seconds:35459}),true);
+    assert.equal(h.refreshAttempts,1);
+    assert.equal(h.remoteLogs[snapshot.id].seconds,35459);
+    assert.equal(h.failures.length,0);
+  }
+});
+
+test('missing refresh credentials preserves a failed record and sends no database mutation',async()=>{
+  const h=harness({verifyAuth:true,authSession:null,refreshError:{name:'AuthSessionMissingError',status:400}});
+  assert.equal(await h.save(),false);
+  assert.equal(h.failures[0].message,'reading-login-required');
+  assert.equal(h.calls.length,0);assert.equal(Object.keys(h.remoteLogs).length,0);
+  assert.equal(h.c.STATE.readingMeta.emotion_u1.currentPage,30);
+});
+
+test('authentication failure retries the same immutable reading record once after refresh',async()=>{
+  for(const failure of ['authInsertFailure','authMetaFailure']){
+    const h=harness({verifyAuth:true,[failure]:true});
+    assert.equal(await h.save(),true);assert.equal(h.refreshAttempts,1);
+    const inserts=h.calls.filter(call=>call.table==='reading_logs'&&call.operation==='insert');
+    assert.equal(inserts.length,2);assert.deepEqual(inserts[0].payload,inserts[1].payload);
+    assert.equal(Object.keys(h.remoteLogs).length,1);assert.equal(h.remoteMeta.emotion_u1.current_page,42);
+    assert.equal(h.failures.length,0);
+  }
+});
+
+test('persistent permission errors stop after a single auth retry without relaxing server access',async()=>{
+  const h=harness({verifyAuth:true,authInsertFailure:true,alwaysRejectAuth:true});
+  assert.equal(await h.save(),false);assert.equal(h.refreshAttempts,1);
+  assert.equal(h.calls.filter(call=>call.operation==='insert').length,2);
+  assert.equal(h.failures.length,1);assert.equal(h.failures[0].code,'42501');
+});
+
+test('another Auth user or an account change during refresh never receives the old member record',async()=>{
+  const other=harness({verifyAuth:true,authSession:{user:{id:'auth2'},access_token:'other-test-only',expires_at:4102444800}});
+  assert.equal(await other.save(),false);assert.equal(other.calls.length,0);assert.equal(other.refreshAttempts,0);
+  const pending=deferred(),h=harness({verifyAuth:true,authSession:null,refresh:()=>pending.promise});
+  const saved=h.save();await new Promise(resolve=>setImmediate(resolve));
+  h.c.SESSION={userId:'u2'};
+  pending.resolve({data:{session:{user:{id:'auth2'},access_token:'other-test-only',expires_at:4102444800}},error:null});
+  assert.equal(await saved,false);assert.equal(h.calls.length,0);assert.equal(h.failures.length,0);
+});
+
+test('temporary auth refresh network failure remains retryable and is not reported as missing login',async()=>{
+  const h=harness({verifyAuth:true,authSession:null,refreshError:{name:'AuthRetryableFetchError',status:0,message:'network failed'}});
+  assert.equal(await h.save(),false);assert.equal(h.failures[0].name,'AuthRetryableFetchError');assert.equal(h.calls.length,0);
+});
 
 test('retry after committed reading insert and failed metadata writes one immutable log',async()=>{
   const h=harness({failFirstMeta:true});

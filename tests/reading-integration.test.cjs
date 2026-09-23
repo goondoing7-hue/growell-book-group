@@ -12,8 +12,9 @@ function section(start,end){
 }
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta:{}},failMeta=0,loseResponse=0,beforeMeta}={}){
+function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta:{}},failMeta=0,loseResponse=0,beforeMeta,authSession,refreshError=null}={}){
   let clock=now,metaFailures=failMeta,lostResponses=loseResponse;
+  const auth={session:authSession===undefined?{access_token:'synthetic-token',expires_at:1000000000000,user:{id:'auth-'+owner}}:authSession,refreshError,getCalls:0,refreshCalls:0};
   const requests=[],toasts=[],notifications=[],storageWrites=[];
   const dialogs=new Map();
   const document={querySelectorAll:()=>[],getElementById:id=>dialogs.get(id)||null,
@@ -32,7 +33,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
     console,Promise,Uint8Array,atob,setTimeout,clearInterval(){},
     Date:class extends Date{static now(){return clock;}},
     GrowellReadingTimer:domain,BOOKS:books,GrowellTimerAlerts:{notify:details=>{notifications.push(clone(details));return Promise.resolve();}},
-    STATE:{users:{[owner]:{id:owner,name:'독서회원'}},posts:{},comments:{},privateEntries:{},materialNotes:{},worksheets:{},habits:{},
+    STATE:{users:{[owner]:{id:owner,name:'독서회원',authUserId:'auth-'+owner}},posts:{},comments:{},privateEntries:{},materialNotes:{},worksheets:{},habits:{},
       readingLogs:{},readingMeta:{},bookLocks:{},announcement:{next:{},reading:{}}},
     SESSION:{userId:owner,name:'독서회원',keyB64:'memory-only'},CURRENT_KEY:null,
     location:{hash:'#/book/emotion/mine'},document,
@@ -40,7 +41,10 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
     sessionStorage:{setItem(){}},urlFromPhoto:()=>null,render(){},showToast:(...args)=>toasts.push(args),
     bookById:id=>books.find(book=>book.id===id),isBookLocked:()=>false,
     myCurrentPage:()=>0,uid:()=> 'rl-test',esc:value=>String(value),fmtDurationHuman:seconds=>seconds+'초',
-    sb:{from(table){
+    sb:{auth:{
+      getSession(){auth.getCalls++;return Promise.resolve({data:{session:auth.session},error:null});},
+      refreshSession(){auth.refreshCalls++;return Promise.resolve({data:{session:auth.session},error:auth.refreshError});}
+    },from(table){
       let operation='select',payload,filters=[],single=false;
       const query={
         select(){return query;},eq(key,value){filters.push([key,value]);return query;},maybeSingle(){single=true;return query;},
@@ -73,6 +77,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
   vm.runInContext(section('function readingMetaKey(', 'function mapProfileRow('),c);
   vm.runInContext(section('function mapReadingMetaRow(', 'function mapBookLockRow('),c);
   vm.runInContext(section('function mapHabitRow(', '\nvar STATE ='),c);
+  vm.runInContext(section('function currentRoute(){', "window.addEventListener('hashchange'"),c);
   vm.runInContext(section('var readingTimer =', 'var worksheetOpenFor ='),c);
   vm.runInContext(section('var saving = false;', '/* ---------------- toast'),c);
   vm.runInContext(section('function submitReadingLog(', 'function todayReadSeconds('),c);
@@ -84,8 +89,118 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
     c.readingTimer.phase='save';c.readingSavePanelOpen=true;c.readingTimerRestoreOwner=owner;
     return c.readingTimer;
   }
-  return {c,memory,server,requests,toasts,notifications,storageWrites,dialogs,prepared,setNow:value=>{clock=value;}};
+  return {c,memory,server,requests,toasts,notifications,storageWrites,dialogs,prepared,auth,setNow:value=>{clock=value;}};
 }
+
+function timerBrowserEvents(fixture){
+  const {c}=fixture,buttons=new Map(),documentEvents={},windowEvents={};
+  for(const id of ['btn-reading-toggle-pause','btn-reading-done','btn-reading-cancel']){
+    const handlers={};buttons.set(id,{addEventListener:(event,handler)=>{handlers[event]=handler;},click:()=>handlers.click()});
+  }
+  const originalElement=c.document.getElementById;
+  c.document.getElementById=id=>id==='app'?{querySelectorAll:()=>[]}:buttons.get(id)||originalElement(id);
+  c.document.addEventListener=(event,handler)=>{documentEvents[event]=handler;};
+  c.window={addEventListener:(event,handler)=>{windowEvents[event]=handler;}};
+  c.setInterval=()=>1;c.confirm=()=>true;
+  vm.runInContext(section('function readingCountdownHtml(', 'function submitWorksheet('),c);
+  c.bindReadingTimerEvents();
+  return {buttons,documentEvents,windowEvents};
+}
+
+test('a frozen tab cannot overwrite another tab pause on pagehide or count the hours away',()=>{
+  const memory=new Map(),active=harness({memory,now:0});active.c.startReading('emotion');
+  const sleeping=harness({memory,now:0});sleeping.c.syncReadingTimer();
+  const events=timerBrowserEvents(sleeping);
+  active.setNow(5000);active.c.readingTimer=domain.pause(active.c.readingTimer,5000);active.c.persistReadingTimer();
+  const key=active.c.readingTimerStorageKey('reader'),paused=memory.get(key),writes=sleeping.storageWrites.length;
+  sleeping.setNow(10*60*60*1000);events.windowEvents.pagehide();
+  assert.equal(memory.get(key),paused,'late pagehide preserves the pause saved by the active tab');
+  assert.equal(sleeping.c.readingTimer.running,false);assert.equal(sleeping.c.readingTimerElapsedMs(),5000);
+  sleeping.c.document.hidden=true;events.documentEvents.visibilitychange();
+  assert.equal(memory.get(key),paused);assert.equal(sleeping.storageWrites.length,writes,'unchanged lifecycle checkpoints do not write or echo storage events');
+  const reopened=harness({memory,now:24*60*60*1000});reopened.c.syncReadingTimer();
+  assert.equal(reopened.c.readingTimerElapsedMs(),5000);assert.equal(reopened.c.readingTimer.running,false);
+});
+
+test('returning to a frozen tab refreshes a pause before a stale pause button can resume it',()=>{
+  const memory=new Map(),active=harness({memory,now:0});active.c.startReading('emotion');
+  const sleeping=harness({memory,now:0});sleeping.c.syncReadingTimer();const events=timerBrowserEvents(sleeping);
+  active.setNow(5000);active.c.readingTimer=domain.pause(active.c.readingTimer,5000);active.c.persistReadingTimer();
+  const key=active.c.readingTimerStorageKey('reader'),paused=memory.get(key);
+  sleeping.setNow(3600000);events.buttons.get('btn-reading-toggle-pause').click();
+  assert.equal(memory.get(key),paused);assert.equal(sleeping.c.readingTimer.running,false);
+  assert.equal(sleeping.c.readingTimerElapsedMs(),5000,'the stale click refreshes instead of toggling the newly paused state');
+  events.buttons.get('btn-reading-toggle-pause').click();
+  assert.equal(sleeping.c.readingTimer.running,true);assert.equal(sleeping.c.readingTimerElapsedMs(),5000);
+  active.setNow(3601000);assert.equal(active.c.refreshReadingTimerFromStorage(),true);
+  assert.equal(active.c.readingTimerElapsedMs(),6000,'a later intentional resume still works across tabs');
+  sleeping.c.readingTimer=domain.pause(sleeping.c.readingTimer,3601000);sleeping.c.persistReadingTimer();
+  active.c.document.hidden=false;const activeEvents=timerBrowserEvents(active);activeEvents.documentEvents.visibilitychange();
+  assert.equal(active.c.readingTimer.running,false);assert.equal(active.c.readingTimerElapsedMs(),6000);
+});
+
+test('a saved timer stays completed when a sleeping tab later persists its old running session',async()=>{
+  const memory=new Map(),server={logs:{},meta:{}},active=harness({memory,server,now:0});active.c.startReading('emotion');
+  const sleeping=harness({memory,server,now:0});sleeping.c.syncReadingTimer();const events=timerBrowserEvents(sleeping);
+  active.setNow(5000);active.c.readingTimer=domain.pause(active.c.readingTimer,5000);active.c.readingTimer.phase='save';active.c.readingSavePanelOpen=true;active.c.persistReadingTimer();
+  assert.equal(await active.c.submitReadingLog('emotion',0,15,{}),true);
+  const key=active.c.readingTimerStorageKey('reader'),completed=memory.get(key);
+  sleeping.setNow(36000000);events.windowEvents.pagehide();
+  assert.equal(memory.get(key),completed);assert.equal(sleeping.c.readingTimer,null);
+  assert.deepEqual(JSON.parse(completed),{v:2,timer:null});assert.equal(Object.keys(server.logs).length,1);
+});
+
+test('a stale tab restores the other tab immutable failed attempt without replacing its time or page',async()=>{
+  const memory=new Map(),server={logs:{},meta:{}},active=harness({memory,server,now:0,failMeta:1});active.c.startReading('emotion');
+  const sleeping=harness({memory,server,now:0});sleeping.c.syncReadingTimer();const events=timerBrowserEvents(sleeping);
+  active.setNow(5000);active.c.readingTimer=domain.pause(active.c.readingTimer,5000);active.c.readingTimer.phase='save';active.c.readingSavePanelOpen=true;active.c.persistReadingTimer();
+  assert.equal(await active.c.submitReadingLog('emotion',0,15,{}),false);
+  const frozen=clone(active.c.readingSaveAttempt),key=active.c.readingTimerStorageKey('reader'),pending=memory.get(key);
+  sleeping.setNow(36000000);events.buttons.get('btn-reading-done').click();
+  assert.equal(memory.get(key),pending);assert.deepEqual(clone(sleeping.c.readingSaveAttempt),frozen);
+  assert.equal(sleeping.c.readingTimerElapsedMs(),5000);assert.equal(sleeping.c.readingSavePanelOpen,true);
+  assert.equal(await sleeping.c.submitReadingLog('emotion',0,99,{}),true);
+  assert.equal(Object.keys(server.logs).length,1);assert.equal(server.logs[frozen.id].seconds,5);assert.equal(server.logs[frozen.id].page,15);
+});
+
+test('lifecycle persistence preserves unreadable or wrong-owner stored timers after refresh',()=>{
+  for(const raw of ['not-json','',JSON.stringify({v:2,timer:{bad:'record'}}),JSON.stringify({v:2,timer:domain.create({id:'other-timer',userId:'other',bookId:'emotion'},0)})]){
+    const fixture=harness(),key=fixture.c.readingTimerStorageKey('reader');fixture.memory.set(key,raw);fixture.c.syncReadingTimer();
+    const events=timerBrowserEvents(fixture);events.windowEvents.pagehide();fixture.c.document.hidden=true;events.documentEvents.visibilitychange();
+    assert.equal(fixture.memory.get(key),raw);assert.equal(fixture.c.readingTimer,null);
+  }
+});
+
+test('a long paused session survives missing auth and saves its exact frozen record after the same account reconnects',async()=>{
+  const memory=new Map(),server={logs:{},meta:{}},pausedMs=35459000;
+  const missing={name:'AuthSessionMissingError',status:400};
+  const first=harness({memory,server,now:pausedMs,authSession:null,refreshError:missing});
+  first.prepared({elapsedMs:pausedMs,startPage:50});first.c.persistReadingTimer();
+  first.setNow(pausedMs+10*60*60*1000);
+  assert.equal(first.c.readingTimerElapsedMs(),pausedMs,'ten hours away do not count after pausing');
+  assert.equal(await first.c.submitReadingLog('emotion',0,50,{}),false);
+  const frozen=clone(first.c.readingSaveAttempt),key=first.c.readingTimerStorageKey('reader');
+  assert.equal(frozen.seconds,35459);assert.equal(frozen.page,50);assert.equal(first.c.readingSaveFailure,'login');
+  assert.equal(first.requests.length,0,'no reading data is sent without a matching authenticated session');
+  assert.deepEqual(JSON.parse(memory.get(key)).attempt,frozen);
+  const other=harness({memory,server,owner:'another-member'});other.c.syncReadingTimer();
+  assert.equal(other.c.readingTimer,null);assert.equal(other.c.readingSaveAttempt,null);
+  const reconnected=harness({memory,server,now:pausedMs+24*60*60*1000});reconnected.c.syncReadingTimer();
+  assert.equal(reconnected.c.readingTimerElapsedMs(),pausedMs);assert.deepEqual(clone(reconnected.c.readingSaveAttempt),frozen);
+  assert.equal(await reconnected.c.submitReadingLog('emotion',0,70,{}),true);
+  assert.equal(Object.keys(server.logs).length,1);assert.equal(server.logs[frozen.id].seconds,35459);
+  assert.equal(server.logs[frozen.id].page,50);assert.equal(server.logs[frozen.id].created_at,frozen.createdAt);
+  assert.equal(reconnected.c.readingTimer,null);assert.deepEqual(JSON.parse(memory.get(key)),{v:2,timer:null});
+});
+
+test('a preserved reading attempt is never submitted through a different authenticated account',async()=>{
+  const wrongSession={access_token:'synthetic-other-token',expires_at:1000000000000,user:{id:'auth-other'}};
+  const fixture=harness({authSession:wrongSession});fixture.prepared({elapsedMs:35459000,startPage:50});fixture.c.persistReadingTimer();
+  assert.equal(await fixture.c.submitReadingLog('emotion',0,50,{}),false);
+  assert.equal(fixture.requests.length,0);assert.equal(fixture.auth.refreshCalls,0);
+  assert.equal(fixture.c.readingSaveFailure,'login');assert.equal(fixture.c.readingSaveAttempt.seconds,35459);
+  assert.equal(fixture.c.readingTimer.userId,'reader');assert.equal(fixture.c.readingTimer.running,false);
+});
 
 test('failed metadata save keeps a frozen retry payload, then clears timer only after complete success',async()=>{
   const {c,memory,server,requests,prepared,setNow}=harness({failMeta:1});
@@ -507,4 +622,99 @@ test('home modal cannot expose an old owner or locked book and logout closes it 
   const dialog=c.document.createElement('dialog');dialog.id='reading-home-dialog';c.document.body.appendChild(dialog);dialog.showModal();
   c.pauseReadingBeforeLogout();assert.equal(dialog.open,false);assert.equal(c.readingHomeDialogFor,null);assert.equal(c.readingHomeReturn,false);
   assert.equal(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))).timer.running,false);
+});
+
+test('popup Back callbacks close the home timer without stopping or losing a pending save',()=>{
+  const {c,setNow}=harness({now:0}),popups=new Map();
+  c.GrowellPopupHistory={open:(key,options)=>popups.set(key,options),closed:key=>popups.delete(key)};
+  c.location.hash='#/';c.startReading('emotion');
+  const timerId=c.readingTimer.id;
+  const dialog=c.document.createElement('dialog');dialog.id='reading-home-dialog';c.document.body.appendChild(dialog);
+  c.showReadingHomeDialog();setNow(5000);
+  popups.get('reading-home').close();
+  assert.equal(dialog.open,false);assert.equal(c.location.hash,'#/');
+  assert.equal(c.readingTimer.id,timerId);assert.equal(c.readingTimer.running,true);assert.equal(c.readingTimerElapsedMs(),5000);
+  c.readingTimer=domain.pause(c.readingTimer,5000);c.readingTimer.phase='save';c.readingSavePanelOpen=true;
+  c.readingSaveAttempt={id:timerId,seconds:5,page:20};c.readingHomeDialogFor=timerId;c.showReadingHomeDialog();
+  popups.get('reading-home').close();
+  assert.equal(c.readingSaveAttempt.page,20);assert.equal(c.readingSavePanelOpen,true);assert.equal(c.readingTimer.running,false);
+  c.startReading('emotion');c.showReadingHomeDialog();
+  assert.equal(dialog.open,true);assert.equal(c.readingSaveAttempt.seconds,5);
+});
+
+test('Back from a completed countdown acknowledges only its notice while reading continues',()=>{
+  const {c,dialogs,setNow}=harness({now:0}),popups=new Map();
+  c.GrowellPopupHistory={open:(key,options)=>popups.set(key,options),closed:key=>popups.delete(key)};
+  c.svgIcon=()=>'';c.I_CLOSE='close';c.location.hash='#/';c.startReading('emotion');
+  c.readingTimer=domain.setCountdown(c.readingTimer,60000,0);
+  setNow(60000);c.syncReadingTimer();
+  assert.ok(popups.has('reading-home'));assert.ok(popups.has('reading-countdown-ended'));
+  popups.get('reading-countdown-ended').close();
+  assert.equal(dialogs.has('reading-countdown-ended'),false);assert.equal(c.readingTimer.countdownAcknowledged,true);
+  setNow(65000);c.syncReadingTimer();
+  assert.equal(dialogs.has('reading-countdown-ended'),false);assert.equal(c.readingTimerElapsedMs(),65000);
+  assert.ok(popups.has('reading-home'));assert.equal(c.readingHomeDialogFor,c.readingTimer.id);
+});
+
+test('leaving My Space closes reading history and returning does not reopen it or change the active timer',()=>{
+  const destinations=['#/book/emotion/share','#/book/emotion/worksheet','#/book/emotion/materials',
+    '#/book/emotion/habit','#/book/thought/mine','#/book/body/mine','#/book/action/mine',
+    '#/book/thought/share','#/','#/community','#/profile/edit','#/book/emotion/mine/post/example'];
+  for(const destination of destinations){
+    const {c}=harness({now:0}),events={};
+    Object.assign(c,{shareComposerOpenFor:null,mineComposerOpenFor:null,materialsComposerOpenFor:null,
+      habitFormOpenFor:null,habitHistoryOpenFor:null,window:{addEventListener:(name,handler)=>{events[name]=handler;}}});
+    vm.runInContext(section('function closeStaleComposersForRoute(', '/* 나의 공간 독서 타이머'),c);
+    vm.runInContext(section('function currentRoute(){', '/* 작성/수정 창이 열려 있는 동안'),c);
+    c.startReading('emotion');const timer=c.readingTimer;
+    c.readingHistoryOpenFor='emotion';
+    c.location.hash=destination;events.hashchange();
+    assert.equal(c.readingHistoryOpenFor,null,destination);
+    assert.equal(c.readingTimer,timer,destination);assert.equal(timer.running,true);
+    c.location.hash='#/book/emotion/mine';events.hashchange();
+    assert.equal(c.readingHistoryOpenFor,null,'returning from '+destination);
+    c.readingHistoryOpenFor='emotion';events.hashchange();c.render();
+    assert.equal(c.readingHistoryOpenFor,'emotion','same-screen updates preserve the expanded list');
+  }
+});
+
+test('a reading save finishing after navigation cannot reopen history on the next My Space visit',async()=>{
+  for(const destination of ['#/book/emotion/share','#/book/emotion/materials','#/book/thought/mine','#/']){
+    const pending=deferred(),{c,prepared}=harness({beforeMeta:()=>pending.promise}),events={};
+    Object.assign(c,{shareComposerOpenFor:null,mineComposerOpenFor:null,materialsComposerOpenFor:null,
+      habitFormOpenFor:null,habitHistoryOpenFor:null,window:{addEventListener:(name,handler)=>{events[name]=handler;}}});
+    vm.runInContext(section('function closeStaleComposersForRoute(', '/* 나의 공간 독서 타이머'),c);
+    vm.runInContext(section('function currentRoute(){', '/* 작성/수정 창이 열려 있는 동안'),c);
+    prepared();c.readingHistoryOpenFor='emotion';
+    const saved=c.submitReadingLog('emotion',0,15,{});await tick();
+    c.location.hash=destination;events.hashchange();assert.equal(c.readingHistoryOpenFor,null);
+    pending.resolve({error:null});assert.equal(await saved,true);
+    assert.equal(c.readingHistoryOpenFor,null,'a late completion while at '+destination+' keeps the list collapsed');
+    c.location.hash='#/book/emotion/mine';events.hashchange();
+    assert.equal(c.readingHistoryOpenFor,null,'returning after the completed save stays collapsed');
+  }
+});
+
+test('a home timer save keeps reading history collapsed until the reader opens it',async()=>{
+  const {c,prepared}=harness();prepared();c.location.hash='#/';c.readingHomeReturn=true;
+  assert.equal(await c.submitReadingLog('emotion',0,15,{}),true);
+  assert.equal(c.readingHistoryOpenFor,null);assert.equal(c.location.hash,'#/');
+});
+
+test('leaving and returning before an earlier reading save finishes keeps the new visit collapsed',async()=>{
+  for(const destination of ['#/book/emotion/share','#/book/emotion/materials','#/book/thought/mine']){
+    const pending=deferred(),{c,prepared}=harness({beforeMeta:()=>pending.promise}),events={};
+    Object.assign(c,{shareComposerOpenFor:null,mineComposerOpenFor:null,materialsComposerOpenFor:null,
+      habitFormOpenFor:null,habitHistoryOpenFor:null,window:{addEventListener:(name,handler)=>{events[name]=handler;}}});
+    vm.runInContext(section('function closeStaleComposersForRoute(', '/* 나의 공간 독서 타이머'),c);
+    vm.runInContext(section('function currentRoute(){', '/* 작성/수정 창이 열려 있는 동안'),c);
+    prepared();c.readingHistoryOpenFor='emotion';
+    const saved=c.submitReadingLog('emotion',0,15,{});await tick();
+    c.location.hash=destination;events.hashchange();
+    c.location.hash='#/book/emotion/mine';events.hashchange();assert.equal(c.readingHistoryOpenFor,null);
+    pending.resolve({error:null});assert.equal(await saved,true);
+    assert.equal(c.readingHistoryOpenFor,null,'the response from the previous visit via '+destination+' cannot expand this visit');
+    assert.equal(c.STATE.readingMeta.emotion_reader.currentPage,15,'the record still saves normally');
+    assert.equal(c.readingTimer,null);
+  }
 });

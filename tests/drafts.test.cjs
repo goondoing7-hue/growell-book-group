@@ -10,6 +10,7 @@ const cryptoSource = html.slice(html.indexOf('function randomSaltHex(){'), html.
 const draftSource = html.slice(html.indexOf('var composerDrafts ='), html.indexOf('/* 컴포저(작성/수정 창)'));
 const composerSource = html.slice(html.indexOf('function noteComposerHtml('), html.indexOf('function noteCtaHtml('));
 const photoSource = html.slice(html.indexOf('function safePhotoUrl('), html.indexOf('function photoFromUrl('));
+const materialRowSource = html.slice(html.indexOf('function materialLinkFromRow('), html.indexOf('function bindMaterialAttachmentInputs('));
 const keyB64 = Buffer.alloc(32, 17).toString('base64');
 function storage(){
   const data = new Map();
@@ -30,7 +31,7 @@ function setup(saved=storage()){
     bgColorPickerHtml:v=>'<span data-bg="'+v+'"></span>', fontSizePickerHtml:v=>'<span data-size="'+v+'"></span>',
     insightFieldsHtml:v=>'<textarea>'+v.q1+'</textarea>', insightBgPickerHtml:()=>'', svgIcon:()=>'', I_CLOSE:'', I_IMG:'', I_COMMENT:'', I_LOCK:'',
     matComposerExtraHtml:v=>JSON.stringify(v.driveLinks||[])};
-  vm.createContext(ctx); vm.runInContext(cryptoSource+draftSource+photoSource+composerSource,ctx);
+  vm.createContext(ctx); vm.runInContext(cryptoSource+draftSource+photoSource+materialRowSource+composerSource,ctx);
   function mount(type='share',mode='standard',bookId='book-a',editId=null,fields={}){
     const attrs={'data-draft-key':ctx.composerDraftKey(type,bookId,editId,ctx.SESSION.userId),
       'data-draft-user':ctx.SESSION.userId, 'data-draft-type':type, 'data-draft-mode':mode,
@@ -55,7 +56,10 @@ function setup(saved=storage()){
         return {value:values[fieldIds[selector]]};
       }
       return null;
-    },querySelectorAll:selector=>selector==='[data-mat-link-row]'?values.driveLinks.map(row=>({querySelector:s=>({value:s.includes('title')?row.title:row.driveUrl})})):[]};
+    },querySelectorAll:selector=>selector==='[data-mat-link-row]'?values.driveLinks.map(row=>({querySelector:s=>{
+      const key={'[data-mat-row-title]':'title','[data-mat-row-url]':'driveUrl','[data-mat-thumbnail]':'thumbnailUrl','[data-mat-file-name]':'fileName','[data-mat-file-type]':'mimeType','[data-mat-file-size]':'fileSize'}[s];
+      return key?{value:row[key]==null?'':String(row[key])}:null;
+    }})):[]};
     return active;
   }
   return {ctx,saved,mount,unmount:()=>{active=null;}};

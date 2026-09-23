@@ -17,6 +17,61 @@ function harness(){
   c.GrowellCommunityFeatures.configure(c);
   return {c,api:c.GrowellCommunityFeatures,requests,queue,events};
 }
+function popupHarness(kind){
+  const h=harness(),opened=[],closed=[],nodes=[];
+  function control(){return {value:'',disabled:false,events:{},isConnected:true,focus(){this.focused=true;},
+    addEventListener(name,handler){this.events[name]=handler;},getAttribute(name){return this.attributes&&this.attributes[name];}};}
+  const trigger=control();trigger.attributes=kind==='author'?{'data-community-author':'author'}:{'data-question-edit':'emotion'};
+  h.c.STATE={users:{author:{name:'작성자'}},posts:Object.fromEntries(Array.from({length:13},(_,i)=>['post-'+i,{id:'post-'+i,userId:'author',bookId:'emotion',createdAt:i+1,title:'글 '+i}]))};
+  h.c.GrowellPopupHistory={open(key,options){opened.push({key,options});},closed(key){closed.push(key);}};
+  h.c.document={activeElement:trigger,querySelector:()=>null,
+    querySelectorAll(selector){return selector===(kind==='author'?'[data-community-author]':'[data-question-edit]')?[trigger]:[];},
+    body:{appendChild(node){node.isConnected=true;nodes.push(node);}},
+    createElement(){
+      const close=control(),cancel=control(),save=control(),input=control(),message=control(),count=control(),more=control(),link=control(),form=control();
+      const status={set outerHTML(markup){const match=markup.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/);if(match)input.value=match[1];}};
+      form.querySelector=()=>save;
+      const node=Object.assign(control(),{controls:{close,cancel,save,input,message,more,link,form},open:false,innerHTML:'',
+        setAttribute(){},showModal(){this.open=true;},close(){this.open=false;},remove(){this.isConnected=false;},contains(){return false;},
+        querySelector(selector){return {'[data-community-close]':close,'[role="status"]':status,form,textarea:input,'[data-question-count]':count,
+          '[data-question-cancel]':cancel,'.community-question-message':message,'[data-author-more]':more}[selector]||null;},
+        querySelectorAll(selector){return selector==='.community-author-post'?[link]:selector==='[data-community-close],[data-question-cancel]'?[close,cancel]:[];}
+      });
+      return node;
+    }};
+  return Object.assign(h,{opened,closed,nodes,trigger,click(){trigger.onclick({preventDefault(){},stopPropagation(){}});}});
+}
+async function flush(){await new Promise(resolve=>setImmediate(resolve));}
+test('author popup Back restores its trigger; pagination creates no additional popup entry',async()=>{
+  const h=popupHarness('author');await h.api.load();h.api.bind();h.click();
+  assert.equal(h.opened.length,1);assert.equal(h.opened[0].key,'community-author');
+  const node=h.nodes[0];node.controls.more.onclick();assert.equal(h.opened.length,1);
+  h.opened[0].options.close();
+  assert.equal(node.open,false);assert.equal(node.isConnected,false);assert.equal(h.trigger.focused,true);
+  assert.deepEqual(h.closed,['community-author']);
+  h.click();h.nodes[1].controls.link.events.click();
+  assert.deepEqual(h.closed,['community-author','community-author'],'following a post link also releases the popup entry');
+});
+test('question popup Back preserves its draft and remains guarded while a save is pending',async()=>{
+  const h=popupHarness('question');await h.api.load();h.api.bind();h.click();await flush();
+  const first=h.nodes[0];first.controls.input.value='뒤로 가도 남아야 하는 질문';first.controls.input.events.input();
+  h.opened[0].options.close();h.click();await flush();
+  const node=h.nodes[1],entry=h.opened[1];
+  assert.equal(node.controls.input.value,'뒤로 가도 남아야 하는 질문');
+  assert.equal(entry.options.canClose(),true);
+  const save=deferred();h.queue.push(save.promise);node.controls.form.events.submit({preventDefault(){}});await flush();
+  assert.equal(entry.options.canClose(),false);assert.equal(node.open,true);
+  save.resolve({data:{book_id:'emotion',question:'뒤로 가도 남아야 하는 질문',revision:1}});await flush();
+  assert.equal(node.open,false);assert.deepEqual(h.closed,['community-question','community-question']);
+});
+test('account reset releases an open popup and does not restore it after a slow question load',async()=>{
+  const h=popupHarness('question');await h.api.load();h.api.bind();
+  const pending=deferred();h.queue.push(pending.promise);h.click();await flush();
+  const node=h.nodes[0];h.api.reset();
+  assert.equal(node.open,false);assert.deepEqual(h.closed,['community-question']);
+  pending.resolve({data:[{book_id:'emotion',question:'stale question',revision:1}]});await flush();
+  assert.equal(h.opened.length,1);assert.equal(node.controls.input.value,'');
+});
 test('author posts include only exact author shared posts in currently accessible books, in chronological order',()=>{
   const posts={a:{id:'a',userId:'author',bookId:'emotion',createdAt:'2026-09-21T12:00:00Z'},
     b:{id:'b',userId:'author',bookId:'thought',createdAt:Date.parse('2026-09-23T12:00:00Z')},

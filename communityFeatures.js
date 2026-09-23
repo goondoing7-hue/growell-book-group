@@ -38,10 +38,18 @@
   }
   function close(restore){
     if(!dialog)return;
-    var node=dialog,target=returnFocus;
+    var node=dialog,target=returnFocus,key='community-'+dialogKind;
     dialog=null;dialogKind=null;returnFocus=null;authorId=null;questionSaving=false;
     if(node.open)node.close();node.remove();
+    if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed(key);
     if(restore!==false&&target&&target.isConnected)target.focus({preventScroll:true});
+  }
+  function trackDialog(node,kind){
+    if(!root.GrowellPopupHistory)return;
+    root.GrowellPopupHistory.open('community-'+kind,{
+      close:function(){if(dialog===node)close();},
+      canClose:function(){return dialog!==node||!questionSaving;}
+    });
   }
   function makeDialog(kind,trigger){
     close(false);dialogKind=kind;returnFocus=trigger||document.activeElement;
@@ -56,7 +64,7 @@
     var book=app.bookById(bookId);if(!book)return;
     var node=makeDialog('question',trigger),expected={owner:member(),epoch:app.saveSessionEpoch};
     node.innerHTML='<div class="community-dialog-head"><h2 id="community-dialog-title">함께 생각할 질문</h2><button type="button" class="icon-btn" data-community-close aria-label="질문 수정 닫기">'+app.svgIcon(app.I_CLOSE)+'</button></div><p class="community-dialog-intro">'+app.esc(book.title)+'<br>저장하면 모임원 모두에게 이 질문이 보여요.</p><p role="status">질문을 불러오는 중이에요…</p>';
-    node.querySelector('[data-community-close]').onclick=function(){close();};node.showModal();
+    node.querySelector('[data-community-close]').onclick=function(){close();};node.showModal();trackDialog(node,'question');
     load(true).then(function(ok){
       if(dialog!==node||!current(expected)||!app.isAdmin())return;
       if(!ok){node.querySelector('[role="status"]').outerHTML='<p class="community-question-message" role="alert">질문을 불러오지 못했어요. 닫은 뒤 다시 시도해주세요. 저장된 질문은 바뀌지 않았어요.</p>';return;}
@@ -116,7 +124,7 @@
   }
   function openAuthor(id,trigger){
     if(!member()||!id)return;
-    makeDialog('author',trigger);authorId=id;authorLimit=12;authorBody();if(dialog)dialog.showModal();
+    makeDialog('author',trigger);authorId=id;authorLimit=12;authorBody();if(dialog){dialog.showModal();trackDialog(dialog,'author');}
   }
   function bind(){
     ensureOwner();if(!member())return;

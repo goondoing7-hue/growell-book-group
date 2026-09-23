@@ -12,6 +12,7 @@ const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),sour
 const authorSource=source.slice(source.indexOf('function publicAuthorHtml('),source.indexOf('/* 헤더 프로필 버튼용',source.indexOf('function publicAuthorHtml(')));
 const escSource=source.slice(source.indexOf('function esc(s){'),source.indexOf('function nlToBr('));
 const timerSource=source.slice(source.indexOf('function readingTimerElapsedMs(){'),source.indexOf('function activeReadingStripHtml('));
+const closeNoteSource=source.slice(source.indexOf('function closeReadingNoteDialog(){'),source.indexOf('function openReadingNote('));
 const timerEventsSource=source.slice(source.indexOf('function bindReadingTimerEvents(){'),source.indexOf('function submitWorksheet('));
 const cardDateSource=source.slice(source.indexOf('function fmtPostDate('),source.indexOf('function initials('));
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
@@ -48,6 +49,7 @@ function harness(){
     habitSaveIntents:{},sharedPostsLoadState:'ready',
     memberLoadState:{privateEntries:'ready',habits:'ready',readingMeta:'ready',readingLogs:'ready'},
     readingTimer:null,readingTimerRestoreOwner:'me',readingSaveAttempt:null,readingSavePanelOpen:false,readingEndPage:null,
+    readingTimerStorageOwner:null,readingTimerStorageSnapshot:null,readingTimerStorageWritable:true,
     readingSaveBusy:false,readingSaveError:false,readingFinishKind:'finish',readingTimerIntervalId:null,
     readingNoteReturn:null,readingHomeReturn:false,readingHomeDialogFor:null,readingHomeDialogPosition:null,
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
@@ -81,7 +83,7 @@ function harness(){
     totalReadSeconds:bookId=>c.myReadingLogs(bookId).reduce((sum,log)=>sum+log.seconds,0),
     svgIcon:()=>'',avatarHtml:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,
     loginGateHtml:message=>message,sharePostCardHtml:()=>'<article>shared</article>'};
-  vm.createContext(c);vm.runInContext(escSource+authorSource+timerSource+timerEventsSource+homeSource,c);
+  vm.createContext(c);vm.runInContext(escSource+authorSource+timerSource+closeNoteSource+timerEventsSource+homeSource,c);
   return {c,controls,queued,opened,renders,createdElements,toasts,storage};
 }
 
@@ -209,6 +211,20 @@ test('home returns to the active reading book without replacing its accumulated 
   assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,'active-reading');
   assert.equal(c.readingTimer.id,'active-reading');assert.equal(c.readingTimer.elapsedMs,65000);
   assert.equal(c.readingTimer.startPage,12);assert.equal(c.readingTimer.running,false);
+});
+
+test('home note-choice close retires only its popup and preserves the reading session',()=>{
+  const {c}=harness(),closed=[],opened=[];
+  c.readingTimer=GrowellReadingTimer.create({id:'active-reading',userId:'me',bookId:'emotion',startPage:12,running:false,elapsedMs:65000},Date.now());
+  c.readingHomeDialogFor='active-reading';
+  const timer=c.readingTimer,button=control({}),dialog={open:true,events:{},close(){this.open=false;},addEventListener(name,fn){this.events[name]=fn;}};
+  const homeDialog={open:true,addEventListener(){}};
+  const getElementById=c.document.getElementById;
+  c.document.getElementById=id=>id==='reading-note-dialog'?dialog:id==='reading-home-dialog'?homeDialog:id==='btn-reading-note-close'?button:getElementById(id);
+  c.GrowellPopupHistory={open:key=>opened.push(key),closed:key=>closed.push(key)};
+  c.bindReadingTimerEvents();button.events.click();
+  assert.equal(dialog.open,false);assert.equal(homeDialog.open,true);assert.deepEqual(opened,['reading-home']);assert.deepEqual(closed,['reading-note']);
+  assert.equal(c.readingTimer,timer);assert.equal(c.readingHomeDialogFor,'active-reading');assert.equal(c.location.hash,'#/');
 });
 
 test('guest home ignores a former member timer and reading totals and only offers login',()=>{

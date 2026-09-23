@@ -796,30 +796,43 @@
   .lp-info{flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; gap:4px; padding:10px 14px;}
   .lp-title{font-size:13.5px; font-weight:600; color:var(--ink); line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
   .lp-domain{font-size:11.5px; color:var(--ink-faint);}
-  /* 자료실 한 줄 목록 — 게시판 스타일: 굵은 제목 한 줄 + 그 아래 회색 메타 줄(#카테고리·
-     몇 번째 모임·날짜·댓글, 첨부 이미지 참고). 줄을 누르면 아래로 펼쳐지는 대신 상세보기
-     페이지로 바로 들어간다(요청 반영) — 나눔공간/나의공간의 feed-tile과 같은 패턴. */
-  .mat-list{display:flex; flex-direction:column; margin-top:22px; border:1px solid var(--line); border-radius:var(--r-sm); overflow:hidden; background:var(--surface);}
-  .mat-row{display:flex; align-items:stretch; border-bottom:1px solid var(--line);}
+  /* 자료실: 한 줄 카테고리와 간결한 게시판. 제목과 첨부 미디어는 각각 열 수 있다. */
+  .mat-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;}
+  .mat-heading h2{margin:0;font-size:22px;letter-spacing:-.6px;}
+  .mat-write{display:inline-flex;align-items:center;gap:5px;min-height:36px;padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--primary);font-size:12px;font-weight:600;}
+  .mat-write svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.7;}
+  .mat-filters{display:grid;grid-template-columns:.6fr 1fr 1fr 1fr 1.25fr .75fr;gap:4px;align-items:stretch;border-bottom:1px solid var(--line);}
+  .mat-filter{min-width:0;min-height:44px;padding:5px 0 9px;border:0;border-bottom:2px solid transparent;background:none;color:var(--ink-muted);font-size:12px;letter-spacing:-.4px;white-space:nowrap;}
+  .mat-filter.is-sel{color:var(--primary);font-weight:750;border-bottom-color:var(--primary);}
+  .mat-filter:focus-visible,.mat-write:focus-visible,.mat-row-link-area:focus-visible,.mat-row-media:focus-visible{outline:2px solid var(--primary);outline-offset:-3px;}
+  .mat-list-info{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:12px 0;color:var(--ink-faint);font-size:11px;}
+  .mat-list-info strong{font-weight:600;color:var(--ink-muted);}
+  .mat-list{display:flex; flex-direction:column; margin:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--surface);}
+  .mat-row{display:flex; align-items:center; gap:12px; min-height:80px; border-bottom:1px solid var(--line);}
   .mat-list .mat-row:last-child{border-bottom:none;}
-  .mat-row:hover{background:var(--surface-2);}
-  .mat-row-link-area{flex:1; min-width:0; display:flex; align-items:flex-start; gap:9px; padding:11px 6px 11px 12px; text-decoration:none; color:inherit;}
-  .mat-row-num{flex:none; font-family:var(--font-mono); font-size:10.5px; color:var(--ink-faint); width:16px; text-align:right; padding-top:2px;}
-  .mat-row-main{flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;}
-  .mat-row-title{font-size:13.5px; font-weight:700; color:var(--ink); line-height:1.35; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical;}
-  .mat-row-link-area:hover .mat-row-title{color:var(--accent-c, var(--primary));}
-  /* 회색 메타 줄 — 카테고리(색으로만 구분)·몇 번째 모임·일자·댓글 수를 점(·)으로 이어 표시 */
-  .mat-row-meta-line{display:flex; align-items:center; flex-wrap:wrap; gap:5px; font-size:11px; color:var(--ink-faint); font-family:var(--font-mono);}
-  .mat-row-cat{font-weight:700; font-family:var(--font-body);}
+  .mat-row:active{background:var(--surface-2);}
+  .mat-row-link-area{flex:1; min-width:0; align-self:stretch; display:flex; align-items:center; padding:12px; text-decoration:none; color:inherit;}
+  .mat-row:has(.mat-row-media) .mat-row-link-area{padding-right:0;}
+  .mat-row-main{flex:1; min-width:0; display:flex; flex-direction:column; gap:6px;}
+  .mat-row-title{font-size:15px; font-weight:650; letter-spacing:-.35px; color:var(--ink); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;word-break:keep-all;overflow-wrap:anywhere;}
+  .mat-row-link-area:hover .mat-row-title{color:var(--primary);}
+  .mat-row-meta-line{display:flex; align-items:center; flex-wrap:wrap; gap:6px; font-size:11px; color:var(--ink-faint);}
+  .mat-row-cat{font-weight:650;}
   .mat-row-meeting{font-weight:600;}
   .mat-row-dot{color:var(--ink-faint);}
-  .mat-row-comment{display:inline-flex; align-items:center; gap:3px;}
+  .mat-row-comment{display:inline-flex; align-items:center; gap:3px;margin-left:2px;}
   .mat-row-comment svg{width:11px; height:11px; stroke:currentColor; fill:none; stroke-width:1.8;}
-  .mat-row-actions{flex:none; display:flex; align-items:flex-start; gap:1px; padding:7px 8px 0 0;}
-  .mat-row-del{flex:none; width:26px; height:26px; border-radius:50%; border:none; background:none; color:var(--ink-faint); display:flex; align-items:center; justify-content:center;}
-  .mat-row-del:hover{color:var(--danger); background:var(--surface-3);}
-  .mat-row-del svg{width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:1.7;}
-  .mat-row-edit:hover{color:var(--primary); background:var(--surface-3);}
+  .mat-row-media{flex:none;position:relative;display:flex;align-items:center;justify-content:center;width:76px;height:58px;margin:12px 12px 12px 0;background:transparent;border-radius:5px;overflow:hidden;}
+  .mat-row-media img{display:block;width:100%;height:100%;object-fit:contain;}
+  .mat-row-play{position:absolute;right:4px;bottom:4px;display:flex;align-items:center;justify-content:center;width:22px;height:16px;border-radius:5px;background:#c73b36;color:#fff;}
+  .mat-row-play svg{width:11px;height:11px;fill:currentColor;}
+  .mat-link-media-tools{grid-column:1/-1;display:flex;align-items:center;flex-wrap:wrap;gap:8px;}
+  .mat-link-media-tools .btn{font-size:12px;min-height:36px;padding:7px 10px;}
+  .mat-link-thumbnail{width:54px;height:42px;object-fit:contain;background:transparent;}
+  .mat-link-upload-status{flex-basis:100%;font-size:12px;color:var(--ink-muted);overflow-wrap:anywhere;}
+  .mat-link-row{padding-bottom:10px;}
+  @media(min-width:700px){.mat-filters{max-width:530px;}.mat-row-link-area{padding:12px 16px;}.mat-row-media{margin-right:16px;}.mat-row-meta-line{font-size:12px;}}
+  @media(max-width:360px){.mat-filter{font-size:11px;letter-spacing:-.5px;}.mat-filters{gap:2px;}.mat-row{gap:9px;}}
 
   /* ---------------- 나의 공간: 독서 진행률 · 타이머 ----------------
      대기 상태에서는 카드 하나를 좌/우로 나눠 씀: 왼쪽엔 표지·진행률·시작 버튼,
@@ -1028,10 +1041,6 @@
     .lp-thumb-wrap{width:92px;}
     .lp-title{font-size:12.5px;}
     .lp-info{padding:8px 10px;}
-    /* 자료실 한 줄 목록: 좁은 화면에서는 여백을 살짝 줄인다(줄바꿈은 flex-wrap이 이미 처리) */
-    .mat-row-link-area{padding:10px 4px 10px 10px; gap:7px;}
-    .mat-row-title{font-size:13px;}
-    .mat-row-meta-line{font-size:10.5px;}
     .composer-foot{flex-direction:column; align-items:stretch;}
     .composer-foot .btn{width:100%;}
     .btn{min-height:42px;}
@@ -1060,12 +1069,14 @@
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
 <link rel="stylesheet" href="brand.css">
+<script src="popupHistory.js"></script>
 <script src="profile.js"></script>
 <script src="oauthDomain.js"></script>
 <script src="homeDomain.js"></script>
 <script src="dailyVerseDomain.js"></script>
 <script src="communityDomain.js"></script>
 <script src="communityFeatures.js"></script>
+<script src="materialsMedia.js"></script>
 <script src="habitDomain.js"></script>
 <script src="readingTimerDomain.js"></script>
 <script src="timerAlerts.js"></script>
@@ -1761,9 +1772,7 @@ function captureComposerDraft(){
     bgColor:selected('.bg-swatch.is-sel','data-bg-color'), fontSize:selected('.font-size-btn.is-sel','data-font-size'),
     meetingNo:field(mode==='insight'?'insight-meeting-no':'mat-meeting-no'),
     q1:field('insight-q1'), q2:field('insight-q2'), q3:field('insight-q3'),
-    driveLinks:Array.prototype.map.call(el.querySelectorAll('[data-mat-link-row]'),function(row){
-      return {title:row.querySelector('[data-mat-row-title]').value, driveUrl:row.querySelector('[data-mat-row-url]').value};
-    })};
+    driveLinks:Array.prototype.map.call(el.querySelectorAll('[data-mat-link-row]'),materialLinkFromRow)};
   var draft = composerDrafts[key] || {userId:SESSION.userId, bookId:el.getAttribute('data-book'), type:type,
     editId:el.getAttribute('data-draft-edit')||null, variants:{}, revision:0};
   if(draft.activeMode===mode && JSON.stringify(draft.variants[mode])===JSON.stringify(fields)) return {key:key, revision:draft.revision, mode:mode};
@@ -1905,6 +1914,10 @@ function closeStaleComposersForRoute(r){
     var stillHabitTab = (r.view==='book' && r.tab==='habit' && !r.postId);
     if(!stillHabitTab){ habitHistoryOpenFor=null; habitHistoryMonth=null; }
   }
+  if(readingHistoryOpenFor!=null){
+    var stillReadingHistory = (r.view==='book' && r.bookId===readingHistoryOpenFor && r.tab==='mine' && !r.postId);
+    if(!stillReadingHistory) readingHistoryOpenFor=null;
+  }
 }
 /* 나의 공간 독서 타이머 — render()가 매번 #app을 통째로 새로 그리기 때문에, 타이머가
    실행 중이라는 사실 자체는 DOM이 아니라 이 모듈 변수들에 살아있어야 렌더를 다시 해도
@@ -1915,7 +1928,11 @@ var readingTimerIntervalId = null;
 var readingSavePanelOpen = false; // 완료를 눌러 "저장" 화면으로 전환된 상태인지
 var readingEditOpenFor = null; // bookId whose 현재 페이지 수정 폼이 열려있는지 (총 페이지는 책마다 고정값이라 더 이상 여기서 다루지 않음)
 var readingHistoryOpenFor = null; // bookId whose "읽은 기록" 목록이 펼쳐져 있는지
+var readingHistoryRouteVersion = 0; // A late save can expand history only during the same visit.
 var readingTimerRestoreOwner = null;
+var readingTimerStorageOwner = null;
+var readingTimerStorageSnapshot = null;
+var readingTimerStorageWritable = true;
 var readingSaveAttempt = null;
 var readingSaveBusy = false;
 var readingCountdownOpen = false;
@@ -1923,6 +1940,7 @@ var readingFinishKind = 'finish';
 var readingEndPage = null;
 var readingTimerMemoryWarning = false;
 var readingSaveError = false;
+var readingSaveFailure = '';
 var readingNoteReturn = null; // Only timer identity and destination; note contents use the existing encrypted draft.
 var readingHomeReturn = false; // Restored with this member's timer; note saves return to the home popup.
 var readingHomeDialogFor = null; // Transient open state, keyed by timer ID. Closing does not stop the timer.
@@ -1976,6 +1994,7 @@ function currentRoute(){
   return {view:'home'};
 }
 window.addEventListener('hashchange', function(){
+  readingHistoryRouteVersion++;
   /* 이동을 막을 기회가 없었던 경우(뒤로가기 등)를 위한 안전망 — 이미 다른 화면으로
      넘어와버렸다면, 원래 있던 곳이 아닌 이상 열려 있던 작성/수정 창을 조용히 닫는다. */
   closeStaleComposersForRoute(currentRoute());
@@ -2157,11 +2176,11 @@ function drainSaveQueue(){
   job.done = Promise.resolve().then(function(){ return performSave(job); }).then(function(ok){
     finishSaveButton(job.opts);
     job.resolve(ok);
-  }).catch(function(){
+  }).catch(function(err){
     finishSaveButton(job.opts);
     if(saveSessionMatches(job)){
       showToast('저장에 실패했어요. 다시 시도해주세요.', true);
-      if(job.opts.onFailure) job.opts.onFailure();
+      if(job.opts.onFailure) job.opts.onFailure(err);
     }
     job.resolve(false);
   }).then(function(){
@@ -2192,6 +2211,47 @@ function insertReadingLogOnce(row,guard){
     });
   });
 }
+function readingAuthError(err){
+  return !!err && (err.status===401 || err.status===403 || ['42501','PGRST301','PGRST303'].indexOf(err.code)>=0);
+}
+function readingLoginRequired(){return new Error('reading-login-required');}
+function readingSessionUnavailable(err){
+  return !!err && (err.name==='AuthSessionMissingError' || err.status>=400 && err.status<500 && err.status!==429);
+}
+/* The visible member cache is not an Auth session. Check the actual SDK session
+   before sending a preserved reading record; never write it under another user. */
+function ensureReadingSaveSession(job,forceRefresh){
+  function guard(){if(!saveSessionMatches(job))throw new Error('save-session-changed');}
+  function verify(session){
+    guard();
+    var member=STATE.users[job.userId];
+    if(!session || !session.user || !session.access_token)throw readingLoginRequired();
+    if(!member || !member.authUserId || session.user.id!==member.authUserId)throw readingLoginRequired();
+    return session;
+  }
+  function refresh(){
+    guard();
+    return sb.auth.refreshSession().then(function(result){
+      guard();
+      if(result.error){
+        if(readingSessionUnavailable(result.error))throw readingLoginRequired();
+        throw result.error;
+      }
+      return verify(result.data && result.data.session);
+    });
+  }
+  return Promise.resolve().then(function(){
+    guard();
+    return sb.auth.getSession();
+  }).then(function(result){
+    guard();
+    if(result.error)throw readingSessionUnavailable(result.error)?readingLoginRequired():result.error;
+    var session=result.data && result.data.session;
+    if(session)verify(session);
+    if(forceRefresh || !session || Number(session.expires_at)<=Math.floor(Date.now()/1000)+60)return refresh();
+    return session;
+  });
+}
 function performSave(job){
   var opts = job.opts;
   function guard(){ if(!saveSessionMatches(job)) throw new Error('save-session-changed'); }
@@ -2213,6 +2273,7 @@ function performSave(job){
   }catch(e){}
 
   var work = Promise.resolve();
+  if(opts.readingSession)work=work.then(function(){return ensureReadingSaveSession(job,false);});
 
   Object.keys(GENERIC_COLLECTIONS).forEach(function(key){
     var spec = GENERIC_COLLECTIONS[key];
@@ -2326,12 +2387,19 @@ function performSave(job){
     if(opts.onSuccess){ try{ opts.onSuccess(); }catch(e){ showToast('저장은 완료됐어요. 화면을 다시 열어 확인해주세요.', true); } }
     return true;
   }).catch(function(err){
+    if(opts.readingSession && !job.readingAuthRetried && readingAuthError(err) && saveSessionMatches(job)){
+      job.readingAuthRetried=true;
+      return ensureReadingSaveSession(job,true).then(function(){return performSave(job);}).catch(failed);
+    }
+    return failed(err);
+  });
+  function failed(err){
     if(saveSessionMatches(job)){
       showToast('저장에 실패했어요. 다시 시도해주세요.', true);
-      if(opts.onFailure) opts.onFailure();
+      if(opts.onFailure) opts.onFailure(err);
     }
     return false;
-  });
+  }
 }
 
 /* ---------------- toast ---------------- */
@@ -3194,6 +3262,7 @@ function saveCurrentPage(bookId, currentPage, btn){
 /* 완료 버튼으로 저장하는 독서 세션 — 기록을 남기는 동시에 "현재 페이지"를 갱신한다.
    읽는 중/완독 표시와 총 읽은 시간은 저장된 기록으로부터 매번 자동으로 다시 계산된다. */
 function submitReadingLog(bookId, seconds, page, btn){
+  if(refreshReadingTimerFromStorage()){render();return;}
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || readingTimer.bookId!==bookId || readingSaveBusy) return;
   if(!readingDataReady()){ showToast('독서 기록을 먼저 불러와 주세요.',true); return; }
   var book=bookById(bookId), validation=GrowellReadingTimer.validatePages(readingTimer.startPage,page,book.totalPages);
@@ -3202,21 +3271,29 @@ function submitReadingLog(bookId, seconds, page, btn){
   if(!(seconds>0)){ showToast('1초 이상 읽은 뒤 저장해주세요.',true); return; }
   // Freeze the immutable log once. A retry, including after reload, uses the same ID and payload.
   if(!readingSaveAttempt) readingSaveAttempt={id:readingTimer.id,bookId:bookId,userId:SESSION.userId,seconds:seconds,page:validation.page,startPage:readingTimer.startPage,createdAt:Date.now()};
-  var snapshot=Object.assign({},readingSaveAttempt), owner=SESSION.userId, key=readingMetaKey(bookId,owner), name=SESSION.name;
-  readingSaveBusy=true; readingSaveError=false; persistReadingTimer();
+  var snapshot=Object.assign({},readingSaveAttempt), owner=SESSION.userId, key=readingMetaKey(bookId,owner), name=SESSION.name, historyRouteVersion=readingHistoryRouteVersion;
+  readingSaveBusy=true; readingSaveError=false; readingSaveFailure=''; persistReadingTimer();
   return saveState(function(next){
     next.readingLogs[snapshot.id]=snapshot;
     var knownProgress=next.readingMeta[key];
     if(!knownProgress || Number(knownProgress.updatedAt)<=snapshot.createdAt) next.readingMeta[key]={bookId:bookId,userId:owner,userName:name,currentPage:snapshot.page,updatedAt:snapshot.createdAt};
-  }, {button:btn,originalLabel:'읽은 기록 저장',savingLabel:'저장 중…',render:false,
+  }, {button:btn,originalLabel:'읽은 기록 저장',savingLabel:'저장 중…',render:false,readingSession:true,
     onSuccess:function(){
       if(!SESSION || SESSION.userId!==owner) return;
       readingSaveBusy=false; readingSaveError=false;
       if(readingTimer && readingTimer.id===snapshot.id){readingHomeReturn=false;closeReadingHomeDialog();readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingCountdownOpen=false;persistReadingTimer();}
-      readingHistoryOpenFor=bookId;render();showToast('읽은 시간과 '+snapshot.page+'쪽까지 읽은 기록을 저장했어요.');
+      var route=currentRoute();
+      if(historyRouteVersion===readingHistoryRouteVersion && route.view==='book' && route.bookId===bookId && route.tab==='mine' && !route.postId)readingHistoryOpenFor=bookId;
+      render();showToast('읽은 시간과 '+snapshot.page+'쪽까지 읽은 기록을 저장했어요.');
     },
-    onFailure:function(){if(SESSION && SESSION.userId===owner){readingSaveBusy=false;readingSaveError=true;persistReadingTimer();render();}}
+    onFailure:function(err){if(SESSION && SESSION.userId===owner){readingSaveBusy=false;readingSaveError=true;readingSaveFailure=err && err.message==='reading-login-required'?'login':readingAuthError(err)?'permission':'connection';persistReadingTimer();render();}}
   });
+}
+function readingSaveErrorHtml(){
+  if(!readingSaveError)return '';
+  if(readingSaveFailure==='login')return '<div class="reading-save-error" role="alert">로그인 연결이 끊겼어요. 읽은 시간과 쪽수는 이 기기에 보관했어요. 같은 계정으로 로그인한 뒤 다시 저장해주세요. <a href="#/login">다시 로그인</a></div>';
+  if(readingSaveFailure==='permission')return '<p class="reading-save-error" role="alert">현재 계정의 저장 권한을 확인하지 못했어요. 읽은 시간과 쪽수는 보관되어 있어요. 잠시 후 다시 저장해주세요.</p>';
+  return '<p class="reading-save-error" role="alert">저장 연결을 확인하지 못했어요. 읽은 시간과 쪽수는 보관되어 있으니 연결을 확인한 뒤 다시 저장해주세요.</p>';
 }
 function deleteReadingLog(logId, btn){
   if(!SESSION) return;
@@ -3245,15 +3322,34 @@ function fmtDurationHuman(totalSeconds){
 function readingDataReady(){return memberLoadState.readingMeta==='ready' && memberLoadState.readingLogs==='ready';}
 function readingTimerStorageKey(owner){return 'growell_reading_timer_v2:'+encodeURIComponent(owner);}
 function legacyReadingTimerStorageKey(owner){return 'growell_reading_timer_v1:'+encodeURIComponent(owner);}
-function persistReadingTimer(){
-  if(!SESSION) return;
+/* Frozen tabs can receive storage events late. Compare the last observed value
+   before acting or persisting so an old running timer cannot replace a pause,
+   pending save, or completed marker written by another tab. */
+function refreshReadingTimerFromStorage(){
+  if(!SESSION)return false;
   try{
-    var key=readingTimerStorageKey(SESSION.userId);
-    if(readingTimer && readingTimer.userId===SESSION.userId) localStorage.setItem(key,JSON.stringify({v:2,timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn,returnView:readingHomeReturn?'home':'mine'}));
+    var owner=SESSION.userId,current=localStorage.getItem(readingTimerStorageKey(owner));
+    if(readingTimerStorageOwner!==owner && current===null){
+      readingTimerStorageOwner=owner;readingTimerStorageSnapshot=null;readingTimerStorageWritable=true;
+      return false;
+    }
+    if(readingTimerStorageOwner===owner && current===readingTimerStorageSnapshot)return false;
+    readingTimerRestoreOwner=null;syncReadingTimer();return true;
+  }catch(e){readingTimerMemoryWarning=true;return false;}
+}
+function persistReadingTimer(){
+  if(!SESSION) return false;
+  if(refreshReadingTimerFromStorage())return false;
+  if(!readingTimerStorageWritable){readingTimerMemoryWarning=true;return false;}
+  try{
+    var key=readingTimerStorageKey(SESSION.userId),serialized;
+    if(readingTimer && readingTimer.userId===SESSION.userId) serialized=JSON.stringify({v:2,timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn,returnView:readingHomeReturn?'home':'mine'});
     // Keep a completed marker so the read-only v1 migration cannot resurrect an old timer.
-    else localStorage.setItem(key,JSON.stringify({v:2,timer:null}));
-    readingTimerMemoryWarning=false;
-  }catch(e){readingTimerMemoryWarning=true;}
+    else serialized=JSON.stringify({v:2,timer:null});
+    if(serialized!==readingTimerStorageSnapshot)localStorage.setItem(key,serialized);
+    readingTimerStorageOwner=SESSION.userId;readingTimerStorageSnapshot=serialized;
+    readingTimerMemoryWarning=false;return true;
+  }catch(e){readingTimerMemoryWarning=true;return false;}
 }
 function prepareReadingTimerAlerts(){
   if(typeof GrowellTimerAlerts==='undefined')return;
@@ -3262,6 +3358,7 @@ function prepareReadingTimerAlerts(){
 function closeReadingCountdownNotice(){
   var dialog=document.getElementById&&document.getElementById('reading-countdown-ended');
   if(dialog){if(dialog.open&&dialog.close)dialog.close();dialog.remove();}
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-countdown-ended');
 }
 function showReadingCountdownNotice(){
   if(!SESSION||!readingTimer||readingTimer.userId!==SESSION.userId||readingTimer.phase!=='timer'||!readingTimer.goalReached||readingTimer.countdownAcknowledged){closeReadingCountdownNotice();return;}
@@ -3283,8 +3380,14 @@ function showReadingCountdownNotice(){
   dialog.querySelector('[data-countdown-confirm]').addEventListener('click',acknowledge);
   dialog.addEventListener('cancel',function(e){e.preventDefault();acknowledge();});
   document.body.appendChild(dialog);dialog.showModal();
+  if(typeof GrowellPopupHistory!=='undefined'){
+    // The timer can be remounted immediately after a countdown settles.
+    if(readingHomeDialogFor===timerId&&isReadingHomeRoute())GrowellPopupHistory.open('reading-home',{close:closeReadingHomeDialog});
+    GrowellPopupHistory.open('reading-countdown-ended',{close:acknowledge});
+  }
 }
 function notifyReadingCountdown(){
+  if(refreshReadingTimerFromStorage())return;
   if(!readingTimer||!readingTimer.goalReached)return;
   if(readingTimer.phase==='save'){
     if(!readingTimer.countdownAcknowledged){readingTimer=GrowellReadingTimer.acknowledgeCountdown(readingTimer,Date.now());persistReadingTimer();}
@@ -3305,10 +3408,12 @@ function syncReadingTimer(){
     readingTimerRestoreOwner=SESSION.userId;readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingSaveBusy=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;
     try{
       var current=localStorage.getItem(readingTimerStorageKey(SESSION.userId)),migrate=current===null;
+      readingTimerStorageOwner=SESSION.userId;readingTimerStorageSnapshot=current;readingTimerStorageWritable=false;
       // Old open tabs may still overwrite v1. Once v2 exists, including a null or
       // unreadable value, it is authoritative and must never fall back to v1.
       var stored=JSON.parse((migrate?localStorage.getItem(legacyReadingTimerStorageKey(SESSION.userId)):current)||'null');
       readingTimer=GrowellReadingTimer.restore(stored && stored.timer,SESSION.userId,BOOKS.map(function(b){return b.id;}),Date.now());
+      readingTimerStorageWritable=(migrate && stored===null) || !!readingTimer || !!(stored && stored.v===2 && stored.timer===null);
       if(readingTimer){
         readingHomeReturn=stored.returnView==='home';
         readingNoteReturn=GrowellReadingTimer.restoreNoteHandoff(stored.noteReturn,readingTimer);
@@ -3332,6 +3437,7 @@ function syncReadingTimer(){
   }
 }
 function pauseReadingBeforeLogout(){
+  if(SESSION)refreshReadingTimerFromStorage();
   if(SESSION && readingTimer && readingTimer.userId===SESSION.userId){readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());persistReadingTimer();}
   readingTimerRestoreOwner=null;readingSaveAttempt=null;readingSaveBusy=false;readingSaveError=false;readingCountdownOpen=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;readingHomeDialogFor=null;
   closeReadingHomeDialog();closeReadingCountdownNotice();
@@ -3349,14 +3455,16 @@ function closeReadingHomeDialog(){
   readingHomeDialogFor=null;readingHomeDialogPosition=null;
   var dialog=document.getElementById('reading-home-dialog');
   if(dialog && dialog.open && dialog.close)dialog.close();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-home');
   var trigger=isReadingHomeRoute() && document.querySelector && document.querySelector('[data-reading-start]');
   if(trigger && trigger.focus)trigger.focus({preventScroll:true});
 }
 function showReadingHomeDialog(){
   var dialog=document.getElementById('reading-home-dialog');
-  if(!dialog)return;
+  if(!dialog){if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-home');return;}
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || readingHomeDialogFor!==readingTimer.id){closeReadingHomeDialog();return;}
   if(!dialog.open)dialog.showModal();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('reading-home',{close:closeReadingHomeDialog});
   var key=readingTimer.id+':'+readingTimer.phase;
   if(readingHomeDialogPosition && readingHomeDialogPosition.key===key)dialog.scrollTop=readingHomeDialogPosition.top;
   dialog.addEventListener('cancel',function(e){e.preventDefault();closeReadingHomeDialog();});
@@ -3366,6 +3474,7 @@ function showReadingHomeDialog(){
 }
 function startReading(bookId){
   if(!SESSION){location.hash='#/login';return;}
+  refreshReadingTimerFromStorage();
   syncReadingTimer();
   var book=bookById(bookId);
   if(!book || isBookLocked(book)) return;
@@ -3422,7 +3531,13 @@ function readingCountdownRingHtml(){
 function readingNoteDialogHtml(){
   return '<dialog class="reading-note-dialog" id="reading-note-dialog" aria-labelledby="reading-note-title"><div class="reading-note-dialog-head"><h3 id="reading-note-title">어디에 기록할까요?</h3><button class="icon-btn" id="btn-reading-note-close" type="button" aria-label="기록할 공간 선택 닫기">'+svgIcon(I_CLOSE)+'</button></div><p>작성하는 동안 타이머는 잠시 멈춰요.<br>저장하면 읽던 타이머로 돌아와요.</p><div class="reading-note-destinations"><button type="button" data-reading-destination="share">'+svgIcon(I_EDIT)+'<span><strong>나눔 공간</strong><small>모임원과 함께 나누는 이야기</small></span></button><button type="button" data-reading-destination="mine">'+svgIcon(I_LOCK)+'<span><strong>나의 공간</strong><small>나에게만 보이는 개인 기록</small></span></button></div></dialog>';
 }
+function closeReadingNoteDialog(){
+  var dialog=document.getElementById('reading-note-dialog');
+  if(dialog&&dialog.open)dialog.close();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-note');
+}
 function openReadingNote(type){
+  if(refreshReadingTimerFromStorage()){render();return;}
   if(!SESSION || !readingTimer || readingSaveBusy || readingSaveAttempt || readingNoteReturn)return;
   var owner=SESSION.userId,timerId=readingTimer.id,bookId=readingTimer.bookId;
   if(type==='mine' && memberLoadState.privateEntries!=='ready'){showToast('개인 기록을 먼저 불러온 뒤 다시 열어주세요.',true);return;}
@@ -3447,6 +3562,7 @@ function openReadingNote(type){
 }
 /* Call after a confirmed note save and draft completion, never when a save failed. */
 function completeReadingNote(type,bookId){
+  if(refreshReadingTimerFromStorage()){render();return false;}
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || !readingNoteReturn || readingNoteReturn.type!==type || readingNoteReturn.bookId!==bookId)return false;
   var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());
   if(!resumed)return false;
@@ -3471,7 +3587,7 @@ function tickReadingTimer(){
 }
 function bindReadingTimerEvents(){
   var app=document.getElementById('app');
-  function on(id,fn){var el=document.getElementById(id);if(el)el.addEventListener('click',fn);}
+  function on(id,fn){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){if(refreshReadingTimerFromStorage()){render();return;}fn(e);});}
   app.querySelectorAll('[data-reading-start]').forEach(function(b){b.addEventListener('click',function(){startReading(b.getAttribute('data-reading-start'));});});
   on('btn-reading-toggle-pause',function(){
     if(!readingTimer || readingSaveBusy)return;
@@ -3523,10 +3639,11 @@ function bindReadingTimerEvents(){
       button.textContent=current.enabled?'휴대폰 알림 켜짐':'휴대폰 알림 켜기';button.disabled=!current.supported||current.permission==='denied'||current.enabled;
     }).catch(function(){var label=document.getElementById('reading-notification-status');if(label)label.textContent='알림 설정을 완료하지 못했어요. 브라우저 설정을 확인해주세요.';button.disabled=GrowellTimerAlerts.notificationStatus().permission==='denied';});
   });
-  app.querySelectorAll('[data-reading-finish]').forEach(function(b){b.addEventListener('click',function(){if(readingSaveAttempt)return;readingFinishKind=b.getAttribute('data-reading-finish');persistReadingTimer();render();});});
+  app.querySelectorAll('[data-reading-finish]').forEach(function(b){b.addEventListener('click',function(){if(refreshReadingTimerFromStorage()){render();return;}if(readingSaveAttempt)return;readingFinishKind=b.getAttribute('data-reading-finish');persistReadingTimer();render();});});
   var pageInput=document.getElementById('reading-log-page-input');
   var pageSlider=document.getElementById('reading-log-page-slider');
   function updateReadingPage(value){
+    if(refreshReadingTimerFromStorage()){render();return;}
     if(!readingTimer || readingSaveAttempt)return;
     var total=bookById(readingTimer.bookId).totalPages,result=GrowellReadingTimer.pageProgress(readingTimer.startPage,value,total);
     document.getElementById('reading-page-delta').textContent=result.ok?readingTimer.startPage+' → '+result.page+'쪽 · 이번에 '+result.pagesRead+'쪽 읽음':result.error;
@@ -3543,10 +3660,14 @@ function bindReadingTimerEvents(){
   app.querySelectorAll('[data-reading-page-step]').forEach(function(b){b.addEventListener('click',function(){var total=bookById(readingTimer.bookId).totalPages;updateReadingPage(Math.max(readingTimer.startPage,Math.min(total,Number(pageSlider.value)+Number(b.getAttribute('data-reading-page-step')))));});});
   on('btn-reading-log-save',function(){var btn=document.getElementById('btn-reading-log-save');submitReadingLog(btn.getAttribute('data-book'),0,pageInput.value,btn);});
   app.querySelectorAll('[data-reading-note]').forEach(function(b){b.addEventListener('click',function(e){
-    e.preventDefault();if(readingNoteReturn)returnToReadingTimer();var dialog=document.getElementById('reading-note-dialog');if(dialog && !dialog.open)dialog.showModal();
+    e.preventDefault();if(readingNoteReturn)returnToReadingTimer();var dialog=document.getElementById('reading-note-dialog');
+    if(dialog&&!dialog.open){dialog.showModal();if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('reading-note',{close:closeReadingNoteDialog});}
   });});
-  on('btn-reading-note-close',function(){document.getElementById('reading-note-dialog').close();});
-  app.querySelectorAll('[data-reading-destination]').forEach(function(b){b.addEventListener('click',function(){var dialog=document.getElementById('reading-note-dialog');if(dialog)dialog.close();openReadingNote(b.getAttribute('data-reading-destination'));});});
+  on('btn-reading-note-close',closeReadingNoteDialog);
+  var noteDialog=document.getElementById('reading-note-dialog');
+  if(noteDialog)noteDialog.addEventListener('cancel',function(e){e.preventDefault();closeReadingNoteDialog();});
+  if((!noteDialog||!noteDialog.open)&&typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-note');
+  app.querySelectorAll('[data-reading-destination]').forEach(function(b){b.addEventListener('click',function(){closeReadingNoteDialog();openReadingNote(b.getAttribute('data-reading-destination'));});});
   app.querySelectorAll('[data-reading-return]').forEach(function(b){b.addEventListener('click',returnToReadingTimer);});
   app.querySelectorAll('#btn-close-share-composer,#btn-close-mine-composer').forEach(function(b){b.addEventListener('click',function(){if(readingNoteReturn)returnToReadingTimer();});});
   app.querySelectorAll('[data-reading-home-close]').forEach(function(b){b.addEventListener('click',closeReadingHomeDialog);});
@@ -3555,7 +3676,7 @@ function bindReadingTimerEvents(){
   readingTimerIntervalId=readingTimer?setInterval(tickReadingTimer,250):null;
   if(!document._readingLifecycleBound){
     document._readingLifecycleBound=true;
-    document.addEventListener('visibilitychange',function(){if(document.hidden)persistReadingTimer();else tickReadingTimer();});
+    document.addEventListener('visibilitychange',function(){if(document.hidden)persistReadingTimer();else if(refreshReadingTimerFromStorage())render();else tickReadingTimer();});
     window.addEventListener('pagehide',persistReadingTimer);
     window.addEventListener('storage',function(e){
       if(!SESSION||readingSaveBusy||e.key!==readingTimerStorageKey(SESSION.userId))return;
@@ -4927,7 +5048,7 @@ function readingCardHtml(book,inDialog){
       '<div class="reading-page-entry"><label class="reading-page-number"><input type="number" min="'+readingTimer.startPage+'" max="'+total+'" step="1" inputmode="numeric" id="reading-log-page-input" aria-label="읽은 마지막 쪽수" value="'+endPage+'"'+(readingSaveAttempt?' readonly':'')+'><span>/ '+total+'쪽</span></label><strong class="reading-page-percentage" id="reading-page-percentage" aria-live="polite">'+pageProgress.percent+'%</strong></div>' +
       '<div class="reading-page-slider-row"><button type="button" class="btn" data-reading-page-step="-1" aria-label="한 쪽 줄이기"'+(readingSaveAttempt || endPage<=readingTimer.startPage?' disabled':'')+'>−</button><input id="reading-log-page-slider" type="range" min="'+readingTimer.startPage+'" max="'+total+'" step="1" value="'+endPage+'" aria-valuetext="'+endPage+'쪽, 전체의 '+pageProgress.percent+'퍼센트"'+(readingSaveAttempt?' disabled':'')+'><button type="button" class="btn" data-reading-page-step="1" aria-label="한 쪽 늘리기"'+(readingSaveAttempt || endPage>=total?' disabled':'')+'>+</button></div>'+
       '<p class="reading-page-delta" id="reading-page-delta" aria-live="polite">'+readingTimer.startPage+' → '+endPage+'쪽 · 이번에 '+(endPage-readingTimer.startPage)+'쪽 읽음</p>' +
-      (readingSaveError?'<p class="reading-save-error" role="alert">저장 완료를 확인하지 못했어요. 읽은 시간은 보관되어 있으니 같은 기록으로 다시 저장해주세요.</p>':'')+
+      readingSaveErrorHtml()+
       '<div class="composer-foot"><span class="hint">저장하면 홈의 읽은 시간과 진도에 반영돼요.</span><button type="button" class="btn reading-complete-btn" id="btn-reading-log-save" data-book="'+book.id+'"'+(readingSaveBusy?' disabled':'')+'>'+(readingSaveBusy?'저장 중…':'읽은 기록 저장')+'</button></div>' +
     '</div>';
   }
@@ -5288,7 +5409,9 @@ function focusHabitDialog(){
   if(modal) modal.focus({preventScroll:true});
 }
 function closeHabitProgress(){
-  var id=habitHistoryOpenFor,fromOverview=habitProgressReturnTarget==='overview';habitHistoryOpenFor=null;habitHistoryMonth=null;habitProgressReturnTarget=null;render();
+  var id=habitHistoryOpenFor,fromOverview=habitProgressReturnTarget==='overview';habitHistoryOpenFor=null;habitHistoryMonth=null;habitProgressReturnTarget=null;
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('habit-progress');
+  render();
   var selector=fromOverview?'[data-habit-overview-open]':'[data-habit-history]';
   app.querySelectorAll(selector).forEach(function(b){if(b.getAttribute(fromOverview?'data-habit-overview-open':'data-habit-history')===id&&(fromOverview||b.classList.contains('habit-title-button'))) b.focus({preventScroll:true});});
 }
@@ -5398,6 +5521,7 @@ var privateCategoryStates = {}, privateCategoryFilters = {}, privateEntryCategor
 function clearPrivateCategoryState(){
   privateCategoryStates={};privateCategoryFilters={};privateEntryCategoryKeys={};
   var dialog=document.getElementById('private-category-dialog');if(dialog)dialog.remove();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('private-category');
 }
 function privateCategoryContext(bookId){
   if(!SESSION)return {status:'locked',categories:[]};
@@ -5458,8 +5582,13 @@ function openPrivateCategoryManager(bookId){
     rows.querySelectorAll('[data-category-remove]').forEach(function(button){button.addEventListener('click',function(){captureNames();categories=categories.filter(function(c){return c.id!==button.getAttribute('data-category-remove');});drawRows();});});
   }
   drawRows();
-  dialog.querySelectorAll('[data-category-close]').forEach(function(button){button.addEventListener('click',function(){dialog.close();});});
-  dialog.addEventListener('close',function(){dialog.remove();});
+  var categoryDialogClosed=false;
+  function closeCategoryDialog(){
+    if(categoryDialogClosed)return;categoryDialogClosed=true;
+    dialog.close();dialog.remove();if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('private-category');
+  }
+  dialog.querySelectorAll('[data-category-close]').forEach(function(button){button.addEventListener('click',closeCategoryDialog);});
+  dialog.addEventListener('cancel',function(event){event.preventDefault();closeCategoryDialog();});
   function addCategory(){
     captureNames();var input=dialog.querySelector('#private-category-new');
     try{categories=GrowellPrivateCategories.prepare(categories.concat([{id:uid('pcat'),label:input.value}]));error.textContent='';input.value='';drawRows();input.focus();}catch(e){error.textContent=e.message;}
@@ -5484,13 +5613,14 @@ function openPrivateCategoryManager(bookId){
     }).then(function(ok){
       if(!ok)throw new Error('저장하지 못했어요. 다른 곳에서 설정을 바꿨다면 새로고침 후 다시 열어주세요.');
       guard();privateCategoryStates[id]={status:'ready',categories:GrowellPrivateCategories.decode(text),data:STATE.privateEntries[id].data,material:material,epoch:epoch};
-      dialog.close();showToast('나의 카테고리를 저장했어요.');render();
+      closeCategoryDialog();showToast('나의 카테고리를 저장했어요.');render();
     }).catch(function(e){
       if(!SESSION||SESSION.userId!==owner||SESSION.keyB64!==material||saveSessionEpoch!==epoch)return;
       error.textContent=e.message||'저장하지 못했어요. 다시 시도해주세요.';dialog.querySelectorAll('button,input').forEach(function(n){n.disabled=false;});saveButton.textContent='변경 저장';
     });
   });
   dialog.showModal();dialog.querySelector('#private-category-new').focus();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('private-category',{close:closeCategoryDialog});
 }
 function bindPrivateCategoryEvents(app){
   app.querySelectorAll('[data-private-category-manage]').forEach(function(button){button.addEventListener('click',function(){openPrivateCategoryManager(button.getAttribute('data-private-category-manage'));});});
@@ -5728,10 +5858,118 @@ function driveFileIdFromUrl(url){
 function matLinkRowHtml(prefill){
   prefill = prefill || {};
   return '<div class="mat-link-row" data-mat-link-row>' +
-    '<input type="text" class="mat-link-title" placeholder="제목 (선택 — 비워두면 &quot;Google Drive 자료&quot;로 표시돼요)" data-mat-row-title value="'+esc(prefill.title||'')+'">' +
-    '<input type="text" class="mat-link-url" placeholder="https://drive.google.com/file/d/....../view?usp=sharing" data-mat-row-url value="'+esc(prefill.driveUrl||'')+'">' +
+    '<input type="text" class="mat-link-title" aria-label="자료 링크 제목" placeholder="자료 제목 (선택)" data-mat-row-title value="'+esc(prefill.title||'')+'">' +
+    '<input type="text" class="mat-link-url" aria-label="자료 링크 주소" placeholder="YouTube · Drive · 자료 주소" data-mat-row-url value="'+esc(prefill.driveUrl||'')+'">' +
     '<button type="button" class="mat-link-remove" data-mat-remove-row title="이 줄 삭제">'+svgIcon(I_CLOSE)+'</button>' +
+    '<div class="mat-link-media-tools">'+
+      '<button type="button" class="btn btn-sm" data-mat-pdf-pick>'+svgIcon(I_DOC)+' PDF 업로드</button><input type="file" accept="application/pdf,.pdf" data-mat-pdf-input hidden>'+
+      '<button type="button" class="btn btn-sm" data-mat-thumb-pick>'+svgIcon(I_IMG)+' 썸네일 사진 선택</button><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" data-mat-thumb-input hidden>'+
+      '<img class="mat-link-thumbnail" data-mat-thumb-preview'+(safePhotoUrl(prefill.thumbnailUrl)?' src="'+esc(prefill.thumbnailUrl)+'"':' hidden')+' alt="자료 썸네일 미리보기">'+
+      '<input type="hidden" data-mat-thumbnail value="'+esc(safePhotoUrl(prefill.thumbnailUrl)||'')+'">'+
+      '<input type="hidden" data-mat-file-name value="'+esc(prefill.fileName||'')+'">'+
+      '<input type="hidden" data-mat-file-type value="'+esc(prefill.mimeType||'')+'">'+
+      '<input type="hidden" data-mat-file-size value="'+esc(prefill.fileSize==null?'':prefill.fileSize)+'">'+
+      '<span class="mat-link-upload-status" data-mat-upload-status role="status">'+esc(prefill.fileName||'')+'</span>'+
+    '</div>'+
   '</div>';
+}
+function materialLinkFromRow(row){
+  function value(selector){var el=row.querySelector(selector);return el?el.value:'';}
+  var result={title:value('[data-mat-row-title]'),driveUrl:value('[data-mat-row-url]')};
+  var thumbnail=value('[data-mat-thumbnail]'),fileName=value('[data-mat-file-name]'),mimeType=value('[data-mat-file-type]'),size=value('[data-mat-file-size]');
+  if(thumbnail)result.thumbnailUrl=thumbnail;
+  if(fileName)result.fileName=fileName;
+  if(mimeType)result.mimeType=mimeType;
+  if(size!=='')result.fileSize=Number(size);
+  return result;
+}
+function bindMaterialAttachmentInputs(container){
+  if(!container)return;
+  function refreshBusy(){
+    if(!container.isConnected)return;
+    var busy=!!container.querySelector('[data-mat-uploading="true"]');
+    ['btn-materials-submit','btn-close-materials-composer'].forEach(function(id){var button=document.getElementById(id);if(button)button.disabled=busy;});
+  }
+  function setValue(row,selector,value){var field=row.querySelector(selector);if(field)field.value=value;}
+  function setThumbnail(row,url){
+    setValue(row,'[data-mat-thumbnail]',url||'');
+    var preview=row.querySelector('[data-mat-thumb-preview]');
+    if(preview){preview.hidden=!url;if(url)preview.src=url;else preview.removeAttribute('src');}
+  }
+  container.addEventListener('click',function(event){
+    var pick=event.target.closest('[data-mat-pdf-pick],[data-mat-thumb-pick]');
+    if(!pick)return;
+    var submit=document.getElementById('btn-materials-submit');
+    if(submit && submit.disabled)return;
+    var row=pick.closest('[data-mat-link-row]');
+    if(!row || row.getAttribute('data-mat-uploading')==='true')return;
+    row.querySelector(pick.hasAttribute('data-mat-pdf-pick')?'[data-mat-pdf-input]':'[data-mat-thumb-input]').click();
+  });
+  container.addEventListener('change',function(event){
+    var input=event.target;
+    if(!input.matches('[data-mat-pdf-input],[data-mat-thumb-input]'))return;
+    var file=input.files && input.files[0],row=input.closest('[data-mat-link-row]');
+    if(!file || !row || !SESSION || !isAdmin())return;
+    var submit=document.getElementById('btn-materials-submit');
+    if(row.getAttribute('data-mat-uploading')==='true' || submit && submit.disabled)return;
+    var pdf=input.hasAttribute('data-mat-pdf-input');
+    if(pdf && !GrowellMaterialsMedia.isPdf(file)){showToast('PDF 파일을 선택해주세요.',true);return;}
+    if(!pdf && !/^image\/(?:jpeg|png|webp|gif)$/.test(file.type)){showToast('JPG, PNG, WebP, GIF 사진을 선택해주세요.',true);return;}
+    var limit=pdf?GrowellMaterialsMedia.MAX_PDF_BYTES:MAX_FILE_BYTES;
+    if(file.size>limit){showToast((pdf?'PDF':'사진')+'는 '+fmtSize(limit)+' 이하로 선택해주세요.',true);return;}
+    var owner=SESSION.userId,epoch=saveSessionEpoch,member=STATE.users[owner];
+    var authId=member && member.authUserId;
+    if(!authId){showToast('파일을 올리려면 다시 로그인해주세요.',true);return;}
+    function guard(){if(!SESSION || SESSION.userId!==owner || saveSessionEpoch!==epoch || !row.isConnected)throw new Error('material-upload-cancelled');}
+    var status=row.querySelector('[data-mat-upload-status]');
+    row.setAttribute('data-mat-uploading','true');
+    row.querySelectorAll('button,input').forEach(function(el){el.disabled=true;});
+    status.textContent=pdf?'PDF와 첫 페이지를 준비하고 있어요…':'썸네일 사진을 준비하고 있어요…';refreshBusy();
+    var warning='';
+    var work=pdf?file.arrayBuffer().then(function(bytes){
+      guard();
+      var header=Array.prototype.map.call(new Uint8Array(bytes,0,Math.min(bytes.byteLength,1024)),function(n){return String.fromCharCode(n);}).join('');
+      if(header.indexOf('%PDF-')===-1)throw new Error('올바른 PDF 파일을 선택해주세요.');
+      return GrowellMaterialsMedia.renderPdfThumbnail(bytes).catch(function(){warning='첫 페이지를 만들지 못했어요. 썸네일 사진을 직접 선택해주세요.';return null;});
+    }).then(function(thumbnail){
+      guard();status.textContent='PDF를 올리고 있어요…';
+      return readFileAsDataURL(file).then(function(dataUrl){
+        guard();
+        dataUrl=dataUrl.replace(/^data:[^;]*;base64,/,'data:application/pdf;base64,');
+        return uploadPhotoIfNeeded('post-photos',authId,uid('material-file'),{dataUrl:dataUrl,mimeType:'application/pdf'});
+      }).then(function(uploaded){
+        guard();
+        if(!thumbnail)return {file:uploaded,thumbnail:null};
+        return uploadPhotoIfNeeded('post-photos',authId,uid('material-thumb'),{dataUrl:thumbnail,mimeType:'image/jpeg'}).then(function(photo){return {file:uploaded,thumbnail:photo};}).catch(function(){warning='PDF는 업로드됐어요. 썸네일 사진을 다시 선택해주세요.';return {file:uploaded,thumbnail:null};});
+      });
+    }):resizeNotePhotoDataUrl(file).then(function(dataUrl){
+      guard();status.textContent='썸네일 사진을 올리고 있어요…';
+      return uploadPhotoIfNeeded('post-photos',authId,uid('material-thumb'),{dataUrl:dataUrl,mimeType:'image/jpeg'}).then(function(photo){return {thumbnail:photo};});
+    });
+    work.then(function(result){
+      guard();
+      if(pdf){
+        setValue(row,'[data-mat-row-url]',result.file.dataUrl);
+        setValue(row,'[data-mat-file-name]',file.name);
+        setValue(row,'[data-mat-file-type]','application/pdf');
+        setValue(row,'[data-mat-file-size]',file.size);
+        if(!row.querySelector('[data-mat-row-title]').value.trim())setValue(row,'[data-mat-row-title]',file.name);
+      }
+      setThumbnail(row,result.thumbnail?result.thumbnail.dataUrl:'');
+      status.textContent=warning || (pdf?file.name+' · 업로드 완료':'썸네일 사진을 바꿨어요.');
+      captureComposerDraft();
+    }).catch(function(error){
+      if(error.message==='material-upload-cancelled')return;
+      if(row.isConnected && SESSION && SESSION.userId===owner && saveSessionEpoch===epoch){
+        status.textContent='업로드하지 못했어요. 기존 자료는 유지돼요.';
+        showToast(error.message || '파일을 올리지 못했어요. 다시 시도해주세요.',true);
+      }
+    }).finally(function(){
+      row.removeAttribute('data-mat-uploading');
+      row.querySelectorAll('button,input').forEach(function(el){el.disabled=false;});
+      input.value='';refreshBusy();
+    });
+  });
 }
 /* 운영자가 자료실에 글을 쓸 때 컴포저 안에 덧붙는 선택 항목 — 자료 올리기를 별도 폼이
    아니라 "글 남기기"의 일부로 통합한 것. 일시는 따로 입력받지 않고 글의 createdAt을
@@ -5742,19 +5980,19 @@ function matComposerExtraHtml(editingPost){
   return '<div class="mat-compose-extra">' +
     '<div class="composer-head" style="margin-bottom:10px"><h3 style="font-size:13.5px">자료 링크 (선택)</h3><span class="admin-badge">운영자</span></div>' +
     '<label class="field-label" style="margin-top:0">몇 번째 모임</label><input type="text" id="mat-meeting-no" placeholder="3" inputmode="numeric" value="'+esc(editingPost?(editingPost.meetingNo||''):'')+'">' +
-    '<label class="field-label">Google Drive 공유 링크</label>' +
+    '<label class="field-label">자료 · 영상 링크</label>' +
     '<div id="mat-link-rows">'+links.map(function(l){ return matLinkRowHtml(l); }).join('')+'</div>' +
     '<button type="button" class="btn btn-ghost btn-sm mat-add-row-btn" id="btn-mat-add-row">'+svgIcon(I_PLUS)+' 링크 추가</button>' +
-    '<p class="hint" style="display:block;margin:10px 0 0">Drive에서 "링크가 있는 모든 사용자" 보기 권한으로 공유한 링크를 붙여넣어주세요. 제목을 비워두면 실제 파일명은 미리보기를 열었을 때 Drive 화면에서 확인할 수 있어요. 링크 없이 글만 남겨도 괜찮아요.</p>' +
+    '<p class="hint" style="display:block;margin:10px 0 0">PDF는 첫 페이지가 자동으로 표시돼요. 별도 사진을 선택해 썸네일을 바꿀 수 있어요. YouTube나 Drive 공유 링크도 함께 올릴 수 있어요.</p>' +
   '</div>';
 }
 /* Drive 링크 목록 — 예전에는 눌러서 펼치면 iframe 미리보기가 나왔지만, 이제는 줄을
    누르면 그 자리에서 바로 새 탭으로 넘어간다(요청 반영). */
 function matLinksHtml(p){
-  var links = p.driveLinks || [];
+  var links = GrowellMaterialsMedia.normalizeAttachments(p.driveLinks);
   if(!links.length) return '';
   var rows = links.map(function(l){
-    var displayTitle = l.title ? esc(l.title) : 'Google Drive 자료';
+    var displayTitle = esc(l.title || l.fileName || (GrowellMaterialsMedia.youtubeId(l.driveUrl)?'유튜브 영상':'첨부 자료'));
     return '<a class="post-mat-link" href="'+esc(l.driveUrl)+'" target="_blank" rel="noopener noreferrer">' +
       svgIcon(I_DOC) + '<span class="post-mat-link-title-text">'+displayTitle+'</span>' + svgIcon(I_LINK) +
     '</a>';
@@ -5805,39 +6043,57 @@ function matRowLabel(p){
    pill을 재사용)이지만, 선택한 카테고리의 글만 걸러 보여준다. */
 function matFilterToolbarHtml(book, filterKey, count){
   var chips = [{key:'all', label:'전체'}].concat(MATERIAL_CATS.map(function(c){ return {key:c.key, label:c.label}; }));
-  return '<div class="feed-toolbar">' +
-    '<span class="feed-count"><strong>'+count+'</strong>개의 자료</span>' +
-    '<div class="feed-filters" id="mat-filters" data-book="'+book.id+'">' + chips.map(function(c){
-      return '<button type="button" class="feed-filter'+(filterKey===c.key?' is-sel':'')+'" data-filter="'+c.key+'">'+(c.key==='all'?esc(c.label):'#'+esc(c.label))+'</button>';
+  return '<div class="mat-toolbar">' +
+    '<div class="mat-filters" id="mat-filters" data-book="'+esc(book.id)+'" aria-label="자료 카테고리">' + chips.map(function(c){
+      return '<button type="button" class="mat-filter'+(filterKey===c.key?' is-sel':'')+'" aria-pressed="'+(filterKey===c.key)+'" data-filter="'+c.key+'">'+esc(c.label)+'</button>';
     }).join('') + '</div>' +
+    '<div class="mat-list-info"><strong>자료 '+count+'개</strong><span>최근 등록순</span></div>' +
   '</div>';
 }
 /* 자료실 한 줄 — 제목(굵게) + 그 아래 회색 메타 줄(#카테고리·몇 번째 모임·일자·댓글).
    줄을 누르면 펼치지 않고 곧장 상세보기 페이지로 들어간다(나눔공간의 feed-tile과 동일한
    패턴) — Drive 링크는 상세보기 안에서 누르면 바로 새 탭으로 열린다. */
-function matRowHtml(book, p, num){
-  var mine = SESSION && SESSION.userId===p.userId;
-  var canDelete = mine || isAdmin();
+function materialBodyUrls(html){
+  var template=document.createElement('template');
+  template.innerHTML=(html||'').replace(/(<\/(?:p|div|li|blockquote)>|<br\s*\/?>)/gi,'$1 ');
+  template.content.querySelectorAll('script,style,iframe,object,embed,svg,template').forEach(function(el){el.remove();});
+  var links=Array.prototype.map.call(template.content.querySelectorAll('a[href]'),function(el){return el.getAttribute('href');});
+  var plain=template.content.textContent||'';
+  return links.concat((plain.match(/https?:\/\/[^\s<>"']+/gi)||[]).map(function(url){return url.replace(/[),.;!?\]}]+$/,'');}));
+}
+function materialShortDate(value){
+  var date=new Date(value);
+  if(!Number.isFinite(date.getTime()))return '';
+  var short=String(date.getMonth()+1).padStart(2,'0')+'.'+String(date.getDate()).padStart(2,'0');
+  return date.getFullYear()===new Date().getFullYear()?short:date.getFullYear()+'.'+short;
+}
+function materialThumbnailHtml(book,p){
+  var media=GrowellMaterialsMedia.thumbnail(p,materialBodyUrls(p.html));
+  if(!media)return '';
+  var label=media.kind==='video'?'유튜브 영상 열기':media.kind==='image'?'첨부 사진 열기':'첨부 파일 열기';
+  var href=media.href || '#/book/'+book.id+'/materials/post/'+p.id;
+  return '<a class="mat-row-media" href="'+esc(href)+'"'+(media.href?' target="_blank" rel="noopener noreferrer"':'')+' aria-label="'+label+'">'+
+    '<img src="'+esc(media.src)+'" alt="" loading="lazy">'+
+    (media.kind==='video'?'<span class="mat-row-play" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M5 3l8 5-8 5z"/></svg></span>':'')+'</a>';
+}
+function matRowHtml(book, p){
   var cat = materialCatOf(p.noteType);
   var commentCount = commentsForPost(p.id).length;
   var metaParts = [
-    '<span class="mat-row-cat '+cat.cls+'">#'+esc(cat.label)+'</span>',
+    '<span class="mat-row-cat '+cat.cls+'">'+esc(cat.label)+'</span>',
     p.meetingNo ? '<span class="mat-row-meeting">'+esc(p.meetingNo)+'번째 모임</span>' : '',
-    '<span class="mat-row-date">'+fmtDate(p.createdAt)+'</span>',
-    '<span class="mat-row-comment">'+svgIcon(I_COMMENT)+(commentCount||0)+'</span>'
+    '<span class="mat-row-date" title="'+esc(fmtDate(p.createdAt))+'">'+materialShortDate(p.createdAt)+'</span>'
   ].filter(Boolean);
   var metaHtml = metaParts.map(function(m,i){ return (i?'<span class="mat-row-dot">·</span>':'') + m; }).join('');
-  var editDelHtml = (mine ? '<button class="mat-row-del mat-row-edit" data-edit-matnote="'+p.id+'" type="button" title="수정">'+svgIcon(I_EDIT)+'</button>' : '') +
-    (canDelete ? '<button class="mat-row-del" data-del-matnote="'+p.id+'" type="button" title="삭제">'+svgIcon(I_TRASH)+'</button>' : '');
+  metaHtml+='<span class="mat-row-comment" aria-label="댓글 '+commentCount+'개">'+svgIcon(I_COMMENT)+commentCount+'</span>';
   return '<div class="mat-row">' +
-    '<a class="mat-row-link-area" href="#/book/'+book.id+'/materials/post/'+p.id+'">' +
-      '<span class="mat-row-num mono">'+num+'</span>' +
+    '<a class="mat-row-link-area" href="#/book/'+esc(book.id)+'/materials/post/'+esc(p.id)+'">' +
       '<div class="mat-row-main">' +
         '<div class="mat-row-title">'+matRowLabel(p)+'</div>' +
         '<div class="mat-row-meta-line">'+metaHtml+'</div>' +
       '</div>' +
     '</a>' +
-    '<span class="mat-row-actions">'+editDelHtml+'</span>' +
+    materialThumbnailHtml(book,p) +
   '</div>';
 }
 function materialsTabHtml(book, postId){
@@ -5849,6 +6105,8 @@ function materialsTabHtml(book, postId){
   }
   /* 자료실은 운영자만 글(=자료)을 남길 수 있고, 목록은 게시글 번호가 붙은 게시판식
      한 줄 목록으로 보여준다 — 상단 카테고리 pill로 걸러볼 수 있다(요청 반영). */
+  var heading='<div class="mat-heading"><h2>자료실</h2>'+(isAdmin() && materialsComposerOpenFor!==book.id?
+    '<button type="button" class="mat-write" id="btn-open-materials-composer" data-book="'+esc(book.id)+'">'+svgIcon(I_EDIT)+' 글쓰기</button>':'')+'</div>';
   var composer = '';
   if(isAdmin()){
     var matEditingPost = materialsEditingId ? STATE.materialNotes[materialsEditingId] : null;
@@ -5860,24 +6118,17 @@ function materialsTabHtml(book, postId){
           submitLabel: matEditingPost?'수정하기':'나누기', withFontSize:true,
           extraHtml: matComposerExtraHtml(matEditingPost), editingPost: matEditingPost,
           selectedNoteType: matEditingPost?matEditingPost.noteType:MATERIAL_CATS[0].key})
-      : noteCtaHtml(book, {openId:'btn-open-materials-composer', icon:I_BULB, label:'자료실에 글 남기기',
-          sub:'글을 쓰면서 Drive 자료 링크도 함께 올릴 수 있어요'});
+      : '';
   }
   var notesAll = Object.values(STATE.materialNotes).filter(function(p){ return p.bookId===book.id; });
-  if(!notesAll.length){ return composer + '<div class="empty">아직 자료실에 올라온 글이 없어요.</div>'; }
-  /* 게시글 번호는 (필터와 무관하게) 전체 글 기준 작성 순서(오래된 글=1번)로 매긴다 —
-     카테고리를 걸러봐도 번호가 다시 매겨지지 않는다. */
-  var byCreatedAsc = notesAll.slice().sort(function(a,b){ return a.createdAt-b.createdAt; });
-  var numById = {};
-  byCreatedAsc.forEach(function(p, i){ numById[p.id] = i+1; });
   var filterKey = matFeedFilter[book.id] || 'all';
   var itemsDesc = notesAll.slice().sort(function(a,b){ return b.createdAt-a.createdAt; });
   var filtered = filterKey==='all' ? itemsDesc : itemsDesc.filter(function(p){ return materialCatOf(p.noteType).key===filterKey; });
   var toolbar = matFilterToolbarHtml(book, filterKey, filtered.length);
   var listHtml = filtered.length
-    ? '<div class="mat-list">'+filtered.map(function(p){ return matRowHtml(book, p, numById[p.id]); }).join('')+'</div>'
-    : '<div class="empty">이 카테고리의 자료가 아직 없어요.</div>';
-  return composer + toolbar + listHtml;
+    ? '<div class="mat-list">'+filtered.map(function(p){ return matRowHtml(book, p); }).join('')+'</div>'
+    : '<div class="empty">'+(notesAll.length?'이 카테고리의 자료가 아직 없어요.':'아직 자료실에 올라온 글이 없어요.')+'</div>';
+  return heading + composer + toolbar + listHtml;
 }
 function readFileAsDataURL(file){
   return new Promise(function(resolve, reject){
@@ -5975,11 +6226,10 @@ function resizeNotePhotoDataUrl(file, maxDim, quality){
 function buildMaterialFields(payload){
   var cleanHtml = sanitizeHtml(payload.html);
   var plain = (function(){ var d=document.createElement('div'); d.innerHTML=cleanHtml; return d.textContent.trim(); })();
-  var links = (payload.driveLinks||[]).map(function(it){
-    return {title:(it.title||'').trim(), driveUrl:(it.driveUrl||'').trim()};
-  }).filter(function(it){ return it.driveUrl; });
-  var bad = links.filter(function(it){ return !/^https?:\/\//i.test(it.driveUrl); });
-  if(bad.length) return {ok:false, msg:'올바른 Drive 링크 형식이 아니에요.'};
+  if((payload.driveLinks||[]).some(function(it){return it && (it.thumbnailUrl || it.fileName) && !(typeof it.driveUrl==='string' && it.driveUrl.trim());}))return {ok:false,msg:'PDF를 업로드하거나 썸네일에 연결할 자료 링크를 입력해주세요.'};
+  var providedLinks=(payload.driveLinks||[]).filter(function(it){return it && typeof it.driveUrl==='string' && it.driveUrl.trim();});
+  var links = GrowellMaterialsMedia.normalizeAttachments(providedLinks);
+  if(links.length!==providedLinks.length)return {ok:false,msg:'올바른 자료 링크 주소를 입력해주세요.'};
   if(!plain && !payload.photo && !links.length) return {ok:false, msg:'나눌 이야기를 적거나 자료 링크를 첨부해주세요.'};
   if(!payload.noteType) return {ok:false, msg:'노트 타입을 먼저 골라주세요.'};
   var title = (payload.title||'').trim();
@@ -5988,6 +6238,7 @@ function buildMaterialFields(payload){
     photo:payload.photo||null, driveLinks:links, meetingNo:(payload.meetingNo||'').trim(), fontSize:payload.fontSize||'', title:title}};
 }
 function submitMaterialPost(bookId, payload, btn){
+  if(btn && btn.disabled)return;
   if(!SESSION){ showToast('먼저 로그인해주세요.', true); return; }
   if(!isAdmin()){ showToast('자료실 글쓰기는 운영자만 할 수 있어요.', true); return; }
   var r = buildMaterialFields(payload);
@@ -6002,6 +6253,7 @@ function submitMaterialPost(bookId, payload, btn){
 }
 /* 자료실 글 수정 — 운영자 본인 글만, id를 유지한 채 내용을 덮어쓴다 */
 function editMaterialPost(postId, payload, btn){
+  if(btn && btn.disabled)return;
   if(!SESSION) return;
   var existing = STATE.materialNotes[postId];
   if(!existing || existing.userId!==SESSION.userId || !isAdmin()) return;
@@ -6711,6 +6963,10 @@ function bindEvents(route){
   if(histPrev && !histPrev.disabled) histPrev.addEventListener('click', function(){ shiftHabitHistoryMonth(-1); });
   var histNext = app.querySelector('[data-habit-history-next]');
   if(histNext && !histNext.disabled) histNext.addEventListener('click', function(){ shiftHabitHistoryMonth(1); });
+  if(typeof GrowellPopupHistory!=='undefined'){
+    if(habitHistoryOpenFor&&app.querySelector('.habit-hist-modal'))GrowellPopupHistory.open('habit-progress',{close:closeHabitProgress});
+    else GrowellPopupHistory.closed('habit-progress');
+  }
 
   /* 나의 공간 독서 진행률 · 타이머 */
   app.querySelectorAll('.js-reading-edit-open').forEach(function(b){
@@ -6749,6 +7005,7 @@ function bindEvents(route){
   /* 자료 링크 여러 줄 추가/삭제 — 자료실 컴포저 안(운영자에게만 보이는 자료 링크 영역)에
      쓰인다. 렌더 없이 DOM만 조작해서 다른 줄에 입력 중인 값이 사라지지 않게 한다. */
   var matLinkRows = document.getElementById('mat-link-rows');
+  bindMaterialAttachmentInputs(matLinkRows);
   var matAddRowBtn = document.getElementById('btn-mat-add-row');
   if(matAddRowBtn && matLinkRows){
     matAddRowBtn.addEventListener('click', function(){
@@ -6783,12 +7040,7 @@ function bindEvents(route){
       var html = noteEditor ? noteEditor.innerHTML : '';
       var meetingNoEl = document.getElementById('mat-meeting-no');
       var meetingNo = meetingNoEl ? meetingNoEl.value : '';
-      var driveLinks = Array.prototype.map.call(document.querySelectorAll('[data-mat-link-row]'), function(row){
-        return {
-          title: row.querySelector('[data-mat-row-title]').value,
-          driveUrl: row.querySelector('[data-mat-row-url]').value
-        };
-      }).filter(function(l){ return l.title || l.driveUrl; });
+      var driveLinks = Array.prototype.map.call(document.querySelectorAll('[data-mat-link-row]'),materialLinkFromRow).filter(function(l){ return l.title || l.driveUrl || l.thumbnailUrl || l.fileName; });
       var matTitleEl = document.getElementById('note-title');
       var payload = {noteType:selectedNoteType, html:html, photo:notePhotoData, meetingNo:meetingNo, driveLinks:driveLinks, fontSize:selectedFontSize, title: matTitleEl ? matTitleEl.value.trim() : ''};
       if(materialsEditingId) editMaterialPost(materialsEditingId, payload, materialsSubmit);
