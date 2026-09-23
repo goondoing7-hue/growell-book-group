@@ -42,13 +42,7 @@
 .habit-overview-note,.habit-overview-save{font-size:12px;line-height:1.7;color:var(--ink-soft);margin:15px 0 0;}
 .habit-overview-save{color:var(--primary);font-weight:650;margin-top:7px;}
 .habit-section .habit-list{gap:18px;}
-.habit-view-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin:18px 0;}
-.habit-view-switch{display:flex;padding:4px;gap:4px;border:1px solid var(--line);border-radius:12px;background:var(--surface);}
-.habit-view-switch button{font:inherit;font-size:14px;font-weight:700;padding:10px 16px;border:0;border-radius:9px;background:transparent;color:var(--ink-soft);cursor:pointer;}
-.habit-view-switch button.is-active{background:var(--primary);color:var(--primary-ink);}
-.habit-month-controls{display:flex;align-items:center;gap:10px;}
-.habit-month-controls strong{min-width:106px;text-align:center;font-size:15px;}
-.habit-month-controls button,.habit-icon-btn{height:40px;min-width:40px;}
+.habit-icon-btn{height:40px;min-width:40px;}
 .habit-card{padding:28px 30px 20px;cursor:pointer;border-radius:22px;box-shadow:none;border-color:var(--line);}
 .habit-card.is-today-success{background:color-mix(in srgb,var(--surface) 76%,var(--habit-accent-soft));}
 .habit-card:focus-within{border-color:var(--habit-accent);}
@@ -62,7 +56,7 @@
 .habit-detail-arrow svg{transform:scaleX(-1);}
 .habit-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 30px;margin:25px 0 28px;}
 .habit-facts>div{display:flex;align-items:flex-start;gap:14px;min-width:0;}
-.habit-facts dt{display:inline-flex;align-items:center;gap:7px;min-width:54px;font-size:14px;font-weight:600;color:var(--ink-soft);white-space:nowrap;line-height:1.6;}
+.habit-facts dt{display:inline-flex;align-items:center;flex-shrink:0;gap:7px;min-width:54px;font-size:14px;font-weight:600;color:var(--ink-soft);white-space:nowrap;line-height:1.6;}
 .habit-facts dt svg{width:20px;height:20px;flex:none;}
 .habit-facts dd{font-size:16px;font-weight:650;line-height:1.6;margin:0;overflow-wrap:anywhere;}
 .habit-facts .habit-fact-period,.habit-facts .habit-fact-goal{grid-column:1/-1;}
@@ -94,13 +88,11 @@
 .habit-today-btn:not(.is-checked) svg{opacity:.45;}
 .habit-today-btn:disabled{border-color:var(--line);background:var(--surface-2);color:var(--ink-faint);cursor:default;}
 .habit-today-btn:focus-visible,.habit-title-button:focus-visible{outline:3px solid var(--habit-accent);outline-offset:3px;}
-.habit-card-calendar{border-top:1px solid var(--line);margin:19px -30px -20px;cursor:pointer;border-radius:0 0 22px 22px;}
-.habit-card-calendar>summary{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:52px;box-sizing:border-box;padding:15px 30px;list-style:none;color:var(--ink-soft);font-size:13px;font-weight:650;cursor:pointer;}
-.habit-card-calendar>summary::-webkit-details-marker{display:none;}
-.habit-card-calendar>summary:focus-visible{outline:3px solid var(--habit-accent);outline-offset:-4px;border-radius:0 0 20px 20px;}
-.habit-card-calendar>summary svg{width:15px;height:15px;transform:rotate(-90deg);}
-.habit-card-calendar[open]>summary svg{transform:rotate(90deg);}
-.habit-card-calendar-body{padding:0 30px 20px;}
+.habit-record-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;border-top:1px solid var(--line);padding-top:16px;margin-top:18px;}
+.habit-record-actions button{display:flex;align-items:center;justify-content:center;gap:7px;min-height:46px;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px;font-weight:700;cursor:pointer;}
+.habit-record-actions button svg{width:17px;height:17px;color:var(--habit-accent);}
+.habit-record-actions button:hover{background:var(--habit-accent-soft);border-color:var(--habit-accent);}
+.habit-record-actions button:focus-visible{outline:3px solid var(--habit-accent);outline-offset:2px;}
 .habit-delete-link{display:flex;align-items:center;justify-content:center;gap:7px;margin:14px auto 0;border:0;background:none;padding:8px;font:inherit;font-size:13px;color:var(--ink-soft);cursor:pointer;}
 .habit-delete-link svg{width:15px;height:15px;}
 .habit-detail-link{color:var(--habit-accent);font-size:13px;font-weight:750;border:0;background:none;cursor:pointer;padding:7px 0;}
@@ -125,7 +117,7 @@
 .habit-kind-icon{width:16px;height:16px;flex:none;}
 .habit-kind-hint{font-size:13px;line-height:1.65;color:var(--ink-soft);margin:9px 0 12px;}
 .habit-kind-picker .habit-kind-hint{margin-bottom:0;}
-.habit-hist-modal{max-width:620px;max-height:calc(100dvh - 40px);overflow:auto;padding:25px;}
+.habit-hist-modal{max-width:620px;max-height:calc(100dvh - 40px);overflow:auto;overscroll-behavior:contain;padding:25px;}
 .habit-hist-modal .composer-head{align-items:flex-start;gap:12px;margin-bottom:12px;}
 .habit-hist-modal .composer-head h4{font-size:22px;line-height:1.45;margin:4px 0;}
 .habit-dialog-kicker{font-size:12px;color:var(--habit-accent);font-weight:750;margin:0;}
@@ -157,15 +149,14 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
  .habit-card{padding:21px 18px 15px;border-radius:20px;}.habit-card-head{align-items:flex-start;gap:5px;}.habit-title-button{font-size:18px;}
  .habit-card-identity{gap:9px;}.habit-card-kind-icon .habit-kind-icon{width:20px;height:20px;}.habit-card-kind-label{font-size:11px;}
  .habit-card-actions{gap:0;}.habit-icon-btn{min-width:32px;width:32px;height:36px;}
- .habit-facts{gap:14px 17px;margin:21px 0 23px;}.habit-facts>div{display:block;}.habit-facts dt{min-width:0;gap:5px;font-size:12px;margin-bottom:4px;}.habit-facts dt svg{width:16px;height:16px;}.habit-facts dd{font-size:14px;line-height:1.6;}.habit-facts .habit-fact-period,.habit-facts .habit-fact-goal{display:flex;gap:12px;}.habit-facts .habit-fact-period dt,.habit-facts .habit-fact-goal dt{min-width:42px;line-height:1.85;}
+ .habit-facts{grid-template-columns:1fr;gap:14px;margin:21px 0 23px;}.habit-facts>div{display:flex;gap:12px;}.habit-facts dt{min-width:42px;gap:5px;font-size:12px;line-height:1.85;}.habit-facts dt svg{width:16px;height:16px;}.habit-facts dd{font-size:14px;line-height:1.6;min-width:0;}
  .habit-goal-head{font-size:14px;}.habit-goal-percent{font-size:21px;}.habit-goal-open{font-size:11px;}.habit-goal-track{height:8px;margin-top:10px;}
  .habit-card-summary{font-size:12px;padding-top:15px;}.habit-today-btn{padding:10px 13px;min-height:44px;font-size:13px;gap:6px;border-radius:11px;}.habit-streak{gap:5px;}
- .habit-card-calendar{margin:16px -18px -15px;border-radius:0 0 20px 20px;}.habit-card-calendar>summary{font-size:12px;padding:14px 18px;}.habit-card-calendar-body{padding:0 18px 15px;}
+ .habit-record-actions{gap:8px;padding-top:14px;margin-top:16px;}.habit-record-actions button{font-size:13px;}
  .habit-wday-dot{width:33px;height:auto;}.habit-week-grid{gap:3px;}
  .habit-form-grid{grid-template-columns:1fr;gap:13px;}.habit-form{padding:18px;}
  .habit-hist-overlay{padding:12px;align-items:center;}.habit-hist-modal{padding:19px 16px;border-radius:20px;max-height:calc(100dvh - 24px);}
  .habit-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.habit-stat{padding:13px;}
  .habit-hist-grid{gap:4px;}.habit-hist-cell{min-height:42px;font-size:13px;}
  .habit-hist-grid.is-stable-weeks .habit-hist-cell.is-empty{min-height:42px;}
- .habit-view-switch button{padding:9px 12px;}.habit-view-bar{gap:10px;}.habit-month-controls{gap:5px;}
 }

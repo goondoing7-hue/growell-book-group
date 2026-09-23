@@ -1704,9 +1704,8 @@ var habitFormOpenFor = null; // bookId whose 습관 만들기 추가/수정 폼�
 var habitEditingId = null; // 수정 중인 habit id, 새로 만드는 중이면 null
 var habitHistoryOpenFor = null; // 지난 기록 팝업이 열려있는 habit id (없으면 null)
 var habitHistoryMonth = null; // 팝업에서 보고 있는 달 {y, m}(m은 0=1월 기준) — 열 때마다 이번 달로 초기화
-var habitCalendarMode = 'week';
-var habitCalendarMonth = null;
-var habitCalendarOpenState = Object.create(null);
+var habitHistoryView = 'progress';
+var habitProgressReturnPosition = null;
 var habitProgressReturnTarget = null;
 /* 생각 나눔(나눔 공간) 컴포저에서만 쓰는 상태 — '통찰 정리'를 고르면 컴포저 구성 자체가
    바뀌기 때문에(체크인 없음, 몇 번째 모임 + 질문 3개) 다시 그려야 한다. */
@@ -2064,7 +2063,8 @@ function clearMemberSession(){
   if(typeof habitFormOpenFor!=='undefined') habitFormOpenFor=null;
   if(typeof habitEditingId!=='undefined') habitEditingId=null;
   if(typeof habitHistoryOpenFor!=='undefined') habitHistoryOpenFor=null;
-  if(typeof habitCalendarOpenState!=='undefined') habitCalendarOpenState=Object.create(null);
+  if(typeof habitHistoryView!=='undefined') habitHistoryView='progress';
+  if(typeof habitProgressReturnPosition!=='undefined') habitProgressReturnPosition=null;
   if(typeof habitProgressReturnTarget!=='undefined') habitProgressReturnTarget=null;
   if(typeof readingTimerIntervalId!=='undefined' && readingTimerIntervalId) clearInterval(readingTimerIntervalId);
   if(typeof readingTimer!=='undefined') readingTimer=null;
@@ -3170,9 +3170,12 @@ function refreshHabitSaveUI(habitId){
     var status=card.querySelector('[data-habit-save-status]');if(status) status.innerHTML=habitCardSaveStatusHtml(habitId);
   });
   document.querySelectorAll('[data-habit-stats-panel]').forEach(function(panel){if(panel.getAttribute('data-habit-stats-panel')===habitId) panel.innerHTML=habitStatsPanelHtml(habit);});
+  document.querySelectorAll('[data-habit-week-progress]').forEach(function(progress){
+    if(progress.getAttribute('data-habit-week-progress')===habitId) progress.textContent=habitWeekProgressLabel(habit);
+  });
   document.querySelectorAll('[data-habit-month-summary]').forEach(function(summary){
     if(summary.getAttribute('data-habit-month-summary')!==habitId) return;
-    var now=new Date(),view=(summary.hasAttribute('data-habit-popup-summary')?habitHistoryMonth:habitCalendarMonth)||{y:now.getFullYear(),m:now.getMonth()};
+    var now=new Date(),view=habitHistoryMonth||{y:now.getFullYear(),m:now.getMonth()};
     summary.textContent=habitMonthSummaryHtml(habit,view.y,view.m);
   });
   document.querySelectorAll('[data-habit-popup-status]').forEach(function(status){if(status.getAttribute('data-habit-popup-status')===habitId) status.innerHTML=habitSaveStatusHtml(habitId);});
@@ -5221,14 +5224,6 @@ function bindHabitOverviewEvents(root){
     });
   });
 }
-function captureHabitCalendarState(){
-  if(!SESSION) return;
-  document.querySelectorAll('[data-habit-calendar-key]').forEach(function(calendar){habitCalendarOpenState[calendar.getAttribute('data-habit-calendar-key')]=calendar.open;});
-}
-function habitCalendarIsOpen(habitId){
-  var key=habitCalendarMode+':'+habitId;
-  return Object.prototype.hasOwnProperty.call(habitCalendarOpenState,key)?habitCalendarOpenState[key]:habitCalendarMode==='month';
-}
 /* 월요일 시작 기준 "이번 주" 계산 — 카드 안 체크표와 완료 카드 이미지가 항상 같은 기준을
    쓰도록 이 두 헬퍼로 통일한다. */
 function mondayOf(d){
@@ -5311,15 +5306,7 @@ function habitCardProgressHtml(stats){
 }
 function habitCardSaveStatusHtml(habitId){return Object.keys(habitSaveIntents[habitId]||{}).length?habitSaveStatusHtml(habitId):'';}
 function habitCardHtml(habit){
-  var today=new Date(),todayStr=ymd(today),weekDates=weekDatesOf(mondayOf(today)),prog=habitWeekProgress(habit,weekDates);
-  var complete=prog.total>0&&prog.done===prog.total,stats=GrowellHabits.stats(habit,todayStr);
-  var view=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()};
-  var progress=prog.total?prog.done+'/'+prog.total+'일 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천'):'이번 주 목표 기간 없음';
-  var calendar=habitCalendarMode==='month'
-    ? habitHistoryCalendarHtml(habit,view.y,view.m)+habitCalendarLegendHtml()+'<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>'
-    : '<div class="habit-week-head"><span>이번 주 · '+(weekDates[0].getMonth()+1)+'/'+weekDates[0].getDate()+' ~ '+(weekDates[6].getMonth()+1)+'/'+weekDates[6].getDate()+'</span><span class="habit-progress'+(complete?' is-done':'')+'">'+progress+'</span></div>'+habitWeekGridHtml(habit,weekDates,prog.checkedSet,todayStr);
-  var download=todayStr===ymd(weekDates[6])&&prog.total>0
-    ? '<div class="habit-save-row"><button type="button" class="btn btn-secondary habit-save-btn" data-save-habit="'+esc(habit.id)+'">이번 주 기록 카드 다운로드</button></div>':'';
+  var todayStr=ymd(new Date()),stats=GrowellHabits.stats(habit,todayStr);
   var todayState=habitTodayState(habit,todayStr);
   return '<article class="card habit-card'+(todayState.checked?' is-today-success':'')+'" data-habit-card="'+esc(habit.id)+'" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><div class="habit-card-head">'+
     '<div class="habit-card-identity"><span class="habit-card-kind-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><div><h4 class="habit-name"><button type="button" class="habit-title-button" data-habit-history="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+esc(habit.name)+'</button></h4><span class="habit-card-kind-label">'+GrowellHabits.behaviorLabel(habit)+'</span></div></div>'+
@@ -5327,7 +5314,9 @@ function habitCardHtml(habit){
     habitFactsHtml(habit)+'<div class="habit-card-goal" data-habit-card-goal="'+esc(habit.id)+'">'+habitCardProgressHtml(stats)+'</div>'+
     '<div class="habit-card-summary"><span class="habit-streak" data-habit-card-summary="'+esc(habit.id)+'">'+habitStreakHtml(habit,stats)+'</span><button type="button" class="habit-today-btn'+(todayState.checked?' is-checked':'')+'" data-habit-today data-habit-day="'+esc(habit.id)+'|'+todayStr+'" aria-pressed="'+todayState.checked+'" aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':'')+'"'+(!todayState.canCheck?' disabled':'')+'>'+svgIcon(I_CHECK)+'<span data-habit-today-label>'+todayState.label+'</span></button></div>'+
     '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitCardSaveStatusHtml(habit.id)+'</p>'+
-    '<details class="habit-card-calendar" data-habit-calendar-key="'+esc(habitCalendarMode+':'+habit.id)+'"'+(habitCalendarIsOpen(habit.id)?' open':'')+'><summary>'+(habitCalendarMode==='month'?'월별 성공 · 실패 기록':'이번 주 기록 보기')+svgIcon(I_BACK)+'</summary><div class="habit-card-calendar-body">'+calendar+download+'</div></details></article>';
+    '<div class="habit-record-actions" role="group" aria-label="'+esc(habit.name)+' 기록 보기">'+
+    '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="week" aria-haspopup="dialog">'+svgIcon(I_CAL)+'이번 주</button>'+
+    '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="month" aria-haspopup="dialog">'+svgIcon(I_CAL)+'월별 달력</button></div></article>';
 }
 function habitFormHtml(book,editingHabit){
   var h=editingHabit||{name:'',place:'',time:'',goal:'',startDate:ymd(new Date()),endDate:''};
@@ -5351,16 +5340,12 @@ function habitsSectionHtml(book){
   if(memberLoadState.habits!=='ready') return '<div class="habit-section">'+habitOverviewHtml()+'</div>';
   var habits=myHabits(book.id),editingHabit=habitEditingId?habits.find(function(h){return h.id===habitEditingId;}):null;
   var form=habitFormOpenFor===book.id?habitFormHtml(book,editingHabit):'<button type="button" class="habit-add-btn" id="btn-open-habit-form" data-book="'+esc(book.id)+'">+ 새 습관 만들기</button>';
-  var today=new Date(),view=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()};
-  var controls='<div class="habit-view-bar"><div class="habit-view-switch" role="group" aria-label="습관 표시 방식">'+
-    '<button type="button" data-habit-view="week" aria-pressed="'+(habitCalendarMode==='week')+'" class="'+(habitCalendarMode==='week'?'is-active':'')+'">이번 주</button>'+
-    '<button type="button" data-habit-view="month" aria-pressed="'+(habitCalendarMode==='month')+'" class="'+(habitCalendarMode==='month'?'is-active':'')+'">월별 달력</button></div>'+
-    (habitCalendarMode==='month'?'<div class="habit-month-controls"><button type="button" class="habit-hist-nav-btn" data-habit-calendar-shift="-1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><strong>'+view.y+'년 '+(view.m+1)+'월</strong><button type="button" class="habit-hist-nav-btn is-next" data-habit-calendar-shift="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>':'')+'</div>';
+  var today=new Date();
   var list=habits.length?'<div class="habit-list">'+habits.map(habitCardHtml).join('')+'</div>':'<div class="empty">아직 만든 습관이 없어요. 장소·시간·목표를 정해서 하나 시작해보세요.</div>';
   var historyHabit=habitHistoryOpenFor?myHabitOverviewItems().find(function(h){return h.id===habitHistoryOpenFor;}):null;
   if(habitHistoryOpenFor&&!historyHabit) habitHistoryOpenFor=null;
   var hero='<header class="habit-hero"><div class="habit-hero-top"><span class="habit-hero-kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21v-9M12 16C5 16 3 12 3 7c6 0 9 3 9 9ZM12 12c0-6 3-9 9-9 0 6-3 9-9 9ZM6 21h12"/></svg>매일의 작은 변화</span><time class="habit-hero-date" datetime="'+ymd(today)+'">'+(today.getMonth()+1)+'월 '+today.getDate()+'일 '+['일요일','월요일','화요일','수요일','목요일','금요일','토요일'][today.getDay()]+'</time></div><h2>나를 키우는 습관</h2><p>완벽한 하루보다, 다시 이어가는 하루.</p></header>';
-  return '<div class="habit-section">'+hero+habitOverviewHtml()+form+controls+list+'</div>'+(historyHabit?habitHistoryModalHtml(historyHabit):'');
+  return '<div class="habit-section">'+hero+habitOverviewHtml()+form+list+'</div>'+(historyHabit?habitHistoryModalHtml(historyHabit):'');
 }
 function habitTabHtml(book){
   if(!SESSION){ return loginGateHtml('습관 만들기는 로그인한 본인만 볼 수 있어요.'); }
@@ -5414,15 +5399,28 @@ function habitStatsPanelHtml(habit){
     '<p class="habit-dialog-footnote">성공 '+stats.success+'일 · 실패 '+stats.fail+'일'+(stats.pending?' · 오늘은 아직 도전 중':'')+'<br>체크하지 않은 지난 날은 실패로 표시해요. 오늘의 미체크와 미래 날짜는 성공률 집계에서 제외해요.'+
     (stats.archivedSuccess?'<br>변경한 목표 기간 밖의 이전 성공 '+stats.archivedSuccess+'일은 달력에 보관하며 현재 목표 통계에는 포함하지 않아요.':'')+'</p>';
 }
-function habitHistoryModalHtml(habit){
+function habitWeekProgressLabel(habit){
+  var progress=habitWeekProgress(habit,weekDatesOf(mondayOf(new Date())));
+  return progress.total?progress.done+'/'+progress.total+'일 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천'):'이번 주 목표 기간 없음';
+}
+function habitWeekPopupHtml(habit){
+  var today=ymd(new Date()),dates=weekDatesOf(mondayOf(new Date())),progress=habitWeekProgress(habit,dates);
+  var download=today===ymd(dates[6])&&progress.total>0?'<div class="habit-save-row"><button type="button" class="btn btn-secondary habit-save-btn" data-save-habit="'+esc(habit.id)+'">이번 주 기록 카드 다운로드</button></div>':'';
+  return '<div class="habit-week-head"><span>'+(dates[0].getMonth()+1)+'/'+dates[0].getDate()+' ~ '+(dates[6].getMonth()+1)+'/'+dates[6].getDate()+'</span><strong data-habit-week-progress="'+esc(habit.id)+'">'+habitWeekProgressLabel(habit)+'</strong></div>'+
+    habitWeekGridHtml(habit,dates,progress.checkedSet,today)+download;
+}
+function habitMonthPopupHtml(habit){
   var today=new Date(),view=habitHistoryMonth||{y:today.getFullYear(),m:today.getMonth()};
-  return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
-    '<div class="composer-head"><div><p class="habit-dialog-kicker">나의 작은 성취</p>'+habitKindBadgeHtml(habit)+'<h4 id="habit-dialog-title">'+esc(habit.name)+'</h4></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 진행 상황 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
-    habitFactsHtml(habit)+
-    '<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+
-    '<div class="habit-hist-month-nav"><button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><span class="habit-hist-month-label" aria-live="polite">'+view.y+'년 '+(view.m+1)+'월</span><button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>'+
+  return '<div class="habit-hist-month-nav"><button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><span class="habit-hist-month-label" aria-live="polite">'+view.y+'년 '+(view.m+1)+'월</span><button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>'+
     '<div data-habit-history-calendar>'+habitHistoryCalendarHtml(habit,view.y,view.m,true)+'</div>'+habitCalendarLegendHtml()+
-    '<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'" data-habit-popup-summary="1">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>'+
+    '<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'" data-habit-popup-summary="1">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>';
+}
+function habitHistoryModalHtml(habit){
+  var view=habitHistoryView,title=view==='week'?'이번 주':view==='month'?'월별 달력':'나의 작은 성취';
+  var body=view==='week'?habitWeekPopupHtml(habit):view==='month'?habitMonthPopupHtml(habit):
+    habitFactsHtml(habit)+'<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+habitMonthPopupHtml(habit);
+  return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
+    '<div class="composer-head"><div><p class="habit-dialog-kicker">'+title+'</p>'+habitKindBadgeHtml(habit)+'<h4 id="habit-dialog-title">'+esc(habit.name)+'</h4></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 기록 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+body+
     '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+
     '</div></div>';
 }
@@ -5454,11 +5452,13 @@ function bindHabitDayEvents(root){
     });
   });
 }
-function openHabitProgress(habitId,origin){
+function openHabitProgress(habitId,origin,view){
   var habit=STATE.habits[habitId];
   if(!SESSION||!habit||habit.userId!==SESSION.userId) return;
   var active=document.activeElement;
-  habitProgressReturnTarget=origin==='overview'||(active&&active.hasAttribute&&active.hasAttribute('data-habit-overview-open'))?'overview':'card';
+  habitHistoryView=view==='week'||view==='month'?view:'progress';
+  habitProgressReturnTarget=origin==='overview'||(active&&active.hasAttribute&&active.hasAttribute('data-habit-overview-open'))?'overview':habitHistoryView;
+  habitProgressReturnPosition={url:location.href,x:window.scrollX,y:window.scrollY};
   habitHistoryOpenFor=habitId;habitHistoryMonth=null;render();focusHabitDialog();
 }
 function focusHabitDialog(){
@@ -5466,11 +5466,19 @@ function focusHabitDialog(){
   if(modal) modal.focus({preventScroll:true});
 }
 function closeHabitProgress(){
-  var id=habitHistoryOpenFor,fromOverview=habitProgressReturnTarget==='overview';habitHistoryOpenFor=null;habitHistoryMonth=null;habitProgressReturnTarget=null;
+  var id=habitHistoryOpenFor,target=habitProgressReturnTarget,position=habitProgressReturnPosition;
+  habitHistoryOpenFor=null;habitHistoryMonth=null;habitHistoryView='progress';habitProgressReturnTarget=null;habitProgressReturnPosition=null;
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('habit-progress');
   render();
-  var selector=fromOverview?'[data-habit-overview-open]':'[data-habit-history]';
-  app.querySelectorAll(selector).forEach(function(b){if(b.getAttribute(fromOverview?'data-habit-overview-open':'data-habit-history')===id&&(fromOverview||b.classList.contains('habit-title-button'))) b.focus({preventScroll:true});});
+  if(position&&position.url!==location.href) return;
+  var attr=target==='overview'?'data-habit-overview-open':target==='week'||target==='month'?'data-habit-record':'data-habit-history';
+  app.querySelectorAll('['+attr+']').forEach(function(b){
+    if(b.getAttribute(attr)!==id) return;
+    if(attr==='data-habit-record'&&b.getAttribute('data-habit-record-view')!==target) return;
+    if(attr==='data-habit-history'&&!b.classList.contains('habit-title-button')) return;
+    b.focus({preventScroll:true});
+  });
+  if(position) window.scrollTo({left:position.x,top:position.y,behavior:'instant'});
 }
 /* ---------------- 습관 완료 카드 이미지 생성 ----------------
    사용자가 준 다이어리 템플릿 3종(covers/habit-templates/theme-N.jpg) 이미지를 그대로 배경으로
@@ -6383,7 +6391,6 @@ function bookPageHtml(book, tab, postId){
 /* ---------------- master render ---------------- */
 function render(){
   captureComposerDraft();
-  captureHabitCalendarState();
   var previousReadingDialog=document.getElementById('reading-home-dialog');
   if(previousReadingDialog && previousReadingDialog.open && readingTimer)readingHomeDialogPosition={key:previousReadingDialog.getAttribute('data-reading-key'),top:previousReadingDialog.scrollTop};
   syncReadingTimer();
@@ -6925,20 +6932,13 @@ function bindEvents(route){
 
   /* 습관 만들기 */
   bindHabitOverviewEvents(app);
-  app.querySelectorAll('[data-habit-view]').forEach(function(b){b.addEventListener('click',function(){habitCalendarMode=b.getAttribute('data-habit-view');render();});});
-  app.querySelectorAll('[data-habit-calendar-shift]').forEach(function(b){b.addEventListener('click',function(){
-    var today=new Date(),cur=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()},next=new Date(cur.y,cur.m+Number(b.getAttribute('data-habit-calendar-shift')),1);
-    if(next.getFullYear()<1000||next.getFullYear()>9999) return;
-    habitCalendarMonth={y:next.getFullYear(),m:next.getMonth()};render();
+  app.querySelectorAll('[data-habit-record]').forEach(function(b){b.addEventListener('click',function(e){
+    e.stopPropagation();
+    openHabitProgress(b.getAttribute('data-habit-record'),'card',b.getAttribute('data-habit-record-view'));
   });});
   app.querySelectorAll('[data-habit-card]').forEach(function(card){card.addEventListener('click',function(e){
-    if(e.target.closest('button,input,a,select,textarea,label,summary,.habit-card-calendar')) return;
+    if(e.target.closest('button,input,a,select,textarea,label')) return;
     openHabitProgress(card.getAttribute('data-habit-card'));
-  });});
-  app.querySelectorAll('.habit-card-calendar').forEach(function(calendar){calendar.addEventListener('click',function(e){
-    e.stopPropagation();
-    if(e.target.closest('button,input,a,select,textarea,label,summary')) return;
-    calendar.open=!calendar.open;
   });});
   var openHabitBtn = document.getElementById('btn-open-habit-form');
   if(openHabitBtn) openHabitBtn.addEventListener('click', function(){
