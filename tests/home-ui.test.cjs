@@ -49,6 +49,7 @@ function harness(){
     memberLoadState:{privateEntries:'ready',habits:'ready',readingMeta:'ready',readingLogs:'ready'},
     readingTimer:null,readingTimerRestoreOwner:'me',readingSaveAttempt:null,readingSavePanelOpen:false,readingEndPage:null,
     readingSaveBusy:false,readingSaveError:false,readingFinishKind:'finish',readingTimerIntervalId:null,
+    readingNoteReturn:null,readingHomeReturn:false,readingHomeDialogFor:null,readingHomeDialogPosition:null,
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     setInterval:()=>1,clearInterval:()=>{},tickReadingTimer:()=>{},uid:prefix=>prefix+'-ui-test',showToast:(...args)=>toasts.push(args),
     mineComposerOpenFor:null,mineEditingId:'old-edit',mineEditingPayload:{title:'old edit'},
@@ -157,15 +158,15 @@ test('today habit keeps the name and goal with compact escaped time and place wi
   assert.match(unset,/<b>시간<\/b> <span>미설정/);assert.match(unset,/<b>장소<\/b> <span>미설정/);
 });
 test('home shows the complete escaped daily verse and reference in place of the old greeting',()=>{
-  const {c}=harness();c.GrowellDailyVerses=[{reference:'출처 <1:1>',text:'긴 말씀 첫 줄\n두 번째 줄과 마지막 문장까지 전부 표시합니다.'}];
+  const {c}=harness();c.GrowellDailyVerses=[{reference:'긴 말씀',text:'긴 문장은 모바일 표시 목록에서 제외합니다. '.repeat(4)},{reference:'출처 <1:1>',text:'짧은 말씀 <원문>을 그대로 표시합니다.'}];
   const html=c.homeHtml();
-  assert.match(html,/오늘의 말씀/);assert.match(html,/긴 말씀 첫 줄\n두 번째 줄과 마지막 문장까지 전부 표시합니다\./);
+  assert.match(html,/오늘의 말씀/);assert.match(html,/짧은 말씀 &lt;원문&gt;을 그대로 표시합니다\./);assert.doesNotMatch(html,/긴 문장은/);
   assert.match(html,/출처 &lt;1:1&gt;/);assert.doesNotMatch(html,/오늘은 여기서 이어가요|님, 독서와 작은 습관/);
 });
 test('the Korean midnight update refreshes only the verse, preserves other content and avoids duplicate lifecycle listeners',()=>{
   const {c,renders}=harness();let now=Date.parse('2026-09-23T23:59:50+09:00'),writes=0,visible=true;
   let verse={dateKey:'2026-09-23',text:'오늘 원문',reference:'오늘 출처'};
-  c.Date=class extends Date{static now(){return now;}};c.GrowellDailyVerse={get:()=>verse};
+  c.Date=class extends Date{static now(){return now;}};c.GrowellDailyVerse={getCompact:()=>verse};
   const attributes={'data-verse-date':'2026-09-23'},panel={getAttribute:key=>attributes[key],setAttribute:(key,value)=>{attributes[key]=value;},set innerHTML(value){writes++;this.content=value;}};
   const pending=[],cleared=[],listeners={};
   c.document.querySelector=()=>visible?panel:null;c.document.addEventListener=(name,handler)=>{assert.equal(listeners[name],undefined);listeners[name]=handler;};
@@ -189,7 +190,7 @@ test('home timer start opens the selected reading book with its saved page and p
   assert.ok(html.includes('42 / 250쪽'));
   const button=control({'data-reading-start':match[1]});
   controls['[data-reading-start]']=[button];c.bindReadingTimerEvents();button.events.click();
-  assert.equal(c.location.hash,'#/book/thought/mine');
+  assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,c.readingTimer.id);assert.equal(c.readingHomeReturn,true);
   assert.equal(c.readingTimer.bookId,'thought');assert.equal(c.readingTimer.userId,'me');
   assert.equal(c.readingTimer.startPage,42);assert.equal(c.readingTimer.running,true);
   const saved=JSON.parse(storage.get('growell_reading_timer_v2:me'));
@@ -205,7 +206,7 @@ test('home returns to the active reading book without replacing its accumulated 
   assert.match(html,/data-reading-elapsed>00:01:05/);
   const button=control({'data-reading-start':match[1]});
   controls['[data-reading-start]']=[button];c.bindReadingTimerEvents();button.events.click();
-  assert.equal(c.location.hash,'#/book/emotion/mine');
+  assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,'active-reading');
   assert.equal(c.readingTimer.id,'active-reading');assert.equal(c.readingTimer.elapsedMs,65000);
   assert.equal(c.readingTimer.startPage,12);assert.equal(c.readingTimer.running,false);
 });

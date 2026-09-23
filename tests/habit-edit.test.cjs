@@ -56,7 +56,7 @@ test('habit server round trip retains kind and reads older rows as doing',()=>{
 
 function cardHarness(){
   class Today extends Date{constructor(...args){super(...(args.length?args:[2026,8,22,12]));}}
-  const c={Date:Today,GrowellHabits:require('../habitDomain.js'),habitSaveIntents:{},habitCalendarMode:'week',habitCalendarMonth:null,
+  const c={Date:Today,GrowellHabits:require('../habitDomain.js'),habitSaveIntents:{},habitCalendarMode:'week',habitCalendarMonth:null,habitCalendarOpenState:Object.create(null),
     I_CAL:'',I_BACK:'',I_EDIT:'',I_CHECK:'',I_TRASH:'',svgIcon:()=>'<svg></svg>',
     esc:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')};
   vm.createContext(c);vm.runInContext(source.slice(source.indexOf('function pad2('),source.indexOf('function habitFormHtml(')),c);
@@ -67,7 +67,7 @@ test('habit card shows successes against the whole target period rather than ela
   const html=c.habitCardHtml(h);
   assert.match(html,/성공 <strong>2일<\/strong> \/ 10일/);assert.match(html,/aria-valuenow="20"/);
   assert.match(html,/data-habit-today data-habit-day="h1\|2026-09-22" aria-pressed="false"/);
-  assert.match(html,/<details class="habit-card-calendar"><summary>이번 주 기록 보기/);
+  assert.match(html,/<details class="habit-card-calendar" data-habit-calendar-key="week:h1"><summary>이번 주 기록 보기/);
   assert.deepEqual(h.checkedDates,['2026-09-20','2026-09-21']);
 });
 test('ongoing habits do not invent a goal percentage and ended or future habits cannot check today',()=>{
@@ -85,7 +85,7 @@ test('today success remains reversible for avoiding habits and month view opens 
   assert.match(html,/절제할 습관/);assert.match(html,/&lt;화면 쉬기&gt;/);assert.match(html,/aria-pressed="true"[^>]+다시 누르면 취소/);
   assert.match(html,/<strong>2일<\/strong> 연속 절제/);assert.equal(c.habitTodayState(h,'2026-09-22').canCheck,true);
   c.habitCalendarMode='month';c.habitHistoryCalendarHtml=()=>'<div>달력</div>';
-  assert.match(c.habitCardHtml(h),/<details class="habit-card-calendar" open>/);
+  assert.match(c.habitCardHtml(h),/<details class="habit-card-calendar" data-habit-calendar-key="month:h1" open>/);
 });
 test('overview includes only the current owner across books and immediately reflects unsaved check intentions',()=>{
   const c=cardHarness();c.SESSION={userId:'owner'};c.memberLoadState={habits:'ready'};
@@ -99,7 +99,10 @@ test('overview includes only the current owner across books and immediately refl
   vm.runInContext(source.slice(source.indexOf('function habitWithPendingChecks('),source.indexOf('function habitSaveStatusHtml(')),c);
   const html=c.habitOverviewBodyHtml();
   assert.match(html,/오늘 성공<\/span><strong>1<small> \/ 2개/);assert.match(html,/오늘 남음<\/span><strong>1<small>개/);
-  assert.match(html,/다른 책 습관/);assert.match(html,/#\/book\/action\/habit/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
+  assert.match(html,/다른 책 습관/);assert.match(html,/data-habit-overview-open="otherBook"/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
+  assert.match(html,/data-habit-overview-day="mine\|2026-09-22" aria-pressed="true"[^>]*다시 누르면 취소/);
+  assert.match(html,/<\/button><button type="button" class="habit-overview-toggle/);
+  assert.doesNotMatch(html,/<a class="habit-overview-item"/);
   assert.deepEqual(c.STATE.habits.mine.checkedDates,[]);
   c.habitSaveIntents.mine['2026-09-22'].status='error';assert.match(c.habitOverviewBodyHtml(),/저장하지 못한 체크/);
 });
@@ -124,4 +127,61 @@ test('the weekly record area expands itself without opening statistics and leave
   calendarClick(event('summary'));assert.equal(calendar.open,true);
   calendarClick(event('calendar'));assert.equal(calendar.open,false);
   cardClick(event('body'));assert.equal(opens,1);
+});
+
+test('checking and undoing a replaced day icon never bubbles into the record disclosure',()=>{
+  let dayClick,calendarClick,checks=0;
+  const calendar={open:true,addEventListener(type,fn){calendarClick=fn;}};
+  const button={getAttribute(){return 'habit|2026-09-22';},addEventListener(type,fn){dayClick=fn;}};
+  const c={app:{querySelectorAll:selector=>selector==='[data-habit-day]'?[button]:selector==='.habit-card-calendar'?[calendar]:[]},toggleHabitDate(id,date){assert.equal(id,'habit');assert.equal(date,'2026-09-22');checks++;}};
+  vm.createContext(c);
+  let begin=source.indexOf("  app.querySelectorAll('.habit-card-calendar').forEach");
+  vm.runInContext(source.slice(begin,source.indexOf('  var openHabitBtn',begin)),c);
+  begin=source.indexOf("  app.querySelectorAll('[data-habit-day]').forEach(function(b){");
+  vm.runInContext(source.slice(begin,source.indexOf("  app.querySelectorAll('[data-save-habit]')",begin)),c);
+  for(let attempt=0;attempt<2;attempt++){
+    const event={stopped:false,target:{closest:()=>null},stopPropagation(){this.stopped=true;}};
+    dayClick(event);if(!event.stopped)calendarClick(event);
+    assert.equal(event.stopped,true);assert.equal(calendar.open,true);
+  }
+  assert.equal(checks,2);
+});
+
+test('overview delegation keeps success reversible after rows refresh and routes other clicks to details',()=>{
+  const c=cardHarness(),events=[],bindings=[];
+  const panel={_habitOverviewBound:false,contains:()=>true,addEventListener(type,fn){bindings.push(fn);}};
+  c.toggleHabitDate=(id,date)=>events.push(['toggle',id,date]);c.openHabitProgress=(...args)=>events.push(['detail',...args]);
+  const root={querySelectorAll:()=>[panel]};c.bindHabitOverviewEvents(root);c.bindHabitOverviewEvents(root);
+  assert.equal(bindings.length,1);
+  const eventFor=(kind,disabled=false)=>({stopped:false,stopPropagation(){this.stopped=true;},target:{closest(selector){
+    if(selector==='[data-habit-overview-day]'&&kind==='day')return {disabled,getAttribute:()=> 'h1|2026-09-22'};
+    if(selector==='[data-habit-overview-open]'&&kind==='detail')return {getAttribute:()=> 'other-book'};
+    if(selector==='[data-habit-overview-id]'&&kind==='space')return {getAttribute:()=> 'other-book'};
+    return null;
+  }}});
+  bindings[0](eventFor('day'));bindings[0](eventFor('day'));bindings[0](eventFor('day',true));
+  bindings[0](eventFor('detail'));bindings[0](eventFor('space'));
+  assert.deepEqual(events,[['toggle','h1','2026-09-22'],['toggle','h1','2026-09-22'],['detail','other-book','overview'],['detail','other-book','overview']]);
+});
+
+test('open weekly and closed monthly records retain their own disclosure state after a render',()=>{
+  const c=cardHarness();c.SESSION={userId:'owner'};
+  c.document={querySelectorAll:()=>[
+    {getAttribute:()=> 'week:h1',open:true},
+    {getAttribute:()=> 'month:h1',open:false}
+  ]};
+  c.captureHabitCalendarState();assert.equal(c.habitCalendarIsOpen('h1'),true);assert.equal(c.habitCalendarIsOpen('h2'),false);
+  const h={id:'h1',name:'책 읽기',startDate:'2026-09-20',endDate:'2026-09-29',checkedDates:[]};
+  assert.match(c.habitCardHtml(h),/data-habit-calendar-key="week:h1" open/);
+  c.habitCalendarMode='month';assert.equal(c.habitCalendarIsOpen('h1'),false);assert.equal(c.habitCalendarIsOpen('h2'),true);
+});
+
+test('overview detail opens another book habit without exposing another member records',()=>{
+  const c=cardHarness();c.SESSION={userId:'owner'};c.memberLoadState={habits:'ready'};c.habitEditingId=null;c.habitFormOpenFor=null;c.habitHistoryOpenFor='other-book';
+  c.myHabits=()=>[];c.myHabitOverviewItems=()=>[{id:'other-book',userId:'owner',bookId:'action',name:'다른 책 습관'}];
+  c.habitOverviewHtml=()=>'';c.habitHistoryModalHtml=habit=>'<dialog>'+habit.name+'</dialog>';
+  const begin=source.indexOf('function habitsSectionHtml(');
+  vm.runInContext(source.slice(begin,source.indexOf('function habitTabHtml(',begin)),c);
+  assert.match(c.habitsSectionHtml({id:'emotion'}),/<dialog>다른 책 습관<\/dialog>/);
+  c.habitHistoryOpenFor='stranger';assert.doesNotMatch(c.habitsSectionHtml({id:'emotion'}),/<dialog>/);assert.equal(c.habitHistoryOpenFor,null);
 });

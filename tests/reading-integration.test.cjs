@@ -446,3 +446,65 @@ test('notification permission is requested only by the explicit button; countdow
   settings.click();assert.equal(requested,1,'already granted permission is not requested again');
   permission='denied';settings.click();assert.equal(requested,1,'denied permission is not requested again');
 });
+
+
+test('home popup closes without stopping a timer and reopens the same session on home',()=>{
+  const {c,dialogs,memory,setNow}=harness({now:0});
+  c.location.hash='#/';c.startReading('emotion');
+  const id=c.readingTimer.id;
+  assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,id);assert.equal(c.readingHomeReturn,true);
+  c.readingCardHtml=(book,inDialog)=>{assert.equal(book.id,'emotion');assert.equal(inDialog,true);return '<div data-timer-fixture></div>';};
+  c.svgIcon=()=>'';c.I_CLOSE='close';
+  const markup=c.readingHomeDialogHtml({view:'home'});
+  assert.match(markup,/^<dialog /);assert.match(markup,/aria-labelledby="reading-home-title"/);assert.match(markup,/data-reading-home-close/);
+  const dialog=c.document.createElement('dialog');dialog.id='reading-home-dialog';c.document.body.appendChild(dialog);
+  c.showReadingHomeDialog();assert.equal(dialog.open,true);
+  setNow(5000);dialog.cancel();
+  assert.equal(dialog.open,false);assert.equal(c.readingHomeDialogFor,null);assert.equal(c.readingTimer.running,true);assert.equal(c.readingTimerElapsedMs(),5000);
+  assert.equal(c.location.hash,'#/');assert.equal(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))).timer.id,id);
+  c.startReading('emotion');assert.equal(c.readingTimer.id,id);assert.equal(c.readingHomeDialogFor,id);
+  assert.equal(c.readingTimerElapsedMs(),5000);assert.equal(c.location.hash,'#/');
+  c.location.hash='#/book/emotion/mine';
+  assert.equal(c.readingHomeDialogHtml({view:'book',bookId:'emotion',tab:'mine'}),'');assert.equal(c.readingHomeDialogFor,null);
+  c.startReading('emotion');assert.equal(c.location.hash,'#/book/emotion/mine');assert.equal(c.readingHomeReturn,false);
+  assert.equal(c.readingTimer.id,id);assert.equal(dialogs.size,1);
+});
+
+test('home completion keeps its popup and paused retry state until save succeeds, then updates home progress',async()=>{
+  const {c,prepared,server}=harness({failMeta:1});
+  prepared({elapsedMs:70000,startPage:10});c.location.hash='#/';c.readingHomeReturn=true;c.readingHomeDialogFor=c.readingTimer.id;
+  const dialog=c.document.createElement('dialog');dialog.id='reading-home-dialog';c.document.body.appendChild(dialog);dialog.showModal();
+  await c.submitReadingLog('emotion',0,25,null);
+  assert.equal(c.readingHomeDialogFor,c.readingTimer.id);assert.equal(dialog.open,true);assert.equal(c.readingSavePanelOpen,true);assert.equal(c.readingSaveError,true);
+  assert.equal(c.location.hash,'#/');assert.equal(c.readingSaveAttempt.seconds,70);
+  await c.submitReadingLog('emotion',0,25,null);
+  assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,null);assert.equal(dialog.open,false);assert.equal(c.readingTimer,null);
+  assert.equal(c.STATE.readingMeta.emotion_reader.currentPage,25);assert.equal(Object.keys(server.logs).length,1);
+});
+
+test('home note handoff returns to the home popup after a matching saved note, including refresh',async()=>{
+  for(const type of ['mine','share']){
+    const memory=new Map(),first=noteHarness({memory,now:5000});
+    first.c.readingHomeReturn=true;first.c.readingHomeDialogFor=first.c.readingTimer.id;first.c.location.hash='#/';
+    await first.c.openReadingNote(type);
+    assert.equal(first.c.location.hash,'#/book/emotion/'+type);assert.equal(first.c.readingTimer.running,false);
+    assert.equal(JSON.parse(memory.get(first.c.readingTimerStorageKey('reader'))).returnView,'home');
+    const next=noteHarness({memory,now:900000});next.c.readingTimerRestoreOwner=null;next.c.syncReadingTimer();
+    assert.equal(next.c.readingHomeReturn,true);assert.equal(next.c.readingTimerElapsedMs(),5000);
+    assert.equal(next.c.completeReadingNote(type,'emotion'),true);assert.equal(next.c.location.hash,'#/');
+    assert.equal(next.c.readingHomeDialogFor,next.c.readingTimer.id);assert.equal(next.c.readingTimer.running,true);
+    next.setNow(901000);assert.equal(next.c.readingTimerElapsedMs(),6000);
+  }
+});
+
+test('home modal cannot expose an old owner or locked book and logout closes it without erasing the timer',()=>{
+  const {c,memory}=harness({now:0});c.location.hash='#/';c.startReading('emotion');
+  c.SESSION={userId:'other'};
+  assert.equal(c.readingHomeDialogHtml({view:'home'}),'');assert.equal(c.readingHomeDialogFor,null);
+  c.SESSION={userId:'reader'};c.readingHomeDialogFor=c.readingTimer.id;c.isBookLocked=()=>true;
+  assert.equal(c.readingHomeDialogHtml({view:'home'}),'');assert.equal(c.readingHomeDialogFor,null);
+  c.isBookLocked=()=>false;c.readingHomeDialogFor=c.readingTimer.id;
+  const dialog=c.document.createElement('dialog');dialog.id='reading-home-dialog';c.document.body.appendChild(dialog);dialog.showModal();
+  c.pauseReadingBeforeLogout();assert.equal(dialog.open,false);assert.equal(c.readingHomeDialogFor,null);assert.equal(c.readingHomeReturn,false);
+  assert.equal(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))).timer.running,false);
+});

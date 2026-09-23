@@ -1695,6 +1695,8 @@ var habitHistoryOpenFor = null; // 지난 기록 팝업이 열려있는 habit id
 var habitHistoryMonth = null; // 팝업에서 보고 있는 달 {y, m}(m은 0=1월 기준) — 열 때마다 이번 달로 초기화
 var habitCalendarMode = 'week';
 var habitCalendarMonth = null;
+var habitCalendarOpenState = Object.create(null);
+var habitProgressReturnTarget = null;
 /* 생각 나눔(나눔 공간) 컴포저에서만 쓰는 상태 — '통찰 정리'를 고르면 컴포저 구성 자체가
    바뀌기 때문에(체크인 없음, 몇 번째 모임 + 질문 3개) 다시 그려야 한다. */
 var shareComposerNoteType = null;
@@ -1922,6 +1924,9 @@ var readingEndPage = null;
 var readingTimerMemoryWarning = false;
 var readingSaveError = false;
 var readingNoteReturn = null; // Only timer identity and destination; note contents use the existing encrypted draft.
+var readingHomeReturn = false; // Restored with this member's timer; note saves return to the home popup.
+var readingHomeDialogFor = null; // Transient open state, keyed by timer ID. Closing does not stop the timer.
+var readingHomeDialogPosition = null;
 var worksheetOpenFor = {}; // activity key -> boolean, 활동지 각 항목이 펼쳐져 있는지 (키가 책마다 고유해서 flat object로 충분)
 var shareFeedFilter = {}; // bookId -> note type key ('all' or one of NOTE_TYPES)
 var matFeedFilter = {}; // bookId -> 자료실 카테고리 key ('all' or one of MATERIAL_CATS)
@@ -2034,6 +2039,8 @@ function clearMemberSession(){
   if(typeof habitFormOpenFor!=='undefined') habitFormOpenFor=null;
   if(typeof habitEditingId!=='undefined') habitEditingId=null;
   if(typeof habitHistoryOpenFor!=='undefined') habitHistoryOpenFor=null;
+  if(typeof habitCalendarOpenState!=='undefined') habitCalendarOpenState=Object.create(null);
+  if(typeof habitProgressReturnTarget!=='undefined') habitProgressReturnTarget=null;
   if(typeof readingTimerIntervalId!=='undefined' && readingTimerIntervalId) clearInterval(readingTimerIntervalId);
   if(typeof readingTimer!=='undefined') readingTimer=null;
   if(typeof readingSavePanelOpen!=='undefined') readingSavePanelOpen=false;
@@ -3053,7 +3060,11 @@ function habitSaveStatusHtml(habitId){
 function refreshHabitSaveUI(habitId){
   var raw=STATE.habits[habitId];
   if(!raw || !SESSION || raw.userId!==SESSION.userId) return;
-  document.querySelectorAll('[data-habit-overview]').forEach(function(panel){panel.innerHTML=habitOverviewBodyHtml();});
+  document.querySelectorAll('[data-habit-overview]').forEach(function(panel){
+    var active=document.activeElement,focusKey=active&&panel.contains(active)?active.getAttribute('data-habit-overview-day'):null;
+    panel.innerHTML=habitOverviewBodyHtml();
+    if(focusKey) panel.querySelectorAll('[data-habit-overview-day]').forEach(function(button){if(button.getAttribute('data-habit-overview-day')===focusKey)button.focus({preventScroll:true});});
+  });
   if(!document.querySelectorAll('[data-habit-card], [data-habit-stats-panel]').length){if(typeof refreshHomeHabits==='function') refreshHomeHabits();return;}
   var habit=habitWithPendingChecks(raw),today=ymd(new Date()),stats=GrowellHabits.stats(habit,today);
   document.querySelectorAll('[data-habit-day]').forEach(function(button){
@@ -3201,7 +3212,7 @@ function submitReadingLog(bookId, seconds, page, btn){
     onSuccess:function(){
       if(!SESSION || SESSION.userId!==owner) return;
       readingSaveBusy=false; readingSaveError=false;
-      if(readingTimer && readingTimer.id===snapshot.id){readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingCountdownOpen=false;persistReadingTimer();}
+      if(readingTimer && readingTimer.id===snapshot.id){readingHomeReturn=false;closeReadingHomeDialog();readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingCountdownOpen=false;persistReadingTimer();}
       readingHistoryOpenFor=bookId;render();showToast('읽은 시간과 '+snapshot.page+'쪽까지 읽은 기록을 저장했어요.');
     },
     onFailure:function(){if(SESSION && SESSION.userId===owner){readingSaveBusy=false;readingSaveError=true;persistReadingTimer();render();}}
@@ -3238,7 +3249,7 @@ function persistReadingTimer(){
   if(!SESSION) return;
   try{
     var key=readingTimerStorageKey(SESSION.userId);
-    if(readingTimer && readingTimer.userId===SESSION.userId) localStorage.setItem(key,JSON.stringify({v:2,timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn}));
+    if(readingTimer && readingTimer.userId===SESSION.userId) localStorage.setItem(key,JSON.stringify({v:2,timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn,returnView:readingHomeReturn?'home':'mine'}));
     // Keep a completed marker so the read-only v1 migration cannot resurrect an old timer.
     else localStorage.setItem(key,JSON.stringify({v:2,timer:null}));
     readingTimerMemoryWarning=false;
@@ -3291,7 +3302,7 @@ function notifyReadingCountdown(){
 function syncReadingTimer(){
   if(!SESSION) return;
   if(readingTimerRestoreOwner!==SESSION.userId){
-    readingTimerRestoreOwner=SESSION.userId;readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingSaveBusy=false;readingEndPage=null;readingNoteReturn=null;
+    readingTimerRestoreOwner=SESSION.userId;readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingSaveBusy=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;
     try{
       var current=localStorage.getItem(readingTimerStorageKey(SESSION.userId)),migrate=current===null;
       // Old open tabs may still overwrite v1. Once v2 exists, including a null or
@@ -3299,6 +3310,7 @@ function syncReadingTimer(){
       var stored=JSON.parse((migrate?localStorage.getItem(legacyReadingTimerStorageKey(SESSION.userId)):current)||'null');
       readingTimer=GrowellReadingTimer.restore(stored && stored.timer,SESSION.userId,BOOKS.map(function(b){return b.id;}),Date.now());
       if(readingTimer){
+        readingHomeReturn=stored.returnView==='home';
         readingNoteReturn=GrowellReadingTimer.restoreNoteHandoff(stored.noteReturn,readingTimer);
         readingSavePanelOpen=readingTimer.phase==='save';readingFinishKind=stored.finishKind==='complete'?'complete':'finish';
         var attempt=stored.attempt, book=bookById(readingTimer.bookId);
@@ -3321,8 +3333,36 @@ function syncReadingTimer(){
 }
 function pauseReadingBeforeLogout(){
   if(SESSION && readingTimer && readingTimer.userId===SESSION.userId){readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());persistReadingTimer();}
-  readingTimerRestoreOwner=null;readingSaveAttempt=null;readingSaveBusy=false;readingSaveError=false;readingCountdownOpen=false;readingEndPage=null;readingNoteReturn=null;
-  closeReadingCountdownNotice();
+  readingTimerRestoreOwner=null;readingSaveAttempt=null;readingSaveBusy=false;readingSaveError=false;readingCountdownOpen=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;readingHomeDialogFor=null;
+  closeReadingHomeDialog();closeReadingCountdownNotice();
+}
+function isReadingHomeRoute(){return !location.hash || location.hash==='#' || location.hash==='#/';}
+function readingHomeDialogHtml(route){
+  if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || readingHomeDialogFor!==readingTimer.id || route.view!=='home'){
+    readingHomeDialogFor=null;return '';
+  }
+  var book=bookById(readingTimer.bookId);
+  if(!book || isBookLocked(book)){readingHomeDialogFor=null;return '';}
+  return '<dialog class="reading-home-dialog" id="reading-home-dialog" data-reading-key="'+esc(readingTimer.id+':'+readingTimer.phase)+'" aria-labelledby="reading-home-title"><div class="reading-home-dialog-heading"><h2 id="reading-home-title">'+(readingSavePanelOpen?'읽은 기록 저장':'독서 타이머')+'</h2><button type="button" class="icon-btn" data-reading-home-close aria-label="타이머 닫고 홈으로 돌아가기">'+svgIcon(I_CLOSE)+'</button></div>'+readingCardHtml(book,true)+'</dialog>';
+}
+function closeReadingHomeDialog(){
+  readingHomeDialogFor=null;readingHomeDialogPosition=null;
+  var dialog=document.getElementById('reading-home-dialog');
+  if(dialog && dialog.open && dialog.close)dialog.close();
+  var trigger=isReadingHomeRoute() && document.querySelector && document.querySelector('[data-reading-start]');
+  if(trigger && trigger.focus)trigger.focus({preventScroll:true});
+}
+function showReadingHomeDialog(){
+  var dialog=document.getElementById('reading-home-dialog');
+  if(!dialog)return;
+  if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || readingHomeDialogFor!==readingTimer.id){closeReadingHomeDialog();return;}
+  if(!dialog.open)dialog.showModal();
+  var key=readingTimer.id+':'+readingTimer.phase;
+  if(readingHomeDialogPosition && readingHomeDialogPosition.key===key)dialog.scrollTop=readingHomeDialogPosition.top;
+  dialog.addEventListener('cancel',function(e){e.preventDefault();closeReadingHomeDialog();});
+  // Re-rendering the parent must not cover the already-visible countdown notice.
+  var notice=document.getElementById('reading-countdown-ended');
+  if(notice && notice.open){notice.close();notice.showModal();}
 }
 function startReading(bookId){
   if(!SESSION){location.hash='#/login';return;}
@@ -3331,13 +3371,21 @@ function startReading(bookId){
   if(!book || isBookLocked(book)) return;
   if(!readingDataReady()){showToast('독서 진도를 불러온 뒤 시작해주세요.',true);return;}
   prepareReadingTimerAlerts();
+  var fromHome=isReadingHomeRoute();
   if(readingTimer){
+    var activeBook=bookById(readingTimer.bookId);if(!activeBook || isBookLocked(activeBook))return;
     if(readingTimer.bookId!==bookId) showToast('읽고 있던 책을 먼저 이어서 읽거나 마무리해주세요.');
-    location.hash='#/book/'+readingTimer.bookId+'/mine';render();return;
+    readingHomeReturn=fromHome;
+    readingHomeDialogFor=fromHome?readingTimer.id:null;
+    if(readingNoteReturn){returnToReadingTimer();return;}
+    persistReadingTimer();
+    if(!fromHome)location.hash='#/book/'+readingTimer.bookId+'/mine';
+    render();return;
   }
   readingTimer=GrowellReadingTimer.create({id:uid('rl'),userId:SESSION.userId,bookId:bookId,startPage:myCurrentPage(bookId)},Date.now());
   readingTimerRestoreOwner=SESSION.userId;readingSavePanelOpen=false;readingSaveAttempt=null;readingSaveError=false;readingFinishKind='finish';readingEndPage=null;readingNoteReturn=null;
-  persistReadingTimer();location.hash='#/book/'+bookId+'/mine';render();
+  readingHomeReturn=fromHome;readingHomeDialogFor=fromHome?readingTimer.id:null;readingHomeDialogPosition=null;
+  persistReadingTimer();if(!fromHome)location.hash='#/book/'+bookId+'/mine';render();
 }
 function todayReadSeconds(bookId){
   var today=ymd(new Date());
@@ -3402,7 +3450,7 @@ function completeReadingNote(type,bookId){
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || !readingNoteReturn || readingNoteReturn.type!==type || readingNoteReturn.bookId!==bookId)return false;
   var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());
   if(!resumed)return false;
-  readingTimer=resumed;readingNoteReturn=null;persistReadingTimer();location.hash='#/book/'+bookId+'/mine';return true;
+  readingTimer=resumed;readingNoteReturn=null;readingHomeDialogFor=readingHomeReturn?readingTimer.id:null;persistReadingTimer();location.hash=readingHomeReturn?'#/':'#/book/'+bookId+'/mine';return true;
 }
 function returnToReadingTimer(){
   if(!readingNoteReturn)return;
@@ -3435,7 +3483,7 @@ function bindReadingTimerEvents(){
   on('btn-reading-cancel',function(){
     if(!readingTimer || readingSaveBusy || readingSaveAttempt)return;
     if(!confirm('이번 독서를 취소할까요? 저장한 이전 기록은 유지되지만, 이번에 읽은 시간은 남지 않아요.'))return;
-    readingTimer=null;readingSavePanelOpen=false;readingCountdownOpen=false;readingSaveAttempt=null;readingNoteReturn=null;persistReadingTimer();render();
+    closeReadingHomeDialog();readingHomeReturn=false;readingTimer=null;readingSavePanelOpen=false;readingCountdownOpen=false;readingSaveAttempt=null;readingNoteReturn=null;persistReadingTimer();render();
   });
   on('btn-reading-done',function(){
     if(!readingTimer)return;
@@ -3501,6 +3549,8 @@ function bindReadingTimerEvents(){
   app.querySelectorAll('[data-reading-destination]').forEach(function(b){b.addEventListener('click',function(){var dialog=document.getElementById('reading-note-dialog');if(dialog)dialog.close();openReadingNote(b.getAttribute('data-reading-destination'));});});
   app.querySelectorAll('[data-reading-return]').forEach(function(b){b.addEventListener('click',returnToReadingTimer);});
   app.querySelectorAll('#btn-close-share-composer,#btn-close-mine-composer').forEach(function(b){b.addEventListener('click',function(){if(readingNoteReturn)returnToReadingTimer();});});
+  app.querySelectorAll('[data-reading-home-close]').forEach(function(b){b.addEventListener('click',closeReadingHomeDialog);});
+  showReadingHomeDialog();
   if(readingTimerIntervalId)clearInterval(readingTimerIntervalId);
   readingTimerIntervalId=readingTimer?setInterval(tickReadingTimer,250):null;
   if(!document._readingLifecycleBound){
@@ -3706,7 +3756,7 @@ function homeUnlockedIds(){
   return BOOKS.filter(function(book){ return !isBookLocked(book); }).map(function(book){ return book.id; });
 }
 function homeDailyVerse(){
-  return typeof GrowellDailyVerse!=='undefined'&&typeof GrowellDailyVerses!=='undefined'?GrowellDailyVerse.get(GrowellDailyVerses):null;
+  return typeof GrowellDailyVerse!=='undefined'&&typeof GrowellDailyVerses!=='undefined'?GrowellDailyVerse.getCompact(GrowellDailyVerses):null;
 }
 function homeDailyVerseContentHtml(verse){
   var date=verse?new Date(verse.dateKey+'T12:00:00Z').toLocaleDateString('ko-KR',{timeZone:'Asia/Seoul',month:'long',day:'numeric',weekday:'long'}):'';
@@ -4855,7 +4905,7 @@ function readingStatusBodyHtml(book){
   if(readingHistoryOpenFor===book.id){ return '<div class="reading-split-body">'+readingHistoryHtml(book)+'</div>'; }
   return '';
 }
-function readingCardHtml(book){
+function readingCardHtml(book,inDialog){
   if(!SESSION) return '';
   if(!readingDataReady()) return '<div class="card reading-card">'+memberDataStatusHtml('readingMeta')+memberDataStatusHtml('readingLogs')+'</div>';
   var total = book.totalPages || 0;
@@ -4878,7 +4928,7 @@ function readingCardHtml(book){
       '<div class="reading-page-slider-row"><button type="button" class="btn" data-reading-page-step="-1" aria-label="한 쪽 줄이기"'+(readingSaveAttempt || endPage<=readingTimer.startPage?' disabled':'')+'>−</button><input id="reading-log-page-slider" type="range" min="'+readingTimer.startPage+'" max="'+total+'" step="1" value="'+endPage+'" aria-valuetext="'+endPage+'쪽, 전체의 '+pageProgress.percent+'퍼센트"'+(readingSaveAttempt?' disabled':'')+'><button type="button" class="btn" data-reading-page-step="1" aria-label="한 쪽 늘리기"'+(readingSaveAttempt || endPage>=total?' disabled':'')+'>+</button></div>'+
       '<p class="reading-page-delta" id="reading-page-delta" aria-live="polite">'+readingTimer.startPage+' → '+endPage+'쪽 · 이번에 '+(endPage-readingTimer.startPage)+'쪽 읽음</p>' +
       (readingSaveError?'<p class="reading-save-error" role="alert">저장 완료를 확인하지 못했어요. 읽은 시간은 보관되어 있으니 같은 기록으로 다시 저장해주세요.</p>':'')+
-      '<div class="composer-foot"><span class="hint">저장하면 홈의 읽은 시간과 진도에 반영돼요.</span><button type="button" class="btn btn-primary" id="btn-reading-log-save" data-book="'+book.id+'"'+(readingSaveBusy?' disabled':'')+'>'+(readingSaveBusy?'저장 중…':'읽은 기록 저장')+'</button></div>' +
+      '<div class="composer-foot"><span class="hint">저장하면 홈의 읽은 시간과 진도에 반영돼요.</span><button type="button" class="btn reading-complete-btn" id="btn-reading-log-save" data-book="'+book.id+'"'+(readingSaveBusy?' disabled':'')+'>'+(readingSaveBusy?'저장 중…':'읽은 기록 저장')+'</button></div>' +
     '</div>';
   }
   /* 실행/일시정지 중인 타이머 */
@@ -4887,9 +4937,9 @@ function readingCardHtml(book){
     var running = !!readingTimer.running;
     return '<div class="card reading-card reading-timer-card">' +
       '<div class="reading-timer-head">' +
-        '<a class="btn btn-sm" href="#/">'+svgIcon(I_BACK)+' 홈</a>' +
+        (inDialog?'<button type="button" class="btn btn-sm" data-reading-home-close>'+svgIcon(I_BACK)+' 홈</button>':'<a class="btn btn-sm" href="#/">'+svgIcon(I_BACK)+' 홈</a>') +
         '<span class="reading-timer-status" data-reading-status role="status">'+(running?(readingTimer.goalReached?'목표 달성 · 계속 읽는 중':'읽고 있는 중…'):'잠시 멈춤')+'</span>' +
-        '<button type="button" class="btn btn-primary btn-sm" id="btn-reading-done">'+svgIcon(I_CHECK)+' 완료</button>' +
+        '<button type="button" class="btn reading-complete-btn btn-sm" id="btn-reading-done">'+svgIcon(I_CHECK)+' 완료</button>' +
       '</div>' +
       '<div class="reading-timer-label">이번에 읽은 시간</div><div class="reading-timer-display mono" id="reading-timer-display" data-reading-elapsed>'+fmtElapsed(elapsedRun)+'</div>' +
       '<button type="button" class="reading-timer-main-control'+(readingTimer.targetMs!==null?' has-countdown':'')+'" id="btn-reading-toggle-pause" aria-label="'+(running?'독서 타이머 일시정지':'독서 타이머 계속 읽기')+'">'+readingCountdownRingHtml()+'<span class="reading-timer-control-icon">'+(running?svgIcon(I_PAUSE):svgIcon(I_PLAY))+'</span></button><p class="reading-control-label">'+(running?'잠시 멈춤':'계속 읽기')+'</p>'+
@@ -4964,15 +5014,43 @@ function habitOverviewBodyHtml(){
     var b=GrowellHabits.bounds(habit,today),status=today<b.start?'upcoming':b.end&&today>b.end?'ended':GrowellHabits.status(habit,today,today)==='success'?'success':'pending';
     var label={upcoming:'시작 전',ended:'기간 종료',success:'오늘 성공',pending:'오늘 도전 중'}[status],book=bookById(habit.bookId);
     var source=book?book.title:'연결된 책';
-    var content='<span class="habit-overview-item-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><span class="habit-overview-item-text"><strong>'+esc(habit.name)+'</strong><small>'+esc(source)+'</small></span><span class="habit-overview-item-status is-'+status+'">'+label+'</span>';
+    var content='<span class="habit-overview-item-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><span class="habit-overview-item-text"><strong>'+esc(habit.name)+'</strong><small>'+esc(source)+'</small></span>';
     var kindAttr=' data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"';
-    return book?'<a class="habit-overview-item"'+kindAttr+' href="#/book/'+encodeURIComponent(habit.bookId)+'/habit" aria-label="'+esc(habit.name)+' · '+label+' · '+esc(source)+' 습관으로 이동">'+content+'</a>':'<div class="habit-overview-item"'+kindAttr+'>'+content+'</div>';
+    var todayState=habitTodayState(habit,today);
+    var action='<button type="button" class="habit-overview-toggle'+(todayState.checked?' is-checked':'')+'" data-habit-overview-day="'+esc(habit.id)+'|'+today+'" aria-pressed="'+todayState.checked+'" aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':' 체크')+'"'+(!todayState.canCheck?' disabled':'')+'>'+svgIcon(I_CHECK)+'<span>'+todayState.label+'</span></button>';
+    return '<div class="habit-overview-item" data-habit-overview-id="'+esc(habit.id)+'"'+kindAttr+'><button type="button" class="habit-overview-open" data-habit-overview-open="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' · '+label+' · '+esc(source)+' 진행 상황 보기">'+content+'</button>'+action+'</div>';
   }).join('');
   var intents=habits.reduce(function(all,habit){return all.concat(Object.values(habitSaveIntents[habit.id]||{}));},[]);
   var pending=intents.some(function(intent){return intent.status==='error';})?'저장하지 못한 체크가 포함돼 있어요. 해당 습관에서 다시 저장해주세요.':intents.length?'체크 저장 중…':'';
   return heading+'<p class="habit-overview-message">'+message+'</p>'+stats+period+'<div class="habit-overview-items">'+rows+'</div><p class="habit-overview-note">이번 주 성공 '+summary.weekSuccess+'회 · 실패 '+summary.weekFail+'회 · 오늘 미체크와 미래 날짜는 성공률에서 제외해요.</p>'+(pending?'<p class="habit-overview-save" role="status">'+pending+'</p>':'');
 }
 function habitOverviewHtml(){return '<section class="card habit-overview" data-habit-overview aria-label="전체 습관 현황">'+habitOverviewBodyHtml()+'</section>';}
+function bindHabitOverviewEvents(root){
+  root.querySelectorAll('[data-habit-overview]').forEach(function(panel){
+    if(panel._habitOverviewBound) return;
+    panel._habitOverviewBound=true;
+    panel.addEventListener('click',function(event){
+      var day=event.target.closest('[data-habit-overview-day]');
+      if(day&&panel.contains(day)){
+        event.stopPropagation();
+        if(day.disabled)return;
+        var parts=day.getAttribute('data-habit-overview-day').split('|');
+        toggleHabitDate(parts[0],parts[1]);return;
+      }
+      var detail=event.target.closest('[data-habit-overview-open]');
+      var row=event.target.closest('[data-habit-overview-id]');
+      if((detail||row)&&panel.contains(detail||row)){event.stopPropagation();openHabitProgress(detail?detail.getAttribute('data-habit-overview-open'):row.getAttribute('data-habit-overview-id'),'overview');}
+    });
+  });
+}
+function captureHabitCalendarState(){
+  if(!SESSION) return;
+  document.querySelectorAll('[data-habit-calendar-key]').forEach(function(calendar){habitCalendarOpenState[calendar.getAttribute('data-habit-calendar-key')]=calendar.open;});
+}
+function habitCalendarIsOpen(habitId){
+  var key=habitCalendarMode+':'+habitId;
+  return Object.prototype.hasOwnProperty.call(habitCalendarOpenState,key)?habitCalendarOpenState[key]:habitCalendarMode==='month';
+}
 /* 월요일 시작 기준 "이번 주" 계산 — 카드 안 체크표와 완료 카드 이미지가 항상 같은 기준을
    쓰도록 이 두 헬퍼로 통일한다. */
 function mondayOf(d){
@@ -5071,7 +5149,7 @@ function habitCardHtml(habit){
     habitFactsHtml(habit)+'<div class="habit-card-goal" data-habit-card-goal="'+esc(habit.id)+'">'+habitCardProgressHtml(stats)+'</div>'+
     '<div class="habit-card-summary"><span class="habit-streak" data-habit-card-summary="'+esc(habit.id)+'">'+habitStreakHtml(habit,stats)+'</span><button type="button" class="habit-today-btn'+(todayState.checked?' is-checked':'')+'" data-habit-today data-habit-day="'+esc(habit.id)+'|'+todayStr+'" aria-pressed="'+todayState.checked+'" aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':'')+'"'+(!todayState.canCheck?' disabled':'')+'>'+svgIcon(I_CHECK)+'<span data-habit-today-label>'+todayState.label+'</span></button></div>'+
     '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitCardSaveStatusHtml(habit.id)+'</p>'+
-    '<details class="habit-card-calendar"'+(habitCalendarMode==='month'?' open':'')+'><summary>'+(habitCalendarMode==='month'?'월별 성공 · 실패 기록':'이번 주 기록 보기')+svgIcon(I_BACK)+'</summary><div class="habit-card-calendar-body">'+calendar+download+'</div></details></article>';
+    '<details class="habit-card-calendar" data-habit-calendar-key="'+esc(habitCalendarMode+':'+habit.id)+'"'+(habitCalendarIsOpen(habit.id)?' open':'')+'><summary>'+(habitCalendarMode==='month'?'월별 성공 · 실패 기록':'이번 주 기록 보기')+svgIcon(I_BACK)+'</summary><div class="habit-card-calendar-body">'+calendar+download+'</div></details></article>';
 }
 function habitFormHtml(book,editingHabit){
   var h=editingHabit||{name:'',place:'',time:'',goal:'',startDate:ymd(new Date()),endDate:''};
@@ -5101,7 +5179,7 @@ function habitsSectionHtml(book){
     '<button type="button" data-habit-view="month" aria-pressed="'+(habitCalendarMode==='month')+'" class="'+(habitCalendarMode==='month'?'is-active':'')+'">월별 달력</button></div>'+
     (habitCalendarMode==='month'?'<div class="habit-month-controls"><button type="button" class="habit-hist-nav-btn" data-habit-calendar-shift="-1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><strong>'+view.y+'년 '+(view.m+1)+'월</strong><button type="button" class="habit-hist-nav-btn is-next" data-habit-calendar-shift="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>':'')+'</div>';
   var list=habits.length?'<div class="habit-list">'+habits.map(habitCardHtml).join('')+'</div>':'<div class="empty">아직 만든 습관이 없어요. 장소·시간·목표를 정해서 하나 시작해보세요.</div>';
-  var historyHabit=habitHistoryOpenFor?habits.find(function(h){return h.id===habitHistoryOpenFor;}):null;
+  var historyHabit=habitHistoryOpenFor?myHabitOverviewItems().find(function(h){return h.id===habitHistoryOpenFor;}):null;
   if(habitHistoryOpenFor&&!historyHabit) habitHistoryOpenFor=null;
   var hero='<header class="habit-hero"><div class="habit-hero-top"><span class="habit-hero-kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21v-9M12 16C5 16 3 12 3 7c6 0 9 3 9 9ZM12 12c0-6 3-9 9-9 0 6-3 9-9 9ZM6 21h12"/></svg>매일의 작은 변화</span><time class="habit-hero-date" datetime="'+ymd(today)+'">'+(today.getMonth()+1)+'월 '+today.getDate()+'일 '+['일요일','월요일','화요일','수요일','목요일','금요일','토요일'][today.getDay()]+'</time></div><h2>나를 키우는 습관</h2><p>완벽한 하루보다, 다시 이어가는 하루.</p></header>';
   return '<div class="habit-section">'+hero+habitOverviewHtml()+form+controls+list+'</div>'+(historyHabit?habitHistoryModalHtml(historyHabit):'');
@@ -5162,7 +5240,7 @@ function habitHistoryModalHtml(habit){
   var today=new Date(),view=habitHistoryMonth||{y:today.getFullYear(),m:today.getMonth()};
   return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
     '<div class="composer-head"><div><p class="habit-dialog-kicker">나의 작은 성취</p>'+habitKindBadgeHtml(habit)+'<h4 id="habit-dialog-title">'+esc(habit.name)+'</h4></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 진행 상황 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
-    '<p class="habit-dialog-period">'+habitPeriodLabel(habit)+(habit.goal?' · '+esc(habit.goal):'')+'</p>'+
+    habitFactsHtml(habit)+
     '<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+
     '<div class="habit-hist-month-nav"><button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><span class="habit-hist-month-label">'+view.y+'년 '+(view.m+1)+'월</span><button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>'+
     habitHistoryCalendarHtml(habit,view.y,view.m)+habitCalendarLegendHtml()+
@@ -5175,9 +5253,11 @@ function shiftHabitHistoryMonth(delta){
   if(next.getFullYear()<1000||next.getFullYear()>9999) return;
   habitHistoryMonth={y:next.getFullYear(),m:next.getMonth()};render();focusHabitDialog();
 }
-function openHabitProgress(habitId){
+function openHabitProgress(habitId,origin){
   var habit=STATE.habits[habitId];
   if(!SESSION||!habit||habit.userId!==SESSION.userId) return;
+  var active=document.activeElement;
+  habitProgressReturnTarget=origin==='overview'||(active&&active.hasAttribute&&active.hasAttribute('data-habit-overview-open'))?'overview':'card';
   habitHistoryOpenFor=habitId;habitHistoryMonth=null;render();focusHabitDialog();
 }
 function focusHabitDialog(){
@@ -5185,8 +5265,9 @@ function focusHabitDialog(){
   if(modal) modal.focus({preventScroll:true});
 }
 function closeHabitProgress(){
-  var id=habitHistoryOpenFor;habitHistoryOpenFor=null;habitHistoryMonth=null;render();
-  app.querySelectorAll('[data-habit-history]').forEach(function(b){if(b.getAttribute('data-habit-history')===id&&b.classList.contains('habit-title-button')) b.focus({preventScroll:true});});
+  var id=habitHistoryOpenFor,fromOverview=habitProgressReturnTarget==='overview';habitHistoryOpenFor=null;habitHistoryMonth=null;habitProgressReturnTarget=null;render();
+  var selector=fromOverview?'[data-habit-overview-open]':'[data-habit-history]';
+  app.querySelectorAll(selector).forEach(function(b){if(b.getAttribute(fromOverview?'data-habit-overview-open':'data-habit-history')===id&&(fromOverview||b.classList.contains('habit-title-button'))) b.focus({preventScroll:true});});
 }
 /* ---------------- 습관 완료 카드 이미지 생성 ----------------
    사용자가 준 다이어리 템플릿 3종(covers/habit-templates/theme-N.jpg) 이미지를 그대로 배경으로
@@ -5970,6 +6051,9 @@ function bookPageHtml(book, tab, postId){
 /* ---------------- master render ---------------- */
 function render(){
   captureComposerDraft();
+  captureHabitCalendarState();
+  var previousReadingDialog=document.getElementById('reading-home-dialog');
+  if(previousReadingDialog && previousReadingDialog.open && readingTimer)readingHomeDialogPosition={key:previousReadingDialog.getAttribute('data-reading-key'),top:previousReadingDialog.scrollTop};
   syncReadingTimer();
   if(SESSION&&sharedPostsLoadState==='idle')loadCommunityForCurrentMember();
   var route = currentRoute();
@@ -5997,7 +6081,7 @@ function render(){
   } else {
     html += homeHtml();
   }
-  html += '</main>' + footerHtml();
+  html += '</main>' + footerHtml() + readingHomeDialogHtml(route);
   if(readingTimerIntervalId){ clearInterval(readingTimerIntervalId); readingTimerIntervalId = null; }
   app.innerHTML = html;
   bindEvents(route);
@@ -6518,6 +6602,7 @@ function bindEvents(route){
   });
 
   /* 습관 만들기 */
+  bindHabitOverviewEvents(app);
   app.querySelectorAll('[data-habit-view]').forEach(function(b){b.addEventListener('click',function(){habitCalendarMode=b.getAttribute('data-habit-view');render();});});
   app.querySelectorAll('[data-habit-calendar-shift]').forEach(function(b){b.addEventListener('click',function(){
     var today=new Date(),cur=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()},next=new Date(cur.y,cur.m+Number(b.getAttribute('data-habit-calendar-shift')),1);
@@ -6572,7 +6657,10 @@ function bindEvents(route){
     });
   }
   app.querySelectorAll('[data-habit-day]').forEach(function(b){
-    b.addEventListener('click', function(){
+    b.addEventListener('click', function(event){
+      // Refreshing the check mark replaces the clicked SVG before bubbling ends.
+      // Stop first so the calendar never mistakes that detached target for empty space.
+      event.stopPropagation();
       var parts = b.getAttribute('data-habit-day').split('|');
       toggleHabitDate(parts[0], parts[1]);
     });

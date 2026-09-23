@@ -37,3 +37,21 @@ test('the browser module exposes the same deterministic getter without CommonJS'
   const context=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(__dirname,'../dailyVerseDomain.js'),'utf8'),context);
   assert.equal(context.GrowellDailyVerse.get(verses,'2026-09-23T00:00:00+09:00').index,0);
 });
+
+test('compact daily rotation uses complete short supplied passages without changing the original collection',()=>{
+  const supplied=require('../dailyVerses.js'),before=JSON.stringify(supplied);
+  const expected=supplied.filter(verse=>Array.from(verse.text).length<=35);
+  const anchor=Date.parse('2026-09-23T00:00:00+09:00');
+  assert.ok(expected.length>1);
+  for(let i=0;i<expected.length;i++){
+    const verse=daily.getCompact(supplied,anchor+i*86400000);
+    assert.equal(verse.text,expected[i].text);
+    assert.equal(verse.reference,expected[i].reference);
+    assert.equal(daily.getCompact(supplied,anchor+i*86400000+86399999).text,verse.text);
+  }
+  assert.equal(daily.getCompact(supplied,anchor+expected.length*86400000).text,expected[0].text);
+  assert.equal(JSON.stringify(supplied),before);
+  assert.equal(supplied.length,50);
+  assert.equal(daily.getCompact([{reference:'long',text:'긴 말씀 '.repeat(20)}],anchor),null);
+  assert.equal(daily.getCompact(null,anchor),null);
+});
