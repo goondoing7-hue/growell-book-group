@@ -173,12 +173,12 @@ test('private category labels are escaped in controls, list rows and composing w
   installCategories(c,[{id:'pcat_journal',label}]);
   const controls=c.privateCategoryControlsHtml(book.id);
   assert.ok(controls.includes(esc(label)));assert.ok(!controls.includes(label));
-  assert.match(controls,/data-private-category-filter="private-none"/);
+  assert.doesNotMatch(controls,/data-private-category-filter="private-none"|분류 없음/);
   for(const noteType of ['thought','summary','quote','question','pcat_deleted']){
     const resolved=c.privateCategoryLabel(book.id,noteType);
-    assert.equal(resolved,'분류 없음');
+    assert.equal(resolved,'');
     const row=c.spaceListContentHtml({title:'기존 글',noteType},1,'나에게만 공개',resolved);
-    assert.match(row,/분류 없음/);assert.doesNotMatch(row,/책 속 문장|내용 요약|의문점/);
+    assert.doesNotMatch(row,/분류 없음|책 속 문장|내용 요약|의문점|space-list-meta"> ·/);
   }
   const row=c.spaceListContentHtml({title:'내 글',noteType:'pcat_journal'},1,'나에게만 공개',c.privateCategoryLabel(book.id,'pcat_journal'));
   assert.ok(row.includes(esc(label)));assert.ok(!row.includes(label));
@@ -206,8 +206,9 @@ test('deleted private categories resolve to unclassified and stale active filter
   const before=JSON.stringify(c.STATE.privateEntries.mine);
   c.privateCategoryStates[id].categories=[{id:'pcat_keep',label:'일기'}];
   assert.equal(c.privateCategoryFilter(book.id),'all');
-  assert.equal(c.privateCategoryLabel(book.id,'pcat_removed'),'분류 없음');
+  assert.equal(c.privateCategoryLabel(book.id,'pcat_removed'),'');
   c.privateCategoryFilters[id]='private-none';
+  assert.equal(c.privateCategoryFilter(book.id),'all');
   const html=c.mineTabHtml(book);
   assert.match(html,/나의 기록 1개/);assert.match(html,/data-mine-entry="mine"/);
   assert.equal(JSON.stringify(c.STATE.privateEntries.mine),before);

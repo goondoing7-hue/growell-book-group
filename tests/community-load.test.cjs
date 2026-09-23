@@ -7,10 +7,10 @@ const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 const clone=value=>JSON.parse(JSON.stringify(value));
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a,start);return source.slice(a,b);}
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
-function harness(){
+function harness({admin=true,worksheetGate=null}={}){
   const gate=deferred(),requests=[];
   const server={
-    profiles:[{id:'owner',name:'원래 이름',avatar_url:'old-avatar',auth_user_id:'auth-owner'},{id:'other',name:'다른 회원'}],
+    profiles:[{id:'owner',name:'원래 이름',avatar_url:'old-avatar',auth_user_id:'auth-owner',is_admin:admin},{id:'other',name:'다른 회원'}],
     posts:[{id:'p1',user_id:'owner',book_id:'emotion',title:'원래 제목',html:'<p>원래 글</p>'},{id:'p2',user_id:'other',book_id:'emotion',title:'원격에서 삭제된 글'}],
     comments:[{id:'c1',user_id:'owner',post_id:'p1',text:'원래 댓글'}],
     material_notes:[{id:'m1',user_id:'owner',book_id:'emotion',html:'원래 자료',drive_links:[]}],
@@ -21,7 +21,7 @@ function harness(){
   let renderCount=0;
   const c={Promise,SESSION:{userId:'owner'},saveSessionEpoch:1,sharedPostsLoadState:'idle',render(){renderCount++;},
     STATE:{users:{},posts:{},comments:{},materialNotes:{},worksheets:{},bookLocks:{},announcement:{next:{date:'2026-09-25',time:'19:00',place:'',note:''},reading:{bookId:'emotion',meetingNo:'',chapter:'',range:'1장',concept:'',note:''}},privateEntries:{private:{iv:'encrypted',data:'secret'}},habits:{keep:{name:'개인 습관'}},readingLogs:{keep:{seconds:10}}},
-    sb:{from(table){requests.push(table);return {select(){return gate.promise.then(()=>server[table] instanceof Error?{error:server[table],data:null}:{data:clone(server[table]),error:null});}};}}
+    sb:{from(table){requests.push(table);return {select(){return (table==='worksheets'&&worksheetGate?worksheetGate.promise:gate.promise).then(()=>server[table] instanceof Error?{error:server[table],data:null}:{data:clone(server[table]),error:null});}};}}
   };
   vm.createContext(c);vm.runInContext(section('function photoFromUrl(', '\nvar STATE ='),c);
   vm.runInContext(section('function currentUser()', 'function isAdmin()'),c);
@@ -83,7 +83,53 @@ test('logout or a new session epoch ignores an old successful community response
   }
 });
 test('an old request failure cannot mark a later session as failed and duplicate active reads are skipped',async()=>{
-  const h=harness(),pending=h.c.loadCommunityForCurrentMember();h.c.loadCommunityForCurrentMember();assert.equal(h.requests.length,7);
+  const h=harness(),pending=h.c.loadCommunityForCurrentMember();h.c.loadCommunityForCurrentMember();assert.equal(h.requests.length,6);
+  assert.ok(!h.requests.includes('worksheets'),'worksheet request waits for fresh server permissions');
   h.c.saveSessionEpoch++;h.c.sharedPostsLoadState='ready';h.server.posts=new Error('old request failure');h.finish();await pending;
   assert.equal(h.c.sharedPostsLoadState,'ready');assert.equal(h.renders(),0);
+});
+
+test('members never request worksheets and discard stale local worksheet cache without changing server records',async()=>{
+  const h=harness({admin:false}),saved=clone(h.server.worksheets),pending=h.c.loadCommunityForCurrentMember();
+  h.finish();await pending;
+  assert.ok(!h.requests.includes('worksheets'));
+  assert.deepEqual(clone(h.c.STATE.worksheets),{});
+  assert.deepEqual(h.server.worksheets,saved);
+  assert.equal(h.c.sharedPostsLoadState,'ready');
+});
+
+test('admin worksheet queries start only after fresh profiles verify an active administrator',async()=>{
+  const h=harness(),pending=h.c.loadCommunityForCurrentMember();
+  assert.ok(!h.requests.includes('worksheets'));
+  h.finish();await pending;
+  assert.equal(h.requests.filter(table=>table==='worksheets').length,1);
+  assert.equal(h.c.STATE.worksheets.w1.data.answer,'원래 응답');
+  for(const profileChange of [row=>{row.is_admin=false;},row=>{row.is_deleted=true;},row=>{row.id='missing-current-member';}]){
+    const denied=harness(),load=denied.c.loadCommunityForCurrentMember();
+    profileChange(denied.server.profiles[0]);denied.finish();await load;
+    assert.ok(!denied.requests.includes('worksheets'));
+    assert.notEqual((denied.c.STATE.users.owner||{}).isAdmin,true);
+    assert.deepEqual(clone(denied.c.STATE.worksheets),{});
+  }
+});
+
+test('fresh demotion clears cached worksheet access even when another collection fails, preserving profile edits',async()=>{
+  const h=harness(),pending=h.c.loadCommunityForCurrentMember();
+  h.c.STATE.users.owner.name='저장한 이름';h.server.profiles[0].is_admin=false;h.server.comments=new Error('other read failed');
+  h.finish();await pending;
+  assert.equal(h.c.STATE.users.owner.isAdmin,false);
+  assert.equal(h.c.STATE.users.owner.name,'저장한 이름');
+  assert.deepEqual(clone(h.c.STATE.worksheets),{});
+  assert.ok(!h.requests.includes('worksheets'));assert.equal(h.c.sharedPostsLoadState,'error');
+  assert.equal(h.renders(),2,'demotion redraws the admin gate before the later collection failure');
+});
+
+test('role loss during an in-flight admin worksheet response cannot restore cached worksheet contents',async()=>{
+  const worksheetGate=deferred(),h=harness({worksheetGate}),pending=h.c.loadCommunityForCurrentMember();
+  h.finish();for(let i=0;i<4;i++)await Promise.resolve();
+  assert.ok(h.requests.includes('worksheets'));
+  h.c.STATE.users.owner.isAdmin=false;h.c.STATE.worksheets={};
+  worksheetGate.resolve();await pending;
+  assert.equal(h.c.STATE.users.owner.isAdmin,false);
+  assert.deepEqual(clone(h.c.STATE.worksheets),{});
 });

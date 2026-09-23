@@ -17,19 +17,29 @@
     var targetMs=raw.targetMs===undefined?null:raw.targetMs;
     var goalReached=raw.goalReached===undefined?false:raw.goalReached;
     var phase=raw.phase===undefined?'timer':raw.phase;
+    var sequence=raw.countdownSequence===undefined?0:raw.countdownSequence;
+    var duration=raw.countdownDurationMs===undefined?(targetMs===null?null:Math.max(1,targetMs)):raw.countdownDurationMs;
+    var countdownId=raw.countdownId===undefined?(targetMs===null?null:raw.id+':legacy:'+targetMs):raw.countdownId;
+    // Older completed timers already opened their save screen; do not alert again.
+    var notified=raw.countdownNotified===undefined?goalReached:raw.countdownNotified;
+    var acknowledged=raw.countdownAcknowledged===undefined?goalReached:raw.countdownAcknowledged;
     if(!number(startPage) || !number(createdAt) || (targetMs!==null && !number(targetMs))) return null;
     if(typeof goalReached!=='boolean' || (phase!=='timer' && phase!=='save')) return null;
-    if(targetMs!==null && targetMs<raw.elapsedMs) return null;
-    if(goalReached && (targetMs===null || raw.running || raw.elapsedMs!==targetMs)) return null;
+    if(!number(sequence) || typeof notified!=='boolean' || typeof acknowledged!=='boolean') return null;
+    if(targetMs===null ? (duration!==null || countdownId!==null || notified || acknowledged) :
+      (!number(duration) || duration===0 || typeof countdownId!=='string' || !countdownId || countdownId.length>300)) return null;
+    if(goalReached && (targetMs===null || raw.elapsedMs<targetMs)) return null;
+    if((notified || acknowledged) && !goalReached) return null;
     if(phase==='save' && raw.running) return null;
     return {id:raw.id,userId:raw.userId,bookId:raw.bookId,startPage:startPage,createdAt:createdAt,
       startedAt:raw.running?raw.startedAt:null,elapsedMs:raw.elapsedMs,running:raw.running,
-      targetMs:targetMs,goalReached:goalReached,phase:phase};
+      targetMs:targetMs,goalReached:goalReached,phase:phase,countdownSequence:sequence,
+      countdownDurationMs:duration,countdownId:countdownId,countdownNotified:notified,countdownAcknowledged:acknowledged};
   }
   function currentElapsed(timer,now){
     var increment=timer.running?Math.max(0,now-timer.startedAt):0;
     var total=Math.min(Number.MAX_SAFE_INTEGER,timer.elapsedMs+increment);
-    return timer.targetMs===null?total:Math.min(total,timer.targetMs);
+    return total;
   }
   // All functions use the supplied millisecond clock and leave inputs untouched.
   // Invalid timer mutations return null; elapsed returns 0 for an invalid timer.
@@ -43,7 +53,9 @@
       running:input.running===undefined?true:input.running,
       targetMs:input.targetMs===undefined?null:input.targetMs,
       goalReached:input.goalReached===undefined?false:input.goalReached,
-      phase:input.phase===undefined?'timer':input.phase},now);
+      phase:input.phase===undefined?'timer':input.phase,countdownSequence:input.countdownSequence,
+      countdownDurationMs:input.countdownDurationMs,countdownId:input.countdownId,
+      countdownNotified:input.countdownNotified,countdownAcknowledged:input.countdownAcknowledged},now);
     return timer?settle(timer,now):null;
   }
   function elapsed(timer,now){
@@ -53,8 +65,8 @@
   function settle(timer,now){
     var next=normalized(timer,now);
     if(!next) return null;
-    if(next.targetMs!==null && currentElapsed(next,now)>=next.targetMs){
-      next.elapsedMs=next.targetMs;next.startedAt=null;next.running=false;next.goalReached=true;
+    if(!next.goalReached && next.targetMs!==null && currentElapsed(next,now)>=next.targetMs){
+      next.elapsedMs=currentElapsed(next,now);next.startedAt=next.running?now:null;next.goalReached=true;
     }
     return next;
   }
@@ -68,7 +80,6 @@
     var next=settle(timer,now);
     if(!next) return null;
     next.elapsedMs=currentElapsed(next,now);
-    if(next.goalReached){next.targetMs=null;next.goalReached=false;}
     next.phase='timer';next.running=true;next.startedAt=now;
     return next;
   }
@@ -77,9 +88,11 @@
     var next=settle(timer,now);
     if(!next) return null;
     var accumulated=currentElapsed(next,now);
-    if(!Number.isSafeInteger(accumulated+durationMs)) return null;
+    if(!Number.isSafeInteger(accumulated+durationMs) || next.countdownSequence===Number.MAX_SAFE_INTEGER) return null;
     next.elapsedMs=accumulated;next.startedAt=next.running?now:null;
     next.targetMs=accumulated+durationMs;next.goalReached=false;
+    next.countdownSequence++;next.countdownDurationMs=durationMs;next.countdownId=next.id+':countdown:'+next.countdownSequence;
+    next.countdownNotified=false;next.countdownAcknowledged=false;
     return next;
   }
   function clearCountdown(timer,now){
@@ -87,11 +100,25 @@
     if(!next) return null;
     next.elapsedMs=currentElapsed(next,now);next.startedAt=next.running?now:null;
     next.targetMs=null;next.goalReached=false;
+    next.countdownDurationMs=null;next.countdownId=null;next.countdownNotified=false;next.countdownAcknowledged=false;
     return next;
   }
   function remaining(timer,now){
     var valid=normalized(timer,now);
     return !valid || valid.targetMs===null?null:Math.max(0,valid.targetMs-currentElapsed(valid,now));
+  }
+  function countdownRatio(timer,now){
+    var valid=normalized(timer,now);
+    if(!valid || valid.targetMs===null) return null;
+    return Math.max(0,Math.min(1,remaining(valid,now)/valid.countdownDurationMs));
+  }
+  function markCountdownNotified(timer,now){
+    var next=settle(timer,now);if(!next || !next.goalReached)return null;
+    next.countdownNotified=true;return next;
+  }
+  function acknowledgeCountdown(timer,now){
+    var next=markCountdownNotified(timer,now);if(!next)return null;
+    next.countdownAcknowledged=true;return next;
   }
   function restore(raw,userId,bookIds,now){
     if(!identity(userId) || !number(now)) return null;
@@ -139,13 +166,13 @@
   }
   function restoreNoteHandoff(raw,timer){
     if(!object(raw) || !timer || raw.timerId!==timer.id || raw.userId!==timer.userId || raw.bookId!==timer.bookId ||
-      (raw.type!=='share' && raw.type!=='mine') || typeof raw.wasRunning!=='boolean' || timer.running || timer.phase!=='timer' || timer.goalReached) return null;
+      (raw.type!=='share' && raw.type!=='mine') || typeof raw.wasRunning!=='boolean' || timer.running || timer.phase!=='timer') return null;
     return {timerId:raw.timerId,userId:raw.userId,bookId:raw.bookId,type:raw.type,wasRunning:raw.wasRunning};
   }
   function beginNote(timer,type,now){
     if(type!=='share' && type!=='mine') return null;
     var next=pause(timer,now);
-    if(!next || next.goalReached || next.phase!=='timer') return null;
+    if(!next || next.phase!=='timer') return null;
     return {timer:next,handoff:{timerId:next.id,userId:next.userId,bookId:next.bookId,type:type,wasRunning:timer.running}};
   }
   function finishNote(timer,handoff,now){
@@ -154,5 +181,7 @@
   }
   return {create:create,elapsed:elapsed,pause:pause,resume:resume,setCountdown:setCountdown,
     clearCountdown:clearCountdown,settle:settle,remaining:remaining,restore:restore,validatePages:validatePages,
-    pageProgress:pageProgress,countdownDuration:countdownDuration,beginNote:beginNote,finishNote:finishNote,restoreNoteHandoff:restoreNoteHandoff};
+    pageProgress:pageProgress,countdownDuration:countdownDuration,countdownRatio:countdownRatio,
+    markCountdownNotified:markCountdownNotified,acknowledgeCountdown:acknowledgeCountdown,
+    beginNote:beginNote,finishNote:finishNote,restoreNoteHandoff:restoreNoteHandoff};
 });

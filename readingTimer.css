@@ -14,8 +14,13 @@
 .reading-timer-status { color: var(--ink-soft); font-size: 14px; font-weight: 600; }
 .reading-timer-label { margin-top: 36px; color: var(--ink-soft); font-size: 15px; font-weight: 500; }
 .reading-timer-card .reading-timer-display { margin: 8px 0 22px; font-family: var(--font-body); font-size: clamp(38px, 8vw, 64px); font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; letter-spacing: .01em; color: var(--ink); }
-.reading-timer-main-control { width: 108px; height: 108px; border: 8px solid var(--timer-soft); border-radius: 50%; background: var(--timer-green); color: #fff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1px var(--line); }
-.reading-timer-main-control svg { width: 36px; height: 36px; }
+.reading-timer-main-control { position: relative; width: 120px; height: 120px; padding: 12px; border: 0; border-radius: 50%; background: var(--timer-soft); color: #fff; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1px var(--line); }
+.reading-timer-control-icon { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--timer-green); border: 4px solid var(--surface); border-radius: 50%; box-sizing: border-box; }
+.reading-timer-control-icon svg { width: 36px; height: 36px; }
+.reading-timer-main-control .reading-countdown-ring { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; transform: rotate(-90deg); }
+.reading-countdown-track,.reading-countdown-progress { fill: none; stroke-width: 8; }
+.reading-countdown-track { stroke: var(--timer-soft); }
+.reading-countdown-progress { stroke: var(--timer-ink); stroke-linecap: butt; transition: stroke-dashoffset .2s linear; }
 .reading-timer-main-control:hover { filter: brightness(1.08); }
 .reading-control-label { margin: 8px 0 24px; font-size: 14px; font-weight: 600; color: var(--ink-soft); }
 .reading-countdown-left { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin: 0 0 14px; color: var(--ink-soft); }
@@ -36,6 +41,19 @@
 .reading-countdown-sliders input[type="range"],.reading-page-slider-row input[type="range"] { width: 100%; min-width: 0; height: 44px; padding: 0; margin: 0; accent-color: var(--timer-green); cursor: pointer; }
 .reading-countdown-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .reading-countdown-actions .btn { flex: 1; min-height: 42px; white-space: nowrap; }
+.reading-notifications { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.reading-notifications .btn { min-height: 42px; }
+.reading-notifications .btn:disabled { cursor: default; opacity: .7; }
+.reading-notifications p { margin: 10px 0 8px; }
+.reading-notifications small { display: block; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
+.reading-countdown-ended { width: min(420px,calc(100% - 32px)); box-sizing: border-box; border: 1px solid var(--line); border-radius: 24px; padding: 30px 26px 24px; background: var(--surface); color: var(--ink); text-align: center; font-family: var(--font-body); line-height: 1.7; box-shadow: 0 20px 80px #172b2533; }
+.reading-countdown-ended::backdrop { background: #102a2359; backdrop-filter: blur(3px); }
+.reading-countdown-ended-icon { display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 16px; border-radius: 50%; background: var(--surface-2); color: var(--ink); font-size: 28px; font-weight: 750; }
+.reading-countdown-ended h3 { margin: 0; font-size: 23px; line-height: 1.4; font-weight: 750; }
+.reading-countdown-ended p { margin: 12px 0 16px; font-size: 14px; color: var(--ink-soft); word-break: keep-all; overflow-wrap: anywhere; }
+.reading-countdown-ended > strong { font-size: 16px; font-weight: 650; }
+.reading-countdown-ended > .btn { width: 100%; min-height: 46px; margin-top: 4px; }
+@media (prefers-reduced-motion: reduce) { .reading-countdown-progress { transition: none; } }
 .reading-timer-book { display: flex; align-items: center; gap: 18px; max-width: 440px; margin: 30px auto 0; padding: 18px; background: var(--timer-soft); border: 1px solid var(--line); border-radius: 16px; text-align: left; }
 .reading-timer-book .reading-cover { width: 64px; flex: 0 0 64px; }
 .reading-timer-book .reading-cover img { width: 100%; height: auto; max-height: 106px; object-fit: contain; display: block; }

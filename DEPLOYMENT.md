@@ -90,7 +90,18 @@ v33에서 저장·변환한 개인 기록은 v2 암호화 형식입니다. v32 �
 2. `server/recovery-owner.sql`: 비로그인 복구 파일의 계정 소유 정보 일치 확인. `server/recovery-owner-verification.sql`로 검증합니다.
 3. `server/member-read-policy.sql`: 9개 테이블의 회원 조회 조건과 프로필 직접 등록 조건. `server/member-read-verification.sql`로 검증합니다. 재적용 전 기존 정책을 비교합니다.
 4. `server/habit-kind.sql`: 습관 종류를 보관하는 `behavior_type` 열과 기존 습관을 위한 기본값 `do`. 적용 성공을 확인한 후 이 필드를 쓰는 앱을 배포합니다.
+5. `server/worksheet-admin-only.sql`: 활동지를 재적 중인 관리자만 조회·작성하도록 기존 정책에 제한을 추가합니다. 소유자 수정 조건과 기존 기록은 보존합니다. `server/worksheet-admin-verification.sql`은 일반 회원·관리자·탈퇴 관리자·비로그인 역할을 임시 데이터로 검사한 뒤 롤백합니다. 2026-09-23 운영 프로젝트에서 롤백 검증을 통과한 뒤 정책을 적용하고 `pg_policies`에서 확인했습니다.
 
 서버 검증에는 실제 회원 기록 대신 롤백 가능한 임시 데이터를 사용하고 잔여 데이터가 없는지 확인합니다. 정책 스냅샷·QA 자료·서버 비밀 키는 Git과 공개 배포에 포함하지 않습니다. SQL 성공과 Google·카카오 제공자 설정, 실제 가입·저장 동작 및 Vercel 배포 완료는 각각 확인합니다.
 
 암호화 API 동작은 [MDN AES-GCM 매개변수](https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams)와 [키 감싸기 설명](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/wrapKey)을 참고했습니다. 실제 운영 데이터에 쓰기 테스트를 하지는 않습니다.
+
+## 독서 타이머 알림
+
+카운트다운 종료는 독서 시간 누적을 멈추지 않습니다. 사용자가 완료를 눌러 읽은 쪽수를 저장할 때 독서 기록에 반영합니다. 실행 중인 타이머와 작성 중인 초안은 해당 기기에 저장되며, 저장한 독서 기록·습관·개인 기록은 동일 계정으로 다른 기기에서 불러올 수 있습니다.
+
+타이머는 기기·회원별 v2 저장 키를 사용합니다. v2 기록이 없을 때만 이전 v1 상태를 옮기며, 완료·취소도 v2에 표시를 남겨 옛 타이머가 다시 복원되지 않게 합니다. 구버전 탭은 v1만 변경하므로 새 타이머를 덮어쓰지 못합니다.
+
+휴대폰 시스템 알림은 카운트다운 설정의 알림 버튼을 사용자가 직접 눌러 권한을 허용한 경우에만 표시합니다. 소리·진동은 브라우저와 기기의 지원·무음 설정에 영향을 받습니다. iPhone/iPad는 지원 버전에서 홈 화면에 추가한 앱으로 알림 권한을 허용해야 합니다. [WebKit 안내](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/)
+
+알림 전용 서비스 워커는 앱·회원 응답을 캐시하지 않으며 서버 푸시 예약도 생성하지 않습니다. 브라우저가 백그라운드 실행을 제한하거나 앱을 종료하면 정확한 종료 시각의 알림은 보장하지 않습니다. 다시 열면 경과시간을 복원하고 도달한 카운트다운을 처리합니다. [백그라운드 타이머 제한](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#policies_in_place_to_aid_background_page_performance)

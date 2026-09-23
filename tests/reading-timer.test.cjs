@@ -9,7 +9,7 @@ const start=(now=0)=>timer.create(input,now);
 
 test('a new timer starts correctly at timestamp zero and keeps original fields',()=>{
   const current=start(0);
-  assert.deepEqual(current,{...input,createdAt:0,startedAt:0,elapsedMs:0,running:true,targetMs:null,goalReached:false,phase:'timer'});
+  assert.deepEqual(current,{...input,createdAt:0,startedAt:0,elapsedMs:0,running:true,targetMs:null,goalReached:false,phase:'timer',countdownSequence:0,countdownDurationMs:null,countdownId:null,countdownNotified:false,countdownAcknowledged:false});
   assert.equal(timer.elapsed(current,1500),1500);
   assert.equal(timer.remaining(current,1500),null);
   assert.equal(current.elapsedMs,0);
@@ -36,21 +36,21 @@ test('a countdown starts from the current elapsed time and pauses do not consume
   assert.equal(timer.remaining(resumed,110000),40000);
 });
 
-test('late wake-up clamps at the exact goal and pauses instead of recording background overrun',()=>{
+test('late wake-up completes the countdown but reading time keeps increasing without a pause',()=>{
   const countdown=timer.setCountdown(start(),60000,5000);
-  assert.equal(timer.elapsed(countdown,300000),65000);
+  assert.equal(timer.elapsed(countdown,300000),300000);
   assert.equal(timer.remaining(countdown,300000),0);
   const reached=timer.settle(countdown,300000);
-  assert.equal(reached.elapsedMs,65000);assert.equal(reached.startedAt,null);assert.equal(reached.running,false);assert.equal(reached.goalReached,true);
-  assert.equal(timer.elapsed(reached,600000),65000);
+  assert.equal(reached.elapsedMs,300000);assert.equal(reached.startedAt,300000);assert.equal(reached.running,true);assert.equal(reached.goalReached,true);
+  assert.equal(timer.elapsed(reached,600000),600000);
   assert.deepEqual(timer.settle(reached,600000),reached);
 });
 
-test('resuming a reached goal clears that target and continues counting',()=>{
-  const reached=timer.settle(timer.setCountdown(start(),10000,0),20000);
+test('pausing and resuming after a reached goal keeps the countdown completed and excludes the pause',()=>{
+  const reached=timer.pause(timer.setCountdown(start(),10000,0),20000);
   const resumed=timer.resume(reached,25000);
-  assert.equal(resumed.targetMs,null);assert.equal(resumed.goalReached,false);assert.equal(resumed.running,true);
-  assert.equal(timer.elapsed(resumed,27000),12000);assert.equal(timer.remaining(resumed,27000),null);
+  assert.equal(resumed.targetMs,10000);assert.equal(resumed.goalReached,true);assert.equal(resumed.running,true);
+  assert.equal(timer.elapsed(resumed,27000),22000);assert.equal(timer.remaining(resumed,27000),0);
 });
 
 test('changing and clearing a countdown preserve accumulated time and paused/running state',()=>{
@@ -64,7 +64,63 @@ test('changing and clearing a countdown preserve accumulated time and paused/run
   const planned=timer.setCountdown(paused,10000,40000);
   assert.equal(planned.running,false);assert.equal(planned.targetMs,45000);
   const finished=timer.settle(timer.setCountdown(start(),1000,0),2000);
-  assert.equal(timer.clearCountdown(finished,4000).running,false,'clearing a reached target does not silently restart');
+  assert.equal(timer.clearCountdown(finished,4000).running,true,'clearing a reached target preserves the running timer');
+  assert.equal(timer.clearCountdown(timer.pause(finished,4000),8000).running,false,'clearing a paused target does not silently restart');
+});
+
+test('the ring uses the selected duration and freezes with the countdown during a pause',()=>{
+  const current=timer.setCountdown(start(),60000,120000);
+  assert.equal(current.targetMs,180000);assert.equal(current.countdownDurationMs,60000);
+  assert.equal(timer.countdownRatio(current,120000),1);
+  assert.equal(timer.countdownRatio(current,150000),.5);
+  const paused=timer.pause(current,150000);
+  assert.equal(timer.countdownRatio(paused,900000),.5);
+  const resumed=timer.resume(paused,900000);
+  assert.equal(timer.countdownRatio(resumed,915000),.25);
+  assert.equal(timer.countdownRatio(resumed,930000),0);
+  assert.equal(timer.countdownRatio(resumed,950000),0);
+  assert.equal(timer.elapsed(resumed,950000),200000);
+  assert.equal(timer.countdownRatio(timer.clearCountdown(resumed,950000),950000),null);
+});
+
+test('reset and cancellation give every new countdown a durable distinct notification identity',()=>{
+  const first=timer.setCountdown(start(),60000,0);
+  const notified=timer.markCountdownNotified(first,60000);
+  assert.equal(notified.countdownNotified,true);assert.equal(notified.countdownAcknowledged,false);
+  const acknowledged=timer.acknowledgeCountdown(notified,61000);
+  const restored=timer.restore(JSON.stringify(acknowledged),'reader',['emotion'],62000);
+  assert.equal(restored.countdownId,first.countdownId);
+  assert.equal(restored.countdownNotified,true);assert.equal(restored.countdownAcknowledged,true);
+  assert.equal(restored.running,true);assert.equal(timer.elapsed(restored,62000),62000);
+  const reset=timer.setCountdown(restored,60000,62000);
+  assert.notEqual(reset.countdownId,first.countdownId);
+  assert.equal(reset.countdownNotified,false);assert.equal(reset.countdownAcknowledged,false);
+  assert.equal(reset.goalReached,false);assert.equal(timer.countdownRatio(reset,62000),1);
+  const again=timer.setCountdown(timer.clearCountdown(reset,63000),60000,64000);
+  assert.notEqual(again.countdownId,reset.countdownId);assert.notEqual(again.countdownId,first.countdownId);
+  assert.equal(timer.markCountdownNotified(again,64000),null);
+  assert.equal(timer.acknowledgeCountdown(again,64000),null);
+});
+
+test('legacy countdowns restore safely while old completed save screens do not alert again',()=>{
+  const legacy={id:'legacy',userId:'reader',bookId:'emotion',elapsedMs:60000,startedAt:null,running:false,targetMs:60000,goalReached:true,phase:'save'};
+  const restored=timer.restore(legacy,'reader',['emotion'],900000);
+  assert.equal(restored.phase,'save');assert.equal(restored.running,false);assert.equal(restored.elapsedMs,60000);
+  assert.equal(restored.countdownNotified,true);assert.equal(restored.countdownAcknowledged,true);
+  assert.equal(timer.countdownRatio(restored,900000),0);
+  const active=timer.restore({...legacy,elapsedMs:20000,startedAt:20000,running:true,goalReached:false,phase:'timer'},'reader',['emotion'],30000);
+  assert.equal(active.countdownNotified,false);assert.equal(timer.countdownRatio(active,30000),.5);
+  assert.notEqual(timer.setCountdown(active,30000,30000).countdownId,active.countdownId);
+});
+
+test('malformed countdown notification and duration metadata is rejected rather than guessing progress',()=>{
+  const valid=timer.setCountdown(start(),60000,0);
+  for(const patch of [{countdownSequence:-1},{countdownSequence:1.5},{countdownId:''},{countdownId:3},
+    {countdownDurationMs:0},{countdownDurationMs:'60000'},{countdownNotified:true},{countdownAcknowledged:true},
+    {countdownNotified:'true'},{countdownAcknowledged:'false'}]){
+    assert.equal(timer.restore({...valid,...patch},'reader',['emotion'],1000),null,JSON.stringify(patch));
+  }
+  assert.equal(timer.countdownRatio(null,0),null);
 });
 
 test('restoring a running JSON timer includes time since the last render and survives another refresh',()=>{
@@ -76,10 +132,10 @@ test('restoring a running JSON timer includes time since the last render and sur
   assert.equal(again.createdAt,1000);assert.equal(again.startPage,12);
 });
 
-test('restoring a countdown after refresh clamps a passed target and preserves save phase',()=>{
+test('restoring an expired countdown includes elapsed reading time and preserves an explicit save phase',()=>{
   const current=timer.setCountdown(start(),60000,0);
   const restored=timer.restore(JSON.stringify(current),'reader',['emotion'],600000);
-  assert.equal(restored.elapsedMs,60000);assert.equal(restored.running,false);assert.equal(restored.goalReached,true);
+  assert.equal(restored.elapsedMs,600000);assert.equal(restored.running,true);assert.equal(restored.goalReached,true);
   const save={...timer.pause(start(),5000),phase:'save'};
   const pending=timer.restore(save,'reader',['emotion'],20000);
   assert.equal(pending.phase,'save');assert.equal(timer.elapsed(pending,20000),5000);
@@ -189,11 +245,14 @@ test('writing a note excludes writing time, preserves remaining countdown and re
   assert.equal(running.running,true,'original timer is not mutated');
 });
 
-test('notes opened from an already paused timer return paused and expired goals cannot enter the writer',()=>{
+test('notes opened from a paused timer return paused and completed countdowns can still enter the writer',()=>{
   const paused=timer.pause(start(),10000),writing=timer.beginNote(paused,'mine',20000);
   const finished=timer.finishNote(writing.timer,writing.handoff,50000);
   assert.equal(finished.running,false);assert.equal(finished.elapsedMs,10000);
-  assert.equal(timer.beginNote(timer.setCountdown(start(),10000,0),'mine',10000),null);
+  const afterGoal=timer.beginNote(timer.setCountdown(start(),10000,0),'mine',12000);
+  assert.equal(afterGoal.timer.goalReached,true);assert.equal(afterGoal.timer.elapsedMs,12000);
+  const resumed=timer.finishNote(afterGoal.timer,afterGoal.handoff,100000);
+  assert.equal(resumed.running,true);assert.equal(timer.elapsed(resumed,101000),13000);
   assert.equal(timer.beginNote({...paused,phase:'save'},'mine',20000),null);
   assert.equal(timer.beginNote(start(),'public',100),null);
 });

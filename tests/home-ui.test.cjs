@@ -192,7 +192,7 @@ test('home timer start opens the selected reading book with its saved page and p
   assert.equal(c.location.hash,'#/book/thought/mine');
   assert.equal(c.readingTimer.bookId,'thought');assert.equal(c.readingTimer.userId,'me');
   assert.equal(c.readingTimer.startPage,42);assert.equal(c.readingTimer.running,true);
-  const saved=JSON.parse(storage.get('growell_reading_timer_v1:me'));
+  const saved=JSON.parse(storage.get('growell_reading_timer_v2:me'));
   assert.equal(saved.timer.id,c.readingTimer.id);assert.equal(saved.timer.startPage,42);
 });
 

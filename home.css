@@ -211,11 +211,11 @@
 .home-dashboard .home-habit input:disabled { cursor: default; }
 .home-dashboard .home-habit > span { min-width: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .home-dashboard .home-habit-name { display: block; line-height: 1.45; }
-.home-dashboard .home-habit-meta { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.3fr) minmax(68px, .9fr) minmax(0, 1fr); margin: 0; color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.6; }
-.home-dashboard .home-habit-meta > span { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; }
-.home-dashboard .home-habit-meta > span + span { border-left: 1px solid var(--line); padding-left: 8px; margin-left: 8px; }
+.home-dashboard .home-habit-meta { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.6; }
+.home-dashboard .home-habit-meta > span { display: flex; align-items: baseline; gap: 3px; min-width: 0; white-space: nowrap; }
+.home-dashboard .home-habit-meta > span + span { border-left: 1px solid var(--line); padding-left: 5px; margin-left: 5px; }
 .home-dashboard .home-habit-meta b { flex: none; font-size: inherit; font-weight: inherit; }
-.home-dashboard .home-habit-meta > span > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.home-dashboard .home-habit-meta > span > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 750; color: var(--ink); }
 .home-dashboard .home-habit-status { margin-top: 10px; color: var(--home-accent); font-size: 13px; }
 .home-dashboard .home-habit-status:empty { display: none; }
 .home-dashboard .home-habits > .home-link { align-self: flex-start; margin-top: 7px; }
@@ -347,7 +347,7 @@
   .home-dashboard .home-habit > span { font-weight: 500; }
   .home-dashboard .home-habit-meta { font-size: 12px; }
   .home-dashboard .home-habit-meta > span { gap: 3px; }
-  .home-dashboard .home-habit-meta > span + span { padding-left: 5px; margin-left: 5px; }
+  .home-dashboard .home-habit-meta > span + span { padding-left: 4px; margin-left: 4px; }
   .home-dashboard .home-habit-status { margin-top: 7px; }
   .home-dashboard .home-habits > .home-link { margin-top: 3px; font-size: 14px; }
   .home-dashboard .home-note,
