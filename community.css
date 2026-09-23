@@ -25,10 +25,10 @@
 .space-prompt strong{font-weight:650;font-size:16px;line-height:1.6}
 .space-prompt .btn{font-size:13px;flex:none}
 .space-filter-row{display:flex;align-items:center;gap:18px;justify-content:space-between;margin:22px 0 12px;flex-wrap:wrap}
-.space-filter-row .feed-toolbar{margin:0;flex:1}
+.space-filter-row .feed-toolbar{margin:0;flex:1;min-width:0}
 .space-filter-row .feed-search{width:240px;margin:0;border-radius:11px;padding:11px 13px;flex:0 1 240px}
-.space-filter-row .feed-filters{gap:6px;flex-wrap:wrap}
-.space-filter-row .feed-filter{min-height:38px;font-size:13px;padding:7px 12px;color:var(--space-muted);background:var(--surface);border:1px solid var(--line)}
+.space-filter-row .feed-filters{gap:6px;flex-wrap:nowrap;max-width:100%;min-width:0;overflow-x:auto;padding:3px 0;scrollbar-width:thin;overscroll-behavior-x:contain}
+.space-filter-row .feed-filter{flex:none;white-space:nowrap;min-height:38px;font-size:13px;padding:7px 12px;color:var(--space-muted);background:var(--surface);border:1px solid var(--line)}
 .space-filter-row .feed-filter.is-sel{background:var(--space-green);color:var(--space-on-green);border-color:var(--space-green)}
 .space-feed-count{font-size:13px;color:var(--space-muted);margin:12px 0}
 .book-page .feed-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:stretch}

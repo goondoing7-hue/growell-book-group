@@ -3273,7 +3273,8 @@ function readingTimerSummaryHtml(book){
 function activeReadingStripHtml(route){
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || route.view==='home' || (route.view==='book' && route.bookId===readingTimer.bookId && route.tab==='mine' && !route.postId)) return '';
   var book=bookById(readingTimer.bookId);if(!book)return '';
-  return '<aside class="reading-active-strip wrap" aria-label="진행 중인 독서"><span>'+svgIcon(I_TIMER)+esc(book.title)+(readingNoteReturn?' · 기록 중 잠시 멈춤':'')+'</span><strong class="mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong>'+(readingNoteReturn?'<button class="btn btn-sm" type="button" data-reading-return>타이머로 돌아가기</button>':'<a class="btn btn-sm" href="#/book/'+book.id+'/mine">'+(readingSavePanelOpen?'기록 저장하기':'타이머로 돌아가기')+'</a>')+'</aside>';
+  var status=readingNoteReturn?'기록 중 · 잠시 멈춤':readingSavePanelOpen?'독서 기록 저장 중':readingTimer.running?'책 읽는 중':'잠시 멈춤';
+  return '<aside class="reading-active-strip wrap" aria-label="진행 중인 독서"><div class="reading-active-info">'+svgIcon(I_TIMER)+'<div><span class="reading-active-title">'+esc(book.title)+'</span><span class="reading-active-status">'+status+'</span></div></div><strong class="reading-active-elapsed mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong>'+(readingNoteReturn?'<button class="btn btn-sm" type="button" data-reading-return>타이머로 돌아가기</button>':'<a class="btn btn-sm" href="#/book/'+book.id+'/mine">'+(readingSavePanelOpen?'기록 저장하기':'타이머로 돌아가기')+'</a>')+'</aside>';
 }
 function readingCountdownHtml(){
   var left=GrowellReadingTimer.remaining(readingTimer,Date.now()),minutes=left===null?20:Math.max(1,Math.min(1439,Math.ceil(left/60000)));
@@ -6126,6 +6127,11 @@ function bindEvents(route){
   var feedFilters = document.getElementById('feed-filters');
   if(feedFilters){
     var fBookId = feedFilters.getAttribute('data-book');
+    var selectedFilter = feedFilters.querySelector('.is-sel');
+    if(selectedFilter){
+      var filterOverflow = selectedFilter.getBoundingClientRect().right - feedFilters.getBoundingClientRect().right;
+      if(filterOverflow>0) feedFilters.scrollLeft += filterOverflow + 6;
+    }
     feedFilters.querySelectorAll('[data-filter]').forEach(function(b){
       b.addEventListener('click', function(){
         shareFeedFilter[fBookId] = b.getAttribute('data-filter');
