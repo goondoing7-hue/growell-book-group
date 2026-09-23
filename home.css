@@ -44,13 +44,13 @@
 .home-dashboard .home-date { color: var(--ink-soft); font-size: 14px; margin-bottom: 5px; }
 .home-dashboard .home-welcome h1 { font-size: 30px; line-height: 1.4; }
 .home-dashboard .home-greeting { margin-top: 7px; color: var(--ink-soft); }
-.home-dashboard .home-daily-verse { padding: 22px 26px; border-radius: 18px; background: var(--home-accent-soft); }
+.home-dashboard .home-daily-verse { padding: 16px 20px; border-radius: 18px; background: var(--home-accent-soft); }
 .home-dashboard .home-daily-verse-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 5px 14px; }
 .home-dashboard .home-daily-verse .home-daily-verse-head h1 { margin: 0; color: var(--home-accent); font-size: 14px; font-weight: 750; line-height: 1.6; letter-spacing: 0; }
 .home-dashboard .home-daily-verse .home-date { margin: 0; font-size: 12px; color: var(--ink-soft); }
-.home-dashboard .home-daily-verse blockquote { margin: 13px 0 0; padding: 0; border: 0; }
-.home-dashboard .home-daily-verse-text { margin: 0; font-size: 23px; font-weight: 650; line-height: 1.8; letter-spacing: -.035em; word-break: keep-all; overflow-wrap: anywhere; white-space: pre-line; text-wrap: pretty; }
-.home-dashboard .home-daily-verse-reference { display: block; margin-top: 12px; color: var(--home-accent); font-size: 14px; font-style: normal; font-weight: 650; line-height: 1.6; }
+.home-dashboard .home-daily-verse blockquote { margin: 9px 0 0; padding: 0; border: 0; }
+.home-dashboard .home-daily-verse-text { margin: 0; font-size: 18px; font-weight: 650; line-height: 1.75; letter-spacing: -.035em; word-break: keep-all; overflow-wrap: anywhere; white-space: pre-line; text-wrap: pretty; }
+.home-dashboard .home-daily-verse-reference { display: block; margin-top: 7px; color: var(--home-accent); font-size: 12px; font-style: normal; font-weight: 650; line-height: 1.6; }
 .home-dashboard .home-daily-verse-empty { margin: 12px 0 0; color: var(--ink-soft); font-size: 15px; }
 
 .home-dashboard .home-grid {
@@ -188,9 +188,10 @@
 .home-dashboard .home-habit-list li { min-width: 0; }
 .home-dashboard .home-habit-list li + li { margin-top: 7px; }
 .home-dashboard .home-habit {
-  display: flex;
+  display: grid;
+  grid-template-columns: 21px minmax(0, 1fr);
   align-items: center;
-  gap: 11px;
+  gap: 5px 11px;
   width: 100%;
   min-height: 48px;
   padding: 10px 12px;
@@ -210,10 +211,11 @@
 .home-dashboard .home-habit input:disabled { cursor: default; }
 .home-dashboard .home-habit > span { min-width: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .home-dashboard .home-habit-name { display: block; line-height: 1.45; }
-.home-dashboard .home-habit small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 14px; font-weight: 500; line-height: 1.5; }
-.home-dashboard .home-habit small b { font-weight: 650; margin-right: 4px; }
-.home-dashboard .home-habit .home-habit-schedule { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; }
-.home-dashboard .home-habit-schedule > span { min-width: 0; }
+.home-dashboard .home-habit-meta { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.3fr) minmax(68px, .9fr) minmax(0, 1fr); margin: 0; color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.6; }
+.home-dashboard .home-habit-meta > span { display: flex; align-items: baseline; gap: 4px; min-width: 0; white-space: nowrap; }
+.home-dashboard .home-habit-meta > span + span { border-left: 1px solid var(--line); padding-left: 8px; margin-left: 8px; }
+.home-dashboard .home-habit-meta b { flex: none; font-size: inherit; font-weight: inherit; }
+.home-dashboard .home-habit-meta > span > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .home-dashboard .home-habit-status { margin-top: 10px; color: var(--home-accent); font-size: 13px; }
 .home-dashboard .home-habit-status:empty { display: none; }
 .home-dashboard .home-habits > .home-link { align-self: flex-start; margin-top: 7px; }
@@ -227,10 +229,10 @@
 .home-dashboard .home-note-summary h2 svg { width: 18px; height: 18px; flex: none; }
 .home-dashboard .home-note-summary small { display: block; color: var(--ink-soft); font-size: 14px; font-weight: 500; line-height: 1.5; }
 .home-dashboard .home-meeting-summary { width: 100%; }
-.home-dashboard .home-meeting-facts { display: grid; gap: 8px; margin: 16px 0 0; }
-.home-dashboard .home-meeting-facts > div { display: grid; grid-template-columns: 64px minmax(0,1fr); align-items: baseline; gap: 10px; }
+.home-dashboard .home-meeting-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 14px 0 0; }
+.home-dashboard .home-meeting-facts > div { min-width: 0; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .home-dashboard .home-meeting-facts dt { color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.6; }
-.home-dashboard .home-meeting-facts dd { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.6; }
+.home-dashboard .home-meeting-facts dd { margin: 4px 0 0; font-size: 15px; font-weight: 650; line-height: 1.6; overflow-wrap: anywhere; }
 .home-dashboard :is(.home-note, .home-meeting) > .home-link { margin-top: 12px; }
 
 .home-dashboard .home-community { margin-top: 30px; }
@@ -321,11 +323,11 @@
   .home-dashboard .home-date { font-size: 13px; }
   .home-dashboard .home-welcome h1 { font-size: 23px; line-height: 1.4; }
   .home-dashboard .home-greeting { display: none; }
-  .home-dashboard .home-daily-verse { padding: 18px 17px; border-radius: 14px; }
+  .home-dashboard .home-daily-verse { padding: 14px 15px; border-radius: 14px; }
   .home-dashboard .home-daily-verse .home-daily-verse-head h1 { font-size: 13px; }
   .home-dashboard .home-daily-verse .home-date { font-size: 11px; }
-  .home-dashboard .home-daily-verse-text { font-size: 19px; line-height: 1.85; }
-  .home-dashboard .home-daily-verse-reference { margin-top: 10px; font-size: 13px; }
+  .home-dashboard .home-daily-verse-text { font-size: 16px; line-height: 1.75; }
+  .home-dashboard .home-daily-verse-reference { margin-top: 7px; font-size: 12px; }
   .home-dashboard .home-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .home-dashboard .home-card { padding: 16px; border-radius: 14px; }
   .home-dashboard .home-label { margin-bottom: 4px; font-size: 13px; }
@@ -341,10 +343,11 @@
   .home-dashboard .home-card-head h2 { font-size: 16px; }
   .home-dashboard .home-habit-count { font-size: 13px; }
   .home-dashboard .home-habit-list li + li { margin-top: 4px; }
-  .home-dashboard .home-habit { min-height: 44px; padding: 8px 9px; gap: 10px; border-radius: 9px; }
+  .home-dashboard .home-habit { min-height: 44px; padding: 8px 9px; gap: 5px 10px; border-radius: 9px; }
   .home-dashboard .home-habit > span { font-weight: 500; }
-  .home-dashboard .home-habit small { font-size: 13px; }
-  .home-dashboard .home-habit .home-habit-schedule { font-size: 12px; gap: 2px 10px; }
+  .home-dashboard .home-habit-meta { font-size: 12px; }
+  .home-dashboard .home-habit-meta > span { gap: 3px; }
+  .home-dashboard .home-habit-meta > span + span { padding-left: 5px; margin-left: 5px; }
   .home-dashboard .home-habit-status { margin-top: 7px; }
   .home-dashboard .home-habits > .home-link { margin-top: 3px; font-size: 14px; }
   .home-dashboard .home-note,
@@ -356,8 +359,8 @@
   .home-dashboard .home-meeting { padding-block: 13px; }
   .home-dashboard .home-meeting-summary { flex: 1 1 auto; }
   .home-dashboard .home-meeting-summary h2 { margin-bottom: 3px; font-size: 16px; }
-  .home-dashboard .home-meeting-facts { gap: 6px; margin-top: 12px; }
-  .home-dashboard .home-meeting-facts > div { grid-template-columns: 59px minmax(0,1fr); gap: 8px; }
+  .home-dashboard .home-meeting-facts { gap: 10px; margin-top: 12px; }
+  .home-dashboard .home-meeting-facts > div { padding: 9px 10px; }
   .home-dashboard .home-meeting-facts dt { font-size: 12px; }
   .home-dashboard .home-meeting-facts dd { font-size: 14px; }
   .home-dashboard :is(.home-note, .home-meeting) > .home-link { flex: 0 0 auto; max-width: 40%; margin: 0; font-size: 14px; }

@@ -151,10 +151,10 @@ test('today habit keeps the name and goal with compact escaped time and place wi
   const {c}=harness();
   const habit={id:'mine',name:'책 읽기',goal:'15분 <집중>',time:'21:00',place:'거실 & 소파',checkedDates:[]};
   const html=c.homeHabitRowsHtml([habit]);
-  assert.match(html,/home-habit-name">책 읽기/);assert.match(html,/<b>목표<\/b> 15분 &lt;집중&gt;/);
-  assert.match(html,/<b>시간<\/b> 21:00/);assert.match(html,/<b>장소<\/b> 거실 &amp; 소파/);
+  assert.match(html,/home-habit-name">책 읽기/);assert.match(html,/<b>목표<\/b> <span>15분 &lt;집중&gt;/);
+  assert.match(html,/<b>시간<\/b> <span>21:00/);assert.match(html,/<b>장소<\/b> <span>거실 &amp; 소파/);
   const unset=c.homeHabitRowsHtml([{...habit,time:'',place:''}]);
-  assert.match(unset,/<b>시간<\/b> 미설정/);assert.match(unset,/<b>장소<\/b> 미설정/);
+  assert.match(unset,/<b>시간<\/b> <span>미설정/);assert.match(unset,/<b>장소<\/b> <span>미설정/);
 });
 test('home shows the complete escaped daily verse and reference in place of the old greeting',()=>{
   const {c}=harness();c.GrowellDailyVerses=[{reference:'출처 <1:1>',text:'긴 말씀 첫 줄\n두 번째 줄과 마지막 문장까지 전부 표시합니다.'}];

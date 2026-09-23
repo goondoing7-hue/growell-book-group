@@ -3699,10 +3699,14 @@ function homeHabitRowsHtml(habits){
   return habits.map(function(habit){
     var checked=habit.checkedDates.indexOf(today)>=0;
     var goal=habit.goal||(GrowellHabits.behaviorType(habit)==='avoid'?'하루 한 번 절제하기':'하루 한 번 실천하기');
+    var time=habit.time||'미설정',place=habit.place||'미설정';
     var pending=Object.keys(habitSaveIntents[habit.id]||{}).length>0;
     return '<li data-home-habit-card="'+esc(habit.id)+'" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><label class="home-habit">' +
       '<input type="checkbox" data-home-habit="'+esc(habit.id)+'"'+(checked?' checked':'')+'>' +
-      '<span><span class="home-habit-name">'+esc(habit.name)+'</span><small class="home-habit-goal"><b>목표</b> '+esc(goal)+'</small><small class="home-habit-schedule"><span><b>시간</b> '+esc(habit.time||'미설정')+'</span><span><b>장소</b> '+esc(habit.place||'미설정')+'</span></small></span></label>' +
+      '<span class="home-habit-name">'+esc(habit.name)+'</span><small class="home-habit-meta">'+
+      '<span class="home-habit-meta-goal" title="'+esc('목표 '+goal)+'"><b>목표</b> <span>'+esc(goal)+'</span></span>'+
+      '<span class="home-habit-meta-time" title="'+esc('시간 '+time)+'"><b>시간</b> <span>'+esc(time)+'</span></span>'+
+      '<span class="home-habit-meta-place" title="'+esc('장소 '+place)+'"><b>장소</b> <span>'+esc(place)+'</span></span></small></label>' +
       '<p class="home-habit-status" data-home-habit-status role="status">'+(pending?habitSaveStatusHtml(habit.id):'')+'</p></li>';
   }).join('');
 }
