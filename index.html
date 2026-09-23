@@ -5121,7 +5121,7 @@ function habitKindIconHtml(habit){
 function habitKindBadgeHtml(habit){return '<span class="habit-kind-badge is-'+GrowellHabits.behaviorType(habit)+'">'+habitKindIconHtml(habit)+GrowellHabits.behaviorLabel(habit)+'</span>';}
 function habitTodayState(habit,today){
   var checked=GrowellHabits.status(habit,today,today)==='success',canCheck=GrowellHabits.canCheck(habit,today,today);
-  return {checked:checked,canCheck:canCheck,label:canCheck?'오늘 성공':today<GrowellHabits.start(habit,today)?'시작 전':'기간 종료'};
+  return {checked:checked,canCheck:canCheck,label:canCheck?'성공':today<GrowellHabits.start(habit,today)?'시작 전':'기간 종료'};
 }
 function habitStreakHtml(habit,stats){
   return habitFactIconHtml('streak')+'<span><strong>'+stats.streak+'일</strong> 연속 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천')+'</span>';
@@ -5203,7 +5203,7 @@ function habitEffectiveStart(habit){
 }
 function habitOverallStats(habit){return GrowellHabits.stats(habit,ymd(new Date()));}
 function habitMonthStats(habit,y,m){return GrowellHabits.monthStats(habit,ymd(new Date()),y,m);}
-function habitHistoryCalendarHtml(habit,y,m){
+function habitHistoryCalendarHtml(habit,y,m,stableWeeks){
   var DOW=['월','화','수','목','금','토','일'],today=ymd(new Date()),first=new Date(y,m,1),lead=(first.getDay()+6)%7,days=new Date(y,m+1,0).getDate(),cells=[];
   for(var i=0;i<lead;i++) cells.push('<div class="habit-hist-cell is-empty" aria-hidden="true"></div>');
   for(var day=1;day<=days;day++){
@@ -5214,8 +5214,8 @@ function habitHistoryCalendarHtml(habit,y,m){
       ? '<button type="button" class="'+cls+'" data-habit-day="'+esc(habit.id)+'|'+date+'" aria-pressed="'+checked+'" aria-label="'+date+' '+label+' · 체크 변경">'+content+'</button>'
       : '<div class="'+cls+'" aria-label="'+date+' '+label+'">'+content+'</div>');
   }
-  while(cells.length%7!==0) cells.push('<div class="habit-hist-cell is-empty" aria-hidden="true"></div>');
-  return '<div class="habit-hist-grid" aria-label="'+y+'년 '+(m+1)+'월 습관 달력">'+DOW.map(function(w){return '<div class="habit-hist-dow">'+w+'</div>';}).join('')+cells.join('')+'</div>';
+  while(stableWeeks?cells.length<42:cells.length%7!==0) cells.push('<div class="habit-hist-cell is-empty" aria-hidden="true"></div>');
+  return '<div class="habit-hist-grid'+(stableWeeks?' is-stable-weeks':'')+'" aria-label="'+y+'년 '+(m+1)+'월 습관 달력">'+DOW.map(function(w){return '<div class="habit-hist-dow">'+w+'</div>';}).join('')+cells.join('')+'</div>';
 }
 function habitGoalProgress(habit){
   var stats=habitOverallStats(habit);
@@ -5242,16 +5242,39 @@ function habitHistoryModalHtml(habit){
     '<div class="composer-head"><div><p class="habit-dialog-kicker">나의 작은 성취</p>'+habitKindBadgeHtml(habit)+'<h4 id="habit-dialog-title">'+esc(habit.name)+'</h4></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 진행 상황 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
     habitFactsHtml(habit)+
     '<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+
-    '<div class="habit-hist-month-nav"><button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><span class="habit-hist-month-label">'+view.y+'년 '+(view.m+1)+'월</span><button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>'+
-    habitHistoryCalendarHtml(habit,view.y,view.m)+habitCalendarLegendHtml()+
+    '<div class="habit-hist-month-nav"><button type="button" class="habit-hist-nav-btn" data-habit-history-prev="1" aria-label="이전 달">'+svgIcon(I_BACK)+'</button><span class="habit-hist-month-label" aria-live="polite">'+view.y+'년 '+(view.m+1)+'월</span><button type="button" class="habit-hist-nav-btn is-next" data-habit-history-next="1" aria-label="다음 달">'+svgIcon(I_BACK)+'</button></div>'+
+    '<div data-habit-history-calendar>'+habitHistoryCalendarHtml(habit,view.y,view.m,true)+'</div>'+habitCalendarLegendHtml()+
     '<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'" data-habit-popup-summary="1">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>'+
     '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+
     '</div></div>';
 }
 function shiftHabitHistoryMonth(delta){
+  var raw=STATE.habits[habitHistoryOpenFor],modal=app.querySelector('.habit-hist-modal');
+  if(!SESSION||!raw||raw.userId!==SESSION.userId||!modal) return;
+  var calendar=modal.querySelector('[data-habit-history-calendar]'),label=modal.querySelector('.habit-hist-month-label'),summary=modal.querySelector('[data-habit-popup-summary]');
+  if(!calendar||!label||!summary) return;
   var today=new Date(),cur=habitHistoryMonth||{y:today.getFullYear(),m:today.getMonth()},next=new Date(cur.y,cur.m+delta,1);
   if(next.getFullYear()<1000||next.getFullYear()>9999) return;
-  habitHistoryMonth={y:next.getFullYear(),m:next.getMonth()};render();focusHabitDialog();
+  var scrollTop=modal.scrollTop,habit=habitWithPendingChecks(raw);
+  habitHistoryMonth={y:next.getFullYear(),m:next.getMonth()};
+  // Keep the dialog and navigation buttons mounted so scroll and keyboard focus stay put.
+  label.textContent=habitHistoryMonth.y+'년 '+(habitHistoryMonth.m+1)+'월';
+  calendar.innerHTML=habitHistoryCalendarHtml(habit,habitHistoryMonth.y,habitHistoryMonth.m,true);
+  summary.textContent=habitMonthSummaryHtml(habit,habitHistoryMonth.y,habitHistoryMonth.m);
+  bindHabitDayEvents(calendar);
+  modal.scrollTop=scrollTop;
+}
+function bindHabitDayEvents(root){
+  root.querySelectorAll('[data-habit-day]').forEach(function(button){
+    if(button._habitDayBound) return;
+    button._habitDayBound=true;
+    button.addEventListener('click',function(event){
+      // A refreshed icon must not bubble into the surrounding record disclosure.
+      event.stopPropagation();
+      var parts=button.getAttribute('data-habit-day').split('|');
+      toggleHabitDate(parts[0],parts[1]);
+    });
+  });
 }
 function openHabitProgress(habitId,origin){
   var habit=STATE.habits[habitId];
@@ -6656,15 +6679,7 @@ function bindEvents(route){
       else submitHabit(bookId, payload, habitSubmit);
     });
   }
-  app.querySelectorAll('[data-habit-day]').forEach(function(b){
-    b.addEventListener('click', function(event){
-      // Refreshing the check mark replaces the clicked SVG before bubbling ends.
-      // Stop first so the calendar never mistakes that detached target for empty space.
-      event.stopPropagation();
-      var parts = b.getAttribute('data-habit-day').split('|');
-      toggleHabitDate(parts[0], parts[1]);
-    });
-  });
+  bindHabitDayEvents(app);
   app.querySelectorAll('[data-save-habit]').forEach(function(b){
     b.addEventListener('click', function(){
       var hid = b.getAttribute('data-save-habit');

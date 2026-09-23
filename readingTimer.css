@@ -156,15 +156,30 @@
 }
 
 /* A home reading session stays above the home screen through completion and save. */
-.reading-home-dialog { width: min(640px,calc(100% - 24px)); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); box-sizing: border-box; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); color: var(--ink); font-family: var(--font-body); overflow-y: auto; overscroll-behavior: contain; box-shadow: 0 24px 80px #172b2538; }
+.reading-home-dialog { width: min(640px,calc(100% - 24px)); max-width: none; max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); box-sizing: border-box; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); color: var(--ink); font-family: var(--font-body); overflow-y: auto; overscroll-behavior: contain; box-shadow: 0 24px 80px #172b2538; }
 .reading-home-dialog::backdrop { background: #152c2659; backdrop-filter: blur(3px); }
-.reading-home-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px 0; }
+.reading-home-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 18px 0; }
 .reading-home-dialog-heading h2 { margin: 0; font-size: 16px; font-weight: 700; }
 .reading-home-dialog-heading .icon-btn { flex: 0 0 40px; width: 40px; height: 40px; }
 .reading-home-dialog > .reading-card { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
-.reading-home-dialog .reading-timer-label { margin-top: 22px; }
-.reading-home-dialog .reading-timer-card .reading-timer-display { font-size: clamp(38px,8vw,60px); }
-.reading-home-dialog .reading-timer-book { margin-top: 24px; }
+.reading-home-dialog .reading-timer-card { padding: 8px 18px 12px; }
+.reading-home-dialog .reading-timer-head .btn { min-height: 40px; padding: 8px 12px; }
+.reading-home-dialog .reading-timer-label { margin-top: 14px; font-size: 14px; }
+.reading-home-dialog .reading-timer-card .reading-timer-display { margin: 4px 0 12px; font-size: clamp(36px,8vw,52px); }
+.reading-home-dialog .reading-timer-main-control { width: 104px; height: 104px; padding: 10px; }
+.reading-home-dialog .reading-control-label { margin: 4px 0 10px; font-size: 13px; }
+.reading-home-dialog .reading-countdown-left { margin-bottom: 8px; font-size: 14px; }
+.reading-home-dialog .reading-countdown-open { min-height: 40px; padding: 8px 14px; font-size: 14px; }
+.reading-home-dialog .reading-timer-book { margin-top: 14px; padding: 12px; gap: 12px; }
+.reading-home-dialog .reading-timer-book .reading-cover { width: 48px; flex-basis: 48px; }
+.reading-home-dialog .reading-timer-book .reading-cover img { max-height: 76px; }
+.reading-home-dialog .reading-timer-book > div:last-child { gap: 2px; }
+.reading-home-dialog .reading-timer-book strong { font-size: 15px; line-height: 1.4; }
+.reading-home-dialog .reading-timer-book span { font-size: 12px; line-height: 1.5; }
+.reading-home-dialog .reading-note-open { min-height: 36px; padding: 5px 10px; margin-top: 4px; font-size: 13px; }
+.reading-home-dialog .reading-note-open svg { width: 17px; height: 17px; }
+.reading-home-dialog .reading-continuity { margin: 10px auto 2px; font-size: 12px; line-height: 1.5; }
+.reading-home-dialog .reading-discard { min-height: 36px; padding: 6px 10px; font-size: 12px; }
 .reading-home-dialog .reading-save-card .composer-head h3 { display: none; }
 body:has(.reading-home-dialog[open]) { overflow: hidden; }
 .reading-timer-card .reading-complete-btn,.reading-save-card .reading-complete-btn { background: #476b8a; border-color: #476b8a; color: #fff; }
@@ -172,4 +187,19 @@ body:has(.reading-home-dialog[open]) { overflow: hidden; }
 @media (max-width: 480px) {
   .reading-home-dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); border-radius: 20px; }
   .reading-home-dialog-heading { padding: 10px 14px 0; }
+  .reading-home-dialog .reading-timer-card { padding: 6px 14px 10px; }
+}
+/* Short screens use the space beside the timer instead of adding another row. */
+@media (max-height: 700px) {
+  .reading-home-dialog .reading-timer-card { display: grid; grid-template-columns: minmax(0,1fr) 100px; column-gap: 8px; align-items: center; }
+  .reading-home-dialog .reading-timer-card > * { grid-column: 1 / -1; }
+  .reading-home-dialog .reading-timer-label { grid-column: 1; grid-row: 2; margin-top: 12px; align-self: end; }
+  .reading-home-dialog .reading-timer-card .reading-timer-display { grid-column: 1; grid-row: 3; font-size: clamp(28px,8vw,44px); margin: 4px 0 8px; align-self: start; }
+  .reading-home-dialog .reading-timer-main-control { grid-column: 2; grid-row: 2 / 4; width: 88px; height: 88px; padding: 8px; justify-self: center; margin-top: 12px; }
+  .reading-home-dialog .reading-timer-control-icon svg { width: 28px; height: 28px; }
+  .reading-home-dialog .reading-control-label { grid-column: 2; margin: 4px 0 8px; font-size: 12px; }
+  .reading-home-dialog .reading-countdown-open { justify-self: center; }
+  .reading-home-dialog .reading-timer-book { width: 100%; box-sizing: border-box; margin-top: 10px; padding: 10px; }
+  .reading-home-dialog .reading-continuity { margin-top: 8px; }
+  .reading-home-dialog .reading-discard { justify-self: center; }
 }

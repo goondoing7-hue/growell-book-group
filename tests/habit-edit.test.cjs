@@ -67,6 +67,7 @@ test('habit card shows successes against the whole target period rather than ela
   const html=c.habitCardHtml(h);
   assert.match(html,/성공 <strong>2일<\/strong> \/ 10일/);assert.match(html,/aria-valuenow="20"/);
   assert.match(html,/data-habit-today data-habit-day="h1\|2026-09-22" aria-pressed="false"/);
+  assert.match(html,/<span data-habit-today-label>성공<\/span>/);
   assert.match(html,/<details class="habit-card-calendar" data-habit-calendar-key="week:h1"><summary>이번 주 기록 보기/);
   assert.deepEqual(h.checkedDates,['2026-09-20','2026-09-21']);
 });
@@ -102,6 +103,7 @@ test('overview includes only the current owner across books and immediately refl
   assert.match(html,/다른 책 습관/);assert.match(html,/data-habit-overview-open="otherBook"/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
   assert.match(html,/data-habit-overview-day="mine\|2026-09-22" aria-pressed="true"[^>]*다시 누르면 취소/);
   assert.match(html,/<\/button><button type="button" class="habit-overview-toggle/);
+  assert.match(html,/class="habit-overview-toggle[^>]*>[\s\S]*?<span>성공<\/span><\/button>/);
   assert.doesNotMatch(html,/<a class="habit-overview-item"/);
   assert.deepEqual(c.STATE.habits.mine.checkedDates,[]);
   c.habitSaveIntents.mine['2026-09-22'].status='error';assert.match(c.habitOverviewBodyHtml(),/저장하지 못한 체크/);
@@ -137,8 +139,9 @@ test('checking and undoing a replaced day icon never bubbles into the record dis
   vm.createContext(c);
   let begin=source.indexOf("  app.querySelectorAll('.habit-card-calendar').forEach");
   vm.runInContext(source.slice(begin,source.indexOf('  var openHabitBtn',begin)),c);
-  begin=source.indexOf("  app.querySelectorAll('[data-habit-day]').forEach(function(b){");
-  vm.runInContext(source.slice(begin,source.indexOf("  app.querySelectorAll('[data-save-habit]')",begin)),c);
+  begin=source.indexOf('function bindHabitDayEvents(');
+  vm.runInContext(source.slice(begin,source.indexOf('function openHabitProgress(',begin)),c);
+  c.bindHabitDayEvents(c.app);
   for(let attempt=0;attempt<2;attempt++){
     const event={stopped:false,target:{closest:()=>null},stopPropagation(){this.stopped=true;}};
     dayClick(event);if(!event.stopped)calendarClick(event);
@@ -184,4 +187,43 @@ test('overview detail opens another book habit without exposing another member r
   vm.runInContext(source.slice(begin,source.indexOf('function habitTabHtml(',begin)),c);
   assert.match(c.habitsSectionHtml({id:'emotion'}),/<dialog>다른 책 습관<\/dialog>/);
   c.habitHistoryOpenFor='stranger';assert.doesNotMatch(c.habitsSectionHtml({id:'emotion'}),/<dialog>/);assert.equal(c.habitHistoryOpenFor,null);
+});
+
+test('changing popup months preserves dialog scroll and focused navigation while new dates remain reversible',()=>{
+  const c=cardHarness(),events=[];
+  c.STATE={habits:{h1:{id:'h1',userId:'owner',startDate:'2026-08-01',checkedDates:[]}}};
+  c.SESSION={userId:'owner'};c.habitHistoryOpenFor='h1';c.habitHistoryMonth={y:2026,m:8};
+  c.habitSaveIntents={h1:{'2026-08-15':{checked:true,status:'saving'}}};
+  vm.runInContext(source.slice(source.indexOf('function habitWithPendingChecks('),source.indexOf('function habitSaveStatusHtml(')),c);
+  const button={getAttribute:()=> 'h1|2026-08-15',addEventListener(type,fn){this.click=fn;}};
+  const calendar={innerHTML:'old dates',querySelectorAll:()=>[button]},label={},summary={};
+  const modal={scrollTop:425,querySelector:selector=>({'[data-habit-history-calendar]':calendar,'.habit-hist-month-label':label,'[data-habit-popup-summary]':summary}[selector])};
+  c.app={querySelector:()=>modal};c.render=()=>assert.fail('month navigation must not replace the dialog');
+  c.focusHabitDialog=()=>assert.fail('month navigation must retain focus on its existing button');
+  c.habitHistoryCalendarHtml=(habit,y,m,stable)=>{assert.equal(stable,true);assert.deepEqual(Array.from(habit.checkedDates),['2026-08-15']);return `${y}-${m+1}`;};
+  c.habitMonthSummaryHtml=(habit,y,m)=>`summary ${y}-${m+1}`;
+  c.toggleHabitDate=(...args)=>events.push(args);
+  const begin=source.indexOf('function shiftHabitHistoryMonth(');
+  vm.runInContext(source.slice(begin,source.indexOf('function openHabitProgress(',begin)),c);
+  c.shiftHabitHistoryMonth(-1);
+  assert.equal(modal.scrollTop,425);assert.equal(label.textContent,'2026년 8월');assert.equal(calendar.innerHTML,'2026-8');assert.equal(summary.textContent,'summary 2026-8');
+  const event={stopped:false,stopPropagation(){this.stopped=true;}};
+  button.click(event);button.click(event);assert.equal(event.stopped,true);assert.deepEqual(events,[['h1','2026-08-15'],['h1','2026-08-15']]);
+  c.shiftHabitHistoryMonth(1);assert.equal(modal.scrollTop,425);assert.equal(label.textContent,'2026년 9월');
+  c.habitHistoryMonth={y:2026,m:0};c.shiftHabitHistoryMonth(-1);assert.equal(label.textContent,'2025년 12월');
+  c.SESSION.userId='someone-else';c.shiftHabitHistoryMonth(1);assert.equal(label.textContent,'2025년 12월');
+});
+
+test('popup calendars keep six week rows across short and long months without adding dates',()=>{
+  const c=cardHarness(),habit={id:'h1',startDate:'2026-01-01',checkedDates:[]};
+  const begin=source.indexOf('function habitHistoryCalendarHtml(');
+  vm.runInContext(source.slice(begin,source.indexOf('function habitGoalProgress(',begin)),c);
+  for(const [year,month,days] of [[2027,1,28],[2026,7,31],[2026,8,30]]){
+    const html=c.habitHistoryCalendarHtml(habit,year,month,true);
+    assert.equal((html.match(/class="habit-hist-cell /g)||[]).length,42);
+    assert.equal((html.match(/<span>\d+<\/span>/g)||[]).length,days);
+    assert.match(html,/class="habit-hist-grid is-stable-weeks"/);
+  }
+  const inline=c.habitHistoryCalendarHtml(habit,2027,1);
+  assert.equal((inline.match(/class="habit-hist-cell /g)||[]).length,28);
 });
