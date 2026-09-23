@@ -117,6 +117,54 @@ test('overview loading failures never turn stale habits into a current-state sum
   const html=c.habitOverviewBodyHtml();assert.match(html,/전체 습관 한눈에/);assert.match(html,/연결을 확인/);assert.doesNotMatch(html,/오늘 성공|오래된 습관|오늘 남음/);
   c.memberLoadState.habits='loading';assert.equal(c.myHabitOverviewItems().length,0);
 });
+test('overview keeps habit order and its save-status slot through rapid undo, recheck and asynchronous saves',async()=>{
+  const c=cardHarness(),today='2026-09-22',saves=[];
+  const habit=(id,createdAt,extra={})=>({id,createdAt,userId:'owner',bookId:'emotion',name:id,startDate:'2026-09-01',checkedDates:[],...extra});
+  Object.assign(c,{SESSION:{userId:'owner'},memberLoadState:{habits:'ready'},habitSaveVersion:0,saveSessionEpoch:0,
+    bookById:()=>({title:'테스트 책'}),STATE:{habits:{
+      upcoming:habit('upcoming',1,{startDate:'2026-10-01'}),
+      second:habit('second',20),
+      ended:habit('ended',0,{endDate:'2026-09-20'}),
+      first:habit('first',10,{checkedDates:[today]}),
+      stranger:habit('stranger',2,{userId:'someone-else'})
+    }},
+    saveState(mutate,options){return new Promise(resolve=>saves.push({mutate,options,resolve}));}
+  });
+  const begin=source.indexOf('function habitWithPendingChecks(');
+  vm.runInContext(source.slice(begin,source.indexOf('/* ---------------- 나의 공간: 독서 진행률',begin)),c);
+  const panel={innerHTML:c.habitOverviewBodyHtml()};
+  c.document={activeElement:null,querySelectorAll:selector=>selector==='[data-habit-overview]'?[panel]:[]};
+  function verify(firstChecked,secondChecked,status){
+    const html=panel.innerHTML;
+    assert.deepEqual(Array.from(html.matchAll(/data-habit-overview-id="([^"]+)"/g),match=>match[1]),['first','second','upcoming','ended']);
+    assert.match(html,new RegExp('data-habit-overview-day="first\\|'+today+'" aria-pressed="'+firstChecked+'"'));
+    assert.match(html,new RegExp('data-habit-overview-day="second\\|'+today+'" aria-pressed="'+secondChecked+'"'));
+    const saveSlot=html.match(/<p class="habit-overview-save"[^>]*>([\s\S]*?)<\/p>/);
+    assert.ok(saveSlot,'idle, pending and completed views retain the same save-status slot');
+    if(status==='saving')assert.match(saveSlot[1],/체크 저장 중/);
+    else if(status==='error')assert.match(saveSlot[1],/저장하지 못한 체크/);
+    else assert.doesNotMatch(saveSlot[1],/체크 저장 중|저장하지 못한 체크/);
+  }
+  function finish(index,ok=true){
+    const saved=saves[index];
+    if(ok){saved.mutate(c.STATE);saved.options.onSuccess();}else saved.options.onFailure();
+    saved.resolve(ok);
+  }
+  verify(true,false,'idle');
+  const undo=c.queueHabitCheck('first',today,false);verify(false,false,'saving');
+  const recheck=c.queueHabitCheck('first',today,true);verify(true,false,'saving');
+  finish(0);await undo;verify(true,false,'saving');
+  finish(1);await recheck;verify(true,false,'idle');
+  const checkSecond=c.queueHabitCheck('second',today,true);verify(true,true,'saving');
+  finish(2);await checkSecond;verify(true,true,'idle');
+  const undoSecond=c.queueHabitCheck('second',today,false);verify(true,false,'saving');
+  finish(3,false);await undoSecond;verify(true,false,'error');
+  const retry=c.retryHabitChecks('second');verify(true,false,'saving');
+  finish(4);await retry;verify(true,false,'idle');
+  assert.deepEqual(Array.from(c.STATE.habits.first.checkedDates),[today]);
+  assert.deepEqual(Array.from(c.STATE.habits.second.checkedDates),[]);
+});
+
 test('each record button opens its own habit and selected popup without bubbling into progress details',()=>{
   const opened=[],buttons=['h1','h2'].flatMap(id=>['week','month'].map(view=>({
     getAttribute:attr=>attr==='data-habit-record'?id:view,addEventListener(type,fn){this.click=fn;}
@@ -300,7 +348,8 @@ test('weekly popup progress and success marks refresh for check and undo without
   }
   const day=node({'data-habit-day':'h2|2026-09-22'});day.parentElement=node({});
   const progress=node({'data-habit-week-progress':'h2'}),otherProgress=node({'data-habit-week-progress':'h1'});
-  otherProgress.textContent='leave alone';const card=node({'data-habit-card':'h2'});
+  otherProgress.textContent='leave alone';const card=node({'data-habit-card':'h2'},['card','habit-card']);
+  card.classList.toggle=()=>assert.fail('checking a day must not change the parent card appearance');
   const popupStatus=node({'data-habit-popup-status':'h2'});
   const nodes={'[data-habit-card], [data-habit-stats-panel]':[card],'[data-habit-card]':[card],'[data-habit-day]':[day],
     '[data-habit-week-progress]':[progress,otherProgress],'[data-habit-popup-status]':[popupStatus]};
@@ -309,7 +358,7 @@ test('weekly popup progress and success marks refresh for check and undo without
     c.habitSaveIntents.h2={'2026-09-22':{checked,status:'saving'}};c.refreshHabitSaveUI('h2');
     assert.equal(progress.textContent,(checked?'1':'0')+'/7일 절제');assert.equal(day.attrs['aria-pressed'],String(checked));
     assert.equal(day.parentElement.classList.contains('is-checked'),checked);
-    assert.equal(card.classList.contains('is-today-success'),checked);assert.match(popupStatus.innerHTML,/체크 저장 중/);
+    assert.equal(card.classList.contains('is-today-success'),false);assert.match(popupStatus.innerHTML,/체크 저장 중/);
     assert.equal(c.habitHistoryOpenFor,'h2');assert.equal(h.renders,renders);
   }
   assert.equal(otherProgress.textContent,'leave alone');assert.deepEqual(c.STATE.habits.h2.checkedDates,[]);

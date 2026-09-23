@@ -2,6 +2,7 @@
 [data-habit-kind="avoid"]{--habit-accent:var(--habit-avoid-ink);--habit-accent-soft:var(--habit-avoid-soft);--habit-accent-fill:var(--habit-avoid-fill);--habit-accent-on-fill:var(--habit-avoid-on-fill);}
 :root[data-theme="dark"] :is(.habit-section,.habit-hist-modal,[data-habit-kind]){--habit-do-ink:#f4d77c;--habit-do-soft:#3b321e;--habit-do-fill:#efc652;--habit-do-on-fill:#493300;--habit-avoid-ink:#f1ada5;--habit-avoid-soft:#422927;--habit-avoid-fill:#b7473c;--habit-avoid-on-fill:#fff;--habit-fail:#cbd0d3;--habit-fail-bg:#353a3e;--habit-fail-border:#555e65;}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]) :is(.habit-section,.habit-hist-modal,[data-habit-kind]){--habit-do-ink:#f4d77c;--habit-do-soft:#3b321e;--habit-do-fill:#efc652;--habit-do-on-fill:#493300;--habit-avoid-ink:#f1ada5;--habit-avoid-soft:#422927;--habit-avoid-fill:#b7473c;--habit-avoid-on-fill:#fff;--habit-fail:#cbd0d3;--habit-fail-bg:#353a3e;--habit-fail-border:#555e65;}}
+.habit-section,.habit-hist-overlay{-webkit-tap-highlight-color:transparent;}
 .habit-section-lead{font-size:15px;line-height:1.7;margin-bottom:18px;}
 .habit-hero{padding:12px 0 26px;}
 .habit-hero-top{display:flex;justify-content:space-between;align-items:center;gap:12px;}
@@ -23,7 +24,6 @@
 .habit-overview-period{font-size:12px;line-height:1.65;color:var(--ink-soft);margin:12px 0 16px;}
 .habit-overview-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}
 .habit-overview-item{display:flex;align-items:stretch;gap:0;min-width:0;border:1px solid var(--line);border-radius:12px;color:var(--ink);cursor:pointer;}
-.habit-overview-item:hover{border-color:var(--habit-accent);}
 .habit-overview-open{display:flex;align-items:center;gap:10px;min-width:0;flex:1;padding:13px 14px;text-align:left;border:0;border-radius:11px;background:transparent;color:var(--ink);font:inherit;cursor:pointer;}
 .habit-overview-open:hover{background:var(--surface-2);}
 .habit-overview-open:focus-visible,.habit-overview-toggle:focus-visible{outline:3px solid var(--habit-accent);outline-offset:2px;}
@@ -40,12 +40,10 @@
 .habit-overview-item-status{flex:none;font-size:11px;font-weight:700;line-height:1.5;white-space:nowrap;color:var(--ink-soft);}
 .habit-overview-item-status.is-success{color:var(--habit-accent);background:var(--habit-accent-soft);padding:4px 7px;border-radius:6px;}
 .habit-overview-note,.habit-overview-save{font-size:12px;line-height:1.7;color:var(--ink-soft);margin:15px 0 0;}
-.habit-overview-save{color:var(--primary);font-weight:650;margin-top:7px;}
+.habit-overview-save{color:var(--primary);font-weight:650;margin-top:7px;min-height:1.7em;}
 .habit-section .habit-list{gap:18px;}
 .habit-icon-btn{height:40px;min-width:40px;}
 .habit-card{padding:28px 30px 20px;cursor:pointer;border-radius:22px;box-shadow:none;border-color:var(--line);}
-.habit-card.is-today-success{background:color-mix(in srgb,var(--surface) 76%,var(--habit-accent-soft));}
-.habit-card:focus-within{border-color:var(--habit-accent);}
 .habit-card-head{align-items:flex-start;gap:14px;}
 .habit-card-identity{display:flex;align-items:flex-start;gap:13px;min-width:0;}
 .habit-card-kind-icon{display:flex;align-items:center;justify-content:center;color:var(--habit-accent);padding-top:3px;flex:none;}
@@ -98,7 +96,8 @@
 .habit-detail-link{color:var(--habit-accent);font-size:13px;font-weight:750;border:0;background:none;cursor:pointer;padding:7px 0;}
 .habit-card-summary svg{width:16px;height:16px;vertical-align:middle;}
 .habit-detail-link svg{transform:scaleX(-1);}
-.habit-save-hint{font-size:12px;line-height:1.65;}.habit-card .habit-save-hint:empty{display:none;}
+.habit-save-hint{font-size:12px;line-height:1.65;min-height:1.65em;}
+.habit-streak .habit-streak-flame{width:20px;height:22px;flex:none;}
 .habit-form{padding:22px;margin-bottom:20px;cursor:default;}
 .habit-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;}
 .habit-form-row{display:block;margin:0;}.habit-form-row label{display:block;width:auto;font-size:13px;margin-bottom:7px;}
@@ -139,10 +138,10 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
 .habit-hist-cell.is-future,.habit-hist-cell.is-outside{color:var(--ink-faint);background:transparent;}.habit-hist-cell.is-pending{border:1px solid var(--habit-accent);}
 .habit-hist-cell.is-today{box-shadow:inset 0 0 0 1.6px var(--habit-accent);}
 .habit-hist-legend{font-size:12px;gap:12px;line-height:1.6;margin:8px 0;}.habit-hist-legend .legend-success{color:var(--habit-accent);}.habit-hist-legend .legend-fail{color:var(--habit-fail,#5d6266);}
-.habit-month-summary{font-size:13px;color:var(--ink-soft);line-height:1.7;margin:10px 0 0;}
+.habit-month-summary{font-size:13px;color:var(--ink-soft);line-height:1.7;min-height:3.4em;margin:10px 0 0;}
 .habit-dialog-footnote{font-size:12px;color:var(--ink-soft);line-height:1.7;margin:15px 0 0;}
 @media(max-width:540px){
- .habit-overview{padding:20px 16px;margin-bottom:18px;}.habit-overview h3{font-size:20px;}.habit-overview-message{font-size:14px;margin:10px 0 15px;}
+ .habit-overview{padding:20px 16px;margin-bottom:18px;}.habit-overview h3{font-size:20px;}.habit-overview-message{font-size:14px;margin:10px 0 15px;min-height:3.3em;}
  .habit-overview-stats{gap:6px;}.habit-overview-stats>div{padding:12px 9px;}.habit-overview-stats span{font-size:11px;}.habit-overview-stats strong{font-size:24px;}.habit-overview-stats small{font-size:11px;}
  .habit-overview-items{grid-template-columns:1fr;gap:7px;}.habit-overview-open{padding:11px 10px;gap:8px;}.habit-overview-toggle{margin-right:9px;gap:3px;padding:7px 6px;}.habit-overview-item-text strong{font-size:13px;}.habit-overview-note{font-size:11px;}
  .habit-hero{padding:8px 0 22px;}.habit-hero h2{font-size:28px;letter-spacing:-.8px;}.habit-hero p{font-size:15px;}.habit-hero-kicker,.habit-hero-date{font-size:11px;padding:6px 8px;}

@@ -3164,7 +3164,6 @@ function refreshHabitSaveUI(habitId){
     if(card.getAttribute('data-habit-card')!==habitId) return;
     var progress=habitWeekProgress(habit,weekDatesOf(mondayOf(new Date()))),el=card.querySelector('.habit-progress');
     if(el){el.classList.toggle('is-done',progress.total>0&&progress.done===progress.total);el.textContent=progress.total?progress.done+'/'+progress.total+'일 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천'):'이번 주 목표 기간 없음';}
-    card.classList.toggle('is-today-success',GrowellHabits.status(habit,today,today)==='success');
     var summary=card.querySelector('[data-habit-card-summary]');if(summary) summary.innerHTML=habitStreakHtml(habit,stats);
     var goal=card.querySelector('[data-habit-card-goal]');if(goal) goal.innerHTML=habitCardProgressHtml(stats);
     var status=card.querySelector('[data-habit-save-status]');if(status) status.innerHTML=habitCardSaveStatusHtml(habitId);
@@ -5190,7 +5189,7 @@ function habitOverviewBodyHtml(){
   var message=summary.active?(summary.todayPending?'오늘 '+summary.todayPending+'개의 작은 약속이 남아 있어요.':'오늘의 약속을 모두 지켰어요!'):'오늘 진행 중인 습관이 없어요.';
   var stats='<div class="habit-overview-stats"><div><span>오늘 성공</span><strong>'+summary.todaySuccess+'<small> / '+summary.active+'개</small></strong></div><div><span>오늘 남음</span><strong>'+summary.todayPending+'<small>개</small></strong></div><div><span>주간 성공률</span><strong>'+(summary.weekRate===null?'—':summary.weekRate+'<small>%</small>')+'</strong></div></div>';
   var period='<p class="habit-overview-period">진행 중 '+summary.active+'개'+(summary.upcoming?' · 시작 전 '+summary.upcoming+'개':'')+(summary.ended?' · 기간 종료 '+summary.ended+'개':'')+'</p>';
-  var order=function(habit){var b=GrowellHabits.bounds(habit,today);return today<b.start?2:b.end&&today>b.end?3:GrowellHabits.status(habit,today,today)==='success'?1:0;};
+  var order=function(habit){var b=GrowellHabits.bounds(habit,today);return today<b.start?1:b.end&&today>b.end?2:0;};
   var rows=habits.slice().sort(function(a,b){return order(a)-order(b)||(Number(a.createdAt)||0)-(Number(b.createdAt)||0);}).map(function(habit){
     var b=GrowellHabits.bounds(habit,today),status=today<b.start?'upcoming':b.end&&today>b.end?'ended':GrowellHabits.status(habit,today,today)==='success'?'success':'pending';
     var label={upcoming:'시작 전',ended:'기간 종료',success:'오늘 성공',pending:'오늘 도전 중'}[status],book=bookById(habit.bookId);
@@ -5203,7 +5202,7 @@ function habitOverviewBodyHtml(){
   }).join('');
   var intents=habits.reduce(function(all,habit){return all.concat(Object.values(habitSaveIntents[habit.id]||{}));},[]);
   var pending=intents.some(function(intent){return intent.status==='error';})?'저장하지 못한 체크가 포함돼 있어요. 해당 습관에서 다시 저장해주세요.':intents.length?'체크 저장 중…':'';
-  return heading+'<p class="habit-overview-message">'+message+'</p>'+stats+period+'<div class="habit-overview-items">'+rows+'</div><p class="habit-overview-note">이번 주 성공 '+summary.weekSuccess+'회 · 실패 '+summary.weekFail+'회 · 오늘 미체크와 미래 날짜는 성공률에서 제외해요.</p>'+(pending?'<p class="habit-overview-save" role="status">'+pending+'</p>':'');
+  return heading+'<p class="habit-overview-message">'+message+'</p>'+stats+period+'<div class="habit-overview-items">'+rows+'</div><p class="habit-overview-note">이번 주 성공 '+summary.weekSuccess+'회 · 실패 '+summary.weekFail+'회 · 오늘 미체크와 미래 날짜는 성공률에서 제외해요.</p><p class="habit-overview-save" role="status">'+pending+'</p>';
 }
 function habitOverviewHtml(){return '<section class="card habit-overview" data-habit-overview aria-label="전체 습관 현황">'+habitOverviewBodyHtml()+'</section>';}
 function bindHabitOverviewEvents(root){
@@ -5297,7 +5296,7 @@ function habitTodayState(habit,today){
   return {checked:checked,canCheck:canCheck,label:canCheck?'성공':today<GrowellHabits.start(habit,today)?'시작 전':'기간 종료'};
 }
 function habitStreakHtml(habit,stats){
-  return habitFactIconHtml('streak')+'<span><strong>'+stats.streak+'일</strong> 연속 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천')+'</span>';
+  return '<svg class="habit-streak-flame" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#ed7634" d="M13 2c1 5-3 6-3 10-2-1-3-3-3-5-3 3-4 6-4 9a9 9 0 0 0 18 0c0-5-4-7-4-11-1 2-2 3-3 4 1-3 0-5-1-7Z"/><path fill="#ffd46a" d="M12 12c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-2-4-4-7Z"/></svg><span><strong>'+stats.streak+'일</strong> 연속 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천')+'</span>';
 }
 function habitCardProgressHtml(stats){
   if(stats.total===null) return '<div class="habit-goal-head"><span>지금까지 <strong>'+stats.success+'일 성공</strong></span><span class="habit-goal-open">나의 속도로 계속</span></div>';
@@ -5308,7 +5307,7 @@ function habitCardSaveStatusHtml(habitId){return Object.keys(habitSaveIntents[ha
 function habitCardHtml(habit){
   var todayStr=ymd(new Date()),stats=GrowellHabits.stats(habit,todayStr);
   var todayState=habitTodayState(habit,todayStr);
-  return '<article class="card habit-card'+(todayState.checked?' is-today-success':'')+'" data-habit-card="'+esc(habit.id)+'" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><div class="habit-card-head">'+
+  return '<article class="card habit-card" data-habit-card="'+esc(habit.id)+'" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><div class="habit-card-head">'+
     '<div class="habit-card-identity"><span class="habit-card-kind-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><div><h4 class="habit-name"><button type="button" class="habit-title-button" data-habit-history="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+esc(habit.name)+'</button></h4><span class="habit-card-kind-label">'+GrowellHabits.behaviorLabel(habit)+'</span></div></div>'+
     '<div class="habit-card-actions"><button type="button" class="habit-icon-btn habit-detail-arrow" data-habit-history="'+esc(habit.id)+'" title="진행 상황" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+svgIcon(I_BACK)+'</button><button type="button" class="habit-icon-btn" data-edit-habit="'+esc(habit.id)+'" title="습관 수정" aria-label="'+esc(habit.name)+' 수정">'+svgIcon(I_EDIT)+'</button></div></div>'+
     habitFactsHtml(habit)+'<div class="habit-card-goal" data-habit-card-goal="'+esc(habit.id)+'">'+habitCardProgressHtml(stats)+'</div>'+
