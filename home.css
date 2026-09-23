@@ -44,6 +44,14 @@
 .home-dashboard .home-date { color: var(--ink-soft); font-size: 14px; margin-bottom: 5px; }
 .home-dashboard .home-welcome h1 { font-size: 30px; line-height: 1.4; }
 .home-dashboard .home-greeting { margin-top: 7px; color: var(--ink-soft); }
+.home-dashboard .home-daily-verse { padding: 22px 26px; border-radius: 18px; background: var(--home-accent-soft); }
+.home-dashboard .home-daily-verse-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 5px 14px; }
+.home-dashboard .home-daily-verse .home-daily-verse-head h1 { margin: 0; color: var(--home-accent); font-size: 14px; font-weight: 750; line-height: 1.6; letter-spacing: 0; }
+.home-dashboard .home-daily-verse .home-date { margin: 0; font-size: 12px; color: var(--ink-soft); }
+.home-dashboard .home-daily-verse blockquote { margin: 13px 0 0; padding: 0; border: 0; }
+.home-dashboard .home-daily-verse-text { margin: 0; font-size: 23px; font-weight: 650; line-height: 1.8; letter-spacing: -.035em; word-break: keep-all; overflow-wrap: anywhere; white-space: pre-line; text-wrap: pretty; }
+.home-dashboard .home-daily-verse-reference { display: block; margin-top: 12px; color: var(--home-accent); font-size: 14px; font-style: normal; font-weight: 650; line-height: 1.6; }
+.home-dashboard .home-daily-verse-empty { margin: 12px 0 0; color: var(--ink-soft); font-size: 15px; }
 
 .home-dashboard .home-grid {
   display: grid;
@@ -190,19 +198,22 @@
   background: var(--bg);
   cursor: pointer;
 }
-.home-dashboard .home-habit:has(input:checked) { background: var(--home-accent-soft); }
+.home-dashboard .home-habit:has(input:checked) { background: var(--habit-accent-soft, var(--home-accent-soft)); }
 .home-dashboard .home-habit input {
   flex: none;
   width: 21px;
   height: 21px;
   margin: 0;
-  accent-color: var(--home-accent);
+  accent-color: var(--habit-accent-fill, var(--home-accent));
   cursor: pointer;
 }
 .home-dashboard .home-habit input:disabled { cursor: default; }
 .home-dashboard .home-habit > span { min-width: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
 .home-dashboard .home-habit-name { display: block; line-height: 1.45; }
 .home-dashboard .home-habit small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 14px; font-weight: 500; line-height: 1.5; }
+.home-dashboard .home-habit small b { font-weight: 650; margin-right: 4px; }
+.home-dashboard .home-habit .home-habit-schedule { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; }
+.home-dashboard .home-habit-schedule > span { min-width: 0; }
 .home-dashboard .home-habit-status { margin-top: 10px; color: var(--home-accent); font-size: 13px; }
 .home-dashboard .home-habit-status:empty { display: none; }
 .home-dashboard .home-habits > .home-link { align-self: flex-start; margin-top: 7px; }
@@ -215,9 +226,11 @@
 .home-dashboard .home-note-summary h2 { display: flex; align-items: center; gap: 8px; }
 .home-dashboard .home-note-summary h2 svg { width: 18px; height: 18px; flex: none; }
 .home-dashboard .home-note-summary small { display: block; color: var(--ink-soft); font-size: 14px; font-weight: 500; line-height: 1.5; }
-.home-dashboard .home-meeting-summary > small { display: block; color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.5; }
-.home-dashboard .home-meeting-time { font-size: 16px; font-weight: 600; line-height: 1.5; }
-.home-dashboard .home-meeting-range { margin-top: 4px; color: var(--ink-soft); font-size: 14px; }
+.home-dashboard .home-meeting-summary { width: 100%; }
+.home-dashboard .home-meeting-facts { display: grid; gap: 8px; margin: 16px 0 0; }
+.home-dashboard .home-meeting-facts > div { display: grid; grid-template-columns: 64px minmax(0,1fr); align-items: baseline; gap: 10px; }
+.home-dashboard .home-meeting-facts dt { color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.6; }
+.home-dashboard .home-meeting-facts dd { margin: 0; font-size: 15px; font-weight: 650; line-height: 1.6; }
 .home-dashboard :is(.home-note, .home-meeting) > .home-link { margin-top: 12px; }
 
 .home-dashboard .home-community { margin-top: 30px; }
@@ -308,6 +321,11 @@
   .home-dashboard .home-date { font-size: 13px; }
   .home-dashboard .home-welcome h1 { font-size: 23px; line-height: 1.4; }
   .home-dashboard .home-greeting { display: none; }
+  .home-dashboard .home-daily-verse { padding: 18px 17px; border-radius: 14px; }
+  .home-dashboard .home-daily-verse .home-daily-verse-head h1 { font-size: 13px; }
+  .home-dashboard .home-daily-verse .home-date { font-size: 11px; }
+  .home-dashboard .home-daily-verse-text { font-size: 19px; line-height: 1.85; }
+  .home-dashboard .home-daily-verse-reference { margin-top: 10px; font-size: 13px; }
   .home-dashboard .home-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .home-dashboard .home-card { padding: 16px; border-radius: 14px; }
   .home-dashboard .home-label { margin-bottom: 4px; font-size: 13px; }
@@ -326,6 +344,7 @@
   .home-dashboard .home-habit { min-height: 44px; padding: 8px 9px; gap: 10px; border-radius: 9px; }
   .home-dashboard .home-habit > span { font-weight: 500; }
   .home-dashboard .home-habit small { font-size: 13px; }
+  .home-dashboard .home-habit .home-habit-schedule { font-size: 12px; gap: 2px 10px; }
   .home-dashboard .home-habit-status { margin-top: 7px; }
   .home-dashboard .home-habits > .home-link { margin-top: 3px; font-size: 14px; }
   .home-dashboard .home-note,
@@ -336,9 +355,11 @@
   .home-dashboard .home-note-summary small { display: none; }
   .home-dashboard .home-meeting { padding-block: 13px; }
   .home-dashboard .home-meeting-summary { flex: 1 1 auto; }
-  .home-dashboard .home-meeting-summary h2 { margin-bottom: 3px; color: var(--ink-soft); font-size: 13px; font-weight: 600; }
-  .home-dashboard .home-meeting-time { font-size: 15px; line-height: 1.45; }
-  .home-dashboard .home-meeting-range { margin-top: 2px; font-size: 13px; line-height: 1.45; }
+  .home-dashboard .home-meeting-summary h2 { margin-bottom: 3px; font-size: 16px; }
+  .home-dashboard .home-meeting-facts { gap: 6px; margin-top: 12px; }
+  .home-dashboard .home-meeting-facts > div { grid-template-columns: 59px minmax(0,1fr); gap: 8px; }
+  .home-dashboard .home-meeting-facts dt { font-size: 12px; }
+  .home-dashboard .home-meeting-facts dd { font-size: 14px; }
   .home-dashboard :is(.home-note, .home-meeting) > .home-link { flex: 0 0 auto; max-width: 40%; margin: 0; font-size: 14px; }
   .home-dashboard .home-community { margin-top: 22px; }
   .home-dashboard .home-section-head,

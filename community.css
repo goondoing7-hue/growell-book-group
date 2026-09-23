@@ -25,10 +25,10 @@
 .space-prompt strong{font-weight:650;font-size:16px;line-height:1.6}
 .space-prompt .btn{font-size:13px;flex:none}
 .space-filter-row{display:flex;align-items:center;gap:18px;justify-content:space-between;margin:22px 0 12px;flex-wrap:wrap}
-.space-filter-row .feed-toolbar{margin:0;flex:1 1 360px;min-width:0}
+.space-filter-row .feed-toolbar{margin:0;flex:1 1 390px;min-width:0}
 .space-filter-row .feed-search{width:240px;margin:0;border-radius:11px;padding:11px 13px;flex:0 1 240px}
-.space-filter-row .feed-filters{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.65fr) minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,1.6fr);gap:6px;width:100%;max-width:480px;min-width:0;padding:3px 0}
-.space-filter-row .feed-filter{min-width:0;white-space:nowrap;min-height:38px;font-size:13px;padding:7px 8px;color:var(--space-muted);background:var(--surface);border:1px solid var(--line)}
+.space-filter-row .feed-filters{display:flex;flex-wrap:nowrap;gap:6px;width:max-content;max-width:100%;min-width:0;padding:3px 0}
+.space-filter-row .feed-filter{flex:none;min-width:0;white-space:nowrap;min-height:38px;font-size:13px;padding:7px 12px;color:var(--space-muted);background:var(--surface);border:1px solid var(--line)}
 .space-filter-row .feed-filter.is-sel{background:var(--space-green);color:var(--space-on-green);border-color:var(--space-green)}
 .space-feed-count{font-size:13px;color:var(--space-muted);margin:12px 0}
 .book-page .feed-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:stretch}
@@ -103,7 +103,7 @@
  .space-filter-row{gap:12px}
  .space-filter-row .feed-toolbar{flex-basis:100%}
  .space-filter-row .feed-search{flex-basis:100%;width:100%}
- .space-filter-row .feed-filters{gap:3px;max-width:none}
+ .space-filter-row .feed-filters{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.65fr) minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,1.6fr);gap:3px;width:100%;max-width:none}
  .space-filter-row .feed-filter{font-size:13px;letter-spacing:-.025em;padding:8px 2px;min-height:38px}
  .book-page .feed-tile-head{padding:15px 18px}
  .space-photo{height:235px}

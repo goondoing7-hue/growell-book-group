@@ -6,6 +6,7 @@ const vm=require('node:vm');
 const GrowellHome=require('../homeDomain.js');
 const GrowellHabits=require('../habitDomain.js');
 const GrowellReadingTimer=require('../readingTimerDomain.js');
+const GrowellDailyVerse=require('../dailyVerseDomain.js');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),source.indexOf('function welcomeHomeHtml(){'));
 const authorSource=source.slice(source.indexOf('function publicAuthorHtml('),source.indexOf('/* 헤더 프로필 버튼용',source.indexOf('function publicAuthorHtml(')));
@@ -38,13 +39,13 @@ function control(attrs){
 function harness(){
   const controls={},queued=[],opened=[],renders=[],createdElements=[],toasts=[],storage=new Map();
   const books=[{id:'emotion',title:'감정의 책',totalPages:200},{id:'thought',title:'생각의 책',totalPages:250},{id:'locked',title:'잠긴 책',locked:true}];
-  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
+  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
     BOOKS:books,SESSION:{userId:'me',keyB64:'my-key'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{},worksheets:{},habits:{},users:{me:{id:'me',name:'회원'}},readingMeta:{},readingLogs:{},announcement:{reading:{bookId:'emotion'},next:{}}},
     INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],
     bookById:id=>books.find(book=>book.id===id),isBookLocked:book=>!!book.locked,
     ymd:()=> '2026-09-21',habitWithPendingChecks:habit=>({...habit,checkedDates:habit.checkedDates||[]}),
-    habitSaveIntents:{},homeMeetingOpen:false,sharedPostsLoadState:'ready',
+    habitSaveIntents:{},sharedPostsLoadState:'ready',
     memberLoadState:{privateEntries:'ready',habits:'ready',readingMeta:'ready',readingLogs:'ready'},
     readingTimer:null,readingTimerRestoreOwner:'me',readingSaveAttempt:null,readingSavePanelOpen:false,readingEndPage:null,
     readingSaveBusy:false,readingSaveError:false,readingFinishKind:'finish',readingTimerIntervalId:null,
@@ -128,11 +129,54 @@ test('member dashboard keeps own reading progress, habit controls and private co
   c.STATE.habits.mine={id:'mine',bookId:'emotion',userId:'me',name:'나의 독서 습관',checkedDates:['2026-09-21']};
   c.STATE.habits.other={id:'other',bookId:'emotion',userId:'other',name:'OTHER PRIVATE HABIT',checkedDates:['2026-09-21']};
   const html=c.homeHtml();
-  assert.ok(html.includes('회원님'));assert.ok(html.includes('147 / 200쪽'));
+  assert.ok(html.includes('오늘의 말씀'));assert.ok(html.includes('147 / 200쪽'));
   assert.ok(html.includes('role="progressbar"'));assert.ok(html.includes('1 / 1 완료'));
   assert.ok(html.includes('data-home-habit="mine"'));assert.ok(html.includes('data-home-write="emotion"'));
   assert.ok(html.includes('href="#/book/emotion/mine"'));assert.ok(!html.includes('OTHER PRIVATE HABIT'));
   assert.ok(!html.includes('로그인하고 이어 읽기'));
+});
+test('home meeting presents only date, time, place and reading range without preparation panels',()=>{
+  const {c}=harness();
+  c.STATE.announcement={next:{date:'9월 28일',time:'19:30',place:'모임 공간 <2층>',note:'숨겨야 할 추가 안내'},reading:{bookId:'thought',chapter:'3장',range:'80~120쪽',note:'숨겨야 할 읽기 메모',concept:'숨겨야 할 개념'}};
+  c.homeMeetingOpen=true;
+  const html=c.homeHtml(),meeting=html.match(/<section class="home-card home-meeting">([\s\S]*?)<\/section>/)[1];
+  assert.match(meeting,/<dt>날짜<\/dt><dd>9월 28일<\/dd>/);
+  assert.match(meeting,/<dt>시간<\/dt><dd>19:30<\/dd>/);
+  assert.match(meeting,/<dt>장소<\/dt><dd>모임 공간 &lt;2층&gt;<\/dd>/);
+  assert.match(meeting,/<dt>읽을 범위<\/dt><dd>3장 · 80~120쪽<\/dd>/);
+  assert.doesNotMatch(meeting,/button|생각의 책|숨겨야/);
+  assert.doesNotMatch(html,/준비 보기|data-home-meeting|home-meeting-details|모임 안내 · 전체 독서 여정|숨겨야/);
+});
+test('today habit keeps the name and goal with compact escaped time and place without inventing defaults',()=>{
+  const {c}=harness();
+  const habit={id:'mine',name:'책 읽기',goal:'15분 <집중>',time:'21:00',place:'거실 & 소파',checkedDates:[]};
+  const html=c.homeHabitRowsHtml([habit]);
+  assert.match(html,/home-habit-name">책 읽기/);assert.match(html,/<b>목표<\/b> 15분 &lt;집중&gt;/);
+  assert.match(html,/<b>시간<\/b> 21:00/);assert.match(html,/<b>장소<\/b> 거실 &amp; 소파/);
+  const unset=c.homeHabitRowsHtml([{...habit,time:'',place:''}]);
+  assert.match(unset,/<b>시간<\/b> 미설정/);assert.match(unset,/<b>장소<\/b> 미설정/);
+});
+test('home shows the complete escaped daily verse and reference in place of the old greeting',()=>{
+  const {c}=harness();c.GrowellDailyVerses=[{reference:'출처 <1:1>',text:'긴 말씀 첫 줄\n두 번째 줄과 마지막 문장까지 전부 표시합니다.'}];
+  const html=c.homeHtml();
+  assert.match(html,/오늘의 말씀/);assert.match(html,/긴 말씀 첫 줄\n두 번째 줄과 마지막 문장까지 전부 표시합니다\./);
+  assert.match(html,/출처 &lt;1:1&gt;/);assert.doesNotMatch(html,/오늘은 여기서 이어가요|님, 독서와 작은 습관/);
+});
+test('the Korean midnight update refreshes only the verse, preserves other content and avoids duplicate lifecycle listeners',()=>{
+  const {c,renders}=harness();let now=Date.parse('2026-09-23T23:59:50+09:00'),writes=0,visible=true;
+  let verse={dateKey:'2026-09-23',text:'오늘 원문',reference:'오늘 출처'};
+  c.Date=class extends Date{static now(){return now;}};c.GrowellDailyVerse={get:()=>verse};
+  const attributes={'data-verse-date':'2026-09-23'},panel={getAttribute:key=>attributes[key],setAttribute:(key,value)=>{attributes[key]=value;},set innerHTML(value){writes++;this.content=value;}};
+  const pending=[],cleared=[],listeners={};
+  c.document.querySelector=()=>visible?panel:null;c.document.addEventListener=(name,handler)=>{assert.equal(listeners[name],undefined);listeners[name]=handler;};
+  c.window={addEventListener:(name,handler)=>{assert.equal(listeners[name],undefined);listeners[name]=handler;}};
+  c.setTimeout=(handler,delay)=>{pending.push({handler,delay});return pending.length;};c.clearTimeout=id=>cleared.push(id);
+  c.bindHomeDailyVerse();assert.equal(pending[0].delay,10025);assert.equal(writes,0);
+  c.bindHomeDailyVerse();assert.equal(cleared.length,1);assert.deepEqual(Object.keys(listeners).sort(),['pageshow','visibilitychange']);
+  now=Date.parse('2026-09-24T00:00:00.025+09:00');verse={dateKey:'2026-09-24',text:'다음 날 원문',reference:'다음 출처'};
+  pending.at(-1).handler();assert.equal(writes,1);assert.match(panel.content,/다음 날 원문/);assert.equal(renders.length,0);
+  listeners.visibilitychange();assert.equal(writes,1);assert.equal(renders.length,0);
+  visible=false;const scheduled=pending.length;c.bindHomeDailyVerse();assert.equal(pending.length,scheduled);assert.equal(c.document._homeDailyVerseTimer,null);
 });
 
 test('home timer start opens the selected reading book with its saved page and persists one session',()=>{

@@ -3,7 +3,9 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
-  'index.html', 'privacy.html', 'privateCrypto.js', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
+  'dailyVerses.js',
+  'dailyVerseDomain.js',
+  'index.html', 'privacy.html', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
   'habitDomain.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
@@ -19,8 +21,9 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/daily-verse.test.cjs',
   'tests/deployment.test.cjs', 'tests/drafts.test.cjs', 'tests/studio-layout.test.cjs',
-  'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs',
+  'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs', 'tests/private-categories.test.cjs',
   'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs', 'tests/home-domain.test.cjs', 'tests/home-ui.test.cjs',
   'tests/editor-colors.test.cjs', 'tests/editor-sanitize.test.cjs', 'tests/reading-timer.test.cjs', 'tests/reading-save.test.cjs', 'tests/reading-integration.test.cjs',
   'tests/profile.test.cjs', 'tests/habit-domain.test.cjs', 'tests/habit-edit.test.cjs', 'tests/community-load.test.cjs', 'tests/community-features.test.cjs', 'tests/oauth-domain.test.cjs', 'tests/oauth-flow.test.cjs'

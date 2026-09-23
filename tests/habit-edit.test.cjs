@@ -87,3 +87,41 @@ test('today success remains reversible for avoiding habits and month view opens 
   c.habitCalendarMode='month';c.habitHistoryCalendarHtml=()=>'<div>달력</div>';
   assert.match(c.habitCardHtml(h),/<details class="habit-card-calendar" open>/);
 });
+test('overview includes only the current owner across books and immediately reflects unsaved check intentions',()=>{
+  const c=cardHarness();c.SESSION={userId:'owner'};c.memberLoadState={habits:'ready'};
+  c.STATE={habits:{
+    mine:{id:'mine',userId:'owner',bookId:'emotion',name:'내 습관',startDate:'2026-09-22',checkedDates:[]},
+    otherBook:{id:'otherBook',userId:'owner',bookId:'action',name:'다른 책 습관',startDate:'2026-09-22',checkedDates:[]},
+    stranger:{id:'stranger',userId:'someone-else',bookId:'emotion',name:'타인 습관',startDate:'2026-09-22',checkedDates:['2026-09-22']}
+  }};
+  c.bookById=id=>({title:id==='action'?'행동 책':'감정 책'});
+  c.habitSaveIntents={mine:{'2026-09-22':{checked:true,status:'saving'}}};
+  vm.runInContext(source.slice(source.indexOf('function habitWithPendingChecks('),source.indexOf('function habitSaveStatusHtml(')),c);
+  const html=c.habitOverviewBodyHtml();
+  assert.match(html,/오늘 성공<\/span><strong>1<small> \/ 2개/);assert.match(html,/오늘 남음<\/span><strong>1<small>개/);
+  assert.match(html,/다른 책 습관/);assert.match(html,/#\/book\/action\/habit/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
+  assert.deepEqual(c.STATE.habits.mine.checkedDates,[]);
+  c.habitSaveIntents.mine['2026-09-22'].status='error';assert.match(c.habitOverviewBodyHtml(),/저장하지 못한 체크/);
+});
+test('overview loading failures never turn stale habits into a current-state summary',()=>{
+  const c=cardHarness();c.SESSION={userId:'owner'};c.memberLoadState={habits:'error'};c.memberDataStatusHtml=()=>'<p>연결을 확인해주세요.</p>';
+  c.STATE={habits:{stale:{userId:'owner',name:'오래된 습관'}}};
+  const html=c.habitOverviewBodyHtml();assert.match(html,/전체 습관 한눈에/);assert.match(html,/연결을 확인/);assert.doesNotMatch(html,/오늘 성공|오래된 습관|오늘 남음/);
+  c.memberLoadState.habits='loading';assert.equal(c.myHabitOverviewItems().length,0);
+});
+test('the weekly record area expands itself without opening statistics and leaves its controls alone',()=>{
+  let cardClick,calendarClick,opens=0;
+  const calendar={open:false,addEventListener(type,fn){calendarClick=fn;}};
+  const card={addEventListener(type,fn){cardClick=fn;},getAttribute(){return 'mine';}};
+  const c={app:{querySelectorAll:selector=>selector==='[data-habit-card]'?[card]:[calendar]},openHabitProgress(){opens++;}};
+  vm.createContext(c);
+  const begin=source.indexOf("  app.querySelectorAll('[data-habit-card]').forEach(function(card){card.addEventListener('click'");
+  vm.runInContext(source.slice(begin,source.indexOf('  var openHabitBtn',begin)),c);
+  const event=(kind)=>({target:{closest:selector=>kind==='calendar'?selector.includes('.habit-card-calendar'):kind==='control'?selector.includes('button'):kind==='summary'?selector.includes('summary'):false},stopPropagation(){}});
+  calendarClick(event('calendar'));assert.equal(calendar.open,true);assert.equal(opens,0);
+  cardClick(event('calendar'));assert.equal(opens,0);
+  calendarClick(event('control'));assert.equal(calendar.open,true);assert.equal(opens,0);
+  calendarClick(event('summary'));assert.equal(calendar.open,true);
+  calendarClick(event('calendar'));assert.equal(calendar.open,false);
+  cardClick(event('body'));assert.equal(opens,1);
+});

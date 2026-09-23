@@ -63,3 +63,21 @@ test('date arithmetic remains inclusive across leap day and year boundaries',()=
   assert.equal(habits.shift('2026-01-01',-1),'2025-12-31');
   assert.equal(habits.days('2026-03-07','2026-03-10'),4);
 });
+test('all-habit overview separates active, future and ended promises and weights weekly attempts',()=>{
+  const list=[
+    sample({id:'doing',startDate:'2026-09-20',endDate:'2026-10-10',checkedDates:['2026-09-21','2026-09-22']}),
+    sample({id:'avoiding',behaviorType:'avoid',startDate:'2026-09-20',endDate:'',checkedDates:['2026-09-21']}),
+    sample({id:'ended',startDate:'2026-09-20',endDate:'2026-09-21',checkedDates:['2026-09-20','2026-09-22']}),
+    sample({id:'future',startDate:'2026-09-23',endDate:'2026-09-30',checkedDates:['2026-09-24']})
+  ];
+  assert.deepEqual(habits.overview(list,today,'2026-09-21'),{
+    total:4,active:2,upcoming:1,ended:1,todaySuccess:1,todayPending:1,weekSuccess:3,weekFail:1,weekPending:1,weekRate:75
+  });
+});
+test('an empty week or only unchecked first-day habits never display a made-up failure rate',()=>{
+  const h=sample({startDate:today,checkedDates:[]});
+  const result=habits.overview([h],today,'2026-09-21');
+  assert.equal(result.todayPending,1);assert.equal(result.weekPending,1);assert.equal(result.weekRate,null);assert.equal(result.weekFail,0);
+  assert.equal(habits.overview([],today,'2026-09-21').weekRate,null);
+  assert.equal(habits.overview([sample({endDate:'2026-09-20'})],today,'2026-09-21').active,0);
+});

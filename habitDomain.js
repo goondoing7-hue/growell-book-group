@@ -54,6 +54,26 @@
     return Object.assign(summary,{start:b.start,end:b.end,total:total,goalPercent:total?Math.round(summary.success/total*100):0,elapsedDays:elapsed,periodPercent:total?Math.round(elapsed/total*100):0,remaining:remaining,streak:streak,bestStreak:best,archivedSuccess:checked(h).filter(function(date){return date<=today&&!inPeriod(h,date,today);}).length});
   }
   function monthStats(h,today,year,month){var first=year+'-'+String(month+1).padStart(2,'0')+'-01',last=new Date(Date.UTC(year,month+1,0)).toISOString().slice(0,10);return rangeStats(h,today,first,last);}
+  function overview(habits,today,weekStart){
+    var result={total:0,active:0,upcoming:0,ended:0,todaySuccess:0,todayPending:0,weekSuccess:0,weekFail:0,weekPending:0,weekRate:null};
+    (Array.isArray(habits)?habits:[]).forEach(function(habit){
+      if(!habit) return;
+      result.total++;
+      var period=bounds(habit,today);
+      if(today<period.start) result.upcoming++;
+      else if(period.end&&today>period.end) result.ended++;
+      else{
+        result.active++;
+        if(status(habit,today,today)==='success') result.todaySuccess++;
+        else result.todayPending++;
+      }
+      var week=rangeStats(habit,today,weekStart,today);
+      result.weekSuccess+=week.success;result.weekFail+=week.fail;result.weekPending+=week.pending;
+    });
+    var settled=result.weekSuccess+result.weekFail;
+    result.weekRate=settled?Math.round(result.weekSuccess/settled*100):null;
+    return result;
+  }
   function validate(payload,today){
     var startDate=String(payload.startDate||'').trim()||today,endDate=String(payload.endDate||'').trim();
     if(!validDate(startDate)||endDate&&!validDate(endDate)) return {ok:false,msg:'시작일과 목표일을 올바른 날짜로 선택해주세요.'};
@@ -67,5 +87,5 @@
     if(summary.success>0){var next=[3,7,14,21,30,50,100].find(function(n){return n>summary.success;})||Math.ceil((summary.success+1)/100)*100;if(summary.total) next=Math.min(next,summary.total);return '벌써 '+summary.success+'번 실천했어요. '+next+'번의 실천까지 '+(next-summary.success)+'번 남았어요.';}
     return '완벽한 시작보다 오늘 한 번의 실천이면 충분해요.';
   }
-  return {behaviorType:behaviorType,behaviorLabel:behaviorLabel,behaviorHint:behaviorHint,validDate:validDate,todayDate:todayDate,shift:shift,days:days,checked:checked,start:start,bounds:bounds,inPeriod:inPeriod,canCheck:canCheck,status:status,stats:stats,monthStats:monthStats,validate:validate,motivation:motivation};
+  return {behaviorType:behaviorType,behaviorLabel:behaviorLabel,behaviorHint:behaviorHint,validDate:validDate,todayDate:todayDate,shift:shift,days:days,checked:checked,start:start,bounds:bounds,inPeriod:inPeriod,canCheck:canCheck,status:status,stats:stats,monthStats:monthStats,overview:overview,validate:validate,motivation:motivation};
 });

@@ -51,6 +51,7 @@ test('nested formatting survives inside colored FONT while executable descendant
 function photoRenderer(){
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const context={URL,esc,sanitizeHtml:value=>String(value||''),nlToBr:esc,stripHtml:value=>value.replace(/<[^>]*>/g,''),
+    GrowellPrivateCategories:require('../privateCategories.js'),privateCategoryContext:()=>({status:'ready',categories:[]}),
     noteTypeOf:()=>null,fontSizeOf:()=>({cls:''}),BG_COLORS:[{key:'#fff1da'}],INSIGHT_QUESTIONS:[],
     NOTE_TYPES:[],SESSION:{userId:'synthetic-reader'},composerEditId:()=>null,composerDraftKey:()=> 'test-draft',composerDrafts:{},
     rtToolbarHtml:()=>'',svgIcon:()=>'',I_IMG:'',I_CLOSE:'',I_COMMENT:'',I_LOCK:''};
