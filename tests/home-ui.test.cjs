@@ -9,6 +9,7 @@ const GrowellReadingTimer=require('../readingTimerDomain.js');
 const GrowellDailyVerse=require('../dailyVerseDomain.js');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),source.indexOf('function welcomeHomeHtml(){'));
+const announcementSource=source.slice(source.indexOf('function canEditAnnouncement(){'),source.indexOf('function announceEditHtml(){'));
 const authorSource=source.slice(source.indexOf('function publicAuthorHtml('),source.indexOf('/* 헤더 프로필 버튼용',source.indexOf('function publicAuthorHtml(')));
 const escSource=source.slice(source.indexOf('function esc(s){'),source.indexOf('function nlToBr('));
 const timerSource=source.slice(source.indexOf('function readingTimerElapsedMs(){'),source.indexOf('function activeReadingStripHtml('));
@@ -81,9 +82,9 @@ function harness(){
     memberDataStatusHtml:()=>'',currentUser:()=>c.SESSION && c.STATE.users[c.SESSION.userId] || null,myCurrentPage:()=>0,
     myReadingLogs:bookId=>Object.values(c.STATE.readingLogs).filter(log=>c.SESSION&&log.userId===c.SESSION.userId&&log.bookId===bookId),
     totalReadSeconds:bookId=>c.myReadingLogs(bookId).reduce((sum,log)=>sum+log.seconds,0),
-    svgIcon:()=>'',avatarHtml:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,
+    svgIcon:()=>'',avatarHtml:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,announcementSaveBusy:false,announcementEditDraft:null,
     loginGateHtml:message=>message,sharePostCardHtml:()=>'<article>shared</article>'};
-  vm.createContext(c);vm.runInContext(escSource+authorSource+timerSource+closeNoteSource+timerEventsSource+homeSource,c);
+  vm.createContext(c);vm.runInContext(escSource+authorSource+timerSource+closeNoteSource+timerEventsSource+announcementSource+homeSource,c);
   return {c,controls,queued,opened,renders,createdElements,toasts,storage};
 }
 
@@ -149,6 +150,50 @@ test('home meeting presents only date, time, place and reading range without pre
   assert.match(meeting,/<dt>읽을 범위<\/dt><dd>3장 · 80~120쪽<\/dd>/);
   assert.doesNotMatch(meeting,/button|생각의 책|숨겨야/);
   assert.doesNotMatch(html,/준비 보기|data-home-meeting|home-meeting-details|모임 안내 · 전체 독서 여정|숨겨야/);
+});
+
+test('only active administrators see home meeting editing controls with escaped current values',()=>{
+  const {c}=harness();
+  assert.doesNotMatch(c.homeMeetingHtml(),/btn-edit-announcement/);
+  c.STATE.users.me.isAdmin=true;
+  assert.match(c.homeMeetingHtml(),/aria-label="이번 모임 수정"/);
+  c.editingAnnouncement=true;c.STATE.announcement.next.place='2층 "모임방" <안내>';
+  const html=c.homeMeetingHtml();
+  assert.match(html,/value="2층 &quot;모임방&quot; &lt;안내&gt;"/);
+  for(const id of ['an-date','an-time','an-place','an-chapter','an-range'])assert.match(html,new RegExp('id="'+id+'"'));
+  assert.doesNotMatch(html,/an-next-note|an-book|an-meeting-no|an-reading-note/);
+  c.announcementEditDraft=JSON.parse(JSON.stringify(c.STATE.announcement));c.announcementEditDraft.next.place='화면 갱신 중인 입력';
+  assert.match(c.homeMeetingHtml(),/value="화면 갱신 중인 입력"/,'rerender uses the editing draft');
+  c.STATE.users.me.isDeleted=true;assert.doesNotMatch(c.homeMeetingHtml(),/btn-save-announcement|btn-edit-announcement/);
+  c.SESSION=null;assert.doesNotMatch(c.homeMeetingHtml(),/btn-save-announcement|btn-edit-announcement/);
+});
+
+test('home meeting save patches visible fields while preserving the shared book and hidden announcement fields',async()=>{
+  const {c,renders}=harness();c.STATE.users.me.isAdmin=true;c.editingAnnouncement=true;
+  c.STATE.announcement={next:{date:'이전 날짜',time:'18:00',place:'이전 장소',note:'준비물 유지'},reading:{bookId:'thought',meetingNo:'3',chapter:'2장',range:'30~60쪽',concept:'개념 유지',note:'메모 유지'}};
+  const button={},inputs={'an-date':{value:' 10월 1일 '},'an-time':{value:'19:00'},'an-place':{value:'새 모임방'},'an-chapter':{value:'3장'},'an-range':{value:'60~90쪽'},'btn-save-announcement':button};
+  c.document.getElementById=id=>inputs[id]||null;
+  let pending;c.saveState=(mutate,opts)=>{pending={mutate,opts};return Promise.resolve(true);};
+  const saved=c.saveAnnouncementEdit(button);
+  assert.equal(c.editingAnnouncement,true);assert.equal(c.announcementSaveBusy,true);
+  assert.equal(await c.saveAnnouncementEdit(button),false,'double submission is ignored');
+  const next=JSON.parse(JSON.stringify(c.STATE));pending.mutate(next);c.STATE=next;
+  assert.equal(next.announcement.next.date,'10월 1일');assert.equal(next.announcement.reading.range,'60~90쪽');
+  assert.equal(next.announcement.next.note,'준비물 유지');assert.equal(next.announcement.reading.bookId,'thought');
+  assert.equal(next.announcement.reading.meetingNo,'3');assert.equal(next.announcement.reading.concept,'개념 유지');assert.equal(next.announcement.reading.note,'메모 유지');
+  pending.opts.onSuccess();await saved;
+  assert.equal(c.editingAnnouncement,false);assert.equal(renders.length,1);assert.match(c.homeMeetingHtml(),/10월 1일/);
+});
+
+test('failed meeting save preserves editing and input; queued saves recheck administrator access',async()=>{
+  const {c,renders}=harness();c.STATE.users.me.isAdmin=true;c.editingAnnouncement=true;
+  const input={value:'수정 중인 장소'};c.document.getElementById=id=>id==='an-place'?input:null;
+  let pending;c.saveState=(mutate,opts)=>{pending={mutate,opts};return Promise.resolve(false);};
+  const saved=c.saveAnnouncementEdit({});pending.opts.onFailure();await saved;
+  assert.equal(c.editingAnnouncement,true);assert.equal(input.value,'수정 중인 장소');assert.equal(renders.length,0);
+  c.STATE.users.me.isAdmin=false;
+  assert.throws(()=>pending.mutate(JSON.parse(JSON.stringify(c.STATE))),/관리자만/);
+  assert.equal(await c.saveAnnouncementEdit({}),false);
 });
 test('today habit keeps the name and goal with compact escaped time and place without inventing defaults',()=>{
   const {c}=harness();

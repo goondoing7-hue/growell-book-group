@@ -78,6 +78,23 @@ function harness({read, write, signIn, signup} = {}) {
   return {context,writes,reads,auth,toasts,memory};
 }
 
+test('announcement writes use the global row and require an active administrator at the database request',async()=>{
+  for(const role of ['admin','member','deleted']){
+    const {context:c,writes}=harness();
+    c.STATE.users.u1.isAdmin=role!=='member';c.STATE.users.u1.isDeleted=role==='deleted';
+    c.currentUser=()=>c.SESSION&&c.STATE.users[c.SESSION.userId];
+    vm.runInContext(section('function canEditAnnouncement(){','function announcementEditFields(){'),c);
+    c.STATE.announcement={next:{date:'이전 일정',note:'준비물'},reading:{bookId:'emotion',meetingNo:'2',range:'10쪽',note:'기존 메모'}};
+    const saved=await c.saveState(next=>{next.announcement.next.date='9월 28일';next.announcement.next.place='교육관';});
+    assert.equal(saved,role==='admin',role);
+    if(role==='admin'){
+      assert.equal(writes.length,1);assert.equal(writes[0].table,'announcement');
+      assert.equal(writes[0].payload.book_id,'global');assert.equal(writes[0].payload.next_date,'9월 28일');
+      assert.equal(writes[0].payload.next_note,'준비물');assert.equal(writes[0].payload.reading_note,'기존 메모');
+    }else{assert.equal(writes.length,0);assert.equal(c.STATE.announcement.next.date,'이전 일정');}
+  }
+});
+
 test('rapid different-day checks save in order, using the latest committed state', async()=>{
   const first = deferred();
   let count=0;

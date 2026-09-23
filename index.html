@@ -1951,6 +1951,8 @@ var matFeedFilter = {}; // bookId -> 자료실 카테고리 key ('all' or one of
 var openComments = {}; // postId -> boolean, comment thread expanded
 var feedSearchQuery = {}; // gridId -> current search text (나눔/나의 공간 grid search)
 var editingAnnouncement = false; // admin: home announcement edit form open
+var announcementSaveBusy = false;
+var announcementEditDraft = null;
 var pendingSignupAvatar = null; // small resized data URL picked on the signup form, before account exists
 var pendingProfileAvatar; // undefined:안 건드림(기존 사진 유지) / null:지우기 / 문자열:새로 고른 데이터 URL
 
@@ -1995,6 +1997,8 @@ function currentRoute(){
 }
 window.addEventListener('hashchange', function(){
   readingHistoryRouteVersion++;
+  editingAnnouncement = false;
+  announcementEditDraft = null;
   /* 이동을 막을 기회가 없었던 경우(뒤로가기 등)를 위한 안전망 — 이미 다른 화면으로
      넘어와버렸다면, 원래 있던 곳이 아닌 이상 열려 있던 작성/수정 창을 조용히 닫는다. */
   closeStaleComposersForRoute(currentRoute());
@@ -2043,6 +2047,8 @@ function finishSaveButton(opts){
   if(opts.button){ opts.button.disabled=false; opts.button.textContent=opts.originalLabel||'저장'; }
 }
 function clearMemberSession(){
+  editingAnnouncement=false;
+  announcementEditDraft=null;
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.reset();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
@@ -2362,6 +2368,7 @@ function performSave(job){
     var a = next.announcement;
     work = work.then(function(){
       guard();
+      if(!canEditAnnouncement()) throw new Error('관리자만 모임 안내를 수정할 수 있어요.');
       return sb.from('announcement').upsert({
         book_id:'global',
         next_date:a.next.date||'', next_time:a.next.time||'', next_place:a.next.place||'', next_note:a.next.note||'',
@@ -3829,7 +3836,7 @@ function announceViewHtml(){
      들어와도 절대 두 줄로 밀리지 않도록 nowrap+ellipsis 안전장치만 추가했다(모바일 폭에서
      실제 가장 긴 제목으로 확인했을 때는 잘리지 않고 한 줄에 들어감). */
   var bookCaption = '<span class="section-sub-book"><b>지금 읽는 책</b> · '+esc(readBook.title)+'</span>';
-  var editBtn = isAdmin() ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-edit-announcement">편집</button>' : '';
+  var editBtn = canEditAnnouncement() ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-edit-announcement">편집</button>' : '';
   return '<div class="section-head"><h2>모임 안내</h2><div class="announce-head-right">'+bookCaption+editBtn+'</div></div>' +
   '<div class="announce-grid">' +
     '<div class="announce-card">' +
@@ -3854,8 +3861,41 @@ function announceViewHtml(){
     '</div>' +
   '</div>';
 }
+function canEditAnnouncement(){
+  var user=currentUser();
+  return !!(SESSION && user && user.isAdmin && !user.isDeleted);
+}
+function announcementEditFields(){
+  return [['next','date','an-date'],['next','time','an-time'],['next','place','an-place'],['next','note','an-next-note'],
+    ['reading','bookId','an-book'],['reading','meetingNo','an-meeting-no'],['reading','chapter','an-chapter'],
+    ['reading','range','an-range'],['reading','concept','an-concept'],['reading','note','an-reading-note']];
+}
+function setAnnouncementEditDisabled(disabled){
+  announcementEditFields().map(function(field){return field[2];}).concat(['btn-close-announcement']).forEach(function(id){
+    var element=document.getElementById(id);if(element)element.disabled=disabled;
+  });
+}
+function saveAnnouncementEdit(button){
+  if(!canEditAnnouncement() || announcementSaveBusy) return Promise.resolve(false);
+  var fields=announcementEditFields(),draft=announcementEditDraft;
+  var changes=[];
+  fields.forEach(function(field){var input=document.getElementById(field[2]);if(input)changes.push({group:field[0],key:field[1],value:input.value.trim()});});
+  if(!changes.length) return Promise.resolve(false);
+  announcementSaveBusy=true;
+  setAnnouncementEditDisabled(true);
+  return saveState(function(next){
+    if(!canEditAnnouncement()) throw new Error('관리자만 모임 안내를 수정할 수 있어요.');
+    changes.forEach(function(change){next.announcement[change.group][change.key]=change.value;});
+  }, {button:button,originalLabel:'저장',savingLabel:'저장 중…',render:false,
+    onSuccess:function(){
+      announcementSaveBusy=false;
+      if((draft&&announcementEditDraft===draft)||document.getElementById('btn-save-announcement')===button){editingAnnouncement=false;announcementEditDraft=null;}
+      render();showToast('이번 모임 정보를 수정했어요.');
+    },onFailure:function(){announcementSaveBusy=false;setAnnouncementEditDisabled(false);}
+  }).then(function(saved){announcementSaveBusy=false;setAnnouncementEditDisabled(false);return saved;});
+}
 function announceEditHtml(){
-  var a = STATE.announcement;
+  var a = announcementEditDraft || STATE.announcement;
   var bookOptions = BOOKS.map(function(b){ return '<option value="'+b.id+'"'+(a.reading.bookId===b.id?' selected':'')+'>'+esc(b.title)+'</option>'; }).join('');
   var currentReadBook = bookById(a.reading.bookId) || BOOKS[0];
   return '<div class="card announce-edit">' +
@@ -3875,6 +3915,24 @@ function announceEditHtml(){
 }
 function homeUnlockedIds(){
   return BOOKS.filter(function(book){ return !isBookLocked(book); }).map(function(book){ return book.id; });
+}
+function homeMeetingHtml(){
+  var a=STATE.announcement,admin=canEditAnnouncement();
+  var heading='<div class="home-card-head"><h2>이번 모임</h2>'+
+    (admin&&!editingAnnouncement?'<button type="button" class="btn btn-ghost btn-sm" id="btn-edit-announcement" aria-label="이번 모임 수정">수정</button>':'')+'</div>';
+  var content;
+  if(admin&&editingAnnouncement){
+    a=announcementEditDraft || a;
+    content='<div class="home-meeting-edit" role="group" aria-label="이번 모임 수정">'+
+      [['날짜','an-date',a.next.date,'예) 9월 28일 (월)'],['시간','an-time',a.next.time,'예) 오후 7시 30분'],
+       ['장소','an-place',a.next.place,'예) 교육관 2층'],['읽을 챕터','an-chapter',a.reading.chapter,'예) 3장'],
+       ['읽을 페이지 범위','an-range',a.reading.range,'예) 80~120쪽']].map(function(field){
+        return '<div class="home-meeting-field"><label class="field-label" for="'+field[1]+'">'+field[0]+'</label><input type="text" id="'+field[1]+'" value="'+esc(field[2]||'')+'" placeholder="'+field[3]+'"></div>';
+      }).join('')+'<div class="home-meeting-edit-actions"><button type="button" class="btn btn-ghost btn-sm" id="btn-close-announcement">취소</button><button type="button" class="btn btn-primary btn-sm" id="btn-save-announcement"'+(announcementSaveBusy?' disabled':'')+'>'+(announcementSaveBusy?'저장 중…':'저장')+'</button></div></div>';
+  }else{
+    content='<dl class="home-meeting-facts">'+[['날짜',a.next.date],['시간',a.next.time],['장소',a.next.place],['읽을 범위',[a.reading.chapter,a.reading.range].filter(Boolean).join(' · ')]].map(function(field){return '<div><dt>'+field[0]+'</dt><dd>'+esc(field[1]||'추후 안내')+'</dd></div>';}).join('')+'</dl>';
+  }
+  return '<section class="home-card home-meeting"><div class="home-meeting-summary">'+heading+content+'</div></section>';
 }
 function homeDailyVerse(){
   return typeof GrowellDailyVerse!=='undefined'&&typeof GrowellDailyVerses!=='undefined'?GrowellDailyVerse.getCompact(GrowellDailyVerses):null;
@@ -4022,8 +4080,7 @@ function memberHomeHtml(){
       '<div class="home-actions">'+habitLinks+'</div></section>' +
       '<section class="home-card home-note"><div class="home-note-summary"><h2>'+svgIcon(I_LOCK)+' 나만 보는 기록</h2><small>마음에 남은 한 줄을 남겨요.</small></div>' +
       (!user?'<a class="home-link" href="#/login">로그인하고 쓰기 →</a>':(book?'<button class="home-link" type="button" data-home-write="'+book.id+'">한 줄 남기기 →</button>':''))+'</section>' +
-      '<section class="home-card home-meeting"><div class="home-meeting-summary"><h2>이번 모임</h2><dl class="home-meeting-facts">' +
-      [['날짜',a.next.date],['시간',a.next.time],['장소',a.next.place],['읽을 범위',[a.reading.chapter,a.reading.range].filter(Boolean).join(' · ')]].map(function(field){return '<div><dt>'+field[0]+'</dt><dd>'+esc(field[1]||'추후 안내')+'</dd></div>';}).join('')+'</dl></div></section>' +
+      homeMeetingHtml() +
     '</div>' +
     '<section class="home-community" aria-labelledby="home-community-title"><div class="home-section-head"><div><h2 id="home-community-title">모임원의 새 글</h2><p>최근 공유 글 3개</p></div><a class="home-link" href="#/community">전체 보기 →</a></div>' +
       (postsStatus || (latest.length ? '<ul class="home-posts">'+homePostsHtml(latest)+'</ul>' : '<p class="home-empty">다른 모임원이 나눈 글이 아직 없어요.</p>'))+'</section>' +
@@ -4101,7 +4158,7 @@ function welcomeHomeHtml(){
     '</div>' +
   '</section>' +
   '<section class="section wrap">' +
-    (editingAnnouncement && isAdmin() ? announceEditHtml() : announceViewHtml()) +
+    (editingAnnouncement && canEditAnnouncement() ? announceEditHtml() : announceViewHtml()) +
   '</section>' +
   '<section class="section wrap">' +
     '<div class="section-head"><h2>독서모임 여정</h2><span class="section-sub">책 별로 나의 공간과 나눔 공간, 활동지가 준비돼요.</span></div>' +
@@ -6482,29 +6539,19 @@ function bindEvents(route){
 
   /* home: 모임 안내 편집 (admin) */
   var editAnnounceBtn = document.getElementById('btn-edit-announcement');
-  if(editAnnounceBtn) editAnnounceBtn.addEventListener('click', function(){ editingAnnouncement = true; render(); });
+  if(editAnnounceBtn) editAnnounceBtn.addEventListener('click', function(){ if(!canEditAnnouncement()||announcementSaveBusy)return; announcementEditDraft=JSON.parse(JSON.stringify(STATE.announcement)); editingAnnouncement = true; render(); });
   var closeAnnounceBtn = document.getElementById('btn-close-announcement');
-  if(closeAnnounceBtn) closeAnnounceBtn.addEventListener('click', function(){ editingAnnouncement = false; render(); });
+  if(closeAnnounceBtn) closeAnnounceBtn.addEventListener('click', function(){ if(announcementSaveBusy)return;editingAnnouncement = false;announcementEditDraft=null; render(); });
   var saveAnnounceBtn = document.getElementById('btn-save-announcement');
   if(saveAnnounceBtn){
-    saveAnnounceBtn.addEventListener('click', function(){
-      var next = {
-        next:{
-          date: document.getElementById('an-date').value.trim(),
-          time: document.getElementById('an-time').value.trim(),
-          place: document.getElementById('an-place').value.trim(),
-          note: document.getElementById('an-next-note').value.trim()
-        },
-        reading:{
-          bookId: document.getElementById('an-book').value,
-          meetingNo: document.getElementById('an-meeting-no').value.trim(),
-          chapter: document.getElementById('an-chapter').value.trim(),
-          range: document.getElementById('an-range').value.trim(),
-          concept: document.getElementById('an-concept').value.trim(),
-          note: document.getElementById('an-reading-note').value.trim()
-        }
-      };
-      saveState(function(nextState){ nextState.announcement = next; editingAnnouncement = false; }, {button:saveAnnounceBtn, originalLabel:'저장', savingLabel:'저장 중…'});
+    saveAnnounceBtn.addEventListener('click', function(){saveAnnouncementEdit(saveAnnounceBtn);});
+    saveAnnounceBtn.disabled=announcementSaveBusy;
+    setAnnouncementEditDisabled(announcementSaveBusy);
+    announcementEditFields().forEach(function(field){
+      var input=document.getElementById(field[2]);
+      if(input)input.addEventListener('input',function(){
+        if(canEditAnnouncement()&&announcementEditDraft&&!announcementSaveBusy)announcementEditDraft[field[0]][field[1]]=input.value;
+      });
     });
   }
 

@@ -229,6 +229,14 @@
 .home-dashboard .home-note-summary h2 svg { width: 18px; height: 18px; flex: none; }
 .home-dashboard .home-note-summary small { display: block; color: var(--ink-soft); font-size: 14px; font-weight: 500; line-height: 1.5; }
 .home-dashboard .home-meeting-summary { width: 100%; }
+.home-dashboard .home-meeting-summary .home-card-head { align-items: center; margin-bottom: 0; }
+.home-dashboard .home-meeting-summary .home-card-head h2 { margin-bottom: 0; }
+.home-dashboard .home-meeting-edit { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 14px; }
+.home-dashboard .home-meeting-field { min-width: 0; }
+.home-dashboard .home-meeting-field:nth-child(3) { grid-column: 1 / -1; }
+.home-dashboard .home-meeting-field .field-label { display: block; margin: 0 0 5px; font-size: 13px; }
+.home-dashboard .home-meeting-field input { width: 100%; min-width: 0; font-size: 14px; padding: 10px; }
+.home-dashboard .home-meeting-edit-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .home-dashboard .home-meeting-facts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin: 14px 0 0; }
 .home-dashboard .home-meeting-facts > div { min-width: 0; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .home-dashboard .home-meeting-facts dt { color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.6; }
