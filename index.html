@@ -5104,9 +5104,7 @@ function mineTabHtml(book, postId){
       '<div class="empty feed-empty-search" id="empty-'+gridId+'" style="display:none">검색 결과가 없어요.</div>'
     : '<div class="empty">아직 나의 공간에 남긴 기록이 없어요.</div>';
   setTimeout(function(){ decryptListInto(entries); }, 0);
-  var activeTimer=readingTimer&&readingTimer.userId===SESSION.userId&&readingTimer.bookId===book.id;
-  var readingSection=activeTimer?readingCard:'<details class="space-reading-wrap"><summary>독서 타이머 · 읽은 시간과 진도 보기</summary>'+readingCard+'</details>';
-  return composer + readingSection+'<p class="space-private-note">'+svgIcon(I_LOCK)+' 나의 기록은 암호화되어 나에게만 보여요. <a href="#/profile/edit">복구 파일 관리</a></p>' + searchRow + grid;
+  return composer + readingCard+'<p class="space-private-note">'+svgIcon(I_LOCK)+' 나의 기록은 암호화되어 나에게만 보여요. <a href="#/profile/edit">복구 파일 관리</a></p>' + searchRow + grid;
 }
 function decryptListInto(entries){
   if(!SESSION)return;

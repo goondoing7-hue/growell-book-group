@@ -58,9 +58,6 @@
 .book-page .feed-tile-count svg{width:16px;height:16px}
 .space-read-more{color:var(--space-green);text-decoration:none;font-size:14px;font-weight:650;padding:4px 0}
 .space-private-note{font-size:13px;color:var(--space-muted);margin:14px 0 24px}
-.space-reading-wrap{margin:0 0 20px}
-.space-reading-wrap>summary{padding:13px 0;font-size:14px;color:var(--space-green);font-weight:650;cursor:pointer}
-.space-reading-wrap .reading-card{margin-bottom:12px}
 .space-composer-label{display:flex;align-items:center;gap:6px;margin-bottom:16px;font-size:13px;color:var(--space-green)}
 .space-composer-label>svg,.space-private-note>svg,.feed-tile-foot>span>svg{width:16px;height:16px;flex:none;vertical-align:middle}
 .feed-tile-foot>span{display:inline-flex;align-items:center;gap:6px}
