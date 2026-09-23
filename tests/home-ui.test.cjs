@@ -7,6 +7,7 @@ const GrowellHome=require('../homeDomain.js');
 const GrowellReadingTimer=require('../readingTimerDomain.js');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),source.indexOf('function welcomeHomeHtml(){'));
+const authorSource=source.slice(source.indexOf('function publicAuthorHtml('),source.indexOf('/* 헤더 프로필 버튼용',source.indexOf('function publicAuthorHtml(')));
 const escSource=source.slice(source.indexOf('function esc(s){'),source.indexOf('function nlToBr('));
 const timerSource=source.slice(source.indexOf('function readingTimerElapsedMs(){'),source.indexOf('function activeReadingStripHtml('));
 const timerEventsSource=source.slice(source.indexOf('function bindReadingTimerEvents(){'),source.indexOf('function submitWorksheet('));
@@ -75,9 +76,9 @@ function harness(){
     memberDataStatusHtml:()=>'',currentUser:()=>c.SESSION && c.STATE.users[c.SESSION.userId] || null,myCurrentPage:()=>0,
     myReadingLogs:bookId=>Object.values(c.STATE.readingLogs).filter(log=>c.SESSION&&log.userId===c.SESSION.userId&&log.bookId===bookId),
     totalReadSeconds:bookId=>c.myReadingLogs(bookId).reduce((sum,log)=>sum+log.seconds,0),
-    svgIcon:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,
+    svgIcon:()=>'',avatarHtml:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,
     loginGateHtml:message=>message,sharePostCardHtml:()=>'<article>shared</article>'};
-  vm.createContext(c);vm.runInContext(escSource+timerSource+timerEventsSource+homeSource,c);
+  vm.createContext(c);vm.runInContext(escSource+authorSource+timerSource+timerEventsSource+homeSource,c);
   return {c,controls,queued,opened,renders,createdElements,toasts,storage};
 }
 

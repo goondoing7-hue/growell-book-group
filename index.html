@@ -8,42 +8,30 @@
      보이게 된다(요청하신 문제의 실제 원인). Claude Artifact로 게시할 때는 플랫폼이 이 태그를
      자동으로 넣어줬지만, Vercel에 올리는 이 파일에는 <html>/<head> 자체가 빠져 있었음. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GROWELL 다이어리</title>
-<!-- 카카오톡 등에 사이트 주소를 공유했을 때 제목·설명·이미지가 카드로 미리보기되게 하는 태그.
-     카카오톡의 링크 미리보기 봇은 자바스크립트를 실행하지 않고 이 <head> 안의 태그만 그대로
-     읽어가기 때문에, 반드시 정적 HTML에 값이 박혀 있어야 한다(og:image는 절대경로 URL이어야
-     실제로 이미지를 받아갈 수 있음). 이미지는 책 표지 4장을 정렬형으로 배치한
-     covers/og-image-v2.jpg(1200x630, 표준 OG 비율) — 파일명 끝에 -v2를 붙인 이유는, 카카오톡
-     "공유 디버거"에서 캐시를 초기화해도 실제 카카오톡 채팅창의 링크 미리보기는 이미지 URL 자체를
-     키로 캐시해두고 있어서 내용만 바꿔서는 계속 예전 이미지가 나오는 문제가 있었기 때문 —
-     이미지 URL을 아예 새 주소로 바꿔서 카카오가 처음 보는 이미지로 인식하게 만든 것.
-     앞으로 이미지를 또 바꿀 일이 있으면 파일명 끝의 버전 숫자를 한 번 더 올려야 함(v3, v4...). -->
+<title>GROWELL · 읽고 나누며 자라는 우리</title>
+<!-- 공유 미리보기는 정적 메타데이터와 1200×630 이미지를 사용한다.
+     이미지 URL의 버전을 바꿔 새 브랜드 이미지의 캐시를 구분한다. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="GROWELL 독서모임">
-<meta property="og:title" content="GROWELL 독서모임 — 나를 만나는 중입니다">
-<meta property="og:description" content="읽고 나누고 생각하며 자라는 우리, DBKS GROWELL 독서모임 공간이에요.">
-<meta property="og:image" content="https://growell-book.vercel.app/covers/og-image-v2.jpg">
+<meta property="og:title" content="GROWELL · 읽고 나누며 자라는 우리">
+<meta property="og:description" content="책에서 시작해 일상의 작은 변화로. 감정, 생각, 신체, 행동을 함께 읽고 기록하는 독서모임.">
+<meta property="og:image" content="https://growell-book.vercel.app/covers/og-image-v3.jpg">
+<meta property="og:image:alt" content="GROWELL — 읽고 나누며 자라는 우리">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:url" content="https://growell-book.vercel.app/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="GROWELL 독서모임 — 나를 만나는 중입니다">
-<meta name="twitter:description" content="읽고 나누고 생각하며 자라는 우리, DBKS GROWELL 독서모임 공간이에요.">
-<meta name="twitter:image" content="https://growell-book.vercel.app/covers/og-image-v2.jpg">
-<!-- 파비콘 + "홈 화면에 추가/설치" 아이콘 세트. 크롬의 "설치" 또는 "바로가기 만들기"는
-     기본적으로 아래 manifest.json의 icons(192/512)를 사용하고, iOS Safari의 "홈 화면에 추가"는
-     apple-touch-icon을 쓴다 — 브라우저 탭 아이콘(favicon)까지 포함해 크기별로 전부 준비해둠.
-     그림은 로고의 책+새싹 마스코트를 정중앙에 배치해 새로 만든 covers/icon-*.png. -->
+<meta name="twitter:title" content="GROWELL · 읽고 나누며 자라는 우리">
+<meta name="twitter:description" content="책에서 시작해 일상의 작은 변화로. 함께 읽고 기록하는 독서모임.">
+<meta name="twitter:image" content="https://growell-book.vercel.app/covers/og-image-v3.jpg">
+<!-- 설치·iOS 홈 화면·탭 아이콘은 헤더와 같은 책 모양을 사용한다. -->
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="covers/favicon.ico" sizes="any">
-<link rel="icon" href="covers/icon-32.png" type="image/png" sizes="32x32">
-<link rel="icon" href="covers/icon-192.png" type="image/png" sizes="192x192">
-<link rel="icon" href="covers/icon-512.png" type="image/png" sizes="512x512">
-<link rel="apple-touch-icon" href="covers/icon-180.png">
-<meta name="theme-color" content="#F3F1EC">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&display=swap">
+<link rel="icon" href="covers/favicon-v3.ico" sizes="any">
+<link rel="icon" href="covers/growell-icon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="covers/growell-icon-192.png" type="image/png" sizes="192x192">
+<link rel="icon" href="covers/growell-icon-512.png" type="image/png" sizes="512x512">
+<link rel="apple-touch-icon" href="covers/growell-icon-180.png">
+<meta name="theme-color" content="#F5F5EF">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css">
 <style id="app-style">
   :root{
@@ -68,7 +56,8 @@
     --highlight:#FBE28A;
     --font-display:'Pretendard Variable',Pretendard,'Malgun Gothic',sans-serif;
     --font-body:'Pretendard Variable',Pretendard,'Malgun Gothic',sans-serif;
-    --font-mono:'IBM Plex Mono','SFMono-Regular',Consolas,monospace;
+    --font-mono:var(--font-body);
+    --font-code:'SFMono-Regular',Consolas,monospace;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -517,11 +506,11 @@
   .note-editor:empty:before{content:attr(data-placeholder); color:var(--ink-faint);}
   .note-editor ul,.note-editor ol{padding-left:1.3em; margin:6px 0;}
   .note-editor blockquote{border-left:3px solid var(--line-strong); margin:8px 0; padding:2px 0 2px 12px; color:var(--ink-soft); font-style:italic;}
-  .note-editor pre,.note-editor code{font-family:var(--font-mono); background:var(--surface-2); border-radius:6px;}
+  .note-editor pre,.note-editor code{font-family:var(--font-code); background:var(--surface-2); border-radius:6px;}
   .note-editor pre{padding:10px 12px; margin:6px 0; white-space:pre-wrap; font-size:12.5px;}
   .rich-content ul,.rich-content ol{padding-left:1.3em; margin:6px 0;}
   .rich-content blockquote{border-left:3px solid var(--line-strong); margin:8px 0; padding:2px 0 2px 12px; color:var(--ink-soft); font-style:italic;}
-  .rich-content pre,.rich-content code{font-family:var(--font-mono); background:var(--surface-2); border-radius:6px;}
+  .rich-content pre,.rich-content code{font-family:var(--font-code); background:var(--surface-2); border-radius:6px;}
   .rich-content pre{padding:10px 12px; margin:6px 0; white-space:pre-wrap; font-size:13px;}
 
   .photo-attach{display:flex; align-items:center; gap:10px; margin:10px 0 4px; flex-wrap:wrap;}
@@ -1073,9 +1062,12 @@
 <link rel="stylesheet" href="habits.css">
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
+<link rel="stylesheet" href="brand.css">
 <script src="profile.js"></script>
 <script src="oauthDomain.js"></script>
 <script src="homeDomain.js"></script>
+<script src="communityDomain.js"></script>
+<script src="communityFeatures.js"></script>
 <script src="habitDomain.js"></script>
 <script src="readingTimerDomain.js"></script>
 </head>
@@ -1086,12 +1078,12 @@
      번 더 보였음. 이 화면을 정적 HTML(+ 이미 <head>에 있는 CSS)로 옮겨두면 브라우저가 그릴 수 있는
      가장 이른 시점에 곧바로 이 화면부터 그려져서, OS 아이콘 스플래시 다음에 다른 화면(빈 화면 등) 없이
      바로 이 화면으로 이어짐. 데이터를 다 불러오면 아래 boot()가 이 자리를 실제 화면으로 교체한다. -->
-<div id="app"><div class="boot-splash">
-  <img class="boot-splash-icon" src="/covers/mascot-icon.png" alt="">
+<div id="app"><div class="boot-splash" role="status" aria-label="GROWELL을 불러오고 있어요">
+  <img class="boot-splash-icon" src="/covers/growell-icon-192.png" alt="" width="192" height="192">
   <div class="boot-splash-text">
     <div class="boot-splash-word">GROWELL</div>
-    <div class="boot-splash-tagline">읽고, 나누고, 생각하며 자라는 우리</div>
-    <div class="boot-splash-dots"><span></span><span></span><span></span></div>
+    <div class="boot-splash-tagline">읽고 나누며, 오늘도 한 걸음</div>
+    <div class="boot-splash-dots" aria-hidden="true"><span></span><span></span><span></span></div>
   </div>
 </div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -1403,7 +1395,7 @@ const COVER_thought = '/covers/thought.jpg';
 const COVER_body = '/covers/body.jpg';
 const COVER_action = '/covers/action.jpg';
 
-const LOGO_SRC = '/covers/logo.webp';
+const LOGO_SRC = '/covers/brand-book.svg';
 
 /* ---------------- book config ---------------- */
 var BOOKS = [
@@ -2002,6 +1994,7 @@ function finishSaveButton(opts){
   if(opts.button){ opts.button.disabled=false; opts.button.textContent=opts.originalLabel||'저장'; }
 }
 function clearMemberSession(){
+  if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.reset();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
   if(typeof pendingProfileAvatar!=='undefined') pendingProfileAvatar=undefined;
@@ -3007,7 +3000,11 @@ function deleteHabit(habitId, btn){
   var h = STATE.habits[habitId];
   if(!h || h.userId!==SESSION.userId) return;
   if(!confirm('이 습관을 삭제할까요? 체크 기록도 함께 사라져요.')) return;
-  saveState(function(next){ delete next.habits[habitId]; }, {button:btn});
+  saveState(function(next){ delete next.habits[habitId]; }, {button:btn,onSuccess:function(){
+    if(habitEditingId===habitId){habitFormOpenFor=null;habitEditingId=null;}
+    if(habitHistoryOpenFor===habitId){habitHistoryOpenFor=null;habitHistoryMonth=null;}
+    render();
+  }});
 }
 /* 체크는 즉시 표시하고 입력한 순서대로 저장한다. 날짜별 마지막 의도를 보존하므로 실패 후
    재시도하거나 같은 날짜를 연속으로 눌러도 다른 날짜의 기록을 덮어쓰지 않는다. */
@@ -3036,6 +3033,13 @@ function refreshHabitSaveUI(habitId){
     var parts=button.getAttribute('data-habit-day').split('|');
     if(parts[0]!==habitId) return;
     var status=GrowellHabits.status(habit,parts[1],today),checked=status==='success',symbol=checked?'✓':status==='fail'?'−':status==='pending'?'○':'';
+    if(button.hasAttribute('data-habit-today')){
+      var todayState=habitTodayState(habit,today);
+      button.classList.toggle('is-checked',todayState.checked);button.disabled=!todayState.canCheck;
+      button.setAttribute('aria-pressed',todayState.checked?'true':'false');button.setAttribute('aria-label',habit.name+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':''));
+      var todayLabel=button.querySelector('[data-habit-today-label]');if(todayLabel) todayLabel.textContent=todayState.label;
+      return;
+    }
     var calendar=button.classList.contains('habit-hist-cell'),mark=calendar?button.querySelector('[data-habit-cell-mark]'):button;
     if(mark) mark.textContent=calendar?symbol:checked?'✓':status==='fail'?'−':'';
     button.setAttribute('aria-pressed',checked?'true':'false');button.setAttribute('aria-label',parts[1]+' '+habitStatusLabel(status)+' · 체크 변경');
@@ -3047,8 +3051,10 @@ function refreshHabitSaveUI(habitId){
     if(card.getAttribute('data-habit-card')!==habitId) return;
     var progress=habitWeekProgress(habit,weekDatesOf(mondayOf(new Date()))),el=card.querySelector('.habit-progress');
     if(el){el.classList.toggle('is-done',progress.total>0&&progress.done===progress.total);el.textContent=progress.total?progress.done+'/'+progress.total+'일 실천':'이번 주 목표 기간 없음';}
-    var summary=card.querySelector('[data-habit-card-summary]');if(summary) summary.textContent='지금까지 '+stats.success+'번 실천 · '+stats.streak+'일 연속';
-    var status=card.querySelector('[data-habit-save-status]');if(status) status.innerHTML=habitSaveStatusHtml(habitId);
+    card.classList.toggle('is-today-success',GrowellHabits.status(habit,today,today)==='success');
+    var summary=card.querySelector('[data-habit-card-summary]');if(summary) summary.innerHTML=habitStreakHtml(habit,stats);
+    var goal=card.querySelector('[data-habit-card-goal]');if(goal) goal.innerHTML=habitCardProgressHtml(stats);
+    var status=card.querySelector('[data-habit-save-status]');if(status) status.innerHTML=habitCardSaveStatusHtml(habitId);
   });
   document.querySelectorAll('[data-habit-stats-panel]').forEach(function(panel){if(panel.getAttribute('data-habit-stats-panel')===habitId) panel.innerHTML=habitStatsPanelHtml(habit);});
   document.querySelectorAll('[data-habit-month-summary]').forEach(function(summary){
@@ -3424,19 +3430,19 @@ function headerHtml(route){
   var navHtml = navItems.map(function(n){
     if(n.id==='home'){
       var active = route.view==='home';
-      return '<a class="nav-pill'+(active?' is-active':'')+'" href="#/">홈</a>';
+      return '<a class="nav-pill'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' href="#/">홈</a>';
     }
     var b = n.book;
     var active = route.view==='book' && route.bookId===b.id;
     var locked = isBookLocked(b);
-    return '<a class="nav-pill'+(active?' is-active':'')+'" style="--accent-c:var(--'+b.accent+')" href="#/book/'+b.id+'/share"><span class="dot"></span>'+b.area+(locked?svgIcon(I_LOCK,'0 0 24 24'):'')+'</a>';
+    return '<a class="nav-pill'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' href="#/book/'+b.id+'/share">'+b.area+(locked?svgIcon(I_LOCK,'0 0 24 24'):'')+'</a>';
   }).join('');
   var admin = isAdmin();
   var right;
   if(SESSION){
     var av = headerAvatarHtml();
     right = '<div class="user-menu">' +
-      '<button class="profile-btn" id="btn-profile-toggle" type="button" aria-haspopup="true" aria-expanded="false" title="'+esc(SESSION.name)+'">'+av+'</button>' +
+      '<button class="profile-btn" id="btn-profile-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="profile-dropdown" aria-label="내 프로필과 계정 메뉴" title="내 프로필">'+av+'</button>' +
       '<div class="profile-dropdown" id="profile-dropdown" hidden>' +
         '<div class="profile-dropdown-head">'+av+'<div class="profile-dropdown-name"><span>'+esc(SESSION.name)+'</span>'+(admin?'<span class="admin-badge">운영자</span>':'')+'</div></div>' +
         '<div class="profile-dropdown-sep"></div>' +
@@ -3444,21 +3450,19 @@ function headerHtml(route){
         (admin
           ? '<a class="profile-dropdown-item" href="#/admin/users">가입자 목록</a>'
           : '<button class="profile-dropdown-item" id="btn-grant-admin" type="button">운영자 코드 입력</button>') +
-        '<button class="profile-dropdown-item" id="btn-delete-account" type="button">계정 삭제</button>' +
-        '<button class="profile-dropdown-item is-danger" id="btn-logout" type="button">로그아웃</button>' +
+        '<button class="profile-dropdown-item" id="btn-theme" type="button">화면 테마 바꾸기</button>' +
+        '<button class="profile-dropdown-item is-danger" id="btn-delete-account" type="button">계정 삭제</button>' +
       '</div>' +
-    '</div>';
+    '</div><button class="header-logout" id="btn-logout" type="button">로그아웃</button>';
   } else {
-    right = '<button class="btn btn-primary btn-sm" id="btn-login-open" type="button">로그인</button>';
+    right = '<button class="icon-btn" id="btn-theme" type="button" aria-label="테마 전환">'+I_SUN+'</button><button class="btn btn-primary btn-sm" id="btn-login-open" type="button">로그인</button>';
   }
   return '' +
-  '<header class="site-header"><div class="header-inner">' +
-    '<a class="brand" href="#/"><img src="'+LOGO_SRC+'" alt="DBKS GROWELL 독서모임"></a>' +
-    '<nav class="primary-nav">'+navHtml+'</nav>' +
-    '<div class="header-actions">' +
-      '<button class="icon-btn" id="btn-theme" type="button" aria-label="테마 전환">'+I_SUN+'</button>' +
-      right +
-    '</div>' +
+  '<header class="site-header"><div class="header-top"><div class="header-inner">' +
+    '<a class="brand" href="#/" aria-label="GROWELL 홈"><svg class="brand-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.2 5 3.2 2.5 4.5v14c3-1.1 6.5-1 9.5 1.5 3-2.5 6.5-2.6 9.5-1.5v-14C19 3.2 15.5 3.2 12 5.5Z"/><path d="M12 5.5V20"/></svg><span>GROWELL</span></a>' +
+    '<div class="header-actions">'+right+'</div>' +
+  '</div></div><div class="header-inner header-nav-row"><nav class="primary-nav" aria-label="주요 메뉴">'+navHtml+'</nav>' +
+    '<span class="member-space-label">'+svgIcon(I_LOCK)+'<span>'+(SESSION?'회원 공간':'독서모임')+'</span></span>' +
   '</div></header>';
 }
 
@@ -3610,11 +3614,11 @@ function homePostsHtml(posts){
     var author = (STATE.users[post.userId]||{}).name || post.userName || '모임원';
     var created = GrowellHome.parseTimestamp(post.createdAt);
     var date = created===null ? '' : new Date(created).toLocaleDateString('ko-KR',{month:'long',day:'numeric'});
-    return '<li><a class="home-post" href="#/community/post/'+encodeURIComponent(post.id)+'">' +
-      '<span class="home-post-meta">'+esc(author)+(date?' · '+esc(date):'')+'</span>' +
+    return '<li><article class="home-post">' +
+      '<div class="home-post-meta community-home-author">'+publicAuthorHtml(post.userId,author,book.accent)+(date?'<span>'+esc(date)+'</span>':'')+'</div><a class="community-home-story" href="#/community/post/'+encodeURIComponent(post.id)+'">' +
       '<strong class="home-post-title">'+esc(title)+'</strong>' +
       (excerpt ? '<span class="home-post-excerpt">'+esc(excerpt.slice(0,240))+'</span>' : '') +
-      '<span class="home-post-book">'+esc(book.title)+'</span></a></li>';
+      '<span class="home-post-book">'+esc(book.title)+'</span></a></article></li>';
   }).join('');
 }
 function homePostsStatusHtml(){
@@ -4074,13 +4078,17 @@ function avatarHtml(userId, name, accent){
   if(avatarUrl){ return '<div class="avatar avatar-img"><img src="'+esc(avatarUrl)+'" alt="'+esc(name)+'" loading="lazy"></div>'; }
   return '<div class="avatar" style="background:var(--'+accent+'-soft); color:var(--'+accent+'-ink)">'+esc(initials(name))+'</div>';
 }
+function publicAuthorHtml(userId,name,accent){
+  var displayName=(STATE.users[userId]||{}).name||name||'모임원';
+  return '<button class="community-author-control" type="button" data-community-author="'+esc(userId)+'" aria-haspopup="dialog" aria-label="'+esc(displayName)+'님의 나눔 글 보기">'+avatarHtml(userId,displayName,accent)+'<span>'+esc(displayName)+'</span></button>';
+}
 /* 헤더 프로필 버튼용 아바타 — 특정 책의 accent 색이 아니라 중립 톤을 씀 */
 function headerAvatarHtml(){
   if(!SESSION) return '';
   var u = STATE.users[SESSION.userId];
   var avatarUrl=GrowellProfile.safeAvatarUrl(u && u.avatar);
   if(avatarUrl){ return '<span class="avatar avatar-img"><img src="'+esc(avatarUrl)+'" alt="'+esc(SESSION.name)+'"></span>'; }
-  return '<span class="avatar" style="background:var(--surface-2); color:var(--ink-soft)">'+esc(initials(SESSION.name))+'</span>';
+  return '<span class="avatar avatar-empty" aria-hidden="true"></span>';
 }
 /* 색 선택은 도구의 설정만 바꾸고, 주 아이콘을 눌렀을 때 선택한 본문에 적용한다. */
 var RT_TEXT_COLORS = [
@@ -4458,7 +4466,7 @@ function commentsForPost(postId){
 function commentThreadHtml(postId, list){
   var items = list.map(function(c){
     var mineC = SESSION && SESSION.userId===c.userId;
-    return '<div class="comment-item"><div class="comment-row"><span class="comment-name">'+esc(c.userName)+'</span><span class="comment-time mono">'+fmtDate(c.createdAt)+'</span>'+
+    return '<div class="comment-item"><div class="comment-row"><button class="community-author-control comment-name" type="button" data-community-author="'+esc(c.userId)+'" aria-haspopup="dialog" aria-label="'+esc((STATE.users[c.userId]||{}).name||c.userName)+'님의 나눔 글 보기"><span>'+esc((STATE.users[c.userId]||{}).name||c.userName)+'</span></button><span class="comment-time mono">'+fmtDate(c.createdAt)+'</span>'+
       (mineC?'<button class="comment-del" data-del-comment="'+c.id+'" type="button" title="삭제">'+svgIcon(I_TRASH)+'</button>':'')+'</div>' +
       '<div class="comment-text">'+nlToBr(c.text)+'</div></div>';
   }).join('');
@@ -4522,7 +4530,7 @@ function sharePostCardHtml(book, p){
   /* 통찰 정리 글은 고정 크기 미리보기 박스(mediaHtml) 대신 상세보기에서 질문 3개를 그대로
      보여준다(bodyHtml) — 몇 번째 모임인지는 카드 맨 아래 오른쪽에 배지로 표시(요청하신 배치). */
   return '<div class="card post'+(nb.ntKey?' nt-'+nb.ntKey:'')+'">' +
-    '<div class="post-head"><div class="post-who">'+avatarHtml(p.userId, p.userName, book.accent)+'<div class="post-who-text"><span class="post-name">'+esc(p.userName)+'</span><span class="post-time mono">'+fmtDate(p.createdAt)+'</span></div></div>' +
+    '<div class="post-head"><div class="post-who">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="post-time mono">'+fmtDate(p.createdAt)+'</span></div>' +
     '<div class="post-head-side">'+nb.badgesHtml+checkinBadge+postEditDelHtml(mine, mine||isAdmin(), 'edit-post="'+p.id+'"', 'del-post="'+p.id+'"')+'</div></div>' +
     (nb.isInsight ? '<div class="post-body">'+nb.bodyHtml+'</div>' : (nb.mediaHtml + (nb.bodyHtml ? '<div class="post-body">'+nb.bodyHtml+'</div>' : ''))) +
     postActionsHtml(p.id, nb.meetingBadgeHtml) +
@@ -4534,7 +4542,7 @@ function sharePostTileHtml(book, p){
   var commentCount = commentsForPost(p.id).length;
   var href='#/book/'+book.id+'/share/post/'+p.id;
   return '<article class="card feed-tile" data-search-text="'+esc(searchText)+'">' +
-    '<div class="feed-tile-head">'+avatarHtml(p.userId,p.userName,book.accent)+'<span class="feed-tile-name" title="'+esc(p.userName)+'">'+esc(p.userName)+'</span><span class="space-post-date" title="'+esc(fmtDate(p.createdAt))+'">'+esc(fmtPostDate(p.createdAt))+'</span>'+spaceNoteTypeHtml(p)+'</div>' +
+    '<div class="feed-tile-head">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="space-post-date" title="'+esc(fmtDate(p.createdAt))+'">'+esc(fmtPostDate(p.createdAt))+'</span>'+spaceNoteTypeHtml(p)+'</div>' +
     spaceStoryHtml(p,href) +
     '<div class="feed-tile-foot"><span class="feed-tile-count">'+svgIcon(I_COMMENT)+' 댓글 '+commentCount+'</span><a class="space-read-more" href="'+esc(href)+'" aria-label="'+esc(p.title||'나눔 글')+' 더 읽기">더 읽기 →</a></div>' +
   '</article>';
@@ -4557,8 +4565,7 @@ function spaceHeadingHtml(book,type){
   return '<div class="space-head"><div><h2>'+(privateSpace?'나를 위한 기록':'함께 나누는 이야기')+'</h2><p>'+(privateSpace?'나의 문장과 사진, 솔직한 마음을 차곡차곡.':'한 문장도, 한 장의 사진도 좋은 시작이에요.')+'</p></div><button class="btn btn-primary" type="button" id="btn-open-'+type+'-composer" data-book="'+book.id+'">'+svgIcon(I_EDIT)+' '+(privateSpace?'나의 기록 쓰기':'생각 나누기')+'</button></div>';
 }
 function spacePromptHtml(book){
-  var questions={emotion:'최근 내 마음에 이름을 붙여 준 순간이 있었나요?',thought:'책 속의 어떤 생각이 나의 시선을 바꾸었나요?',body:'오늘 몸이 나에게 보내는 신호는 무엇인가요?',action:'이번 주에 작게 실천해 보고 싶은 것은 무엇인가요?'};
-  return '<div class="space-prompt">'+svgIcon(I_COMMENT)+'<div><small>이번 책으로 함께 생각해요</small><strong>'+esc(questions[book.id]||book.checkin.prompt||'책을 읽으며 어떤 생각이 떠올랐나요?')+'</strong></div><button class="btn btn-ghost" type="button" data-space-prompt="'+book.id+'">내 생각 남기기 →</button></div>';
+  return GrowellCommunityFeatures.promptHtml(book);
 }
 function shareTabHtml(book, postId){
   if(postId){
@@ -4795,11 +4802,15 @@ function habitPeriodLabel(habit){
   var start=GrowellHabits.start(habit,ymd(new Date()));
   return esc(start.replace(/-/g,'. '))+' ~ '+(habit.endDate?esc(habit.endDate.replace(/-/g,'. ')):'계속 실천');
 }
+function habitFactIconHtml(kind){
+  var shapes={place:'<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',time:'<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',goal:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',period:I_CAL,streak:'<path d="M13 3c1 4-3 5-3 8 0 1 1 2 2 2s2-1 2-3c3 2 4 4 4 6a6 6 0 0 1-12 0c0-2 1-4 3-6-1 4 1 5 2 5"/>'};
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(shapes[kind]||'')+'</svg>';
+}
 function habitFactsHtml(habit){
-  return '<dl class="habit-facts"><div><dt>장소</dt><dd>'+esc(habit.place||'아직 정하지 않았어요')+'</dd></div>'+
-    '<div><dt>시간</dt><dd>'+esc(habit.time||'편한 시간에')+'</dd></div>'+
-    '<div><dt>나의 목표</dt><dd>'+esc(habit.goal||'하루 한 번 실천하기')+'</dd></div>'+
-    '<div class="habit-fact-period"><dt>목표 기간</dt><dd>'+habitPeriodLabel(habit)+'</dd></div></dl>';
+  return '<dl class="habit-facts"><div><dt>'+habitFactIconHtml('place')+'장소</dt><dd>'+esc(habit.place||'아직 정하지 않았어요')+'</dd></div>'+
+    '<div><dt>'+habitFactIconHtml('time')+'시간</dt><dd>'+esc(habit.time||'편한 시간에')+'</dd></div>'+
+    '<div class="habit-fact-goal"><dt>'+habitFactIconHtml('goal')+'목표</dt><dd>'+esc(habit.goal||(GrowellHabits.behaviorType(habit)==='avoid'?'하루 한 번 절제하기':'하루 한 번 실천하기'))+'</dd></div>'+
+    '<div class="habit-fact-period"><dt>'+habitFactIconHtml('period')+'기간</dt><dd>'+habitPeriodLabel(habit)+'</dd></div></dl>';
 }
 function habitMonthSummaryHtml(habit,y,m){
   var stats=GrowellHabits.monthStats(habit,ymd(new Date()),y,m);
@@ -4815,6 +4826,19 @@ function habitKindIconHtml(habit){
   return '<svg class="habit-kind-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'+shape+'</svg>';
 }
 function habitKindBadgeHtml(habit){return '<span class="habit-kind-badge is-'+GrowellHabits.behaviorType(habit)+'">'+habitKindIconHtml(habit)+GrowellHabits.behaviorLabel(habit)+'</span>';}
+function habitTodayState(habit,today){
+  var checked=GrowellHabits.status(habit,today,today)==='success',canCheck=GrowellHabits.canCheck(habit,today,today);
+  return {checked:checked,canCheck:canCheck,label:canCheck?'오늘 성공':today<GrowellHabits.start(habit,today)?'시작 전':'기간 종료'};
+}
+function habitStreakHtml(habit,stats){
+  return habitFactIconHtml('streak')+'<span><strong>'+stats.streak+'일</strong> 연속 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천')+'</span>';
+}
+function habitCardProgressHtml(stats){
+  if(stats.total===null) return '<div class="habit-goal-head"><span>지금까지 <strong>'+stats.success+'일 성공</strong></span><span class="habit-goal-open">나의 속도로 계속</span></div>';
+  return '<div class="habit-goal-head"><span>성공 <strong>'+stats.success+'일</strong> / '+stats.total+'일</span><strong class="habit-goal-percent">'+stats.goalPercent+'%</strong></div>'+
+    '<div class="habit-goal-track" role="progressbar" aria-label="목표 기간 성공률" aria-valuenow="'+stats.goalPercent+'" aria-valuemin="0" aria-valuemax="100" aria-valuetext="목표 '+stats.total+'일 중 '+stats.success+'일 성공"><span style="width:'+stats.goalPercent+'%"></span></div>';
+}
+function habitCardSaveStatusHtml(habitId){return Object.keys(habitSaveIntents[habitId]||{}).length?habitSaveStatusHtml(habitId):'';}
 function habitCardHtml(habit){
   var today=new Date(),todayStr=ymd(today),weekDates=weekDatesOf(mondayOf(today)),prog=habitWeekProgress(habit,weekDates);
   var complete=prog.total>0&&prog.done===prog.total,stats=GrowellHabits.stats(habit,todayStr);
@@ -4825,13 +4849,14 @@ function habitCardHtml(habit){
     : '<div class="habit-week-head"><span>이번 주 · '+(weekDates[0].getMonth()+1)+'/'+weekDates[0].getDate()+' ~ '+(weekDates[6].getMonth()+1)+'/'+weekDates[6].getDate()+'</span><span class="habit-progress'+(complete?' is-done':'')+'">'+progress+'</span></div>'+habitWeekGridHtml(habit,weekDates,prog.checkedSet,todayStr);
   var download=todayStr===ymd(weekDates[6])&&prog.total>0
     ? '<div class="habit-save-row"><button type="button" class="btn btn-secondary habit-save-btn" data-save-habit="'+esc(habit.id)+'">이번 주 기록 카드 다운로드</button></div>':'';
-  return '<article class="card habit-card" data-habit-card="'+esc(habit.id)+'"><div class="habit-card-head">'+
-    '<div>'+habitKindBadgeHtml(habit)+'<h4 class="habit-name"><button type="button" class="habit-title-button" data-habit-history="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+esc(habit.name)+'</button></h4></div>'+
-    '<div class="habit-card-actions"><button type="button" class="habit-icon-btn" data-edit-habit="'+esc(habit.id)+'" title="습관 수정" aria-label="'+esc(habit.name)+' 수정">'+svgIcon(I_EDIT)+'</button>'+
-    '<button type="button" class="habit-icon-btn" data-delete-habit="'+esc(habit.id)+'" title="습관 삭제" aria-label="'+esc(habit.name)+' 삭제">'+svgIcon(I_TRASH)+'</button></div></div>'+
-    habitFactsHtml(habit)+calendar+
-    '<div class="habit-card-summary"><span data-habit-card-summary="'+esc(habit.id)+'">지금까지 '+stats.success+'번 실천 · '+stats.streak+'일 연속</span><button type="button" class="habit-detail-link" data-habit-history="'+esc(habit.id)+'">진행 상황 '+svgIcon(I_BACK)+'</button></div>'+
-    '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitSaveStatusHtml(habit.id)+'</p>'+download+'</article>';
+  var todayState=habitTodayState(habit,todayStr);
+  return '<article class="card habit-card'+(todayState.checked?' is-today-success':'')+'" data-habit-card="'+esc(habit.id)+'"><div class="habit-card-head">'+
+    '<div class="habit-card-identity"><span class="habit-card-kind-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><div><h4 class="habit-name"><button type="button" class="habit-title-button" data-habit-history="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+esc(habit.name)+'</button></h4><span class="habit-card-kind-label">'+GrowellHabits.behaviorLabel(habit)+'</span></div></div>'+
+    '<div class="habit-card-actions"><button type="button" class="habit-icon-btn habit-detail-arrow" data-habit-history="'+esc(habit.id)+'" title="진행 상황" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+svgIcon(I_BACK)+'</button><button type="button" class="habit-icon-btn" data-edit-habit="'+esc(habit.id)+'" title="습관 수정" aria-label="'+esc(habit.name)+' 수정">'+svgIcon(I_EDIT)+'</button></div></div>'+
+    habitFactsHtml(habit)+'<div class="habit-card-goal" data-habit-card-goal="'+esc(habit.id)+'">'+habitCardProgressHtml(stats)+'</div>'+
+    '<div class="habit-card-summary"><span class="habit-streak" data-habit-card-summary="'+esc(habit.id)+'">'+habitStreakHtml(habit,stats)+'</span><button type="button" class="habit-today-btn'+(todayState.checked?' is-checked':'')+'" data-habit-today data-habit-day="'+esc(habit.id)+'|'+todayStr+'" aria-pressed="'+todayState.checked+'" aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':'')+'"'+(!todayState.canCheck?' disabled':'')+'>'+svgIcon(I_CHECK)+'<span data-habit-today-label>'+todayState.label+'</span></button></div>'+
+    '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitCardSaveStatusHtml(habit.id)+'</p>'+
+    '<details class="habit-card-calendar"'+(habitCalendarMode==='month'?' open':'')+'><summary>'+(habitCalendarMode==='month'?'월별 성공 · 실패 기록':'이번 주 기록 보기')+svgIcon(I_BACK)+'</summary><div class="habit-card-calendar-body">'+calendar+download+'</div></details></article>';
 }
 function habitFormHtml(book,editingHabit){
   var h=editingHabit||{name:'',place:'',time:'',goal:'',startDate:ymd(new Date()),endDate:''};
@@ -4848,7 +4873,7 @@ function habitFormHtml(book,editingHabit){
     '<fieldset class="habit-kind-picker"><legend>습관 종류</legend><div class="habit-kind-options">'+['do','avoid'].map(function(value){return '<label class="habit-kind-option"><input type="radio" name="habit-behavior-type" value="'+value+'"'+(kind===value?' checked':'')+'><span>'+habitKindIconHtml({behaviorType:value})+GrowellHabits.behaviorLabel({behaviorType:value})+'</span></label>';}).join('')+'</div><p class="habit-kind-hint" id="habit-kind-hint">'+GrowellHabits.behaviorHint(h)+'</p></fieldset>'+
     '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row"><label for="habit-'+f[0]+'">'+f[1]+'</label><input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+'></div>';}).join('')+'</div>'+
     '<p class="habit-form-hint">목표 기간에는 매일 한 번 체크해요. 목표일을 비워두면 계속 실천할 수 있어요. 기간을 바꿔도 이전 체크 기록은 보관됩니다.</p>'+
-    '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button></div>';
+    '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button>'+(editingHabit?'<button type="button" class="habit-delete-link" data-delete-habit="'+esc(editingHabit.id)+'">'+svgIcon(I_TRASH)+' 이 습관 삭제</button>':'')+'</div>';
 }
 function habitsSectionHtml(book){
   if(!SESSION) return '';
@@ -4864,7 +4889,8 @@ function habitsSectionHtml(book){
   var list=habits.length?'<div class="habit-list">'+habits.map(habitCardHtml).join('')+'</div>':'<div class="empty">아직 만든 습관이 없어요. 장소·시간·목표를 정해서 하나 시작해보세요.</div>';
   var historyHabit=habitHistoryOpenFor?habits.find(function(h){return h.id===habitHistoryOpenFor;}):null;
   if(habitHistoryOpenFor&&!historyHabit) habitHistoryOpenFor=null;
-  return '<div class="habit-section"><p class="habit-section-lead">작은 실천을 쌓아 나만의 변화를 만들어 보세요.<br>습관을 누르면 목표 기간 동안의 성취와 다음 목표를 볼 수 있어요.</p>'+form+controls+list+'</div>'+(historyHabit?habitHistoryModalHtml(historyHabit):'');
+  var hero='<header class="habit-hero"><div class="habit-hero-top"><span class="habit-hero-kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21v-9M12 16C5 16 3 12 3 7c6 0 9 3 9 9ZM12 12c0-6 3-9 9-9 0 6-3 9-9 9ZM6 21h12"/></svg>매일의 작은 변화</span><time class="habit-hero-date" datetime="'+ymd(today)+'">'+(today.getMonth()+1)+'월 '+today.getDate()+'일 '+['일요일','월요일','화요일','수요일','목요일','금요일','토요일'][today.getDay()]+'</time></div><h2>나를 키우는 습관</h2><p>완벽한 하루보다, 다시 이어가는 하루.</p></header>';
+  return '<div class="habit-section">'+hero+form+controls+list+'</div>'+(historyHabit?habitHistoryModalHtml(historyHabit):'');
 }
 function habitTabHtml(book){
   if(!SESSION){ return loginGateHtml('습관 만들기는 로그인한 본인만 볼 수 있어요.'); }
@@ -5325,7 +5351,7 @@ function materialNoteCardHtml(book, p){
   var mine = SESSION && SESSION.userId===p.userId;
   var meetingBadge = p.meetingNo ? '<span class="mat-row-meeting">'+esc(p.meetingNo)+'번째 모임</span>' : '';
   return '<div class="card post mat-detail-card">' +
-    '<div class="post-head"><div class="post-who">'+avatarHtml(p.userId, p.userName, book.accent)+'<div class="post-who-text"><span class="post-name">'+esc(p.userName)+'</span><span class="post-time mono">'+fmtDate(p.createdAt)+'</span></div></div>' +
+    '<div class="post-head"><div class="post-who">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="post-time mono">'+fmtDate(p.createdAt)+'</span></div>' +
     '<div class="post-head-side">'+materialCatTagHtml(p.noteType)+postEditDelHtml(mine, mine||isAdmin(), 'edit-matnote="'+p.id+'"', 'del-matnote="'+p.id+'"')+'</div></div>' +
     materialNoteBodyBlockHtml(p) +
     matLinksHtml(p) +
@@ -5661,6 +5687,7 @@ function restoreDraftIfAny(route){
 
 /* ---------------- events (delegated) ---------------- */
 function bindEvents(route){
+  if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.bind();
   bindOAuthEvents();
   bindPrivateRecovery();
   bindHomeEvents();
@@ -5689,7 +5716,7 @@ function bindEvents(route){
   var themeBtn = document.getElementById('btn-theme');
   if(themeBtn){
     var cur = localStorage.getItem('growell_theme') || 'system';
-    themeBtn.innerHTML = cur==='dark' ? I_MOON : I_SUN;
+    themeBtn.innerHTML = (cur==='dark' ? I_MOON : I_SUN) + (themeBtn.classList.contains('profile-dropdown-item') ? '<span>화면 테마 · '+(cur==='dark'?'어둡게':cur==='light'?'밝게':'시스템')+'</span>' : '');
     themeBtn.addEventListener('click', function(){
       var order = ['system','light','dark'];
       var cur2 = localStorage.getItem('growell_theme') || 'system';
@@ -6167,7 +6194,7 @@ function bindEvents(route){
     habitCalendarMonth={y:next.getFullYear(),m:next.getMonth()};render();
   });});
   app.querySelectorAll('[data-habit-card]').forEach(function(card){card.addEventListener('click',function(e){
-    if(e.target.closest('button,input,a,select,textarea,label')) return;
+    if(e.target.closest('button,input,a,select,textarea,label,summary')) return;
     openHabitProgress(card.getAttribute('data-habit-card'));
   });});
   var openHabitBtn = document.getElementById('btn-open-habit-form');
@@ -6511,7 +6538,7 @@ document.addEventListener('click', function(e){
         : '';
       el.innerHTML =
         '<div class="install-banner-head">' +
-          '<div class="install-banner-icon"><img src="/covers/icon-192.png" alt=""></div>' +
+          '<div class="install-banner-icon"><img src="/covers/growell-icon-192.png" alt=""></div>' +
           '<div class="install-banner-body"><div class="install-banner-title">GROWELL 앱으로 설치하기</div></div>' +
           '<button type="button" class="install-banner-close" id="install-banner-close" aria-label="닫기">×</button>' +
         '</div>' +
@@ -6553,6 +6580,17 @@ document.addEventListener('click', function(e){
     }
   }catch(err){ /* 설치 배너는 부가 기능 — 실패해도 앱 부팅 자체는 계속 진행 */ }
 })();
+
+/* ---------------- community dependency adapter ---------------- */
+GrowellCommunityFeatures.configure({
+  get SESSION(){return SESSION;},
+  get STATE(){return STATE;},
+  get saveSessionEpoch(){return saveSessionEpoch;},
+  sb:sb,svgIcon:svgIcon,esc:esc,bookById:bookById,isAdmin:isAdmin,
+  I_CLOSE:I_CLOSE,I_COMMENT:I_COMMENT,I_EDIT:I_EDIT,
+  avatarHtml:avatarHtml,fmtPostDate:fmtPostDate,homePostExcerpt:homePostExcerpt,
+  homeUnlockedIds:homeUnlockedIds,safePhotoUrl:safePhotoUrl,showToast:showToast
+});
 
 /* ---------------- boot ----------------
    예전엔 STATE가 문서에 이미 박혀 있어 render()를 바로 불렀지만, 이제는 Supabase에서
