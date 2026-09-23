@@ -75,11 +75,15 @@ test('shared row keeps author popup buttons outside the record link',()=>{
   assert.ok(markup.includes('#/book/emotion/share/post/visible'));
 });
 
-test('shared selection is bounded to its book, honors filtered initial selection, and reports missing IDs',()=>{
+test('shared preview honors its filter but highlights only explicitly opened posts and reports missing IDs',()=>{
   const {c}=harness();
   c.STATE.posts={older:post('older','emotion',1),newer:post('newer','emotion',2),foreign:post('foreign','thought',3)};
   c.STATE.posts.newer.noteType='quote';c.shareFeedFilter.emotion='thought';
-  assert.match(c.shareTabHtml(book),/data-shared-detail="older"/);
+  const initial=c.shareTabHtml(book);
+  assert.match(initial,/data-shared-detail="older"/);
+  assert.doesNotMatch(initial,/space-list-item is-selected|aria-current="true"/,'the initial preview does not mark a row as selected');
+  const opened=c.shareTabHtml(book,'older');
+  assert.match(opened,/space-list-item is-selected/);assert.match(opened,/aria-current="true"/);
   assert.match(c.shareTabHtml(book,'newer'),/data-shared-detail="newer"/,'direct links remain available outside the current type filter');
   for(const id of ['foreign','missing']){
     const markup=c.shareTabHtml(book,id);
@@ -103,9 +107,12 @@ test('personal workspace renders and schedules decryption only for the signed-in
   c.STATE.privateEntries={mine:entry('mine'),foreignOwner:entry('foreign-owner','another'),foreignBook:entry('foreign-book','owner','thought')};
   const markup=c.mineTabHtml(book);
   assert.ok(markup.includes('data-mine-entry="mine"'));assert.ok(markup.includes('data-mine-tile="mine"'));
+  assert.doesNotMatch(markup,/space-list-item is-selected|aria-current="true"/);
   assert.doesNotMatch(markup,/foreign-owner|foreign-book|encrypted-record/);
   assert.equal((markup.match(/data-reading-timer/g)||[]).length,1);
   scheduled.forEach(run=>run());assert.deepEqual(decrypted.map(e=>e.id),['mine']);
+  const opened=c.mineTabHtml(book,'mine');
+  assert.match(opened,/space-list-item is-selected/);assert.match(opened,/aria-current="true"/);
   for(const id of ['foreign-owner','foreign-book','missing']){
     const missing=c.mineTabHtml(book,id);
     assert.ok(missing.includes('기록을 찾을 수 없어요.'));assert.doesNotMatch(missing,/data-mine-entry=/);

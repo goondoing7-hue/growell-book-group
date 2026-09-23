@@ -128,20 +128,11 @@
      사용자 요청(요청 반영): 시스템이 야간(다크) 모드여도 이 화면만은 항상 지금 이 모습(크림 배경 +
      네이비 글자) 그대로 고정 — 그래서 다른 컴포넌트들과 달리 var(--bg)/var(--ink) 같은 테마 변수를
      쓰지 않고 색을 전부 직접 값으로 고정한다(다크 모드에서도 절대 안 바뀜).
-     아이콘을 화면 정중앙(top:50%)에 절대배치하는 이유(요청 반영): 홈 화면에 설치한 PWA를 열면, 이
-     화면이 뜨기 전에 안드로이드/크롬이 자체적으로 만들어주는 스플래시 화면(매니페스트의 아이콘+
-     배경색+테마색만으로 자동 생성됨 — 우리 코드가 그리는 게 아니라 켜고 끌 수 없음)이 먼저 잠깐
-     뜨는데, 그 화면은 아이콘을 항상 화면 정중앙에 그림. 예전엔 이 화면의 아이콘이 GROWELL 글자·
-     태그라인·점 3개와 함께 세로로 쌓인 블록 전체를 가운데 정렬해서, 아이콘이 화면 정중앙보다 살짝
-     위에 있었음 — 그 결과 OS 스플래시(아이콘 정중앙) → 이 화면(아이콘이 위로 살짝 이동)으로 넘어갈
-     때 아이콘이 순간 "점프"해 보이는 어색함이 있었음. 아이콘만 절대배치로 항상 화면 정중앙(50%)에
-     고정하고, 글자·태그라인·점은 그 아래에 이어 붙여서 아이콘 위치가 두 화면 사이에서 그대로 유지되게
-     함 — 안드로이드가 그리는 화면 자체는 우리가 없앨 수 없지만(위 설명대로 시스템 동작), 최소한 아이콘이
-     한자리에 머물러 있고 그 아래로 글자만 이어서 나타나는 것처럼 느껴지도록 만든 것. */
-  /* 모바일 주소창이 보이거나 사라져도 현재 보이는 화면을 기준으로 로고를 가운데에 둔다. */
-  .boot-splash{position:fixed; inset:0; width:100%; height:100vh; height:100dvh; min-height:0; padding:0; text-align:center; background:#F3F1EC; --boot-icon-size:clamp(64px, 17vw, 108px); --boot-icon-gap:clamp(20px, 6vw, 30px);}
-  .boot-splash-icon{position:absolute; top:50%; left:50%; width:var(--boot-icon-size); height:auto; display:block; transform:translate(-50%, -50%);}
-  .boot-splash-text{position:absolute; top:calc(50% + (var(--boot-icon-size) / 2) + var(--boot-icon-gap)); left:50%; width:100%; max-width:520px; padding:0 24px; transform:translateX(-50%); box-sizing:border-box;}
+     아이콘과 글자·안내 문구·로딩 점을 하나의 그룹으로 묶어 현재 보이는 화면의 정중앙에 둔다. */
+  .boot-splash{position:fixed; inset:0; width:100%; height:100vh; height:100dvh; min-height:0; padding:0; display:grid; place-items:center; text-align:center; background:#F3F1EC; --boot-icon-size:clamp(64px, 17vw, 108px); --boot-icon-gap:clamp(20px, 6vw, 30px);}
+  .boot-splash-group{display:flex; flex-direction:column; align-items:center; gap:var(--boot-icon-gap); width:100%; max-width:520px; padding:0 24px; box-sizing:border-box;}
+  .boot-splash-icon{width:var(--boot-icon-size); height:auto; display:block; flex:none;}
+  .boot-splash-text{width:100%;}
   .boot-splash-word{font-family:var(--font-body); font-weight:700; font-size:clamp(17px, 4.6vw, 21px); letter-spacing:.24em; color:#1D3A5D; margin-bottom:clamp(14px, 4vw, 18px);}
   .boot-splash-tagline{font-size:clamp(13px, 3.6vw, 14.5px); color:#6B6558; margin-bottom:clamp(28px, 8vw, 38px);}
   .boot-splash-dots{display:flex; align-items:center; justify-content:center; gap:15px; width:fit-content; margin:0 auto;}
@@ -1087,11 +1078,13 @@
      가장 이른 시점에 곧바로 이 화면부터 그려져서, OS 아이콘 스플래시 다음에 다른 화면(빈 화면 등) 없이
      바로 이 화면으로 이어짐. 데이터를 다 불러오면 아래 boot()가 이 자리를 실제 화면으로 교체한다. -->
 <div id="app"><div class="boot-splash" role="status" aria-label="GROWELL을 불러오고 있어요">
+  <div class="boot-splash-group">
   <img class="boot-splash-icon" src="/covers/growell-icon-192.png" alt="" width="192" height="192">
   <div class="boot-splash-text">
     <div class="boot-splash-word">GROWELL</div>
     <div class="boot-splash-tagline">읽고 나누며, 오늘도 한 걸음</div>
     <div class="boot-splash-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+  </div>
   </div>
 </div></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -4788,7 +4781,7 @@ function shareTabHtml(book, postId){
   var gridId = 'share-grid-'+book.id;
   var searchRow = allPosts.length ? feedSearchHtml(gridId, '나눔 글 검색') : '';
   var grid = posts.length
-    ? '<div class="space-record-list" id="'+gridId+'">'+posts.map(function(p){ return spaceShareRowHtml(book,p,selected&&selected.id); }).join('')+'</div>' +
+    ? '<div class="space-record-list" id="'+gridId+'">'+posts.map(function(p){ return spaceShareRowHtml(book,p,postId&&selected&&selected.id); }).join('')+'</div>' +
       '<div class="empty feed-empty-search" id="empty-'+gridId+'" style="display:none">검색 결과가 없어요.</div>'
     : (allPosts.length ? '<div class="empty">이 타입의 나눔이 아직 없어요.</div>' : '<div class="empty">아직 나눈 이야기가 없어요. 첫 번째 나눔을 남겨보세요.</div>');
   var detail=writing?composer:spaceDetailBackHtml(book,'share')+(selected?sharePostCardHtml(book,selected):'<div class="empty">'+(postId?'글을 찾을 수 없어요.':'목록에서 이야기를 골라 읽어보세요.')+'</div>');
@@ -5424,7 +5417,7 @@ function mineTabHtml(book, postId){
   var gridId = 'mine-grid-'+book.id;
   var searchRow = entries.length ? feedSearchHtml(gridId, '나의 기록 검색') : '';
   var grid = entries.length
-    ? '<div class="space-record-list" data-private-category="'+esc(categoryFilter)+'" id="'+gridId+'">'+entries.map(function(e){ return mineEntryTileHtml(book,e,selected&&selected.id); }).join('')+'</div>' +
+    ? '<div class="space-record-list" data-private-category="'+esc(categoryFilter)+'" id="'+gridId+'">'+entries.map(function(e){ return mineEntryTileHtml(book,e,postId&&selected&&selected.id); }).join('')+'</div>' +
       '<div class="empty feed-empty-search" id="empty-'+gridId+'" style="display:none">검색 결과가 없어요.</div>'
     : '<div class="empty">아직 나의 공간에 남긴 기록이 없어요.</div>';
   setTimeout(function(){ decryptListInto(entries); }, 0);

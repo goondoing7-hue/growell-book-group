@@ -176,7 +176,7 @@
 .space-record-list{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-content:start}
 .book-page .space-list-item{position:relative;border-radius:15px;transition:border-color .16s ease,background-color .16s ease;box-shadow:none;overflow:hidden}
 .book-page .space-list-item:hover{border-color:var(--space-green);box-shadow:none}
-.book-page .space-list-item.is-selected{border-color:var(--space-green);background:var(--space-soft)}
+.book-page .space-list-item.is-selected,.book-page .space-list-item:has(>.space-list-link:active){border-color:var(--space-green);background:var(--space-soft)}
 .space-list-item[hidden]{display:none!important}
 .space-list-link{display:flex;align-items:center;gap:16px;box-sizing:border-box;min-width:0;min-height:116px;width:100%;padding:16px;color:var(--ink);text-decoration:none}
 .space-list-link:focus-visible{outline:2px solid var(--space-green);outline-offset:-4px;border-radius:14px}
