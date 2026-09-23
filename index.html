@@ -8,22 +8,24 @@
      보이게 된다(요청하신 문제의 실제 원인). Claude Artifact로 게시할 때는 플랫폼이 이 태그를
      자동으로 넣어줬지만, Vercel에 올리는 이 파일에는 <html>/<head> 자체가 빠져 있었음. -->
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GROWELL · 읽고 나누며 자라는 우리</title>
+<title>GROWELL 독서모임 · 함께 읽고, 나를 기록하는 시간</title>
 <!-- 공유 미리보기는 정적 메타데이터와 1200×630 이미지를 사용한다.
      이미지 URL의 버전을 바꿔 새 브랜드 이미지의 캐시를 구분한다. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="GROWELL 독서모임">
-<meta property="og:title" content="GROWELL · 읽고 나누며 자라는 우리">
-<meta property="og:description" content="책에서 시작해 일상의 작은 변화로. 감정, 생각, 신체, 행동을 함께 읽고 기록하는 독서모임.">
-<meta property="og:image" content="https://growell-book.vercel.app/covers/og-image-v3.jpg">
-<meta property="og:image:alt" content="GROWELL — 읽고 나누며 자라는 우리">
+<meta property="og:title" content="GROWELL 독서모임">
+<meta property="og:description" content="함께 읽고, 나를 기록하는 시간. 독서 기록 · 생각 나눔 · 작은 습관을 한곳에서.">
+<meta property="og:image" content="https://growell-book.vercel.app/covers/og-image-v4.jpg">
+<meta property="og:image:alt" content="GROWELL 독서모임 — 함께 읽고, 나를 기록하는 시간. 독서 기록 · 생각 나눔 · 작은 습관.">
+<meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:url" content="https://growell-book.vercel.app/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="GROWELL · 읽고 나누며 자라는 우리">
-<meta name="twitter:description" content="책에서 시작해 일상의 작은 변화로. 함께 읽고 기록하는 독서모임.">
-<meta name="twitter:image" content="https://growell-book.vercel.app/covers/og-image-v3.jpg">
+<meta name="twitter:title" content="GROWELL 독서모임">
+<meta name="twitter:description" content="함께 읽고, 나를 기록하는 시간. 독서 기록 · 생각 나눔 · 작은 습관을 한곳에서.">
+<meta name="twitter:image" content="https://growell-book.vercel.app/covers/og-image-v4.jpg">
+<meta name="twitter:image:alt" content="GROWELL 독서모임 — 함께 읽고, 나를 기록하는 시간. 독서 기록 · 생각 나눔 · 작은 습관.">
 <!-- 설치·iOS 홈 화면·탭 아이콘은 헤더와 같은 책 모양을 사용한다. -->
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="covers/favicon-v3.ico" sizes="any">
@@ -3041,8 +3043,8 @@ function refreshHabitSaveUI(habitId){
       return;
     }
     var calendar=button.classList.contains('habit-hist-cell'),mark=calendar?button.querySelector('[data-habit-cell-mark]'):button;
-    if(mark) mark.textContent=calendar?symbol:checked?'✓':status==='fail'?'−':'';
-    button.setAttribute('aria-pressed',checked?'true':'false');button.setAttribute('aria-label',parts[1]+' '+habitStatusLabel(status)+' · 체크 변경');
+    if(mark){if(calendar) mark.textContent=symbol;else mark.innerHTML=habitWeekMarkHtml(habit,status);}
+    button.setAttribute('aria-pressed',checked?'true':'false');button.setAttribute('aria-label',parts[1]+' '+(calendar?habitStatusLabel(status):habitWeekStatusLabel(habit,status))+' · 체크 변경');
     var element=calendar?button:button.parentElement;
     ['success','pending','fail','future','outside'].forEach(function(s){element.classList.toggle('is-'+s,status===s);});
     if(!calendar) element.classList.toggle('is-checked',checked);
@@ -3050,7 +3052,7 @@ function refreshHabitSaveUI(habitId){
   document.querySelectorAll('[data-habit-card]').forEach(function(card){
     if(card.getAttribute('data-habit-card')!==habitId) return;
     var progress=habitWeekProgress(habit,weekDatesOf(mondayOf(new Date()))),el=card.querySelector('.habit-progress');
-    if(el){el.classList.toggle('is-done',progress.total>0&&progress.done===progress.total);el.textContent=progress.total?progress.done+'/'+progress.total+'일 실천':'이번 주 목표 기간 없음';}
+    if(el){el.classList.toggle('is-done',progress.total>0&&progress.done===progress.total);el.textContent=progress.total?progress.done+'/'+progress.total+'일 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천'):'이번 주 목표 기간 없음';}
     card.classList.toggle('is-today-success',GrowellHabits.status(habit,today,today)==='success');
     var summary=card.querySelector('[data-habit-card-summary]');if(summary) summary.innerHTML=habitStreakHtml(habit,stats);
     var goal=card.querySelector('[data-habit-card-goal]');if(goal) goal.innerHTML=habitCardProgressHtml(stats);
@@ -3655,13 +3657,13 @@ function refreshHomePosts(){
 }
 function homeHabitRowsHtml(habits){
   var today=ymd(new Date());
-  var showBook=Array.from(new Set(habits.map(function(h){return h.bookId;}))).length>1;
   return habits.map(function(habit){
-    var book=bookById(habit.bookId), checked=habit.checkedDates.indexOf(today)>=0;
+    var checked=habit.checkedDates.indexOf(today)>=0;
+    var goal=habit.goal||(GrowellHabits.behaviorType(habit)==='avoid'?'하루 한 번 절제하기':'하루 한 번 실천하기');
     var pending=Object.keys(habitSaveIntents[habit.id]||{}).length>0;
     return '<li data-home-habit-card="'+esc(habit.id)+'"><label class="home-habit">' +
       '<input type="checkbox" data-home-habit="'+esc(habit.id)+'"'+(checked?' checked':'')+'>' +
-      '<span>'+esc(habit.name)+(showBook?'<small>'+esc(book.title)+'</small>':'')+'</span></label>' +
+      '<span><span class="home-habit-name">'+esc(habit.name)+'</span><small class="home-habit-goal">목표 · '+esc(goal)+'</small></span></label>' +
       '<p class="home-habit-status" data-home-habit-status role="status">'+(pending?habitSaveStatusHtml(habit.id):'')+'</p></li>';
   }).join('');
 }
@@ -4320,7 +4322,8 @@ function noteComposerHtml(book, opts){
   } else if(editing && (editing.noteType==='insight')!==(draftMode==='insight')){
     editing = null;
   }
-  var types = opts.noteTypes || NOTE_TYPES.concat(opts.extraNoteTypes||[]);
+  // Keep legacy summary records and drafts editable without offering the retired category for new notes.
+  var types = opts.noteTypes || NOTE_TYPES.filter(function(t){return t.key!=='summary' || (editing && editing.noteType==='summary');}).concat(opts.extraNoteTypes||[]);
   var ntSetHtml = '<div class="nt-set" id="nt-set">' + types.map(function(t){
     var sel = opts.selectedNoteType===t.key;
     /* 글쓰기 화면에서 종류를 고르는 이 pill은 (통찰 정리처럼 아이콘이 있는 타입도 포함해)
@@ -4520,7 +4523,7 @@ function applyFeedSearch(gridId){
   if(emptyEl) emptyEl.style.display = (visible===0 && q) ? '' : 'none';
 }
 function feedToolbarHtml(book, filterKey, count){
-  var chips = [{key:'all', label:'전체'}].concat(NOTE_TYPES.concat([NOTE_TYPE_INSIGHT]).map(function(t){ return {key:t.key, label:t.label}; }));
+  var chips = [{key:'all', label:'전체'}].concat(NOTE_TYPES.filter(function(t){return t.key!=='summary';}).concat([NOTE_TYPE_INSIGHT]).map(function(t){ return {key:t.key, label:t.label}; }));
   return '<div class="feed-toolbar">' +
     '<div class="feed-filters" id="feed-filters" data-book="'+book.id+'">' + chips.map(function(c){
       return '<button type="button" class="feed-filter'+(filterKey===c.key?' is-sel':'')+'" data-filter="'+c.key+'">'+esc(c.label)+'</button>';
@@ -4626,6 +4629,7 @@ function shareTabHtml(book, postId){
   if(sharedPostsLoadState==='loading')return heading+composer+'<div class="empty" role="status">모임의 글을 불러오는 중이에요…</div>';
   if(sharedPostsLoadState==='error')return heading+composer+'<div class="empty" role="alert">글을 불러오지 못했어요. <button class="btn" type="button" data-retry-community>다시 불러오기</button></div>';
   var filterKey = shareFeedFilter[book.id] || 'all';
+  if(filterKey==='summary') filterKey='all';
   var posts = filterKey==='all' ? allPosts : allPosts.filter(function(p){ return p.noteType===filterKey; });
   var selected=postId?allPosts.find(function(p){return p.id===postId;}):posts[0];
   var toolbar = feedToolbarHtml(book, filterKey, posts.length);
@@ -4819,17 +4823,23 @@ function habitWeekProgress(habit, weekDates){
   return {done:eligible.filter(function(d){return ymd(d)<=today&&checkedSet[ymd(d)];}).length,total:eligible.length,checkedSet:checkedSet};
 }
 function habitStatusLabel(status){return {success:'성공',saved:'이전 기록',fail:'실패',pending:'오늘',future:'예정',outside:'기간 밖'}[status]||'';}
+function habitWeekMarkHtml(habit,status){return status==='success'||status==='saved'?habitKindIconHtml(habit):status==='fail'?'−':'';}
+function habitWeekStatusLabel(habit,status){
+  var action=GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천';
+  return status==='success'?action+' 성공':status==='saved'?'이전 '+action+' 기록':habitStatusLabel(status);
+}
 function habitWeekGridHtml(habit, weekDates, checkedSet, todayStr){
   var DOW=['월','화','수','목','금','토','일'];
-  return '<div class="habit-week-grid">'+weekDates.map(function(d,i){
+  var kind=GrowellHabits.behaviorType(habit);
+  return '<div class="habit-week-grid is-'+kind+'">'+weekDates.map(function(d,i){
     var date=ymd(d),status=GrowellHabits.status(habit,date,todayStr),checked=status==='success'||status==='saved';
     var cls='habit-wday'+(checked?' is-checked':'')+' is-'+status+(date===todayStr?' is-today':'');
-    var content=checked?'✓':status==='fail'?'−':'';
+    var content=habitWeekMarkHtml(habit,status);
     var dot=GrowellHabits.canCheck(habit,date,todayStr)
-      ? '<button type="button" class="habit-wday-dot" aria-label="'+date+' '+habitStatusLabel(status)+' · 체크 변경" aria-pressed="'+checked+'" data-habit-day="'+esc(habit.id)+'|'+date+'">'+content+'</button>'
-      : '<span class="habit-wday-dot" aria-label="'+date+' '+habitStatusLabel(status)+'">'+content+'</span>';
+      ? '<button type="button" class="habit-wday-dot" aria-label="'+date+' '+habitWeekStatusLabel(habit,status)+' · 체크 변경" aria-pressed="'+checked+'" data-habit-day="'+esc(habit.id)+'|'+date+'">'+content+'</button>'
+      : '<span class="habit-wday-dot" aria-label="'+date+' '+habitWeekStatusLabel(habit,status)+'">'+content+'</span>';
     return '<div class="'+cls+'"><span class="habit-wday-label">'+DOW[i]+'</span><span class="habit-wday-date">'+(d.getMonth()+1)+'/'+d.getDate()+'</span>'+dot+'</div>';
-  }).join('')+'</div>';
+  }).join('')+'</div><p class="habit-week-key is-'+kind+'">'+habitKindIconHtml(habit)+'<span>'+habitWeekStatusLabel(habit,'success')+'</span><span class="habit-week-key-hint">다시 누르면 취소돼요</span></p>';
 }
 function habitPeriodLabel(habit){
   var start=GrowellHabits.start(habit,ymd(new Date()));
@@ -4876,7 +4886,7 @@ function habitCardHtml(habit){
   var today=new Date(),todayStr=ymd(today),weekDates=weekDatesOf(mondayOf(today)),prog=habitWeekProgress(habit,weekDates);
   var complete=prog.total>0&&prog.done===prog.total,stats=GrowellHabits.stats(habit,todayStr);
   var view=habitCalendarMonth||{y:today.getFullYear(),m:today.getMonth()};
-  var progress=prog.total?prog.done+'/'+prog.total+'일 실천':'이번 주 목표 기간 없음';
+  var progress=prog.total?prog.done+'/'+prog.total+'일 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천'):'이번 주 목표 기간 없음';
   var calendar=habitCalendarMode==='month'
     ? habitHistoryCalendarHtml(habit,view.y,view.m)+habitCalendarLegendHtml()+'<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>'
     : '<div class="habit-week-head"><span>이번 주 · '+(weekDates[0].getMonth()+1)+'/'+weekDates[0].getDate()+' ~ '+(weekDates[6].getMonth()+1)+'/'+weekDates[6].getDate()+'</span><span class="habit-progress'+(complete?' is-done':'')+'">'+progress+'</span></div>'+habitWeekGridHtml(habit,weekDates,prog.checkedSet,todayStr);
@@ -6127,11 +6137,6 @@ function bindEvents(route){
   var feedFilters = document.getElementById('feed-filters');
   if(feedFilters){
     var fBookId = feedFilters.getAttribute('data-book');
-    var selectedFilter = feedFilters.querySelector('.is-sel');
-    if(selectedFilter){
-      var filterOverflow = selectedFilter.getBoundingClientRect().right - feedFilters.getBoundingClientRect().right;
-      if(filterOverflow>0) feedFilters.scrollLeft += filterOverflow + 6;
-    }
     feedFilters.querySelectorAll('[data-filter]').forEach(function(b){
       b.addEventListener('click', function(){
         shareFeedFilter[fBookId] = b.getAttribute('data-filter');

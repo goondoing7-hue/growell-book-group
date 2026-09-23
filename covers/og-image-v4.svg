@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">GROWELL 독서모임</title>
+  <desc id="description">함께 읽고, 나를 기록하는 시간. 독서 기록, 생각 나눔, 작은 습관.</desc>
+  <rect width="1200" height="630" fill="#F5F5EF"/>
+  <rect x="548" y="82" width="104" height="104" rx="27" fill="#3C624B"/>
+  <!-- The same open-book mark as covers/brand-book.svg and the application header. -->
+  <g transform="translate(565 98) scale(2.9)" fill="none" stroke="#F5F5EF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 5.5C8.5 3.2 5 3.2 2.5 4.5v14c3-1.1 6.5-1 9.5 1.5 3-2.5 6.5-2.6 9.5-1.5v-14C19 3.2 15.5 3.2 12 5.5Z"/>
+    <path d="M12 5.5V20"/>
+  </g>
+  <g text-anchor="middle" font-family="Malgun Gothic, sans-serif">
+    <text x="600" y="296" font-size="68" font-weight="700" letter-spacing="-2" fill="#20382D">GROWELL 독서모임</text>
+    <text x="600" y="386" font-size="43" font-weight="700" letter-spacing="-1.2" fill="#3C624B">함께 읽고, 나를 기록하는 시간</text>
+    <text x="600" y="479" font-size="29" font-weight="400" letter-spacing="0.4" fill="#5B6B61">독서 기록 · 생각 나눔 · 작은 습관</text>
+  </g>
+</svg>

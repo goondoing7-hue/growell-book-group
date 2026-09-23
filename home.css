@@ -200,8 +200,9 @@
   cursor: pointer;
 }
 .home-dashboard .home-habit input:disabled { cursor: default; }
-.home-dashboard .home-habit > span { min-width: 0; font-size: 16px; font-weight: 600; }
-.home-dashboard .home-habit small { display: block; margin-top: 1px; color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.4; }
+.home-dashboard .home-habit > span { min-width: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.home-dashboard .home-habit-name { display: block; line-height: 1.45; }
+.home-dashboard .home-habit small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 14px; font-weight: 500; line-height: 1.5; }
 .home-dashboard .home-habit-status { margin-top: 10px; color: var(--home-accent); font-size: 13px; }
 .home-dashboard .home-habit-status:empty { display: none; }
 .home-dashboard .home-habits > .home-link { align-self: flex-start; margin-top: 7px; }
@@ -324,7 +325,7 @@
   .home-dashboard .home-habit-list li + li { margin-top: 4px; }
   .home-dashboard .home-habit { min-height: 44px; padding: 8px 9px; gap: 10px; border-radius: 9px; }
   .home-dashboard .home-habit > span { font-weight: 500; }
-  .home-dashboard .home-habit small { font-size: 12px; }
+  .home-dashboard .home-habit small { font-size: 13px; }
   .home-dashboard .home-habit-status { margin-top: 7px; }
   .home-dashboard .home-habits > .home-link { margin-top: 3px; font-size: 14px; }
   .home-dashboard .home-note,
