@@ -7611,7 +7611,7 @@ async function openArchiveSharedNote(id,bookId){
 function archiveSharedCatalog(){
   return BOOKS.map(function(b){
     var details=GrowellBookDetails.details(b.id);
-    return {bookId:b.id,linkedBookId:b.id,themes:[b.id],title:b.title,authors:[b.author],publisher:b.publisher,coverUrl:b.cover,
+    return {bookId:b.id,linkedBookId:b.id,themes:[b.id],genres:details&&details.genres?details.genres.slice():[],genreSource:details&&details.genreSource||'',title:b.title,authors:[b.author],publisher:b.publisher,coverUrl:b.cover,
       description:details?details.overview:b.subtitle||'',isbn:details?details.isbn:'',sourceUrl:details?details.infoUrl:'',
       source:'growell',pageCount:b.totalPages||null,totalPages:b.totalPages||null,status:'unread'};
   });
