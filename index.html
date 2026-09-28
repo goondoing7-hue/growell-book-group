@@ -1114,6 +1114,7 @@
 <script src="privateCrypto.js"></script>
 <script src="privateCategories.js"></script>
 <script src="archiveDomain.js"></script>
+<script src="archiveStats.js"></script>
 <script src="archiveCalendar.js"></script>
 <script src="archiveTimer.js"></script>
 <script src="archive.js"></script>
@@ -7700,9 +7701,10 @@ GrowellBookDetails.configure({
   sessionUserId:function(){return SESSION&&SESSION.userId;}
 });
 var archiveSharedNoteCache=null;
+var archiveSharedNoteRequest=0;
 function clearArchiveSharedNotes(){
-  archiveSharedNoteCache=null;
-  var node=document.getElementById('archive-shared-note');if(node){node.close();node.remove();GrowellPopupHistory.closed('archive-shared-note');}
+  archiveSharedNoteCache=null;archiveSharedNoteRequest++;
+  var node=document.getElementById('archive-shared-note');if(node){if(node._closeArchiveSharedNote)node._closeArchiveSharedNote(false);else{node.close();node.remove();GrowellPopupHistory.closed('archive-shared-note');}}
 }
 function archiveSharedNotes(){
   if(!SESSION||memberLoadState.privateEntries!=='ready'){archiveSharedNoteCache=null;return [];}
@@ -7730,21 +7732,37 @@ function archiveSharedNotes(){
   }).catch(function(){});
   return [];
 }
-async function openArchiveSharedNote(id,bookId){
+async function openArchiveSharedNote(id,bookId,trigger){
+  var previous=document.getElementById('archive-shared-note');if(previous&&previous._closeArchiveSharedNote)previous._closeArchiveSharedNote(false);
+  var request=++archiveSharedNoteRequest,originRoute=location.hash,originVersion=readingHistoryRouteVersion;
   var session=SESSION,material=session&&session.keyB64,epoch=saveSessionEpoch,entry=STATE.privateEntries[id],book=bookById(bookId);
   function guard(){if(!session||SESSION!==session||SESSION.keyB64!==material||saveSessionEpoch!==epoch||memberLoadState.privateEntries!=='ready'||!entry||entry.userId!==session.userId||entry.bookId!==bookId||!book||GrowellPrivateCategories.isSettingsEntry(entry)||GrowellArchiveDomain.isArchiveEntry(entry)||STATE.privateEntries[id]!==entry)throw new Error('기록을 다시 불러와 주세요.');}
-  guard();var key=await ensureKey();guard();if(!key)throw new Error('개인 기록 잠금을 먼저 열어주세요.');
-  var raw=await decryptPrivateRecord(entry,key);guard();var payload;try{payload=JSON.parse(raw);}catch(e){payload={text:raw};}
+  function current(){return request===archiveSharedNoteRequest&&location.hash===originRoute&&readingHistoryRouteVersion===originVersion;}
+  function returnTarget(){
+    if(trigger&&trigger.isConnected)return trigger;
+    var matches=Array.from(document.querySelectorAll('[data-shared-read-note]')).filter(function(button){return button.dataset.sharedReadNote===id&&button.dataset.sharedNoteBook===bookId;});
+    var inDialog=matches.filter(function(button){var parent=button.closest&&button.closest('dialog');return parent&&parent.open;});
+    return inDialog[inDialog.length-1]||matches[0]||null;
+  }
+  guard();var key=await ensureKey();if(!current())return;guard();if(!key)throw new Error('개인 기록 잠금을 먼저 열어주세요.');
+  var raw=await decryptPrivateRecord(entry,key);if(!current())return;guard();var payload;try{payload=JSON.parse(raw);}catch(e){payload={text:raw};}
   if(!payload||typeof payload!=='object'||Array.isArray(payload))throw new Error('기록을 열 수 없어요.');
   var node=document.createElement('dialog');node.className='archive-dialog archive-note-dialog';node.id='archive-shared-note';
   var body=noteBodyHtml(payload);
-  node.innerHTML='<header class="archive-dialog-head"><h2>'+esc(payload.title||'독서 노트')+'</h2><button type="button" class="icon-btn" data-close aria-label="노트 닫기">'+svgIcon(I_CLOSE)+'</button></header><div class="archive-dialog-body"><p class="archive-form-hint">'+esc(book.title)+' · '+esc(fmtPostDate(entry.createdAt))+'</p>'+body.mediaHtml+'<div class="post-body">'+body.bodyHtml+'</div><div class="archive-dialog-actions"><button type="button" class="btn btn-primary" data-original>나의 공간에서 수정</button></div></div>';
+  node.innerHTML='<header class="archive-dialog-head"><h2>'+esc(payload.title||'독서 노트')+'</h2><button type="button" class="icon-btn" data-close aria-label="노트 닫기">'+svgIcon(I_CLOSE)+'</button></header><div class="archive-dialog-body"><p class="archive-form-hint">'+esc(book.title)+' · '+esc(fmtPostDate(entry.createdAt))+'</p>'+body.mediaHtml+'<div class="post-body">'+body.bodyHtml+'</div><div class="archive-dialog-actions archive-note-view-actions"><button type="button" class="archive-note-book-link" data-book-record aria-haspopup="dialog">'+svgIcon('<path d="M12 5v15M3 4c3-1 6-1 9 1 3-2 6-2 9-1v15c-3-1-6-1-9 1-3-2-6-2-9-1Z"/>')+'이 책의 독서 기록</button><button type="button" class="btn btn-primary" data-original>나의 공간에서 수정</button></div></div>';
   var closed=false;
-  function close(){if(closed)return;closed=true;node.close();node.remove();GrowellPopupHistory.closed('archive-shared-note');}
-  node.querySelector('[data-close]').onclick=close;node.addEventListener('cancel',function(event){event.preventDefault();close();});
+  function close(restore){if(closed)return;closed=true;if(request===archiveSharedNoteRequest)archiveSharedNoteRequest++;node.close();node.remove();GrowellPopupHistory.closed('archive-shared-note');if(restore!==false&&SESSION===session&&location.hash===originRoute){var target=returnTarget();if(target)target.focus({preventScroll:true});}}
+  node._closeArchiveSharedNote=close;
+  node.querySelector('[data-close]').onclick=function(){close();};node.addEventListener('cancel',function(event){event.preventDefault();close();});
+  node.querySelector('[data-book-record]').onclick=function(){
+    try{guard();}catch(e){close(false);showToast(e.message,true);return;}
+    if(!current()){close(false);return;}
+    var target=returnTarget();close(false);GrowellArchive.openBookRecord(null,bookId,target);
+  };
   node.querySelector('[data-original]').onclick=function(){
     try{guard();}catch(e){close();showToast(e.message,true);return;}
-    close();location.hash='#/book/'+bookId+'/mine';
+    if(!current()){close(false);return;}
+    close(false);location.hash='#/book/'+bookId+'/mine';
     openComposerWithDraft('mine',bookId,id,function(){
       try{guard();}catch(e){showToast(e.message,true);return;}
       mineEditingId=id;mineEditingPayload=payload;mineComposerOpenFor=bookId;render();
@@ -7786,7 +7804,7 @@ GrowellArchive.configure({
   render:render,toast:showToast,reload:function(){loadMemberData().then(render);render();},
   beforeTimerStart:function(ownerId){var paused=pauseSharedReadingForArchive(ownerId);if(paused)render();return paused;},
   catalog:archiveSharedCatalog,linkedSignature:archiveLinkedSignature,
-  sharedNotes:function(){return archiveSharedNotes();},openSharedNote:function(id,bookId){return openArchiveSharedNote(id,bookId);},
+  sharedNotes:function(){return archiveSharedNotes();},openSharedNote:function(id,bookId,trigger){return openArchiveSharedNote(id,bookId,trigger);},
   editorHtml:function(html){return rtToolbarHtml('archive')+'<div class="note-editor" contenteditable="true" role="textbox" aria-label="노트 내용" aria-multiline="true" data-placeholder="마음에 남은 문장과 생각을 적어주세요.">'+sanitizeHtml(html||'')+'</div>';},
   bindEditor:function(container,onChange){return bindRichTextToolbar(container.querySelector('[contenteditable="true"]'),{controls:container.querySelector('.rt-controls'),onChange:onChange,isolated:true});},
   sanitizeHtml:function(html){return sanitizeHtml(html);},plainText:function(html){return stripHtml(html);},

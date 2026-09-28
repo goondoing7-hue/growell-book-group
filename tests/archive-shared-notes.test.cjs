@@ -4,6 +4,8 @@ const domain=require('../archiveDomain.js'),categories=require('../privateCatego
 const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 const source=html.slice(html.indexOf('var archiveSharedNoteCache=null;'),html.indexOf('async function openArchiveSharedNote('));
 const photoSource=html.slice(html.indexOf('function safePhotoUrl('),html.indexOf('function photoFromUrl('));
+const popupSource=html.slice(html.indexOf('async function openArchiveSharedNote('),html.indexOf('function archiveSharedCatalog('));
+const openComposerSource=html.slice(html.indexOf('function openComposerWithDraft('),html.indexOf('/* Recovery also rewraps'));
 async function flush(){for(let i=0;i<5;i++)await new Promise(resolve=>setImmediate(resolve));}
 function harness(){
  const entries=[],reads=[];let renders=0;
@@ -67,4 +69,84 @@ test('locked or corrupt notes never replace persisted records and session cleari
  h.c.archiveSharedNotes();await flush();assert.equal(h.c.archiveSharedNotes().length,1);assert.equal(h.c.archiveSharedNotes()[0].text,'예전 기록');assert.equal(h.entries.length,2);
  h.c.clearArchiveSharedNotes();assert.equal(h.c.archiveSharedNoteCache,null);
  h.c.memberLoadState.privateEntries='loading';assert.equal(h.c.archiveSharedNotes().length,0);
+});
+
+function popupHarness(){
+ const h=harness(),{c}=h,nodes=[],events=[],popups=new Map(),triggers=[];
+ const note=row('mine');h.entries.push(note);
+ const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+ Object.assign(c,{STATE:{privateEntries:{mine:note}},location:{hash:'#/archive'},readingHistoryRouteVersion:1,
+  esc,svgIcon:path=>'<svg>'+path+'</svg>',I_CLOSE:'close',fmtPostDate:()=> '오늘',showToast:message=>events.push(['toast',message]),
+  noteBodyHtml:payload=>({mediaHtml:'',bodyHtml:payload.html?c.sanitizeHtml(payload.html):esc(payload.text||'')}),
+  captureComposerDraft:()=>null,loadComposerDraft:async()=>null,mineEditingId:null,mineEditingPayload:null,mineComposerOpenFor:null,
+  GrowellPopupHistory:{open:(key,options)=>{popups.set(key,options);events.push(['open',key]);},closed:key=>{popups.delete(key);events.push(['closed',key]);}},
+  GrowellArchive:{openBookRecord:(...args)=>{assert.equal(nodes.filter(n=>n.isConnected).length,0);assert.equal(popups.has('archive-shared-note'),false);events.push(['book',...args]);}},
+  document:{getElementById:id=>nodes.find(node=>node.id===id&&node.isConnected)||null,
+   querySelectorAll:selector=>selector==='[data-shared-read-note]'?triggers.filter(trigger=>trigger.isConnected):[],
+   body:{appendChild(node){node.isConnected=true;nodes.push(node);}},createElement(){
+    const controls={},handlers={};
+    return {open:false,isConnected:false,innerHTML:'',querySelector:selector=>controls[selector]||=( {} ),
+     addEventListener:(name,handler)=>{handlers[name]=handler;},showModal(){this.open=true;},close(){this.open=false;},remove(){this.isConnected=false;},
+     cancel(){let prevented=false;handlers.cancel({preventDefault(){prevented=true;}});return prevented;}};
+   }}});
+ vm.runInContext(openComposerSource+popupSource,c);
+ function trigger(id='mine',bookId='emotion'){
+  const result={isConnected:true,dataset:{sharedReadNote:id,sharedNoteBook:bookId},focus:options=>events.push(['focus',result,options])};triggers.push(result);return result;
+ }
+ return {...h,c,nodes,events,popups,trigger,current:()=>nodes.findLast(node=>node.isConnected)};
+}
+
+test('shared note opens the matching archive book record only after retiring its own dialog',async()=>{
+ const h=popupHarness(),trigger=h.trigger(),before=JSON.stringify(h.c.STATE.privateEntries);
+ await h.c.openArchiveSharedNote('mine','emotion',trigger);const node=h.current();
+ assert.match(node.innerHTML,/archive-note-view-actions[\s\S]*archive-note-book-link[\s\S]*이 책의 독서 기록/);
+ assert.match(node.innerHTML,/소중한 문장/);node.querySelector('[data-book-record]').onclick();
+ assert.equal(h.current(),undefined);assert.equal(h.c.location.hash,'#/archive');
+ const target=h.events.find(event=>event[0]==='book');assert.deepEqual(target.slice(1),[null,'emotion',trigger]);
+ assert.equal(JSON.stringify(h.c.STATE.privateEntries),before);
+});
+
+test('shared note X, Escape and Back return focus without scrolling, including a replaced carousel button',async()=>{
+ for(const way of ['x','escape','back']){
+  const h=popupHarness(),original=h.trigger();await h.c.openArchiveSharedNote('mine','emotion',original);const node=h.current();
+  original.isConnected=false;h.trigger();const replacement=h.trigger();replacement.closest=()=>({open:true});
+  if(way==='x')node.querySelector('[data-close]').onclick();
+  else if(way==='escape')assert.equal(node.cancel(),true);
+  else h.popups.get('archive-shared-note').close();
+  assert.equal(h.current(),undefined);assert.equal(h.c.location.hash,'#/archive');
+  const focused=h.events.filter(event=>event[0]==='focus');assert.equal(focused.length,1);assert.equal(focused[0][1],replacement);assert.equal(focused[0][2].preventScroll,true);
+ }
+});
+
+test('late shared note decryption cannot open after navigation, a departed-and-returned route, or member cleanup',async()=>{
+ for(const change of [h=>{h.c.location.hash='#/book/thought/mine';},h=>{h.c.readingHistoryRouteVersion+=2;},h=>h.c.clearArchiveSharedNotes()]){
+  const h=popupHarness();let release;h.c.decryptPrivateRecord=()=>new Promise(resolve=>{release=resolve;});
+  const pending=h.c.openArchiveSharedNote('mine','emotion',h.trigger());await flush();change(h);release(h.entries[0].raw);await pending;
+  assert.equal(h.current(),undefined);assert.equal(h.popups.size,0);
+ }
+});
+
+test('only the newest shared note request can open and an old close callback cannot dismiss its replacement',async()=>{
+ const h=popupHarness(),other=row('newest','thought');h.c.STATE.privateEntries.newest=other;
+ let release;h.c.decryptPrivateRecord=entry=>entry.id==='mine'?new Promise(resolve=>{release=resolve;}):Promise.resolve(entry.raw);
+ const old=h.c.openArchiveSharedNote('mine','emotion',h.trigger());await flush();
+ await h.c.openArchiveSharedNote('newest','thought',h.trigger('newest','thought'));const newest=h.current();
+ release(h.entries[0].raw);await old;assert.equal(h.current(),newest);assert.equal(h.nodes.filter(node=>node.isConnected).length,1);
+ const staleClose=h.popups.get('archive-shared-note').close;
+ await h.c.openArchiveSharedNote('newest','thought',h.trigger('newest','thought'));const replacement=h.current();
+ staleClose();assert.equal(h.current(),replacement);assert.equal(replacement.open,true);assert.equal(h.popups.size,1);
+});
+
+test('shared popup remains owner-scoped and clearing membership closes it without returning focus to private content',async()=>{
+ const h=popupHarness(),trigger=h.trigger();await h.c.openArchiveSharedNote('mine','emotion',trigger);
+ h.c.clearArchiveSharedNotes();assert.equal(h.current(),undefined);assert.equal(h.popups.size,0);assert.equal(h.events.filter(event=>event[0]==='focus').length,0);
+ h.c.SESSION={userId:'other',keyB64:'other'};
+ await assert.rejects(h.c.openArchiveSharedNote('mine','emotion',trigger),/기록을 다시 불러/);assert.equal(h.current(),undefined);
+});
+
+test('shared popup still opens its original private editor on My Space without losing the note payload',async()=>{
+ const h=popupHarness();await h.c.openArchiveSharedNote('mine','emotion',h.trigger());
+ h.current().querySelector('[data-original]').onclick();await flush();
+ assert.equal(h.current(),undefined);assert.equal(h.c.location.hash,'#/book/emotion/mine');assert.equal(h.c.mineEditingId,'mine');assert.equal(h.c.mineComposerOpenFor,'emotion');
+ assert.deepEqual(JSON.parse(JSON.stringify(h.c.mineEditingPayload)),JSON.parse(h.entries[0].raw));assert.equal(h.events.some(event=>event[0]==='book'),false);
 });

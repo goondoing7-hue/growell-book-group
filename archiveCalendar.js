@@ -98,7 +98,7 @@
   function bodyHtml(model){
     var s=model.summary;
     return '<div class="archive-calendar-month"><button type="button" class="icon-btn" data-calendar-shift="-1" aria-label="이전 달"'+(model.year===1&&model.month===1?' disabled':'')+'>'+icon('left')+'</button><h3 id="archive-calendar-month">'+model.year+'년 '+model.month+'월</h3><button type="button" class="icon-btn" data-calendar-shift="1" aria-label="다음 달"'+(model.year===9999&&model.month===12?' disabled':'')+'>'+icon('right')+'</button></div>'+
-      '<div class="archive-calendar-statistics"><span>'+model.month+'월 완독 <strong>'+s.monthCompleted+'<small>권</small></strong></span><span>'+model.year+'년 완독 <strong>'+s.yearCompleted+'<small>권</small></strong></span><span>총 등록한 책 <strong>'+s.total+'<small>권</small></strong></span><span>지금 읽는 중 <strong>'+s.reading+'<small>권</small></strong></span></div>'+
+      '<div class="archive-calendar-statistics">'+[['monthCompleted',model.month+'월 완독'],['yearCompleted',model.year+'년 완독'],['total','총 등록한 책'],['reading','지금 읽는 중']].map(function(pair){return '<button type="button" data-calendar-stat="'+pair[0]+'" aria-haspopup="dialog">'+pair[1]+'<strong>'+s[pair[0]]+'<small>권</small></strong></button>';}).join('')+'</div>'+
       '<div class="archive-calendar-grid" role="group" aria-labelledby="archive-calendar-month"><div class="archive-calendar-weekdays">'+['월','화','수','목','금','토','일'].map(function(label){return '<span>'+label+'</span>';}).join('')+'</div>'+model.weeks.map(function(week){return '<div class="archive-calendar-week"><div class="archive-calendar-dates">'+week.days.map(function(d){return '<time datetime="'+d.date+'" class="'+(!d.inMonth?'is-outside ':'')+(d.today?'is-today':'')+'">'+d.number+'</time>';}).join('')+'</div><div class="archive-calendar-bars" style="grid-template-rows:repeat('+week.lanes+',24px)">'+week.segments.map(function(segment){return '<button type="button" class="archive-calendar-book'+(segment.continuesBefore?' continues-before':'')+(segment.continuesAfter?' continues-after':'')+'" data-calendar-book="'+esc(segment.id)+'" aria-haspopup="dialog" title="'+esc(segment.title+' · '+spanLabel(segment))+'" aria-label="'+esc(segment.title+' · '+spanLabel(segment)+' · 독서 기록 보기')+'" style="grid-column:'+(segment.startCol+1)+' / '+(segment.endCol+2)+';grid-row:'+(segment.lane+1)+';--calendar-book-color:'+fallbackColor(segment.id+'|'+segment.title)+'"><span>'+esc(segment.title)+'</span></button>';}).join('')+'</div></div>';}).join('')+'</div>'+
       '<p class="archive-calendar-help">책 이름을 누르면 독서 기록을 볼 수 있어요. 읽는 중인 책은 오늘까지 표시해요.</p>'+(model.undated?'<p class="archive-calendar-missing">읽기 날짜가 없는 '+model.undated+'권은 달력에 표시하지 않아요.</p>':'');
   }
@@ -108,6 +108,10 @@
     body.innerHTML=bodyHtml(model);node.scrollTop=scroll;
     node.querySelectorAll('[data-calendar-shift]').forEach(function(button){button.onclick=function(){if(!current())return close();var step=Number(button.dataset.calendarShift),next=nextMonth(month.year,month.month,step);if(next.year<1||next.year>9999)return;month=next;paint(step);};});
     node.querySelectorAll('[data-calendar-book]').forEach(function(button){button.onclick=function(){if(!current())return close();var id=button.dataset.calendarBook;if(!context.rows.some(function(row){return row.entry.id===id&&!row.book.deleted;}))return;context.onSelect(id,button);};});
+    node.querySelectorAll('[data-calendar-stat]').forEach(function(button){button.onclick=function(){
+      if(!current())return close();if(!root.GrowellArchiveStats)return;var kind=button.dataset.calendarStat,reference=String(month.year).padStart(4,'0')+'-'+String(month.month).padStart(2,'0')+'-01';
+      root.GrowellArchiveStats.open({kind:kind,title:kind==='monthCompleted'?month.year+'년 '+month.month+'월 완독한 책':kind==='yearCompleted'?month.year+'년 완독한 책':'',rows:context.rows,now:reference,ownerId:context.ownerId,getOwnerId:context.getOwnerId,isCurrent:function(){return dialog===node&&context===activeContext&&current();},onSelect:function(id,trigger){if(current())context.onSelect(id,trigger);},trigger:button,getTrigger:function(key){return node.querySelector('[data-calendar-stat="'+key+'"]');}});
+    };});
     if(focusShift!==undefined){var trigger=node.querySelector('[data-calendar-shift="'+focusShift+'"]');if(trigger)trigger.focus({preventScroll:true});}
     var seen=new Set();model.weeks.forEach(function(week){week.segments.forEach(function(segment){if(seen.has(segment.id))return;seen.add(segment.id);coverColor(segment).then(function(color){if(dialog!==node||context!==activeContext||!current()||!context.rows.some(function(row){return row.entry.id===segment.id&&(row.book.coverUrl||'')===segment.coverUrl;}))return;node.querySelectorAll('[data-calendar-book]').forEach(function(button){if(button.dataset.calendarBook===segment.id)button.style.setProperty('--calendar-book-color',color);});});});});
   }
@@ -115,6 +119,7 @@
     var node=dialog,old=context;dialog=null;context=null;month=null;
     if(node){node.close();node.remove();}
     if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('archive-calendar');
+    if(root.GrowellArchiveStats)root.GrowellArchiveStats.refresh();
     if(old&&old.getOwnerId()===old.ownerId&&(!old.isCurrent||old.isCurrent())&&old.trigger&&old.trigger.isConnected)old.trigger.focus({preventScroll:true});
   }
   function reset(){close();colors.clear();}

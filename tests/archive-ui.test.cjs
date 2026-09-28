@@ -292,10 +292,10 @@ test('missing YES24 connection stays explicit; local catalog is separately label
   await dialog.querySelector('[data-book-search-mode="link"]').click();await submitSearch(dialog,'9788936434120');assert.equal(calls.at(-1).get('mode'),'link');assert.equal(calls.at(-1).get('q'),'9788936434120');
 });
 
-test('YES24 saved cards, records, detail and timer retain safe source attribution without nested links',async()=>{
+test('YES24 book metadata retains attribution while personal notes omit it',async()=>{
   const book=yes24Book({sourceUrl:'https://m.yes24.com/Goods/123456?tracking=ignored'}),row=makeRow('yes24',{...book,providerId:book.id,coverUrl:book.thumbnail,review:'감상',notes:[{id:'n1',text:'내 노트',createdAt:1000}],tableOfContents:'1부 시작\n2부 <끝>'});const h=harness([row]);await h.mount();
   const card=h.body.querySelector('[data-archive-open]');assert.equal(card.querySelector('a'),null);assert.equal(card.parentNode.querySelector('.archive-source a').getAttribute('href'),'https://www.yes24.com/Product/Goods/123456');
-  const records=new Node();records.innerHTML=h.api.recordsHtml();assert.equal(records.querySelector('button a'),null);assert.match(records.querySelector('.archive-source').textContent,/YES24/);
+  const records=new Node();records.innerHTML=h.api.recordsHtml();assert.equal(records.querySelector('button a'),null);assert.equal(records.querySelector('.archive-source'),null);
   await card.click();const detail=h.body.querySelector('dialog');assert.match(detail.querySelector('.archive-source').textContent,/도서 정보: YES24/);await detail.querySelector('[data-archive-timer]').click();assert.equal(h.timers[0].book.source,'yes24');assert.equal(h.timers[0].book.sourceUrl,'https://www.yes24.com/Product/Goods/123456');
   await detail.querySelector('[data-archive-edit]').click();assert.match(detail.querySelector('.archive-selected-source').textContent,/YES24/);
   const unsafe=harness([makeRow('unsafe',{...book,sourceUrl:'https://yes24.com.attacker.invalid/Product/Goods/123456'})]);await unsafe.mount();assert.equal(unsafe.body.querySelector('.archive-source a'),null);
@@ -439,7 +439,7 @@ test('note popup return preserves the current carousel card after close and save
 });
 
 test('book-specific record feed separates fixed note categories from book genres and searches only that book',async()=>{
-  const photo='https://example.com/quote.jpg',h=harness([makeRow('feed',{genres:['인문'],notes:[{id:'quote',category:'quote',title:'밑줄 문장',text:'기억할 한 문장',photo,createdAt:1000},{id:'thought',category:'thought',title:'내 느낌',text:'다시 생각할 내용',createdAt:2000},{id:'legacy',text:'예전 분류 없는 노트',createdAt:3000}]}),makeRow('different',{notes:[{id:'foreign-book-note',category:'quote',text:'다른 책의 문장',createdAt:4000}]})]);const detail=await h.open('feed');assert.equal(detail.querySelectorAll('[data-book-note-filter]').length,5);assert.equal(detail.querySelectorAll('.archive-book-feed-list [data-archive-read-note]').length,3);assert.equal(detail.querySelector('.archive-feed-thumbnail img').getAttribute('src'),photo);assert.doesNotMatch(detail.querySelector('.archive-book-feed-list').textContent,/다른 책의 문장/);assert.doesNotMatch(detail.querySelector('.archive-note-category-tabs').textContent,/인문/);
+  const photo='https://example.com/quote.jpg',h=harness([makeRow('feed',{genres:['인문'],notes:[{id:'quote',category:'quote',title:'밑줄 문장',text:'기억할 한 문장',photo,createdAt:1000},{id:'thought',category:'thought',title:'내 느낌',text:'다시 생각할 내용',createdAt:2000},{id:'legacy',text:'예전 분류 없는 노트',createdAt:3000}]}),makeRow('different',{notes:[{id:'foreign-book-note',category:'quote',text:'다른 책의 문장',createdAt:4000}]})]);const detail=await h.open('feed');assert.equal(detail.querySelectorAll('[data-book-note-filter]').length,5);assert.equal(detail.querySelectorAll('.archive-book-feed-list [data-archive-read-note]').length,3);assert.equal(detail.querySelector('.archive-feed-thumbnail img').getAttribute('src'),photo);assert.equal(detail.querySelectorAll('.archive-book-feed-list .archive-cover').length,0);assert.equal(detail.querySelectorAll('.archive-book-feed-list img').length,1);assert.doesNotMatch(detail.querySelector('.archive-book-feed-list').textContent,/다른 책의 문장/);assert.doesNotMatch(detail.querySelector('.archive-note-category-tabs').textContent,/인문/);
   await detail.querySelector('[data-book-note-filter="quote"]').click();assert.equal(detail.querySelectorAll('.archive-book-feed-list [data-archive-read-note]').length,1);assert.match(detail.querySelector('.archive-book-feed-list').textContent,/밑줄 문장/);assert.doesNotMatch(detail.querySelector('.archive-book-feed-list').textContent,/예전 분류 없는/);await detail.querySelector('[data-book-note-filter=""]').click();let search=detail.querySelector('[data-book-note-search]');search.value='다시 생각';search.oninput();assert.equal(detail.querySelectorAll('.archive-book-feed-list [data-archive-read-note]').length,1);assert.match(detail.querySelector('.archive-book-feed-list').textContent,/내 느낌/);search=detail.querySelector('[data-book-note-search]');search.value='';search.oninput();assert.match(detail.querySelector('.archive-book-feed-list').textContent,/예전 분류 없는/);
 });
 
@@ -453,7 +453,7 @@ test('all-note collection category filters include mapped shared notes and keep 
 });
 
 test('archive inside-cover opens book introduction and passes its current page without changing shelf entry behavior',async()=>{
-  const row=makeRow('cover',{currentPage:37,totalPages:200,tableOfContents:'1장 시작 · 12'}),h=harness([row]),opened=[],hints=[];h.c.GrowellBookDetails={hintArchiveHtml:(book,page)=>{hints.push({title:book.title,page});return '<p class="book-reading-hint">읽는 부분: 1장 시작</p>';},openArchive:(book,page,trigger)=>opened.push({book,page,trigger})};const detail=await h.open('cover');assert.equal(opened.length,0);assert.match(detail.querySelector('.archive-reading-summary').textContent,/읽는 부분: 1장 시작/);assert.equal(hints[0].page,37);const cover=detail.querySelector('[data-archive-book-info]');await cover.click();assert.equal(opened.length,1);assert.equal(opened[0].page,37);assert.equal(opened[0].book.tableOfContents,'1장 시작 · 12');assert.equal(opened[0].trigger,cover);assert.equal(detail.open,true);assert.equal(h.saved.length,0);
+  const row=makeRow('cover',{currentPage:37,totalPages:200,tableOfContents:'1장 시작 · 12'}),h=harness([row]),opened=[],hints=[];h.c.GrowellBookDetails={hintArchiveHtml:(book,page)=>{hints.push({title:book.title,page});return '<p class="book-reading-hint">읽는 부분: 1장 시작</p>';},openArchive:(book,page,trigger)=>opened.push({book,page,trigger})};const detail=await h.open('cover');assert.equal(opened.length,0);assert.equal(detail.querySelector('.archive-description'),null);assert.match(detail.querySelector('.archive-reading-summary').textContent,/읽는 부분: 1장 시작/);assert.equal(hints[0].page,37);const cover=detail.querySelector('[data-archive-book-info]');await cover.click();assert.equal(opened.length,1);assert.equal(opened[0].page,37);assert.equal(opened[0].book.tableOfContents,'1장 시작 · 12');assert.equal(opened[0].trigger,cover);assert.equal(detail.open,true);assert.equal(h.saved.length,0);
 });
 
 test('manual book introduction, author and page-labelled contents edits preserve reading history',async()=>{
@@ -469,4 +469,44 @@ test('late shared-note cache refreshes an open book feed once without disturbing
 test('late shared notes refresh an open collection beneath a dirty note popup while preserving all filters and scroll',async()=>{
   const h=harness([makeRow('late-collection',{linkedBookId:'emotion',genres:['인문']})]);let shared=[];h.adapter.sharedNotes=()=>shared;await h.mount();await h.body.querySelector('[data-archive-notes-all]').click();const collection=h.body.querySelector('.archive-collection-dialog');await collection.querySelector('[data-collection-genre="인문"]').click();await collection.querySelector('[data-collection-book]').click();await collection.querySelector('[data-collection-category="quote"]').click();collection.scrollTop=560;collection.querySelector('.archive-dialog-body').scrollTop=180;collection.querySelector('.archive-note-book-grid').scrollTop=40;await collection.querySelector('[data-collection-write]').click();const popup=h.body.querySelector('.archive-note-dialog'),form=popup.querySelector('form');form.elements.text.value='중첩 팝업에서 작성 중인 글';h.doc.activeElement=form.elements.text;
   shared=[{id:'fresh_quote',bookId:'emotion',userId:'owner',bookTitle:'모임 책',text:'새로 도착한 인용 노트',categoryId:'quote',createdAt:2000}];h.api.bind();assert.match(collection.querySelector('.archive-collection-list').textContent,/새로 도착한 인용 노트/);assert.equal(collection.querySelector('[data-collection-genre="인문"]').getAttribute('aria-pressed'),'true');assert.equal(collection.querySelector('[data-collection-book]').getAttribute('aria-pressed'),'true');assert.equal(collection.querySelector('[data-collection-category="quote"]').getAttribute('aria-pressed'),'true');assert.equal(collection.scrollTop,560);assert.equal(collection.querySelector('.archive-dialog-body').scrollTop,180);assert.equal(collection.querySelector('.archive-note-book-grid').scrollTop,40);assert.equal(h.body.querySelector('.archive-note-dialog'),popup);assert.equal(popup.querySelector('form'),form);assert.equal(form.elements.text.value,'중첩 팝업에서 작성 중인 글');assert.equal(h.doc.activeElement,form.elements.text);const stable=collection.querySelector('.archive-collection-list');h.api.bind();assert.equal(collection.querySelector('.archive-collection-list'),stable);assert.equal(h.saved.length,0);
+});
+
+
+test('notes use book covers in carousels, attachment-only images in book feeds, and open the matching reading record',async()=>{
+  const cover='https://example.com/book.jpg',photo='https://example.com/my-photo.jpg';
+  const h=harness([makeRow('jump',{title:'고찰의 책',coverUrl:cover,themes:['thought'],source:'yes24',sourceUrl:'https://www.yes24.com/Product/Goods/123456',description:'책 소개',tableOfContents:'1장 · 12',notes:[{id:'photo',title:'사진 노트',text:'기록 본문',photo,createdAt:2000},{id:'text',title:'글 노트',text:'글만 기록',createdAt:1000}]}),makeRow('other',{title:'다른 책'})]);
+  await h.mount();
+  const reflection=new Node();reflection.innerHTML=h.api.reflectionHtml('thought');
+  for(const cards of [reflection,h.body.querySelector('.archive-note-shelf')]){
+    assert.equal(cards.querySelectorAll('.archive-feed-thumbnail').length,0);
+    assert.equal(cards.querySelectorAll('.archive-cover img').length,2);
+    assert.equal(cards.querySelector('.archive-cover img').getAttribute('src'),cover);
+    assert.equal(cards.querySelector('.archive-source'),null);
+  }
+  const trigger=h.body.querySelector('[data-archive-read-note="photo"]');await trigger.click();
+  let popup=h.body.querySelector('.archive-note-dialog');
+  assert.equal(popup.querySelector('.archive-source'),null);assert.equal(popup.querySelector('.archive-note-photo img').getAttribute('src'),photo);
+  await popup.querySelector('[data-note-book]').click();
+  assert.equal(h.body.querySelector('.archive-note-dialog'),null);
+  const detail=h.body.querySelector('.archive-dialog');assert.equal(detail._rowId,Domain.recordId('owner','arc_jump'));
+  assert.equal(detail.querySelector('.archive-description'),null);assert.ok(detail.querySelector('[data-archive-book-info]'));
+  assert.equal(detail.querySelectorAll('.archive-book-feed-list .archive-cover').length,0);
+  assert.equal(detail.querySelectorAll('.archive-book-feed-list img').length,1);
+  detail.scrollTop=375;detail.querySelector('.archive-dialog-body').scrollTop=150;
+  await detail.querySelector('[data-archive-read-note="text"]').click();popup=h.body.querySelector('.archive-note-dialog');
+  await popup.querySelector('[data-note-book]').click();await flush();
+  assert.equal(h.body.querySelector('.archive-dialog'),detail);assert.equal(detail.scrollTop,375);assert.equal(detail.querySelector('.archive-dialog-body').scrollTop,150);
+  assert.equal(h.saved.length,0);
+});
+
+test('shared-note book links use the registered book or a note-only collection and reject another owner',async()=>{
+  const h=harness([makeRow('linked',{title:'함께 읽는 책',linkedBookId:'thought'})]);
+  h.adapter.sharedNotes=()=>[{id:'only',bookId:'body',userId:'owner',bookTitle:'노트만 있는 책',text:'개인 노트',createdAt:2000}];
+  await h.mount();h.api.openBookRecord(null,'thought');assert.equal(h.body.querySelector('.archive-dialog')._rowId,Domain.recordId('owner','arc_linked'));
+  h.history.filter(item=>item.key==='archive').at(-1).options.close();
+  h.api.openBookRecord(null,'body');let collection=h.body.querySelector('.archive-collection-dialog');
+  assert.equal(collection.querySelector('[data-collection-book="shared-note-book:body"]').getAttribute('aria-pressed'),'true');
+  assert.equal(collection.querySelectorAll('[data-shared-read-note]').length,1);assert.match(collection.textContent,/개인 노트/);
+  h.api.reset();h.setSession({userId:'other'});h.api.openBookRecord(Domain.recordId('owner','arc_linked'),null);
+  assert.equal(h.body.querySelector('dialog'),null);assert.equal(h.saved.length,0);
 });
