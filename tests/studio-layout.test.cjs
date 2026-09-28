@@ -35,6 +35,7 @@ function harness(){
     setTimeout:callback=>{scheduled.push(callback);},decryptListInto:entries=>decrypted.push(...entries)};
   vm.createContext(c);
   vm.runInContext(section('function safePhotoUrl(', 'function photoFromUrl(')+
+    section('var spaceComposerDialogPosition=', 'function closeStaleComposersForRoute(')+
     section('function spaceListContentHtml(', 'function spaceNoteTypeHtml(')+
     section('function shareTabHtml(', 'function loginGateHtml(')+
     section('function mineEntryDetailHtml(', '/* ---------------- render: 나의 공간 독서 진행률 카드')+
@@ -52,6 +53,83 @@ function installCategories(c,values,bookId='emotion'){
   c.privateCategoryStates[id]={status:'ready',categories:privateCategories.prepare(values),data:settings.data,material:c.SESSION.keyB64,epoch:c.saveSessionEpoch};
   return id;
 }
+
+function composerDialogHarness(type='mine'){
+  let dialog=null;
+  const events=[],popups=new Map(),bodyClasses=new Set();
+  const trigger={id:'btn-open-'+type+'-composer',focus:options=>events.push(['trigger-focus',options])};
+  const document={activeElement:null,body:{classList:{add:name=>bodyClasses.add(name),remove:name=>bodyClasses.delete(name)}},
+    getElementById(id){if(id==='space-composer-dialog')return dialog;if(id===trigger.id)return trigger;return dialog&&dialog.fields[id]||null;}};
+  const c={SESSION:{userId:'owner'},location:{hash:'#/book/emotion/'+type+'/post/original'},document,
+    readingNoteReturn:null,mineComposerOpenFor:type==='mine'?'emotion':null,shareComposerOpenFor:type==='share'?'emotion':null,
+    captureComposerDraft(){events.push(['capture']);},
+    resetMineComposer(){events.push(['reset','mine']);c.mineComposerOpenFor=null;},
+    resetShareComposer(){events.push(['reset','share']);c.shareComposerOpenFor=null;},
+    returnToReadingTimer(){events.push(['timer-return']);},
+    render(){events.push(['render']);if(!c.mineComposerOpenFor&&!c.shareComposerOpenFor)dialog=null;},
+    GrowellPopupHistory:{open:(key,options)=>popups.set(key,options),closed:key=>{events.push(['history-close',key]);popups.delete(key);}}};
+  vm.createContext(c);vm.runInContext(section('var spaceComposerDialogPosition=', 'function closeStaleComposersForRoute('),c);
+  function mount(key='owner:emotion:'+type+':original'){
+    const fields={},handlers={};
+    for(const id of ['note-title','insight-q1'])fields[id]={id,selectionStart:2,selectionEnd:5,
+      focus(options){document.activeElement=this;events.push(['field-focus',id,options]);},
+      setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end;}};
+    const draft={getAttribute:name=>name==='data-draft-key'?key:null};
+    dialog={open:false,scrollTop:0,fields,getAttribute:name=>name==='data-composer-type'?type:null,
+      querySelector:selector=>selector==='[data-draft-key]'?draft:fields[selector.slice(1)]||null,
+      contains:node=>Object.values(fields).includes(node),
+      showModal(){this.open=true;events.push(['show']);},close(){this.open=false;events.push(['close']);},
+      addEventListener(name,handler){handlers[name]=handler;},
+      cancel(){let prevented=false;handlers.cancel({preventDefault(){prevented=true;}});return prevented;}};
+    return dialog;
+  }
+  return {c,mount,events,popups,bodyClasses,document,clear:()=>{dialog=null;}};
+}
+
+test('composer X, Escape and Back preserve the original detail route and capture before closing',()=>{
+  for(const type of ['mine','share'])for(const way of ['x','escape','back']){
+    const h=composerDialogHarness(type),node=h.mount(),route=h.c.location.hash;
+    h.c.showSpaceComposerDialog();assert.equal(node.open,true);assert.equal(h.popups.size,1);
+    assert.equal(h.bodyClasses.has('space-composer-open'),true);
+    if(way==='escape')assert.equal(node.cancel(),true);
+    else if(way==='back')h.popups.get('space-composer').close();
+    else h.c.closeSpaceComposerDialog();
+    assert.equal(node.open,false);assert.equal(h.c.location.hash,route);assert.equal(h.popups.size,0);
+    assert.equal(h.bodyClasses.has('space-composer-open'),false);
+    assert.equal(h.c[type==='mine'?'mineComposerOpenFor':'shareComposerOpenFor'],null);
+    assert.equal(h.events.filter(e=>e[0]==='capture').length,1);
+    assert.ok(h.events.findIndex(e=>e[0]==='capture')<h.events.findIndex(e=>e[0]==='reset'));
+    assert.equal(h.events.filter(e=>e[0]==='render').length,1);
+    assert.equal(h.events.filter(e=>e[0]==='timer-return').length,0);
+    assert.equal(h.events.find(e=>e[0]==='trigger-focus')[1].preventScroll,true);
+  }
+});
+
+test('rerendering a composer preserves matching scroll and text selection without adding history layers',()=>{
+  const h=composerDialogHarness('share'),first=h.mount();h.c.showSpaceComposerDialog();
+  first.scrollTop=260;h.document.activeElement=first.fields['insight-q1'];
+  first.fields['insight-q1'].selectionStart=3;first.fields['insight-q1'].selectionEnd=9;
+  h.c.captureSpaceComposerDialogPosition();
+  const replacement=h.mount();h.c.showSpaceComposerDialog();
+  assert.equal(replacement.scrollTop,260);assert.equal(h.document.activeElement,replacement.fields['insight-q1']);
+  assert.equal(replacement.fields['insight-q1'].selectionStart,3);assert.equal(replacement.fields['insight-q1'].selectionEnd,9);
+  assert.equal(h.popups.size,1);
+  const other=h.mount('owner:emotion:share:new-target');h.c.showSpaceComposerDialog();
+  assert.equal(other.scrollTop,0);assert.equal(h.document.activeElement,other.fields['note-title']);
+  assert.equal(h.popups.size,1);
+});
+
+test('retiring the composer on route or owner change cannot resume a reading handoff',()=>{
+  for(const change of [c=>{c.location.hash='#/book/emotion/habit';},c=>{c.SESSION={userId:'other'};},c=>{c.SESSION=null;}]){
+    const h=composerDialogHarness(),node=h.mount();h.c.showSpaceComposerDialog();h.c.readingNoteReturn={type:'mine',bookId:'emotion'};
+    change(h.c);h.c.closeSpaceComposerDialog();
+    assert.equal(node.open,false);assert.equal(h.events.filter(e=>e[0]==='timer-return').length,0);
+    assert.equal(h.c.readingNoteReturn.type,'mine');assert.equal(h.popups.size,0);
+  }
+  const h=composerDialogHarness();h.mount();h.c.showSpaceComposerDialog();h.clear();h.c.showSpaceComposerDialog();
+  assert.equal(h.popups.size,0);assert.equal(h.bodyClasses.has('space-composer-open'),false);
+  assert.equal(h.c.spaceComposerDialogRoute,null);assert.equal(h.c.spaceComposerDialogOwner,null);
+});
 
 test('studio rows validate and escape photo URLs while text-only and unsafe-photo rows remain readable',()=>{
   const {c}=harness();
@@ -94,13 +172,18 @@ test('shared preview honors its filter but highlights only explicitly opened pos
   }
 });
 
-test('opening a shared record while a draft exists displays that record, and opening writing renders one composer',()=>{
+test('shared writing opens one dialog while retaining the selected record and background list',()=>{
   const {c}=harness();c.STATE.posts={visible:post('visible')};c.shareComposerOpenFor='emotion';
   const selected=c.shareTabHtml(book,'visible');
-  assert.match(selected,/data-shared-detail="visible"/);assert.doesNotMatch(selected,/id="share-composer"/);
+  assert.match(selected,/data-shared-detail="visible"/);
+  assert.match(selected,/<dialog[^>]*id="space-composer-dialog"[^>]*data-composer-type="share"/);
+  assert.equal((selected.match(/id="share-composer"/g)||[]).length,1);
+  assert.doesNotMatch(selected,/space-workspace[^"\n]*is-writing/);
   const writing=c.shareTabHtml(book);
   assert.equal((writing.match(/id="share-composer"/g)||[]).length,1);
-  assert.doesNotMatch(writing,/data-shared-detail=/);
+  assert.match(writing,/data-shared-detail="visible"/);assert.match(writing,/space-record-list/);
+  const dialog=writing.match(/<dialog\b[\s\S]*?<\/dialog>/)[0];
+  assert.match(dialog,/id="note-editor"/);assert.doesNotMatch(dialog,/data-shared-detail=|space-record-list/);
 });
 
 test('personal workspace renders and schedules decryption only for the signed-in owner and requested book',()=>{
@@ -124,9 +207,10 @@ test('personal reading timer remains present during loading, writing and selecte
   const {c}=harness();c.STATE.privateEntries={mine:entry('mine')};c.mineComposerOpenFor='emotion';
   const writing=c.mineTabHtml(book);
   assert.equal((writing.match(/id="mine-composer"/g)||[]).length,1);
-  assert.equal((writing.match(/data-reading-timer/g)||[]).length,1);assert.doesNotMatch(writing,/data-mine-entry=/);
+  assert.equal((writing.match(/data-reading-timer/g)||[]).length,1);assert.match(writing,/data-mine-entry="mine"/);
+  assert.match(writing,/<dialog[^>]*data-composer-type="mine"/);assert.doesNotMatch(writing,/space-workspace[^"\n]*is-writing/);
   const selected=c.mineTabHtml(book,'mine');
-  assert.ok(selected.includes('data-mine-entry="mine"'));assert.doesNotMatch(selected,/id="mine-composer"/);
+  assert.ok(selected.includes('data-mine-entry="mine"'));assert.equal((selected.match(/id="mine-composer"/g)||[]).length,1);
   assert.equal((selected.match(/data-reading-timer/g)||[]).length,1);
   c.memberDataStatusHtml=()=>'<div data-loading></div>';
   const loading=c.mineTabHtml(book,'mine');assert.ok(loading.includes('data-loading'));assert.ok(loading.includes('data-reading-timer'));

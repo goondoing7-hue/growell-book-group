@@ -3,7 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
-  'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css',
+  'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css',
   'materialsMedia.js', ...require('../vendor/pdfjs/manifest.json').files,
   'timerAlerts.js', 'timer-alert-sw.js',
   'dailyVerses.js', 'memberAccess.js', 'bookDetails.js', 'bookDetails.css',
@@ -24,7 +24,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
-  'tests/archive-shared-notes.test.cjs',
+  'tests/archive-shared-notes.test.cjs', 'tests/archive-calendar.test.cjs',
   'tests/archive-domain.test.cjs', 'tests/archive-timer.test.cjs', 'tests/archive-integration.test.cjs', 'tests/archive-ui.test.cjs', 'tests/book-search.test.cjs', 'tests/signup-notifications.test.cjs',
   'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
   'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs',

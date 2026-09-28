@@ -6,6 +6,7 @@ const vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const ensureSource=source.slice(source.indexOf('function ensureKey(){'),source.indexOf('/* 개인 기록 v2:'));
 const guardSource=source.slice(source.indexOf('function privateSessionGuard('),source.indexOf('function ownPrivateEntries('));
+const openComposerSource=source.slice(source.indexOf('function openComposerWithDraft('),source.indexOf('/* Recovery also rewraps'));
 const editStart=source.indexOf("  app.querySelectorAll('[data-edit-mine]')");
 const editSource=source.slice(editStart,source.indexOf('  /* feed note-type filter pills */',editStart));
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
@@ -35,11 +36,11 @@ function editHarness(){
   const decryption=deferred(),draftOpen=deferred();let handler,openCount=0;
   const button={getAttribute:()=> 'entry-a',addEventListener:(event,fn)=>{handler=fn;}};
   const c={SESSION:{userId:'a',keyB64:'key-a'},STATE:{privateEntries:{'entry-a':{id:'entry-a',bookId:'book',userId:'a'}}},
-    app:{querySelectorAll:()=>[button]},route:{},location:{hash:''},Promise,Error,JSON,
+    app:{querySelectorAll:()=>[button]},route:{},location:{hash:'#/book/book/mine/post/entry-a'},saveSessionEpoch:1,Promise,Error,JSON,
     ensureKey:()=>Promise.resolve('crypto-a'),decryptPrivateRecord:()=>decryption.promise,
-    openComposerWithDraft:(type,book,id,open)=>{openCount++;return draftOpen.promise.then(open);},
+    captureComposerDraft:()=>null,loadComposerDraft:()=>{openCount++;return draftOpen.promise;},
     showToast:()=>{},render:()=>{},mineEditingPayload:null,mineEditingId:null,mineComposerOpenFor:null};
-  vm.createContext(c);vm.runInContext(guardSource+editSource,c);
+  vm.createContext(c);vm.runInContext(guardSource+openComposerSource+editSource,c);
   return {c,decryption,draftOpen,click:()=>handler(),opens:()=>openCount};
 }
 
@@ -54,4 +55,32 @@ test('account switch while loading the edit draft cannot expose old decrypted co
   const h=editHarness();h.click();h.decryption.resolve(JSON.stringify({title:'member a secret'}));await flush();
   assert.equal(h.opens(),1);h.c.SESSION={userId:'b',keyB64:'key-b'};h.draftOpen.resolve(null);await flush();
   assert.equal(h.c.mineEditingPayload,null);assert.equal(h.c.mineEditingId,null);
+});
+
+test('navigation or a replacement save session during private decryption or draft loading cannot reopen the old edit popup',async()=>{
+  for(const stage of ['decryption','draft'])for(const change of [
+    c=>{c.location.hash='#/book/book/share';},
+    c=>{c.location.hash='#/book/book/mine/post/another-entry';},
+    c=>{c.saveSessionEpoch++;}
+  ]){
+    const h=editHarness();h.click();await flush();
+    const originalRoute=h.c.location.hash;
+    if(stage==='draft'){
+      h.decryption.resolve(JSON.stringify({title:'old private edit',html:'private'}));await flush();
+      assert.equal(h.opens(),1);
+    }
+    change(h.c);const destination=h.c.location.hash;
+    if(stage==='decryption')h.decryption.resolve(JSON.stringify({title:'old private edit',html:'private'}));
+    h.draftOpen.resolve(null);await flush();
+    assert.equal(h.opens(),stage==='draft'?1:0);
+    assert.equal(h.c.mineComposerOpenFor,null);assert.equal(h.c.mineEditingPayload,null);assert.equal(h.c.mineEditingId,null);
+    assert.equal(h.c.location.hash,destination,'late loading must not navigate back to '+originalRoute);
+  }
+});
+
+test('private editing in the unchanged detail route opens its own payload without leaving the original record',async()=>{
+  const h=editHarness(),route=h.c.location.hash,payload={title:'own private record',html:'<p>memo</p>',noteType:'original-category'};
+  h.click();h.decryption.resolve(JSON.stringify(payload));await flush();h.draftOpen.resolve(null);await flush();
+  assert.equal(h.c.location.hash,route);assert.equal(h.c.mineComposerOpenFor,'book');assert.equal(h.c.mineEditingId,'entry-a');
+  assert.deepEqual(JSON.parse(JSON.stringify(h.c.mineEditingPayload)),payload);
 });

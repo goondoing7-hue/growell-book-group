@@ -14,7 +14,7 @@ async function flush(){for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r))
 // Small, inert DOM fixture: enough to bind the actual archive module's controls.
 // It never executes attributes, makes network calls, or stores member data.
 class Node {
-  constructor(tag='div',attrs={}){this.tagName=tag.toUpperCase();this.attrs=attrs;this.children=[];this.events={};this.parentNode=null;this._text='';this._html='';this.disabled='disabled' in attrs;this.checked='checked' in attrs;}
+  constructor(tag='div',attrs={}){this.tagName=tag.toUpperCase();this.attrs=attrs;this.children=[];this.events={};this.parentNode=null;this._text='';this._html='';this.disabled='disabled' in attrs;this.checked='checked' in attrs;this.style={setProperty(name,value){this[name]=value;}};}
   get dataset(){return Object.fromEntries(Object.entries(this.attrs).filter(([k])=>k.startsWith('data-')).map(([k,v])=>[k.slice(5).replace(/-([a-z])/g,(_,c)=>c.toUpperCase()),v]));}
   get className(){return this.attrs.class||'';}set className(value){this.attrs.class=value;}
   get classList(){return {toggle:(name,on)=>{const names=new Set(this.className.split(/\s+/).filter(Boolean));const enabled=on===undefined?!names.has(name):on;if(enabled)names.add(name);else names.delete(name);this.className=[...names].join(' ');},add:name=>{this.className+=' '+name;},remove:name=>{this.className=this.className.split(/\s+/).filter(v=>v!==name).join(' ');}};}
@@ -98,6 +98,59 @@ function harness(initialRows=[]){
     async open(id){await this.mount();const button=body.querySelector('[data-archive-open="'+Domain.recordId('owner','arc_'+id)+'"]');assert.ok(button,'archive card');await button.click();return body.querySelector('dialog');}};
 }
 
+test('empty review and reading period are accessible edit targets and Back preserves book dialog position',async()=>{
+  const h=harness([makeRow('quick')]),detail=await h.open('quick');detail.scrollTop=240;const body=detail.querySelector('.archive-dialog-body');body.scrollTop=95;
+  for(const kind of ['review','period']){
+    const trigger=detail.querySelector('[data-archive-field="'+kind+'"]');assert.equal(trigger.tagName,'BUTTON');assert.equal(trigger.getAttribute('aria-haspopup'),'dialog');assert.ok(trigger.getAttribute('aria-label'));
+    await trigger.click();const editor=h.body.querySelector('.archive-detail-field-dialog');assert.equal(editor.open,true);assert.equal(detail.open,true);
+    const history=h.history.filter(item=>item.key==='archive-field').at(-1);assert.equal(history.options.canClose(),true);history.options.close();
+    assert.equal(h.body.querySelector('.archive-detail-field-dialog'),null);assert.equal(detail.open,true);assert.equal(detail.scrollTop,240);assert.equal(body.scrollTop,95);assert.equal(trigger.focused,true);
+  }
+  assert.equal(h.saved.length,0);
+});
+test('direct review edit merges only the review into the latest book and keeps the record open',async()=>{
+  const original=makeRow('review',{rating:4,review:'이전 감상',notes:[{id:'old',text:'원래 노트',createdAt:1000}]});
+  const h=harness([original]),detail=await h.open('review');detail.scrollTop=260;await detail.querySelector('[data-archive-field="review"]').click();
+  const editor=h.body.querySelector('.archive-detail-field-dialog'),form=editor.querySelector('form');assert.equal(form.elements.review.value,'이전 감상');form.elements.review.value='새롭게 남긴 이유';editor.events.input();
+  const latest=makeRow('review',{...original.book,currentPage:50,notes:[...original.book.notes,{id:'new',text:'다른 화면에서 저장한 노트',createdAt:2000}]});h.setRows([latest]);
+  await form.onsubmit({preventDefault(){}});await flush();assert.equal(h.saved.length,1);assert.equal(h.saved[0].row.entry.id,original.entry.id);
+  assert.equal(h.rows()[0].book.review,'새롭게 남긴 이유');assert.equal(h.rows()[0].book.rating,4);assert.equal(h.rows()[0].book.currentPage,50);assert.deepEqual(h.rows()[0].book.notes,latest.book.notes);
+  assert.equal(h.body.querySelector('.archive-detail-field-dialog'),null);assert.equal(detail.open,true);assert.equal(detail.scrollTop,260);assert.match(detail.querySelector('.archive-reflection').textContent,/새롭게 남긴 이유/);
+  assert.equal(detail.querySelector('[data-archive-field="review"]').focused,true);
+});
+test('reading period validates date order, keeps draft after save failure and updates only dates',async()=>{
+  const original=makeRow('dates',{startDate:'2026-09-01',rating:5,review:'날짜와 별개인 감상',readingSessions:[{id:'time',seconds:90,startPage:0,endPage:25,createdAt:1000}]});
+  const h=harness([original]),detail=await h.open('dates');await detail.querySelector('[data-archive-field="period"]').click();
+  const editor=h.body.querySelector('.archive-detail-field-dialog'),form=editor.querySelector('form');assert.equal(form.elements.startDate.value,'2026-09-01');assert.equal(form.elements.endDate.value,'');
+  form.elements.startDate.value='2026-09-10';form.elements.endDate.value='2026-09-05';await form.onsubmit({preventDefault(){}});
+  assert.equal(h.saved.length,0);assert.match(form.querySelector('.archive-form-status').textContent,/빠를 수 없어요/);assert.equal(editor.open,true);
+  form.elements.endDate.value='2026-09-28';h.setFailure(new Error('저장 연결 실패'));await form.onsubmit({preventDefault(){}});
+  assert.equal(editor.open,true);assert.equal(form.elements.endDate.value,'2026-09-28');assert.match(form.querySelector('.archive-form-status').textContent,/저장 연결 실패/);
+  h.setFailure(null);await form.onsubmit({preventDefault(){}});await flush();const saved=h.rows()[0].book;
+  assert.equal(saved.startDate,'2026-09-10');assert.equal(saved.endDate,'2026-09-28');assert.equal(saved.status,'reading');assert.equal(saved.currentPage,25);assert.equal(saved.review,original.book.review);assert.equal(saved.rating,5);assert.deepEqual(saved.readingSessions,original.book.readingSessions);
+  assert.match(detail.querySelector('.archive-period').textContent,/2026-09-10 — 2026-09-28/);assert.equal(detail.open,true);
+});
+test('direct edits preserve unsaved text on conflicts and cancel while guarding session changes',async()=>{
+  const original=makeRow('conflict',{review:'원래 이유'}),h=harness([original]),detail=await h.open('conflict');await detail.querySelector('[data-archive-field="review"]').click();
+  const editor=h.body.querySelector('.archive-detail-field-dialog'),form=editor.querySelector('form');form.elements.review.value='작성하던 내용';editor.events.input();h.c.confirm=()=>false;
+  await editor.querySelector('[data-field-cancel]').click();assert.equal(editor.open,true);assert.equal(form.elements.review.value,'작성하던 내용');
+  h.setRows([makeRow('conflict',{review:'다른 기기에서 쓴 이유'})]);await form.onsubmit({preventDefault(){}});
+  assert.equal(h.saved.length,0);assert.match(form.querySelector('.archive-form-status').textContent,/다른 곳에서 수정/);assert.equal(form.elements.review.value,'작성하던 내용');
+  h.setSession({userId:'other'});await form.onsubmit({preventDefault(){}});assert.equal(h.saved.length,0);h.api.bind();assert.equal(h.body.querySelector('.archive-detail-field-dialog'),null);
+});
+test('reading statistics and calendar use owned active books, and period edits refresh the same calendar month',async()=>{
+  const h=harness([makeRow('now',{status:'completed',startDate:'2026-09-01',endDate:'2026-09-21'}),makeRow('past',{status:'completed',endDate:'2025-12-31'}),
+    makeRow('reading',{startDate:'2026-08-28'}),makeRow('unread',{status:'unread'}),makeRow('trash',{deleted:true}),makeRow('foreign',{},'other')]);
+  h.c.Date=class extends Date{constructor(...args){super(...(args.length?args:['2026-09-28T12:00:00+09:00']));}};
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../archiveCalendar.js'),'utf8'),h.c);
+  await h.mount();const stats=h.body.querySelector('.archive-reading-stats');assert.deepEqual(stats.querySelectorAll('.archive-stat-value').map(node=>node.textContent),['4','1','1','1']);assert.doesNotMatch(stats.textContent,/평균 별점|개의 감상/);
+  await stats.querySelector('[data-archive-calendar]').click();const calendar=h.body.querySelector('.archive-calendar-dialog');assert.equal(calendar.open,true);
+  await calendar.querySelector('[data-calendar-shift="-1"]').click();calendar.scrollTop=310;
+  const bar=calendar.querySelector('[data-calendar-book="'+Domain.recordId('owner','arc_reading')+'"]');assert.ok(bar);await bar.click();const detail=h.body.querySelector('.archive-dialog');assert.equal(detail.open,true);assert.equal(calendar.open,true);
+  await detail.querySelector('[data-archive-field="period"]').click();const form=h.body.querySelector('.archive-detail-field-dialog form');form.elements.startDate.value='2026-08-29';await form.onsubmit({preventDefault(){}});await flush();
+  assert.match(calendar.querySelector('#archive-calendar-month').textContent,/2026년 8월/);assert.equal(calendar.scrollTop,310);assert.equal(h.rows().find(row=>row.entry.id===Domain.recordId('owner','arc_reading')).book.startDate,'2026-08-29');
+  h.history.filter(item=>item.key==='archive').at(-1).options.close();assert.equal(detail.open,false);assert.equal(calendar.open,true);h.events.hashchange();assert.equal(calendar.open,false);
+});
 test('book cards expose reading states and honest progress, and state tabs filter the cover shelf',async()=>{
   const h=harness([makeRow('unread',{status:'unread'}),makeRow('reading',{currentPage:50,totalPages:200}),
     makeRow('complete',{status:'completed',totalPages:300}),makeRow('unknown',{totalPages:null,currentPage:12})]);
@@ -358,6 +411,9 @@ test('emotion reflection hides the original meeting book only, preserving the ar
 
 test('reading history is an icon popup whose Back leaves the existing book details open',async()=>{
   const original=makeRow('history',{readingSessions:[{id:'read',seconds:80,startPage:20,endPage:30,createdAt:1000}]});const h=harness([original]),detail=await h.open('history');assert.equal(detail.querySelector('details.archive-sessions'),null);assert.ok(detail.querySelector('[data-archive-timer]'));assert.ok(detail.querySelector('[data-archive-edit-icon]'));const trigger=detail.querySelector('[data-archive-history]');await trigger.click();const popup=h.body.querySelector('.archive-sessions-dialog');assert.match(popup.textContent,/읽은 기록|p. 20–30|10쪽 읽음|1분/);h.history.filter(item=>item.key==='archive-sessions').at(-1).options.close();assert.equal(h.body.querySelector('.archive-sessions-dialog'),null);assert.equal(detail.open,true);assert.equal(trigger.focused,true);assert.deepEqual(h.rows()[0].book.readingSessions,original.book.readingSessions);
+  assert.equal(detail.querySelector('.archive-reading-icons [data-archive-edit]'),null);
+  const footer=detail.querySelector('.archive-reading-footer');assert.ok(footer.querySelector('[data-archive-note-add]'));
+  await footer.querySelector('[data-archive-edit]').click();assert.ok(detail.querySelector('#archive-form'));
 });
 
 test('archive composer saves page and background with the existing photo while preserving note identity',async()=>{

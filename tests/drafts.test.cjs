@@ -22,6 +22,7 @@ function setup(saved=storage()){
   const ctx={crypto:webcrypto, TextEncoder, TextDecoder, Uint8Array, Promise, Date, JSON, console, URL,
     bytesToB64:v=>Buffer.from(v).toString('base64'), b64ToBytes:v=>new Uint8Array(Buffer.from(v,'base64')),
     localStorage:saved, sessionStorage:storage(), SESSION:{userId:'member-a',keyB64},
+    location:{hash:'#/book/book-a/mine'},saveSessionEpoch:1,
     shareEditingId:null, mineEditingId:null, materialsEditingId:null,
     stripHtml:v=>v.replace(/<[^>]*>/g,''), showToast:()=>{},
     document:{querySelector:()=>active},
@@ -176,4 +177,23 @@ test('success clears the saved draft without closing a different active composer
   mount('mine','standard','book-b');const other=ctx.captureComposerDraft();
   assert.equal(ctx.finishComposerDraft('share','book-a',null,'member-a',token),false);
   await flush(ctx);assert.equal(saved.getItem(token.key),null);assert.ok(saved.getItem(other.key));
+});
+
+test('a delayed composer draft cannot reopen writing after route, owner or session epoch changes',async()=>{
+  const cases=[null,
+    c=>{c.location.hash='#/book/book-a/share';},
+    c=>{c.location.hash='#/book/book-a/mine/post/entry-1';},
+    c=>{c.SESSION={userId:'member-b',keyB64};},
+    c=>{c.SESSION=null;},
+    c=>{c.saveSessionEpoch++;}];
+  for(const change of cases){
+    const {ctx}=setup();let resolve,opened=0;
+    const draft={userId:'member-a',bookId:'book-a',type:'mine',variants:{standard:{html:'<b>보관한 초안</b>'}}};
+    ctx.loadComposerDraft=()=>new Promise(done=>{resolve=done;});
+    const pending=ctx.openComposerWithDraft('mine','book-a',null,value=>{opened++;assert.equal(value,draft);});
+    if(change)change(ctx);
+    resolve(draft);await pending;
+    assert.equal(opened,change?0:1,'only the original route and authenticated session may open the composer');
+    assert.equal(draft.variants.standard.html,'<b>보관한 초안</b>');
+  }
 });

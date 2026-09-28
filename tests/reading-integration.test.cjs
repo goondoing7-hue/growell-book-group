@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const domain=require('../readingTimerDomain.js');
+const createPopupHistory=require('../popupHistory.js');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const clone=value=>JSON.parse(JSON.stringify(value));
 function section(start,end){
@@ -70,7 +71,7 @@ test('history popup closes on account or route change and the summary never expa
   c.readingHistoryOpenFor=book.id;assert.equal(c.readingStatusBodyHtml(book),'');
 });
 
-test('compact My Space card keeps progress and all three management actions together, with status below',()=>{
+test('compact My Space card keeps timer and history beside progress and page editing below the status',()=>{
   const {c,book}=historyDialogHarness();
   Object.assign(c,{myCurrentPage:()=>20,readingNoteReturn:false,readingTimer:null,readingSavePanelOpen:false,readingEditOpenFor:null,
     I_TIMER:'timer',I_EDIT:'edit',GrowellBookDetails:{coverHtml:()=>'<img alt="책 표지">',hintHtml:()=>'<span>읽는 부분: 첫 장</span>'}});
@@ -79,9 +80,13 @@ test('compact My Space card keeps progress and all three management actions toge
   const markup=c.readingCardHtml(book);
   assert.match(markup,/p\. 20 \/ 200/);assert.match(markup,/10%/);assert.match(markup,/aria-valuenow="10"/);
   const actions=markup.slice(markup.indexOf('class="reading-card-actions"'),markup.indexOf('<div class="reading-split-right">'));
-  for(const id of ['btn-reading-start','btn-reading-edit-open','btn-reading-history-toggle']){
-    assert.ok(actions.includes('id="'+id+'"'));assert.equal((markup.match(new RegExp('id="'+id+'"','g'))||[]).length,1);
+  for(const id of ['btn-reading-start','btn-reading-history-toggle']){
+    assert.ok(actions.includes('id="'+id+'"'));
   }
+  assert.doesNotMatch(actions,/btn-reading-edit-open/);
+  const footer=markup.slice(markup.indexOf('<div class="reading-card-footer">'));
+  assert.match(footer,/id="btn-reading-edit-open"/);
+  for(const id of ['btn-reading-start','btn-reading-edit-open','btn-reading-history-toggle'])assert.equal((markup.match(new RegExp('id="'+id+'"','g'))||[]).length,1);
   assert.match(markup.slice(markup.indexOf('<div class="reading-split-right">')),/읽는 중[\s\S]*총 읽은 시간/);
   assert.doesNotMatch(markup,/노트 작성|reading-log-list|reading-toggle-row/);
   for(const state of [{running:true},{running:false},{running:false,save:true},{running:false,note:true}]){
@@ -869,6 +874,37 @@ test('My Space timer popup leaves note writing visible and reopens only after re
   c.location.hash='#/book/emotion/mine';assert.equal(c.readingHomeDialogHtml(c.currentRoute()),'');
 });
 
+test('closing a timer note popup by X, Escape or Back returns once to the original home or My Space timer',async()=>{
+  for(const type of ['mine','share'])for(const fromHome of [false,true])for(const wasRunning of [false,true])for(const way of ['x','escape','back']){
+    const {c,setNow}=noteHarness({now:5000}),popups=new Map(),handlers={},classes=new Set();
+    if(!wasRunning)c.readingTimer=domain.pause(c.readingTimer,4000);
+    const originalId=c.readingTimer.id,elapsed=wasRunning?5000:4000;
+    c.readingHomeReturn=fromHome;c.location.hash=fromHome?'#/':'#/book/emotion/mine';
+    await c.openReadingNote(type);
+    assert.equal(c.readingTimer.running,false);assert.equal(c.readingNoteReturn.wasRunning,wasRunning);
+    const node={open:false,scrollTop:0,getAttribute:name=>name==='data-composer-type'?type:null,
+      querySelector:()=>null,contains:()=>false,showModal(){this.open=true;},close(){this.open=false;},
+      addEventListener:(name,handler)=>{handlers[name]=handler;}};
+    c.document.body.classList={add:name=>classes.add(name),remove:name=>classes.delete(name)};
+    c.document.getElementById=id=>id==='space-composer-dialog'?node:null;
+    c.GrowellPopupHistory={open:(key,options)=>popups.set(key,options),closed:key=>popups.delete(key)};
+    vm.runInContext(section('var spaceComposerDialogPosition=', 'function closeStaleComposersForRoute('),c);
+    let returned=0;const originalReturn=c.returnToReadingTimer;
+    c.returnToReadingTimer=()=>{returned++;originalReturn();};
+    c.showSpaceComposerDialog();assert.equal(node.open,true);setNow(100000);
+    if(way==='escape'){let prevented=false;handlers.cancel({preventDefault(){prevented=true;}});assert.equal(prevented,true);}
+    else if(way==='back')popups.get('space-composer').close();
+    else c.closeSpaceComposerDialog();
+    assert.equal(returned,1);assert.equal(node.open,false);assert.equal(popups.has('space-composer'),false);
+    assert.equal(c.location.hash,fromHome?'#/':'#/book/emotion/mine');
+    assert.equal(c.readingTimer.id,originalId);assert.equal(c.readingHomeDialogFor,originalId);
+    assert.equal(c.readingTimer.running,wasRunning);assert.equal(c.readingTimerElapsedMs(),elapsed);
+    assert.equal(c.readingNoteReturn,null);assert.equal(type==='mine'?c.mineComposerOpenFor:c.shareComposerOpenFor,null);
+    assert.deepEqual(clone(c.STATE.readingLogs),{});assert.deepEqual(clone(c.STATE.readingMeta),{});
+    setNow(101000);assert.equal(c.readingTimerElapsedMs(),elapsed+(wasRunning?1000:0));
+  }
+});
+
 test('home note handoff returns to the home popup after a matching saved note, including refresh',async()=>{
   for(const type of ['mine','share']){
     const memory=new Map(),first=noteHarness({memory,now:5000});
@@ -881,6 +917,67 @@ test('home note handoff returns to the home popup after a matching saved note, i
     assert.equal(next.c.completeReadingNote(type,'emotion'),true);assert.equal(next.c.location.hash,'#/');
     assert.equal(next.c.readingHomeDialogFor,next.c.readingTimer.id);assert.equal(next.c.readingTimer.running,true);
     next.setNow(901000);assert.equal(next.c.readingTimerElapsedMs(),6000);
+  }
+});
+
+test('saving a shared timer note retires its popup before the return route opens a timer, without a ghost Back stop',async()=>{
+  for(const fromHome of [false,true])for(const wasRunning of [false,true]){
+    const {c,setNow}=noteHarness({now:5000});
+    c.mineComposerOpenFor=null;
+    if(!wasRunning)c.readingTimer=domain.pause(c.readingTimer,4000);
+    c.readingHomeReturn=fromHome;
+    await c.openReadingNote('share');
+    const timerId=c.readingTimer.id,elapsed=c.readingTimerElapsedMs();
+    const listeners={},pending=[],history=[{url:'https://example.test/'+c.location.hash,state:null}];
+    let index=0,depth=0,maxDepth=0;
+    const location={
+      get href(){return history[index].url;},
+      get hash(){return new URL(this.href).hash;},
+      set hash(hash){if(hash!==this.hash)browser.history.pushState(null,'','https://example.test/'+hash);}
+    };
+    const browser={location,addEventListener(name,callback){(listeners[name]||=[]).push(callback);},history:{
+      get state(){return history[index].state;},
+      replaceState(state,unused,url){history[index]={state,url};},
+      pushState(state,unused,url){history.splice(index+1);history.push({state,url});index++;},
+      go(delta){pending.push(delta);}
+    }};
+    function emit(name,event){(listeners[name]||[]).slice().forEach(callback=>callback(event));}
+    function back(){
+      browser.history.go(-1);let steps=0;
+      while(pending.length){
+        assert.ok(++steps<20,'retired history entries must settle');
+        const target=index+pending.shift();if(target<0||target>=history.length)continue;
+        const oldUrl=location.href;index=target;emit('popstate',{state:browser.history.state});
+        if(oldUrl!==location.href)emit('hashchange',{});
+      }
+    }
+    c.location=location;c.GrowellPopupHistory=createPopupHistory(browser);
+    const nodes=new Map(),classes=new Set();
+    function dialog(id,type){return {id,open:false,scrollTop:0,
+      getAttribute:name=>name==='data-composer-type'?type:null,querySelector:()=>null,contains:()=>false,
+      showModal(){this.open=true;},close(){this.open=false;},addEventListener(){}};}
+    c.document.getElementById=id=>nodes.get(id)||null;
+    c.document.body.classList={add:name=>classes.add(name),remove:name=>classes.delete(name)};
+    vm.runInContext(section('var spaceComposerDialogPosition=', 'function closeStaleComposersForRoute('),c);
+    nodes.set('space-composer-dialog',dialog('space-composer-dialog','share'));c.showSpaceComposerDialog();
+    // Match render's order: replace the old composer, bind/show the timer, then
+    // showSpaceComposerDialog cleans up the absent composer. Hash events are later.
+    c.render=()=>{
+      depth++;maxDepth=Math.max(maxDepth,depth);nodes.delete('space-composer-dialog');
+      nodes.set('reading-home-dialog',dialog('reading-home-dialog'));
+      c.showReadingHomeDialog();c.showSpaceComposerDialog();depth--;
+    };
+    setNow(100000);c.resetShareComposer();
+    assert.equal(c.completeReadingNote('share','emotion'),true);c.render();
+    emit('hashchange',{});
+    assert.equal(maxDepth,1,'a retired composer callback must not re-enter the new timer render');
+    assert.equal(location.hash,fromHome?'#/':'#/book/emotion/mine');
+    assert.equal(nodes.get('reading-home-dialog').open,true);assert.equal(classes.size,0);
+    assert.equal(c.readingTimer.id,timerId);assert.equal(c.readingTimer.running,wasRunning);
+    assert.equal(c.readingTimerElapsedMs(),elapsed);assert.equal(c.readingNoteReturn,null);
+    c.closeReadingHomeDialog();back();
+    assert.equal(location.hash,'#/book/emotion/share','one Back after X must leave the returned timer screen');
+    assert.equal(c.readingTimer.id,timerId);assert.equal(c.readingTimerElapsedMs(),elapsed);
   }
 });
 

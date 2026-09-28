@@ -1,13 +1,13 @@
 (function(root){
   'use strict';
   var app, rows=[], signature='', loading=null, generation=0, owner=null, error='', dialog=null, returnFocus=null;
-  var search='', year='', order='recent', trash=false, stateFilter='', genreFilter='', noteFilter='', noteDialog=null, collectionDialog=null, sessionsDialog=null, carouselPositions={};
+  var search='', year='', order='recent', trash=false, stateFilter='', genreFilter='', noteFilter='', noteDialog=null, collectionDialog=null, sessionsDialog=null, fieldDialog=null, carouselPositions={};
   var THEMES={emotion:'감정',thought:'생각',body:'신체',action:'행동'};
   var NOTE_CATEGORIES={quote:'책 속 문장',thought:'내 생각',question:'의문점',insight:'통찰 정리'};
   var NOTE_BACKGROUNDS=[['','기본'],['#EFE6D8','베이지'],['#E4EEE6','민트'],['#F3E1E6','로즈'],['#E1EAF3','스카이'],['#E9E2F2','라벤더'],['#F4EDE0','크림']];
   var D=function(){return root.GrowellArchiveDomain;};
   var esc=function(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});};
-  function icon(name){var paths={plus:'M12 5v14M5 12h14',close:'m6 6 12 12M18 6 6 18',search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',book:'M12 5v15M3 4c3-1 6-1 9 1 3-2 6-2 9-1v15c-3-1-6-1-9 1-3-2-6-2-9-1Z',left:'m15 5-7 7 7 7',right:'m9 5 7 7-7 7',timer:'M9 2h6M12 7v6m5-8 2-2M20 14a8 8 0 1 1-16 0 8 8 0 0 1 16 0',edit:'m15 4 5 5M4 20l5-1L21 7l-5-5L4 14Z',history:'M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v6l4 2',image:'M3 3h18v18H3Zm0 13 6-6 7 7 3-3 2 2M16 7h.01'};return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';}
+  function icon(name){var paths={plus:'M12 5v14M5 12h14',close:'m6 6 12 12M18 6 6 18',search:'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',book:'M12 5v15M3 4c3-1 6-1 9 1 3-2 6-2 9-1v15c-3-1-6-1-9 1-3-2-6-2-9-1Z',left:'m15 5-7 7 7 7',right:'m9 5 7 7-7 7',timer:'M9 2h6M12 7v6m5-8 2-2M20 14a8 8 0 1 1-16 0 8 8 0 0 1 16 0',edit:'m15 4 5 5M4 20l5-1L21 7l-5-5L4 14Z',history:'M3 11a9 9 0 1 1 2 7M3 4v7h7M12 7v6l4 2',calendar:'M8 2v4M16 2v4M3 9h18M5 4h14a2 2 0 0 1 2 2v14H3V6a2 2 0 0 1 2-2Z',image:'M3 3h18v18H3Zm0 13 6-6 7 7 3-3 2 2M16 7h.01'};return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';}
   function cover(book,cls){var url=D().safeCoverUrl(book.coverUrl);return '<span class="archive-cover '+(cls||'')+'">'+(url?'<img src="'+esc(url)+'" alt="'+esc(book.title)+' 표지" loading="lazy" referrerpolicy="no-referrer">':'<span class="archive-cover-fallback">'+icon('book')+'<span>'+esc(book.title||'나의 책')+'</span></span>')+'</span>';}
   function sourceHref(book){
     try{var url=new URL(book.sourceUrl);if(url.protocol!=='https:'||url.username||url.password)return '';if(book.source==='yes24'){var id=url.pathname.match(/^\/(?:Product\/Goods|goods)\/(\d+)\/?$/i);return /^(?:www\.|m\.)?yes24\.com$/i.test(url.hostname)&&id?'https://www.yes24.com/Product/Goods/'+id[1]:'';}return url.href;}catch(e){return '';}
@@ -21,9 +21,10 @@
   function duration(seconds){var h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60;return (h?h+'시간 ':'')+(m?m+'분 ':'')+(!h&&!m?s+'초':'');}
   function dateTime(at){return new Date(at).toLocaleString('ko-KR',{year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});}
   async function latestRow(id){var expected=app.session()&&app.session().userId;if(!expected)throw new Error('로그인 후 다시 열어주세요.');var entries=app.entries().filter(function(e){return e.userId===expected&&D().isArchiveEntry(e);});var fresh=(await app.read(entries)).find(function(row){return row.entry.id===id&&row.entry.userId===expected;});if(!app.session()||app.session().userId!==expected)throw new Error('로그인한 계정이 바뀌었어요. 다시 열어주세요.');if(!fresh)throw new Error('책을 다시 불러와 주세요.');return fresh;}
-  async function persist(row,book,createId){var saved=await app.save(row,book,createId);if(saved){var index=rows.findIndex(function(r){return r.entry.id===saved.entry.id;});if(index>=0)rows[index]=saved;else rows.push(saved);}signature='';return saved;}
+  async function persist(row,book,createId){var saved=await app.save(row,book,createId);if(saved){var index=rows.findIndex(function(r){return r.entry.id===saved.entry.id;});if(index>=0)rows[index]=saved;else rows.push(saved);}signature='';refreshCalendar();return saved;}
+  function refreshCalendar(){if(root.GrowellArchiveCalendar&&app&&app.session()&&app.status()==='ready')root.GrowellArchiveCalendar.refresh(rows.filter(function(row){return row.entry.userId===app.session().userId&&!row.book.deleted;}));}
   function configure(adapter){app=adapter;}
-  function reset(){generation++;rows=[];signature='';loading=null;owner=null;error='';search='';year='';trash=false;stateFilter='';genreFilter='';noteFilter='';carouselPositions={};if(root.GrowellArchiveTimer)root.GrowellArchiveTimer.reset();closeNote();closeCollection();closeSessions();close(false,true);}
+  function reset(){generation++;rows=[];signature='';loading=null;owner=null;error='';search='';year='';trash=false;stateFilter='';genreFilter='';noteFilter='';carouselPositions={};if(root.GrowellArchiveCalendar)root.GrowellArchiveCalendar.reset();if(root.GrowellArchiveTimer)root.GrowellArchiveTimer.reset();closeFieldEditor(false);closeNote();closeCollection();closeSessions();close(false,true);}
   function ensure(){
     var session=app.session();if(!session)return;
     if(owner!==session.userId){reset();owner=session.userId;}
@@ -35,7 +36,7 @@
     var token=++generation,expected=owner;loading=sig;error='';
     app.read(entries).then(function(items){
       if(token!==generation||!app.session()||app.session().userId!==expected)return;
-      rows=items.filter(function(row){return row.entry.userId===expected;});rows._loaded=true;signature=sig;loading=null;app.render();
+      rows=items.filter(function(row){return row.entry.userId===expected;});rows._loaded=true;signature=sig;loading=null;refreshCalendar();app.render();
     }).catch(function(){if(token!==generation)return;loading=null;error='아카이브를 불러오지 못했어요. 기존 기록은 안전하게 보관되어 있어요.';signature=sig;rows._loaded=true;app.render();});
   }
   function html(){
@@ -48,11 +49,12 @@
     if(app.status()!=='ready')return app.statusHtml();
     if(error)return '<div class="empty" role="alert">'+esc(error)+'<br><button class="btn btn-secondary" data-archive-retry>다시 불러오기</button></div>';
     if(!rows._loaded)return '<div class="empty" role="status">나의 책장을 펼치는 중이에요…</div>';
-    var all=rows.filter(function(r){return !r.book.deleted;}),rated=all.filter(function(r){return r.book.rating>0;}),years=[...new Set(all.map(function(r){return r.book.endDate.slice(0,4);}).filter(Boolean))].sort().reverse();
+    var all=rows.filter(function(r){return !r.book.deleted;}),years=[...new Set(all.map(function(r){return r.book.endDate.slice(0,4);}).filter(Boolean))].sort().reverse();
     var genres=registeredGenres(all);if(genreFilter&&genres.indexOf(genreFilter)<0)genreFilter='';
     var visible=rows.filter(function(r){var b=r.book;return !!b.deleted===trash&&(!genreFilter||(b.genres||[]).indexOf(genreFilter)>=0)&&(!stateFilter||b.status===stateFilter)&&(!year||b.endDate.slice(0,4)===year)&&(!search||(b.title+' '+b.authors.join(' ')+' '+b.review).toLowerCase().includes(search.toLowerCase()));});
     visible.sort(function(a,b){return order==='rating'?(b.book.rating-a.book.rating||b.entry.createdAt-a.entry.createdAt):order==='title'?a.book.title.localeCompare(b.book.title,'ko'):(b.book.endDate||'').localeCompare(a.book.endDate||'')||b.entry.createdAt-a.entry.createdAt;});
-    var stats='<div class="archive-stats"><span><strong>'+all.length+'</strong>권의 책</span><span><strong>'+(rated.length?(rated.reduce(function(s,r){return s+r.book.rating;},0)/rated.length).toFixed(1):'—')+'</strong>평균 별점</span><span><strong>'+all.filter(function(r){return r.book.review;}).length+'</strong>개의 감상</span></div>';
+    var now=new Date(),month=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0'),summary=root.GrowellArchiveCalendar?root.GrowellArchiveCalendar.summary(all,now):{total:all.length,monthCompleted:all.filter(function(r){return r.book.status==='completed'&&r.book.endDate.slice(0,7)===month;}).length,reading:all.filter(function(r){return r.book.status==='reading';}).length,yearCompleted:all.filter(function(r){return r.book.status==='completed'&&r.book.endDate.slice(0,4)===String(now.getFullYear());}).length};
+    var stats='<div class="archive-stats archive-reading-stats">'+[['total','총 등록한 책'],['monthCompleted','이번 달 완독한 책'],['reading','읽는 중인 책'],['yearCompleted','올해 완독한 책']].map(function(pair){return '<span><strong class="archive-stat-value">'+summary[pair[0]]+'</strong>'+pair[1]+'</span>';}).join('')+'<button type="button" class="icon-btn archive-calendar-open" data-archive-calendar aria-label="독서 달력 보기" aria-haspopup="dialog">'+icon('calendar')+'</button></div>';
     var controls='<div class="archive-toolbar"><label class="archive-filter-search">'+icon('search')+'<input id="archive-filter" type="search" placeholder="제목, 저자, 감상 찾기" aria-label="내 책 검색" value="'+esc(search)+'"></label><div class="archive-filter-options"><select id="archive-year" aria-label="읽은 연도"><option value="">모든 연도</option>'+years.map(function(y){return '<option'+(year===y?' selected':'')+'>'+y+'</option>';}).join('')+'</select><select id="archive-sort" aria-label="책 정렬"><option value="recent"'+(order==='recent'?' selected':'')+'>최근 읽은 순</option><option value="rating"'+(order==='rating'?' selected':'')+'>별점 높은 순</option><option value="title"'+(order==='title'?' selected':'')+'>제목순</option></select><button type="button" class="archive-trash-toggle" data-archive-trash aria-pressed="'+trash+'">'+(trash?'책장으로':'휴지통')+'</button></div></div>';
     var grid=visible.length?'<div class="archive-grid">'+visible.map(function(r){var b=r.book;return '<article class="archive-book-entry"><button type="button" class="archive-book" data-archive-open="'+esc(r.entry.id)+'" aria-haspopup="dialog">'+cover(b)+'<span class="archive-book-title">'+esc(b.title)+'</span><span class="archive-author">'+esc(b.authors.join(' · ')||'저자 미기록')+'</span>'+((b.genres||[]).length?'<span class="archive-book-genre">'+esc(b.genres.join(' · '))+'</span>':'')+badge(b)+progressHtml(b)+stars(b.rating)+'<span class="archive-date">'+esc(b.endDate?b.endDate.replace(/-/g,'.')+' 완독':b.startDate?b.startDate.replace(/-/g,'.')+' 시작':'독서 날짜 미기록')+'</span></button>'+sourceHtml(b)+'</article>';}).join('')+'</div>':'<div class="archive-empty">'+icon('book')+'<h2>'+(trash?'휴지통이 비어 있어요':all.length?'찾는 책이 없어요':'나만의 책장을 채워보세요')+'</h2><p>'+(all.length||trash?'검색어와 필터를 바꿔보세요.':'책을 찾아 담고, 읽은 시간과 마음에 남은 이유를 기록해요.')+'</p>'+(!all.length&&!trash?'<button class="btn btn-primary" data-archive-add>첫 번째 책 등록</button>':'')+'</div>';
     var tabs='<div class="archive-status-tabs" aria-label="독서 상태">'+[['','전체'],['unread','읽기 전'],['reading','읽는 중'],['completed','완독']].map(function(pair){return '<button type="button" data-archive-status="'+pair[0]+'" aria-pressed="'+(stateFilter===pair[0])+'">'+pair[1]+' <span>'+all.filter(function(r){return !pair[0]||r.book.status===pair[0];}).length+'</span></button>';}).join('')+'</div>';
@@ -61,6 +63,10 @@
   }
   function refresh(){var node=root.document.getElementById('archive-content');if(node){node.innerHTML=contentHtml();bindContent(node);}}
   function bindContent(node){
+    var calendar=node.querySelector('[data-archive-calendar]');if(calendar)calendar.onclick=function(){
+      var session=app.session();if(!session||app.status()!=='ready'||!root.GrowellArchiveCalendar)return;
+      root.GrowellArchiveCalendar.open({rows:rows.filter(function(row){return row.entry.userId===session.userId&&!row.book.deleted;}),ownerId:session.userId,getOwnerId:function(){return app.session()&&app.session().userId;},isCurrent:function(){return app.session()===session&&app.status()==='ready';},onSelect:function(id,trigger){open(id,trigger);},trigger:calendar});
+    };
     node.querySelectorAll('[data-archive-add]').forEach(function(b){b.onclick=function(){open(null,b);};});
     node.querySelectorAll('[data-archive-open]').forEach(function(b){b.onclick=function(){open(b.dataset.archiveOpen,b);};});
     node.querySelectorAll('[data-archive-status]').forEach(function(b){b.onclick=function(){stateFilter=b.dataset.archiveStatus;refresh();};});
@@ -80,7 +86,7 @@
   function bindImages(node){node.querySelectorAll('.archive-cover img,.archive-feed-thumbnail img').forEach(function(img){img.onerror=function(){var span=root.document.createElement('span');span.className='archive-cover-fallback';span.textContent=img.alt.replace(/ 표지$/,'');img.replaceWith(span);};});}
   function bind(){if(!app)return;if(owner&&(!app.session()||owner!==app.session().userId))reset();root.document.querySelectorAll('.archive-page,.archive-records').forEach(bindContent);var sharedSignature=sharedNoteSignature();if(dialog&&dialog.querySelector('.archive-book-note-feed')&&dialog._refreshNoteFeed&&dialog._sharedNoteSignature!==sharedSignature)dialog._refreshNoteFeed(true);if(collectionDialog&&collectionDialog._refresh&&collectionDialog._sharedNoteSignature!==sharedSignature)collectionDialog._refresh(null,true);}
   function canClose(){return !dialog||!dialog._dirty||root.confirm('작성 중인 내용이 있어요. 저장하지 않고 닫을까요?');}
-  function close(restore,force){if(!dialog||(!force&&!canClose()))return;var node=dialog,target=returnFocus;dialog=null;returnFocus=null;if(node._searchAbort)node._searchAbort.abort();if(node._genreAbort)node._genreAbort.abort();node.close();node.remove();if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('archive');if(restore!==false&&target&&target.isConnected)target.focus({preventScroll:true});}
+  function close(restore,force){if(!dialog||(!force&&!canClose()))return;closeFieldEditor(false);var node=dialog,target=returnFocus;dialog=null;returnFocus=null;if(node._searchAbort)node._searchAbort.abort();if(node._genreAbort)node._genreAbort.abort();node.close();node.remove();if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('archive');if(restore!==false&&target&&target.isConnected)target.focus({preventScroll:true});}
   function shell(title){return '<header class="archive-dialog-head"><h2 id="archive-dialog-title">'+title+'</h2><button type="button" class="icon-btn" data-archive-close aria-label="아카이브 닫기">'+icon('close')+'</button></header><div class="archive-dialog-body"></div>';}
   function open(id,trigger){
     if(!app.session()||app.status()!=='ready')return;
@@ -95,7 +101,12 @@
     var b=row.book;node._dirty=false;node._rowId=row.entry.id;
     node.querySelector('.archive-dialog-body').innerHTML='<div class="archive-detail-book"><button type="button" class="archive-detail-cover-button" data-archive-book-info aria-label="'+esc(b.title)+' 책 소개와 목차" aria-haspopup="dialog">'+cover(b)+'</button><div><span class="archive-eyebrow">READ & REMEMBER</span><h3>'+esc(b.title)+'</h3><p>'+esc(b.authors.join(' · '))+'</p><p class="archive-detail-publisher">'+esc([b.publisher,b.publishedDate].filter(Boolean).join(' · '))+'</p>'+stars(b.rating)+'</div></div><div class="archive-period"><span>함께한 시간</span><strong>'+esc(period(b))+'</strong></div><section class="archive-reflection"><h3>이 별점을 남긴 이유</h3><p>'+esc(b.review||'아직 남긴 감상이 없어요.')+'</p></section>'+(b.description?'<details class="archive-description"><summary>책 소개</summary><p>'+esc(b.description)+'</p>'+(sourceHref(b)&&b.source!=='yes24'?'<a href="'+esc(sourceHref(b))+'" target="_blank" rel="noopener noreferrer">도서 정보 출처 ↗</a>':'')+'</details>':'')+'<div class="archive-dialog-actions">'+(b.deleted?'<button class="btn btn-primary" data-archive-restore>책장으로 복원</button>':'<button class="btn btn-secondary" data-archive-remove>휴지통으로</button>')+'</div><p class="archive-form-status" role="status"></p>';
     var body=node.querySelector('.archive-dialog-body'),periodNode=body.querySelector('.archive-period');
-    periodNode.insertAdjacentHTML('beforebegin','<section class="archive-reading-summary"><div class="archive-progress-actions"><div>'+progressHtml(b)+(root.GrowellBookDetails&&root.GrowellBookDetails.hintArchiveHtml?root.GrowellBookDetails.hintArchiveHtml(b,b.currentPage):'')+'</div><div class="archive-reading-icons">'+(!b.deleted?'<button type="button" class="icon-btn" data-archive-timer aria-label="타이머로 읽기" title="타이머로 읽기">'+icon('timer')+'</button><button type="button" class="icon-btn" data-archive-edit data-archive-edit-icon aria-label="독서 기록 수정" title="독서 기록 수정">'+icon('edit')+'</button>':'')+'<button type="button" class="icon-btn" data-archive-history aria-label="읽은 기록 보기 ('+b.readingSessions.length+')" title="읽은 기록 보기">'+icon('history')+'</button></div></div><div class="archive-reading-meta">'+badge(b)+'<p class="archive-time">총 읽은 시간 <strong>'+esc(duration(D().totalReadingSeconds(b)))+'</strong></p></div>'+(!b.deleted?'<button class="btn btn-secondary archive-note-write" data-archive-note-add>'+icon('edit')+'노트 작성</button>':'')+'</section>');
+    if(!b.deleted){
+      periodNode.innerHTML='<button type="button" class="archive-detail-field-button" data-archive-field="period" aria-label="함께한 시간 설정" aria-haspopup="dialog"><span class="archive-detail-field-copy"><span class="archive-detail-field-label">함께한 시간</span><strong>'+esc(b.startDate||b.endDate?period(b):'읽기 시작일과 종료일을 남겨보세요.')+'</strong></span><span class="archive-detail-field-icon" aria-hidden="true">'+icon('edit')+'</span></button>';
+      body.querySelector('.archive-reflection').innerHTML='<button type="button" class="archive-detail-field-button" data-archive-field="review" aria-label="이 별점을 남긴 이유 작성 또는 수정" aria-haspopup="dialog"><span class="archive-detail-field-copy"><strong class="archive-detail-field-label">이 별점을 남긴 이유</strong><span class="archive-detail-field-text'+(b.review?'':' is-empty')+'">'+esc(b.review||'이 책에 대한 감상을 남겨보세요.')+'</span></span><span class="archive-detail-field-icon" aria-hidden="true">'+icon('edit')+'</span></button>';
+      body.querySelectorAll('[data-archive-field]').forEach(function(button){button.onclick=function(){openFieldEditor(node,row,button.dataset.archiveField,button);};});
+    }
+    periodNode.insertAdjacentHTML('beforebegin','<section class="archive-reading-summary"><div class="archive-progress-actions"><div>'+progressHtml(b)+(root.GrowellBookDetails&&root.GrowellBookDetails.hintArchiveHtml?root.GrowellBookDetails.hintArchiveHtml(b,b.currentPage):'')+'</div><div class="archive-reading-icons">'+(!b.deleted?'<button type="button" class="icon-btn" data-archive-timer aria-label="타이머로 읽기" title="타이머로 읽기">'+icon('timer')+'</button>':'')+'<button type="button" class="icon-btn" data-archive-history aria-label="읽은 기록 보기 ('+b.readingSessions.length+')" title="읽은 기록 보기">'+icon('history')+'</button></div></div><div class="archive-reading-meta">'+badge(b)+'<p class="archive-time">총 읽은 시간 <strong>'+esc(duration(D().totalReadingSeconds(b)))+'</strong></p></div>'+(!b.deleted?'<div class="archive-reading-footer"><button type="button" class="btn btn-secondary archive-note-write" data-archive-note-add>'+icon('edit')+'노트 작성</button><button type="button" class="icon-btn" data-archive-edit data-archive-edit-icon aria-label="독서 기록 수정" title="독서 기록 수정">'+icon('edit')+'</button></div>':'')+'</section>');
     if(b.tableOfContents)body.querySelector('.archive-dialog-actions').insertAdjacentHTML('beforebegin','<details class="archive-description archive-toc"><summary>목차</summary><p>'+esc(b.tableOfContents)+'</p></details>');
     body.querySelector('.archive-dialog-actions').insertAdjacentHTML('beforebegin',historyHtml(b,row.entry.id,node._noteCategory||'',node._noteSearch||''));
     body.querySelector('.archive-detail-book').insertAdjacentHTML('afterend',sourceHtml(b)+categoriesHtml(b));
@@ -112,6 +123,41 @@
     var remove=node.querySelector('[data-archive-remove]'),restore=node.querySelector('[data-archive-restore]');
     function move(deleted,button){button.disabled=true;app.save(row,Object.assign({},b,{deleted:deleted})).then(function(){if(dialog===node){close(true,true);app.render();}app.toast(deleted?'휴지통으로 옮겼어요. 언제든 복원할 수 있어요.':'책장으로 복원했어요.');}).catch(function(e){if(dialog!==node)return;button.disabled=false;node.querySelector('.archive-form-status').textContent=e.message;});}
     if(remove)remove.onclick=function(){move(true,remove);};if(restore)restore.onclick=function(){move(false,restore);};bindContent(body);node._sharedNoteSignature=sharedNoteSignature();
+  }
+  function closeFieldEditor(restore){
+    if(!fieldDialog)return;var node=fieldDialog;fieldDialog=null;node.close();node.remove();
+    if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('archive-field');
+    var target=node._parent&&node._parent.querySelector('[data-archive-field="'+node._field+'"]')||node._trigger;
+    if(restore!==false&&target&&target.isConnected)target.focus({preventScroll:true});
+  }
+  function openFieldEditor(parent,row,kind,trigger){
+    var session=app.session(),expected=session&&session.userId,key=session&&session.keyB64;
+    if(!expected||row.entry.userId!==expected||row.book.deleted||app.status()!=='ready'||['review','period'].indexOf(kind)<0)return;
+    if(fieldDialog)return;
+    var node=root.document.createElement('dialog');fieldDialog=node;node._parent=parent;node._field=kind;node._trigger=trigger;
+    var title=kind==='review'?'이 별점을 남긴 이유':'함께한 시간';
+    node.className='archive-dialog archive-detail-field-dialog';node.setAttribute('aria-labelledby','archive-field-title');
+    node.innerHTML='<header class="archive-dialog-head"><h2 id="archive-field-title">'+title+'</h2><button type="button" class="icon-btn" data-field-close aria-label="편집 닫기">'+icon('close')+'</button></header><form class="archive-dialog-body"><p class="archive-field-book-title">'+esc(row.book.title)+'</p>'+(kind==='review'?'<label class="archive-field"><span class="sr-only">이 별점을 남긴 이유</span><textarea name="review" rows="6" maxlength="10000" placeholder="마음에 남은 점과 이 별점을 준 이유를 적어주세요.">'+esc(row.book.review)+'</textarea></label>':'<div class="archive-date-fields">'+field('읽기 시작일','startDate',row.book.startDate,'date')+field('읽기 종료일','endDate',row.book.endDate,'date')+'</div><p class="archive-form-hint">아직 읽고 있다면 종료일은 비워두세요.</p>')+'<p class="archive-form-status" role="status"></p><div class="archive-dialog-actions"><button type="button" class="btn btn-secondary" data-field-cancel>취소</button><button type="submit" class="btn btn-primary">저장</button></div></form>';
+    root.document.body.appendChild(node);var form=node.querySelector('form'),status=form.querySelector('.archive-form-status');
+    function active(){return fieldDialog===node&&dialog===parent&&app.session()===session&&session.userId===expected&&session.keyB64===key&&app.status()==='ready';}
+    function canCloseField(){return !node._busy&&(!node._dirty||root.confirm('작성 중인 내용을 저장하지 않고 닫을까요?'));}
+    function requestClose(){if(canCloseField())closeFieldEditor();}
+    node.querySelector('[data-field-close]').onclick=requestClose;node.querySelector('[data-field-cancel]').onclick=requestClose;
+    node.addEventListener('cancel',function(event){event.preventDefault();requestClose();});node.addEventListener('input',function(){node._dirty=true;});
+    form.onsubmit=async function(event){
+      event.preventDefault();if(!active()||node._busy)return;var button=form.querySelector('[type="submit"]');node._busy=true;button.disabled=true;status.textContent='저장 중…';
+      try{
+        var latest=await latestRow(row.entry.id);if(!active())return;if(latest.book.deleted)throw new Error('책을 복원한 뒤 수정해주세요.');
+        var fields=kind==='review'?['review']:['startDate','endDate'];
+        if(fields.some(function(name){return latest.book[name]!==row.book[name];}))throw new Error('다른 곳에서 수정된 내용이 있어요. 닫고 다시 열어주세요.');
+        var changes={};fields.forEach(function(name){changes[name]=form.elements[name].value;});
+        var next=D().prepare(Object.assign({},latest.book,changes));await persist(latest,next);
+        if(active()){node._dirty=false;await updateDetail(parent,row.entry.id);if(active()){closeFieldEditor();app.render();app.toast(kind==='review'?'감상을 저장했어요.':'읽기 기간을 저장했어요.');}}
+      }catch(err){if(active())status.textContent=err.message||'저장하지 못했어요. 다시 시도해주세요.';}
+      finally{node._busy=false;button.disabled=false;}
+    };
+    node.showModal();if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('archive-field',{canClose:canCloseField,close:closeFieldEditor});
+    (kind==='review'?form.elements.review:form.elements.startDate).focus({preventScroll:true});
   }
   function noteCategoryTabs(selected,attribute,label){return '<div class="archive-note-category-tabs" aria-label="'+label+'"><button type="button" '+attribute+'="" aria-pressed="'+!selected+'">전체</button>'+Object.keys(NOTE_CATEGORIES).map(function(key){return '<button type="button" '+attribute+'="'+key+'" aria-pressed="'+(selected===key)+'">'+NOTE_CATEGORIES[key]+'</button>';}).join('')+'</div>';}
   function filterNoteRecords(records,category,query){var term=String(query||'').trim().toLowerCase();return records.filter(function(record){return (!category||record.note.category===category)&&(!term||(record.note.title+' '+record.note.text+' '+record.row.book.title).toLowerCase().includes(term));});}
@@ -333,6 +379,6 @@
     [form.elements.scope,form.elements.sort].forEach(function(select){select.onchange=function(){invalidate();found=[];results.innerHTML='';more.hidden=true;if(form.elements.query.value.trim().length>=2)return load(false);};});
   }
   function readCover(file,maxDimension){return new Promise(function(resolve,reject){if(!/^image\/(jpeg|png|webp)$/.test(file.type)||file.size>5*1024*1024){reject(new Error('5MB 이하의 JPG, PNG, WebP 사진을 선택해주세요.'));return;}var url=URL.createObjectURL(file),img=new Image();img.onload=function(){try{var scale=Math.min(1,(maxDimension||600)/Math.max(img.width,img.height)),canvas=root.document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));var ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',0.82));}catch(e){reject(new Error('사진을 읽지 못했어요. 다른 사진을 선택해주세요.'));}finally{URL.revokeObjectURL(url);}};img.onerror=function(){URL.revokeObjectURL(url);reject(new Error('사진을 읽지 못했어요.'));};img.src=url;});}
-  root.addEventListener('hashchange',function(){closeNote();closeCollection();closeSessions();close(false,true);});
+  root.addEventListener('hashchange',function(){closeNote();closeCollection();closeSessions();close(false,true);if(root.GrowellArchiveCalendar)root.GrowellArchiveCalendar.reset();});
   root.GrowellArchive={configure:configure,html:html,recordsHtml:recordsHtml,reflectionHtml:reflectionHtml,bind:bind,reset:reset};
 })(window);

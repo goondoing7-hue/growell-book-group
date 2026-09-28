@@ -30,6 +30,10 @@
 .space-filter-row .feed-filters{display:flex;flex-wrap:nowrap;gap:6px;width:max-content;max-width:100%;min-width:0;padding:3px 0}
 .space-filter-row .feed-filter{flex:none;min-width:0;white-space:nowrap;min-height:38px;font-size:13px;padding:7px 12px;color:var(--space-muted);background:var(--surface);border:1px solid var(--line)}
 .space-filter-row .feed-filter.is-sel{background:var(--space-green);color:var(--space-on-green);border-color:var(--space-green)}
+.space-filter-row>.mine-fixed-categories{margin:0;flex:1 1 390px;min-width:0}
+.space-filter-row .mine-category-filters{display:flex;flex-wrap:nowrap;gap:6px;width:max-content;max-width:100%;padding:3px 0}
+.space-filter-row .mine-category-filters button{flex:none;min-width:0;min-height:38px;font-size:13px;padding:7px 12px;color:var(--space-muted)}
+.space-filter-row .mine-category-filters button.is-selected{color:var(--space-on-green)}
 .space-feed-count{font-size:13px;color:var(--space-muted);margin:12px 0}
 .book-page .feed-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:stretch}
 .book-page .feed-tile{border-radius:18px;min-width:0;box-shadow:none;transform:none;border:1px solid var(--line);background:var(--surface)}
@@ -117,9 +121,12 @@
  .space-prompt .btn{margin-left:auto;padding:5px 0}
  .space-filter-row{gap:12px}
  .space-filter-row .feed-toolbar{flex-basis:100%}
+ .space-filter-row>.mine-fixed-categories{flex-basis:100%}
  .space-filter-row .feed-search{flex-basis:100%;width:100%}
  .space-filter-row .feed-filters{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.65fr) minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,1.6fr);gap:3px;width:100%;max-width:none}
+ .space-filter-row .mine-category-filters{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.65fr) minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,1.6fr);gap:3px;width:100%;max-width:none}
  .space-filter-row .feed-filter{font-size:13px;letter-spacing:-.025em;padding:8px 2px;min-height:38px}
+ .space-filter-row .mine-category-filters button{font-size:13px;letter-spacing:-.025em;padding:8px 2px;min-height:38px}
  .book-page .feed-tile-head{padding:15px 18px}
  .space-photo{height:235px}
  .space-story-copy{padding:18px}
@@ -272,4 +279,29 @@
  .space-list-thumbnail{width:64px;height:64px;flex-basis:64px;border-radius:9px}
  .space-list-title{font-size:15px}
  .space-list-footer{left:14px;bottom:14px;max-width:calc(100% - 104px)}
+}
+
+/* Writing opens above its space without changing the underlying list layout. */
+body.space-composer-open{overflow:hidden}
+.space-composer-dialog{box-sizing:border-box;width:min(1000px,calc(100vw - 40px));max-width:none;max-height:calc(100dvh - 40px);margin:auto;padding:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);font-family:var(--font-body);box-shadow:var(--shadow-lg)}
+.space-composer-dialog::backdrop{background:rgba(20,31,25,.48);backdrop-filter:blur(3px)}
+.space-composer-dialog>.card.composer{min-width:0;margin:0;padding:26px 28px;border:0;border-radius:0;box-shadow:none}
+.space-composer-dialog .space-composer-label{margin-bottom:14px}
+.space-composer-dialog .composer-head h3{margin:0;font-size:22px;font-weight:750;line-height:1.45;letter-spacing:-.035em}
+.space-composer-dialog .composer-close{width:36px;height:36px}
+.space-composer-dialog .note-meta{gap:12px}
+.space-composer-dialog .nt-set{gap:6px}
+.space-composer-dialog .nt-pill{min-height:38px;font-size:13px}
+.space-composer-dialog .note-editor{min-height:clamp(240px,40dvh,420px);max-height:none;padding:20px;font-size:17px;line-height:1.9;overflow:visible;overflow-wrap:anywhere}
+.space-composer-dialog .rt-controls{min-width:0}
+.space-composer-dialog .composer-foot{gap:12px;margin-top:18px}
+@media(max-width:640px){
+ .space-composer-dialog{width:calc(100vw - 24px);max-height:calc(100dvh - 24px);border-radius:18px}
+ .space-composer-dialog>.card.composer{padding:20px 16px}
+ .space-composer-dialog .space-composer-label{font-size:12px;margin-bottom:12px}
+ .space-composer-dialog .composer-head h3{font-size:21px}
+ .space-composer-dialog .composer-close{width:40px;height:40px}
+ .space-composer-dialog .note-meta{align-items:flex-start;flex-wrap:wrap}
+ .space-composer-dialog .nt-pill{padding:7px 9px;font-size:12px}
+ .space-composer-dialog .note-editor{min-height:clamp(220px,38dvh,360px);padding:16px 14px}
 }
