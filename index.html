@@ -1510,11 +1510,9 @@ var SUPABASE_URL = 'https://oxaeecawijnetwmvggjs.supabase.co';
 var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94YWVlY2F3aWpuZXR3bXZnZ2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyODQ4NDEsImV4cCI6MjEwMzg2MDg0MX0.TXOCq4lgPZRcWDncN0qlZkkKymXJS_sl5LlCauP_DGk';
 var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storage: window.localStorage, flowType:'pkce', detectSessionInUrl:false }
-  /* 세션 저장소를 sessionStorage(탭을 닫으면 로그아웃)에서 localStorage로 변경 — 한 번 로그인하면
-     브라우저/탭을 껐다 켜도, 심지어 기기를 재부팅해도 로그인 상태가 계속 유지된다(요청 반영).
-     autoRefreshToken:true라서 access token이 만료돼도(기본 1시간) refresh token으로 자동 갱신되고,
-     그 refresh token 자체도 만료 전까지(Supabase 기본 설정 기준 통상 몇 주~한 달 단위로 롤링 갱신)
-     계속 로그인 상태가 이어진다. "로그아웃" 버튼을 직접 누르기 전까지는 세션이 끊기지 않는다. */
+  /* 같은 브라우저에서 앱을 다시 열면 저장된 세션을 확인하고 토큰을 자동 갱신한다.
+     만료·철회와 브라우저 저장소 삭제 여부는 서버·기기 설정에 따른다.
+     연결 실패만으로 저장된 개인 기록 키를 지우거나 로그인 해제로 처리하지 않는다. */
 });
 
 // 운영자 코드는 클라이언트에 보관하지 않으며 서버 함수에서만 검증한다.
@@ -1590,29 +1588,9 @@ var BOOT_FAILED = false;
    RLS가 본인 것만 돌려주므로 로그인 상태일 때만 함께 불러온다. */
 function bootApp(){
   var flow=authFlowEpoch;
-  loadOAuthProviderSettings();bindOAuthAuthWatcher();
+  loadOAuthProviderSettings();bindOAuthAuthWatcher();bindMemberSessionRestore();
   function guard(){if(flow!==authFlowEpoch)throw new Error('auth-flow-cancelled');}
-  return finishOAuthCallback().then(function(){guard();return sb.auth.getSession();}).then(function(result){
-    guard();
-    if(!result.data || !result.data.session){SESSION=null;sharedPostsLoadState='idle';try{localStorage.removeItem('growell_session');}catch(e){}return null;}
-    return sb.auth.getUser().then(function(verified){guard();if(verified.error||!verified.data||!verified.data.user)throw new Error('auth-verification-failed');return verified.data.user;});
-  }).then(function(user){
-    guard();if(!user)return;
-    return sb.from('profiles').select('*').eq('auth_user_id',user.id).maybeSingle().then(async function(result){
-      guard();if(result.error)throw new Error('profile-load-failed');
-      var row=result.data,restored=null;
-      if(row&&!GrowellMemberAccess.approved(row)){oauthMessage=GrowellMemberAccess.message(row.approval_status);SESSION=null;await sb.auth.signOut();return;}
-      try{restored=JSON.parse(localStorage.getItem('growell_session')||'null');}catch(e){}
-      if(row && row.auth_user_id===user.id && !row.is_deleted && restored && restored.userId===row.id && typeof restored.keyB64==='string'){
-        try{await keyFromB64(restored.keyB64);}catch(e){restored=null;}
-        guard();
-        if(restored){var profile=mapProfileRow(row);STATE.users[profile.id]=profile;SESSION={userId:profile.id,name:profile.name,keyB64:restored.keyB64,authKind:restored.authKind==='oauth'?'oauth':'password'};sharedPostsLoadState='idle';await loadMemberData();guard();return;}
-      }
-      SESSION=null;sharedPostsLoadState='idle';
-      try{localStorage.removeItem('growell_session');}catch(e){}
-      if(hasSocialIdentity(user))await prepareOAuthMember(user,flow);
-    });
-  }).catch(function(error){
+  return finishOAuthCallback().then(function(){guard();return restoreMemberSession();}).catch(function(error){
     if(flow===authFlowEpoch && error.message!=='auth-flow-cancelled'){
       SESSION=null;sharedPostsLoadState='idle';
       oauthMessage=error.message==='oauth-cancelled'?'간편 로그인을 취소했어요. 다시 선택할 수 있어요.':
@@ -1620,6 +1598,137 @@ function bootApp(){
         '로그인 연결을 마치지 못했어요. 다시 로그인해주세요.';
     }
   }).then(function(){BOOTING=false;});
+}
+
+var authRestoreState='idle',authRestoreRequest=null,authRestoreRetryTimer=null,authRestoreRetryCount=0,authRestoreLifecycleBound=false,authRestoreUserId=null;
+function cancelMemberSessionRestore(){
+  if(authRestoreRetryTimer!==null)clearTimeout(authRestoreRetryTimer);
+  authRestoreRetryTimer=null;authRestoreRequest=null;authRestoreRetryCount=0;authRestoreState='idle';authRestoreUserId=null;
+}
+function definitiveMemberSessionError(error){
+  return !!error && (error.name==='AuthSessionMissingError' ||
+    ['bad_jwt','invalid_jwt','jwt_expired','session_not_found','refresh_token_not_found','refresh_token_already_used','user_not_found','user_banned','invalid_grant'].indexOf(error.code)>=0 ||
+    [400,401,403,404,422].indexOf(Number(error.status))>=0);
+}
+function memberSessionFailure(error,invalid){
+  var failure=new Error('member-session-unavailable');
+  failure.invalidSession=invalid===true || invalid!==false && definitiveMemberSessionError(error);
+  return failure;
+}
+function scheduleMemberSessionRestore(){
+  var delays=[1500,5000,15000];
+  if(authRestoreState!=='retry'||SESSION||authRestoreRetryTimer!==null||authRestoreRetryCount>=delays.length)return;
+  authRestoreRetryTimer=setTimeout(function(){authRestoreRetryTimer=null;retryMemberSession(false);},delays[authRestoreRetryCount++]);
+}
+function restoreMemberSession(){
+  if(SESSION)return Promise.resolve(true);
+  if(authRestoreRequest)return authRestoreRequest;
+  var flow=authFlowEpoch,request;
+  if(authRestoreRetryTimer!==null)clearTimeout(authRestoreRetryTimer);
+  authRestoreRetryTimer=null;authRestoreState='checking';
+  function current(){return flow===authFlowEpoch&&authRestoreRequest===request;}
+  function guard(){if(!current())throw new Error('auth-flow-cancelled');}
+  function forgetCachedSession(){
+    guard();SESSION=null;sharedPostsLoadState='idle';authRestoreState='idle';authRestoreRetryCount=0;authRestoreUserId=null;
+    try{localStorage.removeItem('growell_session');}catch(e){}
+  }
+  async function verifiedUser(session){
+    if(!session||!session.user||!session.user.id)throw memberSessionFailure(null,true);
+    var expected=session.user.id,verified=await Promise.resolve().then(function(){return sb.auth.getUser();}).catch(function(error){return {error:error};});guard();
+    if(verified && verified.error && definitiveMemberSessionError(verified.error) && typeof sb.auth.refreshSession==='function'){
+      // Verify a refreshed token once; a cached profile never establishes membership.
+      var refreshed=await sb.auth.refreshSession();guard();
+      if(!refreshed||refreshed.error)throw memberSessionFailure(refreshed&&refreshed.error);
+      var renewed=refreshed.data&&refreshed.data.session;
+      if(!renewed||!renewed.user||renewed.user.id!==expected)throw memberSessionFailure(null,true);
+      verified=await Promise.resolve().then(function(){return sb.auth.getUser();}).catch(function(error){return {error:error};});guard();
+    }
+    if(!verified||verified.error)throw memberSessionFailure(verified&&verified.error);
+    if(!verified.data||!verified.data.user||verified.data.user.id!==expected)throw memberSessionFailure(null,true);
+    return verified.data.user;
+  }
+  request=Promise.resolve().then(async function(){
+    guard();
+    var result=await sb.auth.getSession();guard();
+    // A failed refresh may return both an error and a null session. Preserve the
+    // stored key until the server actually confirms there is no usable session.
+    if(!result||result.error)throw memberSessionFailure(result&&result.error);
+    if(!result.data||!result.data.session){forgetCachedSession();return false;}
+    authRestoreUserId=result.data.session.user&&result.data.session.user.id||null;
+    var user=await verifiedUser(result.data.session);guard();
+    var profileResult=await sb.from('profiles').select('*').eq('auth_user_id',user.id).maybeSingle();guard();
+    if(!profileResult||profileResult.error)throw memberSessionFailure(null,false);
+    var row=profileResult.data,restored=null;
+    if(row&&row.auth_user_id!==user.id)throw memberSessionFailure(null,true);
+    if(row&&!GrowellMemberAccess.approved(row)){
+      forgetCachedSession();oauthMessage=GrowellMemberAccess.message(row.approval_status);
+      await sb.auth.signOut();guard();return false;
+    }
+    var saved;try{saved=localStorage.getItem('growell_session');}catch(e){throw memberSessionFailure(null,false);}
+    try{restored=JSON.parse(saved||'null');}catch(e){}
+    if(row&&restored&&restored.userId===row.id&&typeof restored.keyB64==='string'){
+      try{await keyFromB64(restored.keyB64);}catch(e){restored=null;}
+      guard();
+      if(restored){
+        var profile=mapProfileRow(row);STATE.users[profile.id]=profile;
+        SESSION={userId:profile.id,name:profile.name,keyB64:restored.keyB64,authKind:restored.authKind==='oauth'?'oauth':'password'};
+        sharedPostsLoadState='idle';authRestoreState='idle';authRestoreRetryCount=0;oauthMessage='';
+        if(location.hash==='#/login')history.replaceState(null,'','#/');
+        // Individual record fetches have their own retry UI and must not log out
+        // an otherwise verified member or discard the original encryption key.
+        await loadMemberData();guard();
+        return true;
+      }
+    }
+    forgetCachedSession();
+    if(hasSocialIdentity(user)){await prepareOAuthMember(user,flow);guard();}
+    return false;
+  }).catch(function(error){
+    if(!current()||error.message==='auth-flow-cancelled')return false;
+    // Once membership is verified, a later data-load failure has its own UI.
+    if(SESSION){authRestoreState='idle';return true;}
+    sharedPostsLoadState='idle';
+    if(error.invalidSession || error.invalidSession!==false&&definitiveMemberSessionError(error)){forgetCachedSession();oauthMessage='로그인이 만료되었어요. 다시 로그인해주세요.';}
+    else{authRestoreState='retry';oauthMessage='';}
+    return false;
+  }).then(function(restored){
+    if(authRestoreRequest===request){authRestoreRequest=null;scheduleMemberSessionRestore();}
+    return restored;
+  });
+  authRestoreRequest=request;
+  return request;
+}
+function retryMemberSession(resetAttempts){
+  if(BOOTING||SESSION||authRestoreState!=='retry')return authRestoreRequest||Promise.resolve(false);
+  if(resetAttempts!==false)authRestoreRetryCount=0;
+  var flow=authFlowEpoch,request=restoreMemberSession();
+  render();
+  return request.then(function(restored){if(flow===authFlowEpoch&&!BOOTING)render();return restored;});
+}
+function restartMemberLogin(){
+  if(authRestoreState==='idle')return;
+  ++authFlowEpoch;
+  var pending=resetSaveSession();clearMemberSession();
+  oauthPending=null;oauthBusy=false;oauthMessage='';authMode='login';
+  authTransition=authTransition.catch(function(){}).then(function(){return pending;}).then(function(){return sb.auth.signOut({scope:'local'});}).catch(function(){});
+  history.replaceState(null,'','#/login');render();
+  return authTransition;
+}
+function bindMemberSessionRestore(){
+  if(authRestoreLifecycleBound)return;
+  authRestoreLifecycleBound=true;
+  if(typeof window!=='undefined'&&typeof window.addEventListener==='function'){
+    window.addEventListener('online',function(){retryMemberSession();});
+    window.addEventListener('pageshow',function(){retryMemberSession();});
+  }
+  if(typeof document.addEventListener==='function')document.addEventListener('visibilitychange',function(){if(!document.hidden)retryMemberSession();});
+}
+function memberSessionRestoreHtml(){
+  var checking=authRestoreState==='checking';
+  return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card" aria-busy="'+checking+'">'+
+    '<h2>로그인을 이어가는 중이에요</h2><p class="sub" role="status">'+(checking?'저장된 로그인 정보를 확인하고 있어요.':'연결이 잠시 끊겼어요. 인터넷 연결이 돌아오면 저장된 로그인 정보를 다시 확인해요.')+'</p>'+
+    '<button type="button" class="btn btn-primary btn-block" id="btn-retry-member-session"'+(checking?' disabled':'')+'>'+(checking?'연결 확인 중…':'다시 연결')+'</button>'+
+    '<button type="button" class="btn btn-ghost btn-block btn-sm" id="btn-restart-member-login">다시 로그인</button></section></div></div>';
 }
 
 function currentUser(){ return SESSION && STATE.users[SESSION.userId] || null; }
@@ -2054,6 +2163,7 @@ function finishSaveButton(opts){
   if(opts.button){ opts.button.disabled=false; opts.button.textContent=opts.originalLabel||'저장'; }
 }
 function clearMemberSession(){
+  if(typeof cancelMemberSessionRestore==='function')cancelMemberSessionRestore();
   editingAnnouncement=false;
   announcementEditDraft=null;
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.reset();
@@ -4217,7 +4327,7 @@ function bindOAuthAuthWatcher(){
   if(oauthWatcherBound || typeof sb.auth.onAuthStateChange!=='function')return;
   oauthWatcherBound=true;
   sb.auth.onAuthStateChange(function(event,session){
-    var expected=SESSION && STATE.users[SESSION.userId] && STATE.users[SESSION.userId].authUserId || oauthPending && oauthPending.authUserId;
+    var expected=SESSION && STATE.users[SESSION.userId] && STATE.users[SESSION.userId].authUserId || oauthPending && oauthPending.authUserId || authRestoreUserId;
     if(event!=='SIGNED_OUT' && (!expected || session && session.user && session.user.id===expected))return;
     var flow=authFlowEpoch;
     // Supabase holds an Auth lock inside this callback; never await another Auth call here.
@@ -6404,7 +6514,9 @@ function render(){
   if(theme==='dark') document.documentElement.setAttribute('data-theme','dark');
   else if(theme==='light') document.documentElement.setAttribute('data-theme','light');
   var html = headerHtml(route) + '<main>' + activeReadingStripHtml(route);
-  if(!SESSION&&route.view!=='about'){
+  if(!SESSION&&authRestoreState!=='idle'){
+    html += memberSessionRestoreHtml();
+  } else if(!SESSION&&route.view!=='about'){
     html += loginHtml();
   } else if(route.view==='login'){
     html += loginHtml();
@@ -6495,9 +6607,13 @@ function bindEvents(route){
     });
   }
   var loginOpen = document.getElementById('btn-login-open');
-  if(loginOpen) loginOpen.addEventListener('click', function(){ location.hash='#/login'; });
+  if(loginOpen) loginOpen.addEventListener('click', function(){ if(authRestoreState!=='idle')restartMemberLogin();else location.hash='#/login'; });
   var gotoLogin = document.getElementById('btn-goto-login');
-  if(gotoLogin) gotoLogin.addEventListener('click', function(){ location.hash='#/login'; });
+  if(gotoLogin) gotoLogin.addEventListener('click', function(){ if(authRestoreState!=='idle')restartMemberLogin();else location.hash='#/login'; });
+  var retryLogin = document.getElementById('btn-retry-member-session');
+  if(retryLogin)retryLogin.addEventListener('click',function(){retryMemberSession();});
+  var restartLogin = document.getElementById('btn-restart-member-login');
+  if(restartLogin)restartLogin.addEventListener('click',restartMemberLogin);
   var logoutBtn = document.getElementById('btn-logout');
   if(logoutBtn) logoutBtn.addEventListener('click', doLogout);
   var deleteAccountBtn = document.getElementById('btn-delete-account');

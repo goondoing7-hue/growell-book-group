@@ -7,34 +7,47 @@ const profile={id:'u-social',auth_user_id:authId,login_id:'social_test',name:'�
 const user={id:authId,identities:[{provider:'google'}],app_metadata:{providers:['google']}};
 function section(a,b){const start=html.indexOf(a),end=html.indexOf(b,start);assert.ok(start>=0&&end>start);return html.slice(start,end);}
 function harness(options={}){
-  const memory=options.memory||new Map(),sessionMemory=new Map(),authUser=options.user||user,calls=[],logs=[],nodes={},c={Promise,URL,URLSearchParams,JSON,Date,setTimeout,clearTimeout,
+  const memory=options.memory||new Map(),sessionMemory=new Map(),authUser=options.user||user,calls=[],logs=[],nodes={},listeners={},timers=new Map();let timerId=0;
+  const url=new URL(options.href||'https://app.example/'),c={Promise,URL,URLSearchParams,JSON,Date,
+    setTimeout(callback,delay=0){if(delay<1000)return setTimeout(callback,delay);const id={id:++timerId};timers.set(id,{callback,delay});return id;},
+    clearTimeout(id){if(!timers.delete(id))clearTimeout(id);},
     console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,
     STATE:{users:{},posts:{},comments:{},privateEntries:{},habits:{},readingMeta:{},readingLogs:{},worksheets:{},materialNotes:{}},SESSION:null,
     authFlowEpoch:0,saveSessionEpoch:0,sharedPostsLoadState:'idle',BOOTING:true,BOOT_FAILED:false,
     GrowellOAuth:OAuth,GrowellMemberAccess:MemberAccess,keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
-    location:{href:options.href||'https://app.example/',hash:'#/',assign(url){calls.push(['redirect',url]);}},
-    history:{replaceState(a,b,url){calls.push(['clean-url',url]);}},
+    location:{href:url.href,hash:url.hash||'#/',pathname:url.pathname,search:url.search,assign(url){calls.push(['redirect',url]);}},
+    history:{replaceState(a,b,value){calls.push(['clean-url',value]);const next=new URL(value,c.location.href);Object.assign(c.location,{href:next.href,hash:next.hash,pathname:next.pathname,search:next.search});}},
     localStorage:{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)},
     sessionStorage:{getItem:key=>sessionMemory.get(key)||null,setItem:(key,value)=>sessionMemory.set(key,value),removeItem:key=>sessionMemory.delete(key)},
-    document:{querySelector(){return null;},querySelectorAll(){return [];},getElementById:id=>nodes[id]||null},
+    document:{visibilityState:'visible',hidden:false,querySelector(){return null;},querySelectorAll(){return [];},getElementById:id=>nodes[id]||null,
+      addEventListener(type,callback){(listeners['document:'+type]||(listeners['document:'+type]=[])).push(callback);}},
+    navigator:{onLine:true},
+    addEventListener(type,callback){(listeners['window:'+type]||(listeners['window:'+type]=[])).push(callback);},
     fetch:async()=>{calls.push(['provider-settings']);return {ok:true,json:async()=>({external:{google:true,kakao:false}})};},
     render(){calls.push(['render']);},showToast(message){calls.push(['toast',message]);},esc:value=>String(value),
     mapProfileRow:r=>({id:r.id,name:r.name,authUserId:r.auth_user_id,salt:r.pbkdf2_salt,isAdmin:r.is_admin,loginId:r.login_id}),
-    resetSaveSession(){c.saveSessionEpoch++;return Promise.resolve();},clearMemberSession(){c.SESSION=null;c.STATE.privateEntries={};calls.push(['clear']);},
-    loadMemberData:async()=>{calls.push(['load-member']);return true;},
-    sb:{auth:{getSession:async()=>({data:{session:options.guest?null:{user:authUser}}}),getUser:async()=>options.invalidAuth?{error:new Error('expired')}:{data:{user:authUser},error:null},
+    resetSaveSession(){c.saveSessionEpoch++;return Promise.resolve();},clearMemberSession(){if(c.cancelMemberSessionRestore)c.cancelMemberSessionRestore();c.SESSION=null;c.STATE.privateEntries={};memory.delete('growell_session');calls.push(['clear']);},
+    loadMemberData:async()=>{calls.push(['load-member']);return options.loadMemberData?options.loadMemberData():true;},
+    sb:{auth:{getSession:async()=>{calls.push(['get-session']);return options.getSession?options.getSession():{data:{session:options.guest?null:{user:authUser}}};},
+      getUser:async()=>{calls.push(['verify-user']);return options.getUser?options.getUser():options.invalidAuth?{error:new Error('expired')}:{data:{user:authUser},error:null};},
       onAuthStateChange(callback){c.authCallback=callback;return {data:{subscription:{unsubscribe(){}}}};},
       exchangeCodeForSession:async code=>{calls.push(['exchange',code]);return {error:null};},
       signOut:async()=>{calls.push(['signout']);return {};},
       signInWithOAuth:async input=>{calls.push(['oauth',input]);return {data:{url:'https://project.supabase.co/auth/v1/authorize?provider='+input.provider}};}
-    },from(table){const query={select(){return query;},eq(key,value){calls.push(['read',table,key,value]);return query;},maybeSingle:async()=>({data:options.profile===undefined?profile:options.profile,error:null})};return query;},
+    },from(table){const query={select(){return query;},eq(key,value){calls.push(['read',table,key,value]);return query;},maybeSingle:async()=>options.getProfile?options.getProfile():({data:options.profile===undefined?profile:options.profile,error:null})};return query;},
     rpc:async(name,args)=>{calls.push(['rpc',name,args]);if(options.rpc)return options.rpc(name,args);return {data:{status:'new',profile:null,envelope:null}};}}
   };
+  c.window=c;
   vm.createContext(c);
   vm.runInContext(section('/* ---------------- OAuth login and private-space unlock ---------------- */','/* ---------------- render: login ---------------- */'),c);
   vm.runInContext(section('function bootApp(){','function currentUser(){'),c);
-  return {c,memory,calls,nodes,logs};
+  return {c,memory,calls,nodes,logs,timers,listeners,
+    dispatch(type,target='window'){for(const callback of listeners[target+':'+type]||[])callback({type});},
+    async fireTimer(){const entry=timers.entries().next().value;assert.ok(entry,'a retry should be scheduled');timers.delete(entry[0]);await entry[1].callback();await settle();return entry[1].delay;}};
 }
+function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
+async function settle(){await new Promise(resolve=>setTimeout(resolve,5));}
+async function cacheMember(h,extra={}){const keyB64=await Private.exportKey(await Private.newKey());const saved=JSON.stringify({userId:profile.id,name:'old name',keyB64,authKind:'password',...extra});h.memory.set('growell_session',saved);return {keyB64,saved};}
 test('hidden social entry points make no provider probe or launch and leave only native login and signup',async()=>{
   const {c,calls}=harness({guest:true});
   vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
@@ -66,6 +79,144 @@ test('native login restores from persistent storage in a fresh app with no tab s
   assert.ok(fresh.calls.some(call=>call[0]==='load-member'));
   assert.ok(!fresh.calls.some(call=>['oauth','provider-settings','signout'].includes(call[0])));
 });
+test('returned and thrown session refresh failures preserve the private key and offer connection retry',async()=>{
+  for(const thrown of [false,true]){
+    const h=harness({getSession:async()=>{const error=new TypeError('Failed to fetch');if(thrown)throw error;return {data:{session:null},error};}});
+    const cached=await cacheMember(h);await h.c.bootApp();
+    assert.equal(h.c.SESSION,null);assert.equal(h.c.BOOTING,false);assert.equal(h.c.authRestoreState,'retry');
+    assert.equal(h.memory.get('growell_session'),cached.saved,'a failed refresh is not an explicit logout');
+    assert.ok(!h.calls.some(call=>['read','verify-user','load-member','signout','clear'].includes(call[0])));
+    assert.match(h.c.memberSessionRestoreHtml(),/다시|연결/);
+    assert.doesNotMatch(h.c.oauthMessage,/다시 로그인/);
+    assert.equal(h.timers.size,1);
+  }
+});
+
+test('verification and profile connection failures recover the same key after approved identity verification',async()=>{
+  for(const stage of ['user','profile']){
+    let failed=true;
+    const h=harness({
+      getUser:async()=>stage==='user'&&failed?{error:{status:503,message:'network unavailable'}}:{data:{user},error:null},
+      getProfile:async()=>stage==='profile'&&failed?{data:null,error:{status:503,message:'network unavailable'}}:{data:profile,error:null}
+    });
+    const cached=await cacheMember(h);await h.c.bootApp();
+    assert.equal(h.c.SESSION,null);assert.equal(h.c.authRestoreState,'retry');
+    assert.equal(h.memory.get('growell_session'),cached.saved);
+    assert.ok(!h.calls.some(call=>call[0]==='load-member'));
+    failed=false;await h.c.retryMemberSession();
+    assert.equal(h.c.SESSION.userId,profile.id);assert.equal(h.c.SESSION.keyB64,cached.keyB64);
+    assert.equal(h.c.SESSION.name,profile.name);assert.equal(h.c.authRestoreState,'idle');assert.equal(h.timers.size,0);
+    assert.equal(h.calls.filter(call=>call[0]==='load-member').length,1);
+    assert.ok(h.calls.some(call=>call[0]==='read'&&call[2]==='auth_user_id'&&call[3]===authId));
+    assert.equal(JSON.parse(h.memory.get('growell_session')).keyB64,cached.keyB64);
+  }
+});
+
+test('definitively absent or revoked Auth sessions clear cached access without scheduling a retry',async()=>{
+  for(const result of [
+    {data:{session:null},error:null},
+    {data:{session:null},error:{status:400,code:'refresh_token_not_found',message:'revoked refresh token'}}
+  ]){
+    const h=harness({getSession:async()=>result});await cacheMember(h);await h.c.bootApp();
+    assert.equal(h.c.SESSION,null);assert.equal(h.memory.has('growell_session'),false);
+    assert.equal(h.c.authRestoreState,'idle');assert.equal(h.timers.size,0);
+    assert.ok(!h.calls.some(call=>['read','load-member'].includes(call[0])));
+  }
+});
+
+test('an expired access token is refreshed once and reverified before private records load',async()=>{
+  for(const unavailable of [false,true]){
+    let verified=0;
+    const h=harness({getUser:async()=>++verified===1?{error:{status:401,code:'jwt_expired'}}:{data:{user},error:null}});
+    h.c.sb.auth.refreshSession=async()=>{h.calls.push(['refresh-session']);return unavailable?{error:{status:503}}:{data:{session:{user}},error:null};};
+    const cached=await cacheMember(h);await h.c.bootApp();
+    assert.equal(h.calls.filter(call=>call[0]==='refresh-session').length,1);
+    assert.equal(h.memory.get('growell_session'),cached.saved);
+    if(unavailable){assert.equal(h.c.SESSION,null);assert.equal(h.c.authRestoreState,'retry');assert.ok(!h.calls.some(call=>call[0]==='load-member'));}
+    else{assert.equal(verified,2);assert.equal(h.c.SESSION.keyB64,cached.keyB64);assert.equal(h.calls.filter(call=>call[0]==='load-member').length,1);}
+  }
+});
+
+test('recovery never unlocks a cached profile for a different verified user or mismatched profile',async()=>{
+  for(const changed of [
+    {getUser:async()=>({data:{user:{...user,id:'66666666-7777-8888-9999-000000000000'}},error:null})},
+    {profile:{...profile,id:'another-profile'}}
+  ]){
+    const h=harness(changed);const cached=await cacheMember(h);await h.c.bootApp();
+    assert.equal(h.c.SESSION,null);assert.ok(!h.calls.some(call=>call[0]==='load-member'));
+    assert.ok(!Object.values(h.c.STATE.users).some(row=>row.id===profile.id));
+    assert.notEqual(h.c.SESSION&&h.c.SESSION.keyB64,cached.keyB64);
+  }
+});
+
+test('concurrent restore attempts share one verification and cancellation ignores late completion',async()=>{
+  const pending=deferred(),h=harness({getUser:()=>pending.promise});await cacheMember(h);
+  const first=h.c.restoreMemberSession(),second=h.c.restoreMemberSession();
+  assert.equal(first,second);await settle();
+  assert.equal(h.calls.filter(call=>call[0]==='verify-user').length,1);
+  h.c.authFlowEpoch++;h.c.clearMemberSession();
+  pending.resolve({data:{user},error:null});await Promise.all([first,second]);
+  assert.equal(h.c.SESSION,null);assert.equal(h.memory.has('growell_session'),false);
+  assert.ok(!h.calls.some(call=>call[0]==='read'||call[0]==='load-member'));
+  assert.equal(h.c.authRestoreState,'idle');assert.equal(h.timers.size,0);
+});
+
+test('logout and an Auth account change during restoration cannot resurrect the previous private session',async()=>{
+  for(const event of ['SIGNED_OUT','SIGNED_IN']){
+    const pending=deferred(),h=harness({getUser:()=>pending.promise});await cacheMember(h);
+    const boot=h.c.bootApp();await settle();
+    h.c.authCallback(event,event==='SIGNED_OUT'?null:{user:{id:'another-auth-user'}});await settle();
+    pending.resolve({data:{user},error:null});await boot;
+    assert.equal(h.c.SESSION,null,event);assert.equal(h.memory.has('growell_session'),false,event);
+    assert.ok(!h.calls.some(call=>call[0]==='load-member'),event);
+    assert.equal(h.c.authRestoreState,'idle');assert.equal(h.timers.size,0);
+  }
+});
+
+test('a late previous-account response cannot clear or replace a newly restored account',async()=>{
+  const pending=deferred(),nextUser={...user,id:'66666666-7777-8888-9999-000000000000'},nextProfile={...profile,id:'next-profile',auth_user_id:'66666666-7777-8888-9999-000000000000'};
+  let next=false;
+  const h=harness({
+    getSession:async()=>({data:{session:{user:next?nextUser:user}},error:null}),
+    getUser:()=>next?Promise.resolve({data:{user:nextUser},error:null}):pending.promise,
+    getProfile:async()=>({data:next?nextProfile:profile,error:null})
+  });
+  await cacheMember(h);const previous=h.c.restoreMemberSession();await settle();
+  h.c.authFlowEpoch++;h.c.clearMemberSession();next=true;
+  const cached=await cacheMember(h,{userId:nextProfile.id});await h.c.restoreMemberSession();
+  assert.equal(h.c.SESSION.userId,nextProfile.id);
+  pending.resolve({data:{user},error:null});await previous;
+  assert.equal(h.c.SESSION.userId,nextProfile.id);assert.equal(h.c.SESSION.keyB64,cached.keyB64);
+  assert.equal(h.memory.get('growell_session'),cached.saved);assert.equal(h.c.authRestoreState,'idle');assert.equal(h.timers.size,0);
+  assert.equal(h.calls.filter(call=>call[0]==='load-member').length,1);
+});
+
+test('automatic recovery is bounded and reopening online retries without disturbing a restored session',async()=>{
+  let failed=true;
+  const h=harness({getSession:async()=>failed?{data:{session:null},error:{status:503}}:{data:{session:{user}},error:null}});
+  const cached=await cacheMember(h);await h.c.bootApp();
+  const delays=[];
+  while(h.timers.size){assert.ok(delays.length<4,'automatic retries must stop');delays.push(await h.fireTimer());}
+  assert.deepEqual(delays,[1500,5000,15000]);assert.equal(h.c.authRestoreState,'retry');
+  assert.equal(h.memory.get('growell_session'),cached.saved);
+  failed=false;h.dispatch('online');await settle();
+  assert.equal(h.c.SESSION.keyB64,cached.keyB64);assert.equal(h.c.authRestoreState,'idle');
+  const callCount=h.calls.length;
+  h.dispatch('online');h.dispatch('pageshow');h.dispatch('visibilitychange','document');await settle();
+  assert.equal(h.calls.length,callCount,'lifecycle events must not re-render or refetch a healthy member session');
+  assert.equal(h.timers.size,0);
+});
+
+test('a restored login route is replaced with home while a reading route remains unchanged',async()=>{
+  for(const route of ['#/login','#/book/emotion/mine']){
+    const h=harness({href:'https://app.example/'+route});await cacheMember(h);await h.c.bootApp();
+    assert.ok(h.c.SESSION);
+    assert.equal(h.c.location.hash,route==='#/login'?'#/':route);
+    const changes=h.calls.filter(call=>call[0]==='clean-url');
+    assert.equal(changes.length,route==='#/login'?1:0);
+  }
+});
+
 test('guest boot never reads member tables or verifies an absent Auth session',async()=>{
   const {c,calls,memory}=harness({guest:true});memory.set('growell_session','{"userId":"stale"}');await c.bootApp();
   assert.equal(c.SESSION,null);assert.equal(calls.filter(v=>v[0]==='read').length,0);assert.equal(memory.has('growell_session'),false);
