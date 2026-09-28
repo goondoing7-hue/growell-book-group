@@ -29,7 +29,7 @@ test('a popup highlights only the current chapter and labels summarized contents
   assert.match(html,/rel="noopener noreferrer"/);
   assert.doesNotMatch(Book.bodyHtml(book,null),/aria-current="location"|현재 0쪽/);
   assert.equal(Book.hintHtml('emotion',null),'');
-  assert.match(Book.hintHtml('emotion',90),/읽는 대목: 2장/);
+  assert.match(Book.hintHtml('emotion',90),/읽는 부분: 2장/);
 });
 
 test('book markup escapes provided labels and limits details buttons to supported editions',()=>{

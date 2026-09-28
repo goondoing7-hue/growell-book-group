@@ -80,7 +80,8 @@
 .habit-wday.is-outside{opacity:.45;}
 .habit-card-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:16px;margin-top:0;color:var(--ink-soft);font-size:14px;font-weight:600;}
 .habit-streak{display:inline-flex;align-items:center;gap:8px;line-height:20px;}
-.habit-streak>span{display:inline-block;line-height:20px;}
+/* Align the text with the flame's rounded body, below its narrow tip. */
+.habit-streak>span{display:inline-block;line-height:20px;transform:translateY(2px);}
 .habit-streak strong{font-weight:750;}
 .habit-today-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:none;padding:13px 17px;min-height:48px;border-radius:13px;border:1px solid var(--habit-accent);background:var(--surface);color:var(--habit-accent);font:inherit;font-size:15px;font-weight:750;cursor:pointer;}
 .habit-today-btn.is-checked{background:var(--habit-accent-fill);color:var(--habit-accent-on-fill);}

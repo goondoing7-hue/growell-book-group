@@ -10,8 +10,8 @@
   // not inferred chapter-divider pages. Labels summarize each chapter.
   var emotion={
     isbn:'9791193388266',totalPages:364,
-    authorIntro:'문요한은 정신건강의학과 의사이자 작가로, 심리치유와 몸과 마음을 돌보는 방법을 연구하고 있어요.',
-    overview:'어린 시절 억눌렀던 감정이 지금의 선택과 관계에 어떻게 영향을 주는지 살펴보는 책이에요. 불안·울분·공허감·무력감·수치심을 알아차리고, 몸의 감각과 자기돌봄을 통해 감정을 다루는 과정을 상담 사례와 함께 안내해요.',
+    authorIntro:'문요한은 정신건강의학과 의사이자 작가이다. 심리치유와 몸과 마음을 돌보는 방법을 연구하고 있다.',
+    overview:'어린 시절 억눌렀던 감정이 지금의 선택과 관계에 어떻게 영향을 주는지 살펴보는 책이다. 불안·울분·공허감·무력감·수치심을 알아차리고, 몸의 감각과 자기돌봄을 통해 감정을 다루는 과정을 상담 사례와 함께 안내한다.',
     chapters:[
       {id:'prologue',label:'프롤로그',title:'마음에 남은 상처를 돌아보며',page:4},
       {id:'before',label:'읽기 안내',title:'책을 읽기 전에',page:15},
@@ -39,7 +39,7 @@
   }
   function hintHtml(bookId,page){
     var section=currentSection(bookId,page);
-    return section?'<span class="book-reading-section"><span aria-hidden="true">·</span> 읽는 대목: '+escape(section.label)+' · '+escape(section.title)+'</span>':'';
+    return section?'<span class="book-reading-section"><span aria-hidden="true">·</span> 읽는 부분: '+escape(section.label)+' · '+escape(section.title)+'</span>':'';
   }
   function coverHtml(book,imageClass){
     if(!book)return '';
@@ -69,7 +69,7 @@
     return '<header class="book-details-header"><h2 id="book-details-title">책 소개와 목차</h2><button class="icon-btn" type="button" data-book-details-close aria-label="책 소개 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>'+
       '<div class="book-details-body"><div class="book-details-book"><img src="'+escape(book.cover)+'" alt=""><div><h3>'+escape(book.title)+'</h3><p>'+escape(book.author)+' · '+escape(book.publisher)+'<br>'+info.totalPages+'쪽</p></div></div>'+
       '<section class="book-details-overview"><h3>어떤 책인가요?</h3><p>'+escape(info.overview)+'</p><h3>저자 소개</h3><p>'+escape(info.authorIntro)+'</p></section>'+
-      '<section class="book-details-contents"><div class="book-toc-heading"><h3>장별 목차 요약</h3>'+(section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">각 장의 내용을 짧게 정리했어요. 쪽수와 읽는 대목은 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.</p><ol class="book-toc">'+toc+'</ol></section>'+
+      '<section class="book-details-contents"><div class="book-toc-heading"><h3>장별 목차 요약</h3>'+(section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">쪽수와 읽는 챕터는 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.</p><ol class="book-toc">'+toc+'</ol></section>'+
       '<footer class="book-details-sources"><span>종이책 기준 · ISBN '+info.isbn+'</span><a href="'+info.previewUrl+'" target="_blank" rel="noopener noreferrer">원래 목차 보기 ↗</a><a href="'+info.infoUrl+'" target="_blank" rel="noopener noreferrer">도서 정보 출처 ↗</a></footer></div>';
   }
   function open(bookId,trigger){
