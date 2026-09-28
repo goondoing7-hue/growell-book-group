@@ -423,6 +423,10 @@
   /* rich toolbar + editor */
   .rt-toolbar{display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:4px 2px 8px; margin-bottom:2px;}
   .rt-toolbar::-webkit-scrollbar{display:none;}
+  .rt-size-row{display:flex;align-items:center;gap:3px;width:100%;padding-bottom:7px;margin-bottom:3px;border-bottom:1px solid var(--line);}
+  .rt-size-row>span{font-size:11px;color:var(--muted);margin-right:4px;}
+  .rt-size-btn{font-size:12px;font-variant-numeric:tabular-nums;min-width:28px;}
+  .rt-size-btn[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 0 0 0 1px currentColor;}
   .rt-sep{width:1px; align-self:stretch; margin:4px 4px; background:var(--line); flex:none;}
   .rt-btn{flex:none; width:32px; height:32px; border-radius:8px; border:none; background:none; color:var(--ink-soft); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700;}
   .rt-btn:hover{background:var(--surface-2);}
@@ -2176,6 +2180,7 @@ function clearMemberSession(){
   if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
   if(typeof GrowellBookDetails!=='undefined')GrowellBookDetails.reset();
   if(typeof GrowellArchive!=='undefined')GrowellArchive.reset();
+  if(typeof clearArchiveSharedNotes==='function')clearArchiveSharedNotes();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
   if(typeof pendingProfileAvatar!=='undefined') pendingProfileAvatar=undefined;
@@ -4689,7 +4694,9 @@ function rtColorOptions(kind){
   return kind==='highlight' ? HL_COLORS.map(function(value,i){ return {value:value,label:names[i]}; }) : RT_TEXT_COLORS;
 }
 function rtColorLabel(kind){ return kind==='highlight' ? '형광펜' : '글자색'; }
-function rtToolbarHtml(){
+var RT_FONT_SIZES = [10,13,16,18,24,32,48];
+function rtToolbarHtml(prefix){
+  var palettePrefix=prefix ? prefix+'-rt-' : 'rt-';
   function btn(cmd, label, content, extraClass){
     return '<button type="button" class="rt-btn'+(extraClass?' '+extraClass:'')+'" data-rt-cmd="'+cmd+'" title="'+esc(label)+'" aria-label="'+esc(label)+'">'+content+'</button>';
   }
@@ -4697,11 +4704,11 @@ function rtToolbarHtml(){
     var label=rtColorLabel(kind), color=RT_SELECTED_COLORS[kind];
     return '<span class="rt-color-split" role="group" aria-label="'+label+'">' +
       '<button type="button" class="rt-btn rt-color-apply" data-rt-apply="'+kind+'" style="--rt-color:'+color+'" title="선택한 글에 '+label+' 적용" aria-label="선택한 글에 '+label+' 적용">'+content+'</button>' +
-      '<button type="button" class="rt-btn rt-color-toggle" data-rt-palette="'+kind+'" aria-label="'+label+' 색 고르기" title="'+label+' 색 고르기" aria-expanded="false" aria-controls="rt-'+kind+'-palette">▾</button>' +
+      '<button type="button" class="rt-btn rt-color-toggle" data-rt-palette="'+kind+'" aria-label="'+label+' 색 고르기" title="'+label+' 색 고르기" aria-expanded="false" aria-controls="'+palettePrefix+kind+'-palette">▾</button>' +
     '</span>';
   }
   var palettes=['text','highlight'].map(function(kind){
-    return '<div class="rt-color-panel" id="rt-'+kind+'-palette" data-rt-color-panel="'+kind+'" role="group" aria-label="'+rtColorLabel(kind)+' 색상" hidden>' +
+    return '<div class="rt-color-panel" id="'+palettePrefix+kind+'-palette" data-rt-color-panel="'+kind+'" role="group" aria-label="'+rtColorLabel(kind)+' 색상" hidden>' +
       '<div class="rt-color-label">'+rtColorLabel(kind)+' 색상</div><div class="rt-color-swatches">' +
       rtColorOptions(kind).map(function(option){
         var selected=option.value===RT_SELECTED_COLORS[kind];
@@ -4709,6 +4716,7 @@ function rtToolbarHtml(){
       }).join('') + '</div><p class="rt-color-help">색을 고른 뒤 본문에서 글을 선택하고 '+rtColorLabel(kind)+' 아이콘을 눌러주세요.</p></div>';
   }).join('');
   return '<div class="rt-controls"><div class="rt-toolbar" role="toolbar" aria-label="글쓰기 서식">' +
+    '<div class="rt-size-row" role="group" aria-label="글자 크기"><span>크기</span>'+RT_FONT_SIZES.map(function(px,i){return '<button type="button" class="rt-btn rt-size-btn" data-rt-size="'+(i+1)+'" aria-label="글자 크기 '+px+'" aria-pressed="false">'+px+'</button>';}).join('')+'</div>'+
     '<div class="rt-toolbar-row" role="group" aria-label="글자 서식과 색상">' +
     btn('bold','굵게','B') +
     btn('italic','기울임','I','rt-i') +
@@ -4719,7 +4727,6 @@ function rtToolbarHtml(){
     '</div><div class="rt-toolbar-row rt-toolbar-row--edit" role="group" aria-label="편집과 문단 서식">' +
     btn('undo','실행 취소', svgIcon(I_UNDO)) +
     btn('redo','다시 실행', svgIcon(I_REDO)) +
-    btn('fontsize','글자 크기','가') +
     btn('ol','번호 목록','1.') +
     btn('ul','글머리 기호','•') +
     btn('quote','인용구','&ldquo;') +
@@ -4728,11 +4735,13 @@ function rtToolbarHtml(){
     btn('clear','서식 지우기', svgIcon(I_ERASE)) +
   '</div></div>' + palettes + '</div>';
 }
-function bindRichTextToolbar(noteEditor){
-  if(rtToolbarCleanup){ rtToolbarCleanup(); rtToolbarCleanup=null; }
+function bindRichTextToolbar(noteEditor,options){
+  options=options||{};
+  if(!options.isolated&&rtToolbarCleanup){ rtToolbarCleanup(); rtToolbarCleanup=null; }
   if(!noteEditor) return;
-  var controls=document.querySelector('.rt-controls');
+  var controls=options.controls||document.querySelector('.rt-controls');
   if(!controls) return;
+  var changed=options.onChange||captureComposerDraft;
   var savedRange=null, openPalette='', listeners=[];
   function listen(target,type,fn){ target.addEventListener(type,fn); listeners.push(function(){target.removeEventListener(type,fn);}); }
   function rememberSelection(){
@@ -4782,7 +4791,7 @@ function bindRichTextToolbar(noteEditor){
     finally{ try{document.execCommand('styleWithCSS',false,cssMode);}catch(err){} }
     rememberSelection(); closePalette();
     if(applied===false) showToast('색을 적용하지 못했어요. 글을 다시 선택해주세요.',true);
-    else captureComposerDraft();
+    else changed();
   }
   function runCommand(cmd){
     restoreSelection(true);
@@ -4804,13 +4813,26 @@ function bindRichTextToolbar(noteEditor){
         if(url){if(!/^https?:\/\//i.test(url)) url='https://'+url;restoreSelection(true);document.execCommand('createLink',false,url);}
       }
     }catch(err){}
-    rememberSelection(); closePalette(); captureComposerDraft();
+    rememberSelection(); closePalette(); changed();
+  }
+  function applySize(value){
+    if(!/^[1-7]$/.test(value))return;
+    restoreSelection(true);
+    var cssMode=false;
+    try{
+      if(document.queryCommandState)cssMode=!!document.queryCommandState('styleWithCSS');
+      document.execCommand('styleWithCSS',false,false);
+      document.execCommand('fontSize',false,value);
+    }finally{try{document.execCommand('styleWithCSS',false,cssMode);}catch(err){}}
+    controls.querySelectorAll('[data-rt-size]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-rt-size')===value));});
+    rememberSelection();closePalette();changed();
   }
   listen(controls,'pointerdown',function(event){ if(event.target.closest('button')){rememberSelection();event.preventDefault();} });
   listen(controls,'mousedown',function(event){ if(event.target.closest('button')){rememberSelection();event.preventDefault();} });
   listen(controls,'click',function(event){
     var button=event.target.closest('button'); if(!button || !controls.contains(button)) return;
-    if(button.hasAttribute('data-rt-palette')){
+    if(button.hasAttribute('data-rt-size'))applySize(button.getAttribute('data-rt-size'));
+    else if(button.hasAttribute('data-rt-palette')){
       var kind=button.getAttribute('data-rt-palette'), opening=openPalette!==kind;
       closePalette();
       if(opening){openPalette=kind;controls.querySelector('[data-rt-color-panel="'+kind+'"]').hidden=false;button.setAttribute('aria-expanded','true');}
@@ -4828,7 +4850,9 @@ function bindRichTextToolbar(noteEditor){
   });
   listen(noteEditor,'keyup',rememberSelection); listen(noteEditor,'mouseup',rememberSelection);
   updateColors();
-  rtToolbarCleanup=function(){listeners.forEach(function(remove){remove();});};
+  var cleanup=function(){listeners.forEach(function(remove){remove();});listeners=[];};
+  if(!options.isolated)rtToolbarCleanup=cleanup;
+  return cleanup;
 }
 /* 나눔 공간 / 나의 공간 글쓰기에서 텍스트 박스 배경색을 고르는 스와치 줄 */
 function bgColorPickerHtml(selected){
@@ -4852,7 +4876,7 @@ function insightBgPickerHtml(selected){
 /* 나눔 공간 / 나의 공간 / 자료실 글쓰기에서 글자 크기를 고르는 줄 — 버튼 자체를 실제 크기로
    미리 보여줘서("가" 글자 크기가 곧 미리보기) 눌러보지 않아도 크기 차이가 바로 느껴지게 했다. */
 function fontSizePickerHtml(selected){
-  return '<div class="font-size-row"><span class="font-size-label">글자 크기</span><div class="font-size-set" id="font-size-set">' + FONT_SIZES.map(function(f){
+  return '<div class="font-size-row" hidden style="display:none"><span class="font-size-label">글자 크기</span><div class="font-size-set" id="font-size-set">' + FONT_SIZES.map(function(f){
     var sel = (selected||'')===f.key;
     return '<button type="button" class="font-size-btn'+(sel?' is-sel':'')+'" data-font-size="'+esc(f.key)+'" style="font-size:'+f.px+'" title="'+esc(f.label)+'">가</button>';
   }).join('') + '</div></div>';
@@ -5809,7 +5833,7 @@ function privateCategoryContext(bookId){
 function privateCategoryFilter(bookId){
   var id=GrowellPrivateCategories.recordId(SESSION.userId,bookId),value=privateCategoryFilters[id]||'all';
   var categories=privateCategoryContext(bookId).categories;
-  return value==='all'||categories.some(function(c){return c.id===value;})?value:'all';
+  return value==='all'||value==='private-archive'||categories.some(function(c){return c.id===value;})?value:'all';
 }
 function privateCategoryLabel(bookId,noteType){
   var categories=privateCategoryContext(bookId).categories;
@@ -5819,7 +5843,7 @@ function privateCategoryControlsHtml(bookId){
   var state=privateCategoryContext(bookId);
   if(state.status==='loading')return '<p class="mine-category-status" role="status">나의 카테고리를 불러오고 있어요…</p>';
   if(state.status!=='ready')return '<p class="mine-category-status" role="alert">카테고리를 열지 못했어요. 기존 설정은 유지됩니다. <button class="btn btn-sm" data-private-category-retry="'+bookId+'">다시 불러오기</button></p>';
-  var selected=privateCategoryFilter(bookId),options=[{key:'all',label:'전체'}].concat(state.categories.map(function(c){return {key:c.id,label:c.label};}));
+  var selected=privateCategoryFilter(bookId),options=[{key:'all',label:'전체'},{key:'private-archive',label:'아카이브'}].concat(state.categories.map(function(c){return {key:c.id,label:c.label};}));
   return '<section class="mine-categories" aria-label="나의 카테고리"><div class="mine-category-head"><strong>나의 카테고리</strong><button class="icon-btn mine-category-settings" type="button" data-private-category-manage="'+bookId+'" aria-label="카테고리 설정" title="카테고리 설정" aria-haspopup="dialog">'+svgIcon(I_SETTINGS)+'</button></div>'+
     (!state.categories.length?'<p>나에게 맞는 카테고리를 직접 만들어 보세요.</p>':'')+
     '<div class="mine-category-filters">'+options.map(function(c){return '<button type="button" class="'+(selected===c.key?'is-selected':'')+'" data-private-category-filter="'+esc(c.key)+'" data-book="'+bookId+'" aria-pressed="'+(selected===c.key)+'">'+esc(c.label)+'</button>';}).join('')+'</div></section>';
@@ -5895,7 +5919,7 @@ function bindPrivateCategoryEvents(app){
 }
 function mineTabHtml(book, postId){
   if(!SESSION){ return loginGateHtml('나의 공간은 로그인한 본인만 볼 수 있어요.'); }
-  var archiveRecords = GrowellArchive.recordsHtml();
+  var archiveRecords = GrowellArchive.reflectionHtml(book.id);
   var loadStatus = memberDataStatusHtml('privateEntries');
   if(loadStatus) return readingCardHtml(book)+archiveRecords+loadStatus;
   var categoryState=privateCategoryContext(book.id),categoryFilter=privateCategoryFilter(book.id);
@@ -5904,6 +5928,7 @@ function mineTabHtml(book, postId){
   var selected=postId?entries.find(function(e){return e.id===postId;}):matching[0];
   var writing=!postId && mineComposerOpenFor===book.id;
   var readingCard = readingCardHtml(book);
+  if(categoryFilter==='private-archive'&&!postId&&!writing)return spaceHeadingHtml(book,'mine')+readingCard+privateCategoryControlsHtml(book.id)+archiveRecords;
   var mineEditingPost = mineEditingId ? mineEditingPayload : null;
   var composer = writing && categoryState.status==='ready'
     ? noteComposerHtml(book, {containerId:'mine-composer', closeId:'btn-close-mine-composer', submitId:'btn-mine-submit',
@@ -7532,12 +7557,95 @@ GrowellBookDetails.configure({
   bookById:bookById,currentPage:function(id){return SESSION&&readingDataReady()?myCurrentPage(id):null;},
   sessionUserId:function(){return SESSION&&SESSION.userId;}
 });
+var archiveSharedNoteCache=null;
+function clearArchiveSharedNotes(){
+  archiveSharedNoteCache=null;
+  var node=document.getElementById('archive-shared-note');if(node){node.close();node.remove();GrowellPopupHistory.closed('archive-shared-note');}
+}
+function archiveSharedNotes(){
+  if(!SESSION||memberLoadState.privateEntries!=='ready'){archiveSharedNoteCache=null;return [];}
+  var session=SESSION,material=session.keyB64,epoch=saveSessionEpoch;
+  var entries=ownPrivateEntries().filter(function(entry){return entry.userId===session.userId&&bookById(entry.bookId)&&!GrowellPrivateCategories.isSettingsEntry(entry)&&!GrowellArchiveDomain.isArchiveEntry(entry);});
+  var signature=entries.map(function(e){return e.id+':'+e.iv+':'+e.data;}).sort().join('|');
+  var cache=archiveSharedNoteCache;
+  if(cache&&cache.session===session&&cache.material===material&&cache.epoch===epoch&&cache.signature===signature)return cache.notes;
+  cache={session:session,material:material,epoch:epoch,signature:signature,notes:[]};archiveSharedNoteCache=cache;
+  function current(){return archiveSharedNoteCache===cache&&SESSION===session&&SESSION.keyB64===material&&saveSessionEpoch===epoch&&memberLoadState.privateEntries==='ready';}
+  ensureKey().then(async function(key){
+    if(!key||!current())return;
+    var notes=await Promise.all(entries.map(async function(entry){
+      try{
+        var raw=await decryptPrivateRecord(entry,key);if(!current())return null;
+        var payload;try{payload=JSON.parse(raw);}catch(e){payload={text:raw};}
+        if(!payload||typeof payload!=='object'||Array.isArray(payload))return null;
+        var book=bookById(entry.bookId),html=typeof payload.html==='string'?sanitizeHtml(payload.html):'',text=html?stripHtml(html):String(payload.text||'');
+        return {id:entry.id,userId:session.userId,bookId:book.id,bookTitle:book.title,coverUrl:book.cover,title:String(payload.title||''),text:text,html:html,createdAt:entry.createdAt,genres:[],themes:[book.id]};
+      }catch(e){return null;}
+    }));
+    if(current()){cache.notes=notes.filter(Boolean);render();}
+  }).catch(function(){});
+  return [];
+}
+async function openArchiveSharedNote(id,bookId){
+  var session=SESSION,material=session&&session.keyB64,epoch=saveSessionEpoch,entry=STATE.privateEntries[id],book=bookById(bookId);
+  function guard(){if(!session||SESSION!==session||SESSION.keyB64!==material||saveSessionEpoch!==epoch||memberLoadState.privateEntries!=='ready'||!entry||entry.userId!==session.userId||entry.bookId!==bookId||!book||GrowellPrivateCategories.isSettingsEntry(entry)||GrowellArchiveDomain.isArchiveEntry(entry)||STATE.privateEntries[id]!==entry)throw new Error('기록을 다시 불러와 주세요.');}
+  guard();var key=await ensureKey();guard();if(!key)throw new Error('개인 기록 잠금을 먼저 열어주세요.');
+  var raw=await decryptPrivateRecord(entry,key);guard();var payload;try{payload=JSON.parse(raw);}catch(e){payload={text:raw};}
+  if(!payload||typeof payload!=='object'||Array.isArray(payload))throw new Error('기록을 열 수 없어요.');
+  var node=document.createElement('dialog');node.className='archive-dialog archive-note-dialog';node.id='archive-shared-note';
+  var body=noteBodyHtml(payload);
+  node.innerHTML='<header class="archive-dialog-head"><h2>'+esc(payload.title||'독서 노트')+'</h2><button type="button" class="icon-btn" data-close aria-label="노트 닫기">'+svgIcon(I_CLOSE)+'</button></header><div class="archive-dialog-body"><p class="archive-form-hint">'+esc(book.title)+' · '+esc(fmtPostDate(entry.createdAt))+'</p>'+body.mediaHtml+'<div class="post-body">'+body.bodyHtml+'</div><div class="archive-dialog-actions"><button type="button" class="btn btn-primary" data-original>나의 공간에서 수정</button></div></div>';
+  var closed=false;
+  function close(){if(closed)return;closed=true;node.close();node.remove();GrowellPopupHistory.closed('archive-shared-note');}
+  node.querySelector('[data-close]').onclick=close;node.addEventListener('cancel',function(event){event.preventDefault();close();});
+  node.querySelector('[data-original]').onclick=function(){
+    try{guard();}catch(e){close();showToast(e.message,true);return;}
+    close();location.hash='#/book/'+bookId+'/mine';
+    openComposerWithDraft('mine',bookId,id,function(){
+      try{guard();}catch(e){showToast(e.message,true);return;}
+      mineEditingId=id;mineEditingPayload=payload;mineComposerOpenFor=bookId;render();
+    });
+  };
+  document.body.appendChild(node);node.showModal();GrowellPopupHistory.open('archive-shared-note',{close:close});
+}
+function archiveSharedCatalog(){
+  return BOOKS.map(function(b){
+    var details=GrowellBookDetails.details(b.id);
+    return {bookId:b.id,linkedBookId:b.id,themes:[b.id],title:b.title,authors:[b.author],publisher:b.publisher,coverUrl:b.cover,
+      description:details?details.overview:b.subtitle||'',isbn:details?details.isbn:'',sourceUrl:details?details.infoUrl:'',
+      source:'growell',pageCount:b.totalPages||null,totalPages:b.totalPages||null,status:'unread'};
+  });
+}
+function archiveSharedSnapshots(){
+  if(!SESSION||!readingDataReady())return [];
+  var owner=SESSION.userId;
+  return archiveSharedCatalog().filter(function(book){return !isBookLocked(bookById(book.bookId));}).map(function(book){
+    var meta=myReadingMeta(book.bookId),logs=myReadingLogsWithRange(book.bookId).map(function(item){
+      return {id:item.log.id,seconds:Number(item.log.seconds),startPage:Math.min(Number(item.startPage)||0,Number(item.log.page)||0),endPage:Number(item.log.page)||0,createdAt:Number(item.log.createdAt)};
+    });
+    var pending=readingTimer&&readingTimer.userId===owner&&readingTimer.bookId===book.bookId?readingTimer:null;
+    var parked=readingParkedSessions[book.bookId];
+    if(!pending&&parked&&parked.timer&&parked.timer.userId===owner)pending=parked.timer;
+    var times=logs.map(function(log){return log.createdAt;});
+    if(pending&&Number(pending.createdAt)>0)times.push(Number(pending.createdAt));
+    var updated=meta&&Number(meta.updatedAt)>0?Number(meta.updatedAt):null;
+    return {userId:owner,bookId:book.bookId,book:book,currentPage:myCurrentPage(book.bookId),totalPages:book.totalPages,
+      readingSessions:logs,startedAt:times.length?Math.min.apply(null,times):updated,updatedAt:updated,active:!!pending};
+  });
+}
+function archiveLinkedSignature(){
+  return JSON.stringify({owner:SESSION&&SESSION.userId,logs:memberLoadState.readingLogs,meta:memberLoadState.readingMeta,books:archiveSharedSnapshots()});
+}
 GrowellArchive.configure({
   session:function(){return SESSION;},status:function(){return memberLoadState.privateEntries;},
   statusHtml:function(){return memberDataStatusHtml('privateEntries');},entries:ownPrivateEntries,
   render:render,toast:showToast,reload:function(){loadMemberData().then(render);render();},
   beforeTimerStart:function(ownerId){var paused=pauseSharedReadingForArchive(ownerId);if(paused)render();return paused;},
-  catalog:function(){return BOOKS.map(function(b){var details=GrowellBookDetails.details(b.id);return {title:b.title,authors:[b.author],publisher:b.publisher,coverUrl:b.cover,description:details?details.overview:b.subtitle||'',isbn:details?details.isbn:'',sourceUrl:details?details.infoUrl:'',source:'growell',pageCount:b.totalPages||null};});},
+  catalog:archiveSharedCatalog,linkedSignature:archiveLinkedSignature,
+  sharedNotes:function(){return archiveSharedNotes();},openSharedNote:function(id,bookId){return openArchiveSharedNote(id,bookId);},
+  editorHtml:function(html){return rtToolbarHtml('archive')+'<div class="note-editor" contenteditable="true" role="textbox" aria-label="노트 내용" aria-multiline="true" data-placeholder="마음에 남은 문장과 생각을 적어주세요.">'+sanitizeHtml(html||'')+'</div>';},
+  bindEditor:function(container,onChange){return bindRichTextToolbar(container.querySelector('[contenteditable="true"]'),{controls:container.querySelector('.rt-controls'),onChange:onChange,isolated:true});},
+  sanitizeHtml:function(html){return sanitizeHtml(html);},plainText:function(html){return stripHtml(html);},
   read:async function(entries){
     var session=SESSION,epoch=saveSessionEpoch,material=session&&session.keyB64;if(!session)throw new Error('로그인해주세요.');
     function guard(){if(SESSION!==session||epoch!==saveSessionEpoch||SESSION.keyB64!==material)throw new Error('로그인 정보가 바뀌었어요.');}
@@ -7545,24 +7653,47 @@ GrowellArchive.configure({
     var key=await ensureKey();if(!key)throw new Error('개인 기록을 열지 못했어요.');
     guard();
     var result=await Promise.all(entries.map(async function(entry){return {entry:entry,book:GrowellArchiveDomain.decode(await decryptPrivateRecord(entry,key))};}));
-    guard();return result;
+    guard();return GrowellArchiveDomain.mergeLinkedRows(result,archiveSharedSnapshots(),session.userId);
+  },
+  saveLinkedSession:async function(bookId,sessionRecord){
+    var session=SESSION,epoch=saveSessionEpoch,material=session&&session.keyB64,book=bookById(bookId);
+    function guard(){if(!session||SESSION!==session||SESSION.keyB64!==material||epoch!==saveSessionEpoch||memberLoadState.privateEntries!=='ready'||!readingDataReady()||!book||isBookLocked(book))throw new Error('로그인과 책의 연결 상태를 확인해주세요.');}
+    guard();
+    var prepared=GrowellArchiveDomain.addReadingSession({title:book.title,status:'reading',totalPages:book.totalPages||null},sessionRecord).readingSessions[0];
+    if(prepared.seconds<1)throw new Error('읽은 시간을 확인해주세요.');
+    var snapshot={id:prepared.id,bookId:bookId,userId:session.userId,seconds:prepared.seconds,startPage:prepared.startPage,page:prepared.endPage,createdAt:prepared.createdAt};
+    var expected=GENERIC_COLLECTIONS.readingLogs.toRow(snapshot),saveError=null;
+    var ok=await saveState(function(next){
+      guard();var previous=next.readingLogs[snapshot.id];
+      if(previous&&!matchingReadingLog(GENERIC_COLLECTIONS.readingLogs.toRow(previous),expected))throw new Error('같은 독서 기록이 다른 내용으로 저장되어 있어요.');
+      next.readingLogs[snapshot.id]=snapshot;
+      var key=readingMetaKey(bookId,session.userId),meta=next.readingMeta[key];
+      if(!meta||Number(meta.updatedAt||0)<=snapshot.createdAt)next.readingMeta[key]={bookId:bookId,userId:session.userId,userName:session.name,currentPage:snapshot.page,updatedAt:snapshot.createdAt};
+    },{render:false,readingSession:true,onFailure:function(error){saveError=error;}});
+    guard();if(!ok)throw saveError||new Error('읽은 기록을 저장하지 못했어요. 같은 기록으로 다시 저장해주세요.');
+    return true;
   },
   save:async function(row,book,createId){
     var session=SESSION,epoch=saveSessionEpoch,material=session&&session.keyB64;
     function guard(){if(!session||SESSION!==session||SESSION.keyB64!==material||epoch!==saveSessionEpoch||memberLoadState.privateEntries!=='ready')throw new Error('로그인과 연결 상태를 확인해주세요.');}
-    guard();var text=GrowellArchiveDomain.encode(book),existing=row&&row.entry;
+    guard();var text=GrowellArchiveDomain.encode(book),sourceEntry=row&&row.entry,existing=sourceEntry;
     if(existing&&(!GrowellArchiveDomain.isArchiveEntry(existing)||existing.userId!==session.userId))throw new Error('내 기록만 수정할 수 있어요.');
-    var id=existing?existing.id:GrowellArchiveDomain.recordId(session.userId,createId||uid('arc'));
+    function virtualGuard(){
+      if(!row||!row.virtual)return;
+      if(!book.linkedBookId||sourceEntry.id!==GrowellArchiveDomain.recordId(session.userId,'arc_shared_'+book.linkedBookId)||!archiveSharedSnapshots().some(function(item){return item.bookId===book.linkedBookId&&(item.currentPage>0||item.readingSessions.length||item.active);}))throw new Error('모임 책의 독서 정보를 다시 불러와 주세요.');
+    }
+    virtualGuard();if(row&&row.virtual)existing=null;
+    var id=sourceEntry?sourceEntry.id:GrowellArchiveDomain.recordId(session.userId,createId||uid('arc'));
     if(existing&&(!STATE.privateEntries[id]||STATE.privateEntries[id].data!==existing.data||STATE.privateEntries[id].iv!==existing.iv))throw new Error('다른 곳에서 수정된 기록이에요. 다시 열어주세요.');
-    var key=await ensureKey();guard();if(!key)throw new Error('개인 기록을 열지 못했어요.');
+    var key=await ensureKey();guard();virtualGuard();if(!key)throw new Error('개인 기록을 열지 못했어요.');
     var enc=await encryptPrivateRecord({id:id,userId:session.userId},key,text);guard();
     var saveError=null,opts={render:false,onFailure:function(err){saveError=err;}};
     if(existing){opts.expectedPrivateEntries={};opts.expectedPrivateEntries[id]=existing.data;opts.expectedPrivateIVs={};opts.expectedPrivateIVs[id]=existing.iv;}
     var ok=await saveState(function(next){
-      guard();
+      guard();virtualGuard();
       if(existing&&(!next.privateEntries[id]||next.privateEntries[id].data!==existing.data||next.privateEntries[id].iv!==existing.iv))throw new Error('다른 곳에서 수정된 기록이에요. 다시 열어주세요.');
       if(!existing&&next.privateEntries[id])throw new Error('이미 저장된 기록이에요. 다시 열어주세요.');
-      next.privateEntries[id]={id:id,bookId:GrowellArchiveDomain.STORAGE_BOOK_ID,userId:session.userId,iv:enc.iv,data:enc.data,createdAt:existing?existing.createdAt:Date.now(),updatedAt:existing?Date.now():null};
+      next.privateEntries[id]={id:id,bookId:GrowellArchiveDomain.STORAGE_BOOK_ID,userId:session.userId,iv:enc.iv,data:enc.data,createdAt:sourceEntry?sourceEntry.createdAt:Date.now(),updatedAt:existing?Date.now():null};
     },opts);
     guard();
     if(!ok){

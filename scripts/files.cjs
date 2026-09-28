@@ -24,6 +24,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/archive-shared-notes.test.cjs',
   'tests/archive-domain.test.cjs', 'tests/archive-timer.test.cjs', 'tests/archive-integration.test.cjs', 'tests/archive-ui.test.cjs', 'tests/book-search.test.cjs', 'tests/signup-notifications.test.cjs',
   'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
   'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs',

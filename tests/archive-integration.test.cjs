@@ -13,12 +13,16 @@ async function flush(){for(let i=0;i<6;i++)await new Promise(r=>setImmediate(r))
 const clone=value=>JSON.parse(JSON.stringify(value));
 const book=()=>domain.prepare({title:'테스트 독서 기록',authors:['가상 저자'],startDate:'2026-09-01',endDate:'2026-09-28',rating:4,review:'다시 읽고 싶은 책이다.'});
 async function harness(){
-  const passwordKey=await privateCrypto.newKey(),dataKey=await privateCrypto.newKey(),db={},requests=[],toasts=[];
+  const passwordKey=await privateCrypto.newKey(),dataKey=await privateCrypto.newKey(),db={},logDb={},metaDb={},requests=[],toasts=[];
   let adapter,id=0;
-  const h={db,requests,toasts,intercept:null};
+  const h={db,logDb,metaDb,requests,toasts,intercept:null};
   const c={Promise,Date,Uint8Array,atob,console,URL,JSON,Error,
-    SESSION:{userId:'owner',keyB64:'key-owner'},
-    STATE:{users:{},posts:{},comments:{},privateEntries:{},materialNotes:{},worksheets:{},readingLogs:{},habits:{},readingMeta:{},bookLocks:{},announcement:{next:{},reading:{}}},
+    SESSION:{userId:'owner',keyB64:'key-owner',name:'테스트 회원'},
+    STATE:{users:{owner:{authUserId:'auth-owner'}},posts:{},comments:{},privateEntries:{},materialNotes:{},worksheets:{},readingLogs:{},habits:{},readingMeta:{},bookLocks:{},announcement:{next:{},reading:{}}},
+    BOOKS:['emotion','thought','body','action'].map(id=>({id,title:'모임 '+id,author:'가상 저자',totalPages:200})),
+    readingTimer:null,readingParkedSessions:{},GrowellBookDetails:{details(){return null;}},
+    bookById:id=>c.BOOKS.find(b=>b.id===id),isBookLocked:b=>!!c.STATE.bookLocks[b.id]?.locked,
+    readingDataReady:()=>c.memberLoadState.readingLogs==='ready'&&c.memberLoadState.readingMeta==='ready',
     location:{hash:'#/archive'},localStorage:{setItem(){}},sessionStorage:{setItem(){}},
     render(){},showToast:(...args)=>toasts.push(args),uid:prefix=>prefix+'_'+(++id),
     GrowellArchiveDomain:domain,GrowellArchive:{configure:value=>{adapter=value;}},
@@ -26,21 +30,23 @@ async function harness(){
     ensureKey:async()=>passwordKey,
     decryptPrivateRecord:async(entry,key)=>(await privateCrypto.read(entry,key)).text,
     encryptPrivateRecord:(entry,key,text)=>privateCrypto.create(entry,key,dataKey,text),
-    sb:{from(table){
+    sb:{auth:{getSession:async()=>({data:{session:{user:{id:'auth-owner'},access_token:'synthetic-test',expires_at:Math.floor(Date.now()/1000)+3600}}})},from(table){
       let operation='select',payload,filters=[];
       const query={select(){return query;},eq(k,v){filters.push([k,v]);return query;},maybeSingle(){return query;},
-        insert(value){operation='insert';payload=value;return query;},update(value){operation='update';payload=value;return query;},
+        insert(value){operation='insert';payload=value;return query;},update(value){operation='update';payload=value;return query;},upsert(value){operation='upsert';payload=value;return query;},
         then(yes,no){const request={table,operation,payload:payload&&clone(payload),filters:clone(filters)};requests.push(request);
           const perform=()=>{
-            assert.equal(table,'private_entries');
+            assert.ok(['private_entries','reading_logs','reading_meta'].includes(table));
+            const store=table==='private_entries'?db:table==='reading_logs'?logDb:metaDb;
+            if(operation==='upsert'){store[payload.book_id+'_'+payload.user_id]=clone(payload);return {error:null};}
             if(operation==='insert'){
-              if(db[payload.id])return {error:{code:'23505'}};
-              db[payload.id]=clone(payload);return {data:null,error:null};
+              if(store[payload.id])return {error:{code:'23505'}};
+              store[payload.id]=clone(payload);return {data:null,error:null};
             }
-            const row=Object.values(db).find(item=>filters.every(([key,value])=>item[key]===value));
+            const row=Object.values(store).find(item=>filters.every(([key,value])=>item[key]===value));
             if(operation==='select')return {data:row?clone(row):null,error:null};
             if(!row)return {data:null,error:null};
-            db[row.id]={...row,...clone(payload)};return {data:{id:row.id},error:null};
+            store[row.id]={...row,...clone(payload)};return {data:{id:row.id},error:null};
           };
           return Promise.resolve(h.intercept?h.intercept(request,perform):perform()).then(yes,no);
         }};return query;
@@ -49,8 +55,10 @@ async function harness(){
   vm.createContext(c);
   vm.runInContext(section('function mapPrivateEntryRow(', 'function mapMaterialNoteRow('),c);
   vm.runInContext(section('var saving = false;', '/* ---------------- toast'),c);
-  c.memberLoadState.privateEntries='ready';
-  vm.runInContext(section('GrowellArchive.configure({','/* ---------------- member access adapter'),c);
+  c.memberLoadState.privateEntries='ready';c.memberLoadState.readingLogs='ready';c.memberLoadState.readingMeta='ready';
+  c.readingMetaKey=(bookId,userId)=>bookId+'_'+userId;
+  vm.runInContext(section('function myReadingMeta(', 'function saveCurrentPage('),c);
+  vm.runInContext(section('function archiveSharedCatalog(){','/* ---------------- member access adapter'),c);
   Object.assign(h,{c,adapter,passwordKey,dataKey});return h;
 }
 
@@ -190,6 +198,73 @@ test('archive adapter rejects foreign and unrelated private records before readi
     await assert.rejects(()=>h.adapter.save({entry,book:book()},book()),/내 기록/);
   }
   assert.equal(decrypts,0);assert.equal(h.requests.length,0);
+});
+
+test('shared books appear from owned progress or parked timers and their signature stays stable between ticks',async()=>{
+  const h=await harness(),c=h.c;
+  assert.equal((await h.adapter.read([])).length,0);
+  c.STATE.readingMeta.emotion_owner={bookId:'emotion',userId:'owner',currentPage:20,updatedAt:3000};
+  c.STATE.readingLogs.shared={id:'shared',bookId:'emotion',userId:'owner',page:20,seconds:120,createdAt:2000};
+  c.STATE.readingLogs.foreign={id:'foreign',bookId:'body',userId:'other',page:40,seconds:100,createdAt:2000};
+  c.readingParkedSessions.thought={timer:{id:'paused',bookId:'thought',userId:'owner',createdAt:1500,phase:'timer'}};
+  const rows=await h.adapter.read([]);
+  assert.deepEqual(rows.map(row=>row.book.linkedBookId),['emotion','thought']);
+  assert.equal(rows[0].book.currentPage,20);assert.equal(rows[0].book.totalPages,200);assert.equal(rows[0].book.readingSessions[0].seconds,120);
+  const signature=h.adapter.linkedSignature();assert.equal(h.adapter.linkedSignature(),signature);
+  c.readingParkedSessions.thought.timer.elapsedMs=99999;assert.equal(h.adapter.linkedSignature(),signature);
+  c.STATE.readingMeta.emotion_owner.currentPage=30;assert.notEqual(h.adapter.linkedSignature(),signature);
+  c.STATE.bookLocks.emotion={locked:true};assert.deepEqual((await h.adapter.read([])).map(row=>row.book.linkedBookId),['thought']);
+  c.memberLoadState.readingLogs='loading';assert.equal((await h.adapter.read([])).length,0);
+  assert.deepEqual(h.adapter.catalog().map(row=>[row.bookId,row.linkedBookId,row.themes[0]]),c.BOOKS.map(b=>[b.id,b.id,b.id]));
+});
+
+test('virtual shared books save to their deterministic encrypted record and survive a lost insert response',async()=>{
+  const h=await harness();h.c.STATE.readingMeta.emotion_owner={bookId:'emotion',userId:'owner',currentPage:20,updatedAt:3000};
+  const [row]=await h.adapter.read([]),withNote=domain.upsertNote(row.book,{id:'note',text:'공유 책의 개인 기록',createdAt:4000});
+  h.intercept=(request,perform)=>{const result=perform();return request.operation==='insert'?{error:new Error('response lost')}:result;};
+  await h.adapter.save(row,withNote);await h.adapter.save(row,withNote);
+  assert.equal(Object.keys(h.db).length,1);assert.equal(h.c.STATE.privateEntries[row.entry.id].createdAt,3000);
+  const saved=await h.adapter.read(Object.values(h.c.STATE.privateEntries));
+  assert.equal(saved.length,1);assert.equal(saved[0].virtual,undefined);assert.equal(saved[0].book.notes[0].text,'공유 책의 개인 기록');
+  assert.equal(h.db[row.entry.id].data.includes('공유 책의 개인 기록'),false);
+  await assert.rejects(()=>h.adapter.save(row,{...withNote,review:'stale replacement'}),/다른 내용|다른 곳/);
+  assert.equal((await h.adapter.read(Object.values(h.c.STATE.privateEntries)))[0].book.review,'');
+});
+
+test('a shared archive timer saves original logs and progress exactly once, including a lost response',async()=>{
+  const h=await harness(),session={id:'shared_timer',seconds:60,startPage:0,endPage:25,createdAt:4000};
+  h.intercept=(request,perform)=>{const result=perform();return request.table==='reading_logs'&&request.operation==='insert'?{error:new Error('response lost')}:result;};
+  await h.adapter.saveLinkedSession('emotion',session);await h.adapter.saveLinkedSession('emotion',session);
+  assert.equal(Object.keys(h.logDb).length,1);assert.equal(Object.keys(h.db).length,0);
+  assert.equal(h.metaDb.emotion_owner.current_page,25);assert.equal(h.c.STATE.readingLogs.shared_timer.startPage,0);
+  const [row]=await h.adapter.read([]);assert.equal(row.book.currentPage,25);assert.equal(domain.totalReadingSeconds(row.book),60);
+  await assert.rejects(()=>h.adapter.saveLinkedSession('emotion',{...session,seconds:90}));
+  assert.equal(h.logDb.shared_timer.seconds,60);
+  await h.adapter.saveLinkedSession('emotion',{...session,id:'old_recovery',endPage:10,createdAt:3000});
+  assert.equal(h.metaDb.emotion_owner.current_page,25);assert.equal((await h.adapter.read([]))[0].book.currentPage,25);
+});
+
+test('a shared timer retries metadata failure using the same immutable log without losing any elapsed time',async()=>{
+  const h=await harness(),session={id:'shared_retry',seconds:90,startPage:0,endPage:30,createdAt:4000};let offline=true;
+  h.intercept=(request,perform)=>offline&&request.table==='reading_meta'?{error:new Error('offline')}:perform();
+  await assert.rejects(()=>h.adapter.saveLinkedSession('emotion',session));
+  assert.equal(Object.keys(h.logDb).length,1);assert.equal(Object.keys(h.c.STATE.readingLogs).length,0);
+  offline=false;await h.adapter.saveLinkedSession('emotion',session);
+  assert.equal(Object.keys(h.logDb).length,1);assert.equal((await h.adapter.read([]))[0].book.readingSessions.length,1);
+  assert.equal(h.metaDb.emotion_owner.current_page,30);
+});
+
+test('shared archive saves reject locked or unloaded books, foreign auth and sessions changed while queued',async()=>{
+  const session={id:'guard_timer',seconds:60,startPage:0,endPage:25,createdAt:4000};
+  for(const change of [c=>{c.STATE.bookLocks.emotion={locked:true};},c=>{c.memberLoadState.readingLogs='loading';},c=>{c.memberLoadState.readingMeta='error';}]){
+    const h=await harness();change(h.c);await assert.rejects(()=>h.adapter.saveLinkedSession('emotion',session));assert.equal(h.requests.length,0);
+  }
+  const h=await harness();h.c.sb.auth.getSession=async()=>({data:{session:{user:{id:'other-auth'},access_token:'synthetic'}}});
+  await assert.rejects(()=>h.adapter.saveLinkedSession('emotion',session));assert.equal(h.requests.length,0);
+  const pending=deferred(),h2=await harness();h2.c.sb.auth.getSession=()=>pending.promise;
+  const save=h2.adapter.saveLinkedSession('emotion',session),failed=assert.rejects(save);await flush();
+  h2.c.SESSION={userId:'other',keyB64:'other'};h2.c.saveSessionEpoch++;
+  pending.resolve({data:{session:{user:{id:'auth-owner'},access_token:'synthetic'}}});await failed;assert.equal(h2.requests.length,0);
 });
 
 function uiHarness(){

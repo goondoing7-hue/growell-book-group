@@ -21,7 +21,7 @@ function harness(){
     commentsForPost:()=>[{}],SESSION:{userId:'owner',name:'독서회원',keyB64:'key-a'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{}},sharedPostsLoadState:'ready',shareFeedFilter:{},
     GrowellPrivateCategories:privateCategories,GrowellArchiveDomain:require('../archiveDomain.js'),
-    GrowellArchive:{recordsHtml:()=>'<section data-archive-records><h3>아카이브 기록</h3></section>'},memberLoadState:{privateEntries:'ready'},
+    GrowellArchive:{reflectionHtml:theme=>'<section data-archive-reflection="'+esc(theme)+'"><h3>'+esc({emotion:'감정',thought:'생각',body:'신체',action:'행동'}[theme])+'에 대한 고찰</h3></section>'},memberLoadState:{privateEntries:'ready'},
     ensureKey:()=>Promise.resolve('synthetic-key'),decryptPrivateRecord:()=>Promise.resolve(privateCategories.encode([])),
     document:{getElementById:()=>null,querySelector:()=>null},
     currentRoute:()=>({view:'book',bookId:'emotion',tab:'mine'}),render:()=>renders.push(true),
@@ -132,13 +132,13 @@ test('personal reading timer remains present during loading, writing and selecte
   const loading=c.mineTabHtml(book,'mine');assert.ok(loading.includes('data-loading'));assert.ok(loading.includes('data-reading-timer'));
 });
 
-test('personal workspace mounts the archive record collection once below reading and separately from note categories',()=>{
+test('personal workspace mounts the current theme reflection once below reading in every view',()=>{
   const {c}=harness();
   let recordCalls=0;
-  c.GrowellArchive.recordsHtml=(...args)=>{
-    assert.equal(args.length,0,'the personal archive spans books rather than the current meeting-book category');
+  c.GrowellArchive.reflectionHtml=(...args)=>{
+    assert.deepEqual(args,['emotion'],'personal reflections use the current meeting book theme');
     assert.equal(c.SESSION.userId,'owner');recordCalls++;
-    return '<section data-archive-records><h3>아카이브 기록</h3></section>';
+    return '<section data-archive-reflection="emotion"><h3>감정에 대한 고찰</h3></section>';
   };
   installCategories(c,[{id:'pcat_journal',label:'일기'}]);
   c.STATE.privateEntries.mine=entry('mine');
@@ -146,14 +146,49 @@ test('personal workspace mounts the archive record collection once below reading
     c.mineComposerOpenFor=state==='writing'?'emotion':null;
     c.memberDataStatusHtml=()=>state==='loading'?'<div data-loading></div>':'';
     const markup=c.mineTabHtml(book,state==='detail'?'mine':undefined);
-    assert.equal((markup.match(/data-archive-records/g)||[]).length,1);
-    assert.ok(markup.indexOf('data-archive-records')>markup.indexOf('data-reading-timer'));
-    if(state!=='loading')assert.ok(markup.indexOf('data-archive-records')<markup.indexOf('data-private-category-filter'));
+    assert.equal((markup.match(/data-archive-reflection/g)||[]).length,1);
+    assert.ok(markup.indexOf('data-archive-reflection')>markup.indexOf('data-reading-timer'));
+    if(state!=='loading')assert.ok(markup.indexOf('data-archive-reflection')<markup.indexOf('data-private-category-filter'));
   }
   assert.equal(recordCalls,4);
   c.SESSION=null;
   const guest=c.mineTabHtml(book);
-  assert.match(guest,/data-login-gate/);assert.doesNotMatch(guest,/data-archive-records/);assert.equal(recordCalls,4);
+  assert.match(guest,/data-login-gate/);assert.doesNotMatch(guest,/data-archive-reflection/);assert.equal(recordCalls,4);
+});
+
+test('each private space supplies its own theme to archive reflections instead of mixing all books',()=>{
+  const {c}=harness(),seen=[];c.GrowellArchive.reflectionHtml=theme=>{seen.push(theme);return '<section data-archive-reflection="'+theme+'"></section>';};
+  for(const id of ['emotion','thought','body','action']){
+    installCategories(c,[],id);
+    const markup=c.mineTabHtml({id,accent:id});
+    assert.equal((markup.match(/data-archive-reflection=/g)||[]).length,1);
+    assert.ok(markup.includes('data-archive-reflection="'+id+'"'));
+  }
+  assert.deepEqual(seen,['emotion','thought','body','action']);
+});
+
+test('archive is a built-in category immediately after all and opens theme notes without decrypting unrelated entries',()=>{
+  const {c,scheduled,decrypted}=harness(),id=installCategories(c,[{id:'pcat_journal',label:'일기'}]);
+  c.STATE.privateEntries.mine=entry('mine');
+  const controls=c.privateCategoryControlsHtml(book.id),filters=[...controls.matchAll(/data-private-category-filter="([^"]+)"/g)].map(match=>match[1]);
+  assert.deepEqual(filters,['all','private-archive','pcat_journal']);
+  assert.equal(c.privateCategoryContext(book.id).categories.some(category=>category.id==='private-archive'),false,'the built-in filter is not a custom category setting');
+  c.privateCategoryFilters[id]='private-archive';assert.equal(c.privateCategoryFilter(book.id),'private-archive');
+  const markup=c.mineTabHtml(book);
+  assert.match(markup,/data-private-category-filter="private-archive"[^>]*aria-pressed="true"/);
+  assert.equal((markup.match(/data-archive-reflection="emotion"/g)||[]).length,1);
+  assert.ok(markup.indexOf('data-private-category-filter')>markup.indexOf('data-reading-timer'));
+  assert.ok(markup.indexOf('data-archive-reflection')>markup.indexOf('data-private-category-filter'));
+  assert.doesNotMatch(markup,/data-mine-entry=|data-mine-tile=|data-private-count|id="mine-composer"/);
+  scheduled.forEach(run=>run());assert.deepEqual(decrypted,[],'archive-only filtering does not decrypt the existing ordinary note list');
+  c.privateCategoryStates[id].categories=[];assert.equal(c.privateCategoryFilter(book.id),'private-archive','removing a custom category cannot remove the built-in archive filter');
+  assert.ok(c.STATE.privateEntries.mine);
+});
+
+test('archive filtering preserves explicit private-note links and the writing flow',()=>{
+  const {c}=harness(),id=installCategories(c,[]);c.STATE.privateEntries.mine=entry('mine');c.privateCategoryFilters[id]='private-archive';
+  const detail=c.mineTabHtml(book,'mine');assert.match(detail,/data-mine-entry="mine"/);assert.doesNotMatch(detail,/기록을 찾을 수 없어요/);
+  c.mineComposerOpenFor='emotion';const writing=c.mineTabHtml(book);assert.equal((writing.match(/id="mine-composer"/g)||[]).length,1);assert.equal((writing.match(/data-archive-reflection="emotion"/g)||[]).length,1);
 });
 
 test('private thumbnail and detail appear only after guarded decryption and are never written back to encrypted STATE',async()=>{

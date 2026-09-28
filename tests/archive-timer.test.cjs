@@ -191,3 +191,42 @@ test('logout reset pauses every captured-owner timer even when the open book was
   assert.equal(first.timer.running,false);assert.equal(first.timer.elapsedMs,20000);assert.equal(second.timer.running,false);
   assert.equal(JSON.parse(f.storage.getItem(foreignKey)).timer.running,true);
 });
+
+function timerView(book){
+  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),f=fixture();
+  let dialog,done;
+  class Clock extends Date{static now(){return f.options.now();}}
+  function node(){return dialog={open:false,innerHTML:'',setAttribute(){},
+    querySelectorAll(selector){return selector==='[data-at-done]'?[{addEventListener(_name,handler){done=handler;}}]:[];},
+    querySelector(){return null;},showModal(){this.open=true;},close(){this.open=false;},remove(){}};}
+  const browser={URL,GrowellReadingTimer:Domain,GrowellArchiveDomain:ArchiveDomain,localStorage:f.storage,Date:Clock,
+    document:{createElement:node,body:{appendChild(){}}},setInterval:()=>1,clearInterval(){}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../archiveTimer.js'),'utf8'),browser);
+  assert.equal(browser.GrowellArchiveTimer.open({...f.options,book:{...f.options.book,...book}}),true);
+  const timerHtml=dialog.innerHTML;f.clock(5000);done();
+  const saveHtml=dialog.innerHTML;browser.GrowellArchiveTimer.reset();
+  return {timerHtml,saveHtml};
+}
+
+test('YES24 search source retains canonical attribution in both timer and save views',()=>{
+  for(const source of ['yes24','YES24']){
+    const views=timerView({source,sourceUrl:'https://www.yes24.com/product/goods/123?tracking=unused#reviews'});
+    assert.match(views.timerHtml,/reading-timer-book/);assert.match(views.saveHtml,/reading-save-book/);
+    for(const html of Object.values(views)){
+      assert.match(html,/도서 정보: <a href="https:\/\/www\.yes24\.com\/product\/goods\/123" target="_blank" rel="noopener noreferrer">YES24<\/a>/);
+      assert.equal(html.includes('tracking=unused'),false);
+    }
+  }
+});
+
+test('timer attribution never links an unsafe or unrelated YES24 source URL',()=>{
+  for(const sourceUrl of ['https://www.yes24.com.evil.test/product/goods/123','http://www.yes24.com/product/goods/123',
+    'https://user@www.yes24.com/product/goods/123','https://www.yes24.com:8443/product/goods/123',
+    'https://www.yes24.com/product/goods/0','https://www.yes24.com/product/goods/123/edit',
+    'https://www.yes24.com/support','javascript:alert(1)','//www.yes24.com/product/goods/123']){
+    for(const html of Object.values(timerView({source:'yes24',sourceUrl})))assert.equal(html.includes('도서 정보:'),false,sourceUrl);
+  }
+  for(const source of ['Google Books',undefined]){
+    for(const html of Object.values(timerView({source,sourceUrl:'https://www.yes24.com/product/goods/123'})))assert.equal(html.includes('도서 정보:'),false);
+  }
+});

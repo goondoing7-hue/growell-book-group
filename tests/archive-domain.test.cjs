@@ -55,6 +55,32 @@ test('real calendar dates and reading order are validated without inventing unkn
   assert.equal(archive.prepare(sample({startDate:'2026-09-28',endDate:'2026-09-28'})).endDate,'2026-09-28');
 });
 
+test('book contents preserve section breaks across storage and subsequent personal reading updates',()=>{
+  const tableOfContents='1부 마음을 알아차리기\n\n1장 감정의 시작 · 26\n  내 마음의 이야기 · 30\n\n2부 다시 읽기\n2장 회복 · 120';
+  const book=archive.decode(archive.encode(sample({tableOfContents,status:'reading',currentPage:0,totalPages:200})));
+  assert.equal(book.tableOfContents,tableOfContents);
+  const session={id:'ars_toc',seconds:60,startPage:0,endPage:10,createdAt:1000};
+  const afterReading=archive.addReadingSession(book,session);
+  const afterNote=archive.upsertNote(afterReading,{id:'an_toc',text:'첫 장을 읽었다.',createdAt:2000});
+  const edited=archive.upsertNote(afterNote,{id:'an_toc',text:'첫 장에서 배운 점을 남겼다.',createdAt:2000,updatedAt:3000});
+  const reloaded=archive.decode(archive.encode(edited));
+  assert.equal(reloaded.tableOfContents,tableOfContents);
+  assert.equal(reloaded.currentPage,10);
+  assert.equal(reloaded.notes[0].text,'첫 장에서 배운 점을 남겼다.');
+  assert.equal(archive.removeNote(reloaded,'an_toc',4000).tableOfContents,tableOfContents);
+  assert.equal(book.currentPage,0,'updates preserve the original book snapshot');
+});
+
+test('legacy archives without contents remain readable and contents have a Unicode-aware limit',()=>{
+  const legacy={format:archive.FORMAT,book:{title:'기존 책',description:'기존 소개'}};
+  assert.equal(archive.decode(JSON.stringify(legacy)).tableOfContents,'');
+  for(const tableOfContents of [undefined,null,''])assert.equal(archive.prepare({title:'책',tableOfContents}).tableOfContents,'');
+  const maximum='📚'.repeat(20000);
+  assert.equal(archive.decode(archive.encode({title:'책',tableOfContents:maximum})).tableOfContents,maximum);
+  assert.throws(()=>archive.prepare({title:'책',tableOfContents:maximum+'가'}),/20000/);
+  for(const tableOfContents of [[],{},42,true])assert.throws(()=>archive.prepare({title:'책',tableOfContents}),/형식/);
+});
+
 test('unrated books are distinct from five-star ratings and invalid ratings fail',()=>{
   for(const rating of [undefined,null,'',0,'0']) assert.equal(archive.prepare(sample({rating})).rating,0);
   for(const rating of [1,2,3,4,5,'1','5']) assert.equal(archive.prepare(sample({rating})).rating,Number(rating));
@@ -209,4 +235,156 @@ test('archive notes reject corrupt or oversized data instead of silently removin
   }
   for(const notes of [null,{},[null],[note,note],Array(1)]) assert.throws(()=>archive.prepare({title:'책',notes}));
   assert.throws(()=>archive.removeNote({title:'책'},'an_missing',2000),/찾을 수/);
+});
+
+test('archive classifications normalize optional legacy fields without sharing caller arrays',()=>{
+  const legacy=archive.decode(JSON.stringify({format:archive.FORMAT,book:{title:'이전 책'}}));
+  assert.deepEqual(legacy.genres,[]);assert.deepEqual(legacy.themes,[]);assert.equal(legacy.linkedBookId,'');assert.equal(legacy.genreSource,'');
+  const genres=[' 심리학 ','자기계발','심리학'],themes=['emotion','thought','emotion'];
+  const book=archive.prepare({title:'책',genres,themes,linkedBookId:'emotion',genreSource:'yes24'});
+  assert.deepEqual(book.genres,['심리학','자기계발']);assert.deepEqual(book.themes,['emotion','thought']);
+  book.genres.push('철학');book.themes.push('body');assert.equal(genres.length,3);assert.equal(themes.length,3);
+  for(const genreSource of ['','yes24','google','manual'])assert.equal(archive.prepare({title:'책',genreSource}).genreSource,genreSource);
+  for(const linkedBookId of ['','emotion','thought','body','action'])assert.equal(archive.prepare({title:'책',linkedBookId}).linkedBookId,linkedBookId);
+  const maximum=Array.from({length:8},(_,i)=>String(i)+'📚'.repeat(79));
+  assert.deepEqual(archive.decode(archive.encode({title:'책',genres:maximum})).genres,maximum);
+  for(const change of [{genres:'심리학'},{genres:['']},{genres:[{}]},{genres:Array(1)},{genres:Array.from({length:9},(_,i)=>'장르'+i)},
+    {genres:['가'.repeat(81)]},{themes:['unknown']},{themes:'emotion'},{linkedBookId:'other'},{genreSource:'unsupported'}]){
+    assert.throws(()=>archive.prepare({title:'책',...change}));
+  }
+});
+
+test('rich note metadata survives edit, storage, reading updates and deletion while plain text remains mandatory',()=>{
+  const original={id:'note_rich',text:'중요한 문장\n나의 생각',title:'첫 장의 기록',html:'<p><strong>중요한 문장</strong></p>\n<p>나의 생각</p>',createdAt:1000};
+  const book=archive.upsertNote({title:'책',status:'reading',totalPages:100,genres:['문학'],themes:['thought']},original);
+  const read=archive.addReadingSession(book,{id:'reading_rich',seconds:30,startPage:0,endPage:10,createdAt:2000});
+  const edited=archive.upsertNote(read,{...original,title:'다듬은 기록',updatedAt:3000});
+  const reloaded=archive.decode(archive.encode(archive.removeNote(edited,original.id,4000)));
+  assert.equal(reloaded.notes[0].html,original.html);assert.equal(reloaded.notes[0].title,'다듬은 기록');
+  assert.equal(reloaded.notes[0].text,original.text);assert.equal(reloaded.notes[0].deleted,true);
+  assert.deepEqual(reloaded.genres,['문학']);assert.deepEqual(reloaded.themes,['thought']);
+  const plain=archive.upsertNote({title:'기존 책'},{id:'legacy',text:'예전 글',createdAt:1}).notes[0];
+  assert.equal(plain.html,'');assert.equal(plain.title,'');
+  assert.equal(archive.upsertNote({title:'책'},{...original,title:'가'.repeat(300),html:'가'.repeat(100000)}).notes[0].html.length,100000);
+  for(const change of [{text:''},{text:'가'.repeat(10001)},{title:'가'.repeat(301)},{html:'가'.repeat(100001)},{html:[]},{title:42}]){
+    assert.throws(()=>archive.upsertNote({title:'책'},{...original,...change}));
+  }
+});
+
+function linkedRow(id='arc_personal',book={},owner='owner-a'){
+  return {entry:{id:archive.recordId(owner,id),userId:owner,bookId:archive.STORAGE_BOOK_ID,createdAt:100},book:archive.prepare({title:'모임 책',authors:['작가'],status:'reading',totalPages:200,...book})};
+}
+function sharedSnapshot(change={}){
+  return {bookId:'emotion',book:archive.prepare({title:'모임 책',authors:['작가'],totalPages:200,description:'책 소개',genres:['심리학']}),
+    currentPage:20,totalPages:200,readingSessions:[{id:'shared_log',seconds:120,startPage:0,endPage:20,createdAt:2000}],startedAt:1000,updatedAt:3000,active:false,...change};
+}
+
+test('shared reading creates a deterministic owner-specific virtual archive without changing inputs',()=>{
+  const snapshot=sharedSnapshot(),original=structuredClone(snapshot);
+  const rows=archive.mergeLinkedRows([], [snapshot], 'owner-a');
+  assert.equal(rows.length,1);assert.equal(rows[0].virtual,true);
+  assert.deepEqual(rows[0].entry,{id:'private_archive_owner-a_arc_shared_emotion',userId:'owner-a',bookId:archive.STORAGE_BOOK_ID,createdAt:1000,updatedAt:3000});
+  assert.equal(rows[0].book.linkedBookId,'emotion');assert.deepEqual(rows[0].book.themes,['emotion']);
+  assert.deepEqual(rows[0].book.genres,['심리학']);assert.equal(rows[0].book.description,'책 소개');
+  assert.equal(archive.progress(rows[0].book).percent,10);assert.equal(archive.totalReadingSeconds(rows[0].book),120);
+  assert.deepEqual(snapshot,original);
+  const again=archive.mergeLinkedRows(rows,[snapshot],'owner-a');assert.deepEqual(again,rows);
+  assert.notEqual(archive.mergeLinkedRows([],[snapshot],'owner-b')[0].entry.id,rows[0].entry.id);
+});
+
+test('automatic shared books appear only after progress, a session or an active timer and derive reading state',()=>{
+  const idle=sharedSnapshot({currentPage:0,readingSessions:[],startedAt:undefined,updatedAt:undefined});
+  assert.deepEqual(archive.mergeLinkedRows([],[idle],'owner-a'),[]);
+  for(const change of [{active:true},{currentPage:1},{readingSessions:[{id:'time_only',seconds:10,startPage:0,endPage:0,createdAt:2}]}]){
+    const row=archive.mergeLinkedRows([],[{...idle,...change}],'owner-a')[0];assert.equal(row.book.status,'reading');assert.equal(row.entry.createdAt,1);
+  }
+  const complete=archive.mergeLinkedRows([],[sharedSnapshot({currentPage:200})],'owner-a')[0];
+  assert.equal(complete.book.status,'completed');assert.equal(complete.book.currentPage,200);
+  const noTotal=archive.mergeLinkedRows([],[sharedSnapshot({totalPages:null})],'owner-a')[0];
+  assert.equal(noTotal.book.status,'reading');assert.equal(noTotal.book.totalPages,null);
+  assert.equal(archive.mergeLinkedRows([],[{...idle,active:true,updatedAt:50}],'owner-a')[0].entry.createdAt,50);
+});
+
+test('link matching prefers explicit links then ISBN and then both title and authors',()=>{
+  const isbn='9781234567890',snapshot=sharedSnapshot({book:archive.prepare({title:'모임 책',authors:['작가'],isbn,totalPages:200})});
+  const titleMatch=linkedRow('arc_title'),isbnMatch=linkedRow('arc_isbn',{title:'개인적으로 쓴 제목',isbn:'978-1234567890'}),explicit=linkedRow('arc_explicit',{linkedBookId:'emotion',title:'다른 제목'});
+  const priority=archive.mergeLinkedRows([titleMatch,isbnMatch,explicit],[snapshot],'owner-a');
+  assert.equal(priority.length,3);assert.equal(priority[2].book.currentPage,20);assert.equal(priority[0].book.linkedBookId,'');assert.equal(priority[1].book.linkedBookId,'');
+  const byIsbn=archive.mergeLinkedRows([titleMatch,isbnMatch],[snapshot],'owner-a');
+  assert.equal(byIsbn.length,2);assert.equal(byIsbn[1].book.linkedBookId,'emotion');assert.equal(byIsbn[0].book.linkedBookId,'');
+  const byName=archive.mergeLinkedRows([linkedRow('arc_title',{title:'  모임   책 ',authors:[' 작가 ']})],[snapshot],'owner-a');
+  assert.equal(byName.length,1);assert.equal(byName[0].entry.id,titleMatch.entry.id);assert.equal(byName[0].book.linkedBookId,'emotion');
+  for(const book of [{authors:['다른 작가']},{authors:[]},{isbn:'9789876543210'},{linkedBookId:'thought'}]){
+    assert.equal(archive.mergeLinkedRows([linkedRow('arc_distinct',book)],[snapshot],'owner-a').length,2);
+  }
+});
+
+test('linked updates preserve private content, explicit empty themes, tombstones and stable row identity',()=>{
+  const personal=linkedRow('arc_personal',{linkedBookId:'emotion',genres:['내 분류'],themes:[],genreSource:'manual',rating:5,review:'나의 감상',
+    startDate:'2026-01-01',endDate:'2026-02-01',deleted:true,notes:[{id:'my_note',text:'나의 문장',html:'<p>나의 문장</p>',createdAt:10}],
+    readingSessions:[{id:'old_snapshot',seconds:120,startPage:0,endPage:20,createdAt:2000}],linkedSessionIds:['old_snapshot']});
+  const original=structuredClone(personal),rows=archive.mergeLinkedRows([personal],[sharedSnapshot()],'owner-a');
+  assert.equal(rows.length,1);assert.deepEqual(rows[0].entry,personal.entry);assert.equal(rows[0].virtual,undefined);
+  for(const key of ['genres','themes','genreSource','rating','review','startDate','endDate','deleted','notes'])assert.deepEqual(rows[0].book[key],personal.book[key]);
+  assert.equal(rows[0].book.readingSessions.length,1);assert.equal(rows[0].book.readingSessions[0].id,'shared_log');assert.equal(archive.totalReadingSeconds(rows[0].book),120);
+  assert.deepEqual(personal,original);
+  const reset=archive.mergeLinkedRows(rows,[sharedSnapshot({currentPage:0,readingSessions:[],active:false})],'owner-a')[0];
+  assert.equal(reset.book.currentPage,0);assert.equal(reset.book.status,'unread');assert.equal(reset.book.deleted,true);
+  assert.deepEqual(reset.book.notes,personal.book.notes);
+});
+
+test('a deleted matching ISBN or renamed materialized automatic book is never resurrected or duplicated',()=>{
+  const book=archive.prepare({title:'모임 책',authors:['작가'],isbn:'9781234567890',totalPages:200});
+  const deleted=linkedRow('arc_deleted',{isbn:book.isbn,deleted:true});
+  const rows=archive.mergeLinkedRows([deleted],[sharedSnapshot({book})],'owner-a');
+  assert.equal(rows.length,1);assert.equal(rows[0].book.deleted,true);
+  const materialized=linkedRow('arc_shared_emotion',{title:'새 제목',authors:['새 저자'],deleted:true});
+  const result=archive.mergeLinkedRows([materialized],[sharedSnapshot()],'owner-a');
+  assert.equal(result.length,1);assert.equal(result[0].book.title,'새 제목');assert.equal(result[0].book.deleted,true);assert.equal(result[0].book.linkedBookId,'emotion');
+});
+
+test('shared merges isolate owners and do not inspect another member private payload',()=>{
+  const foreign=linkedRow('arc_foreign',{},'owner-b');Object.defineProperty(foreign,'book',{get(){throw Error('foreign payload was read');}});
+  const own=linkedRow('arc_own',{linkedBookId:'emotion'});
+  const result=archive.mergeLinkedRows([foreign,own],[{userId:'owner-b',bookId:'emotion',get book(){throw Error('foreign snapshot was read');}}],'owner-a');
+  assert.equal(result.length,1);assert.equal(result[0].entry.userId,'owner-a');assert.equal(result[0].book.currentPage,0);
+  const snapshot=sharedSnapshot({userId:'owner-a'});assert.equal(archive.mergeLinkedRows([foreign],[snapshot],'owner-a').length,1);
+  assert.throws(()=>archive.mergeLinkedRows([],[],''));
+  assert.throws(()=>archive.mergeLinkedRows([{entry:{id:'ordinary_note',userId:'owner-a'},book:{title:'개인 메모'}}],[],'owner-a'));
+});
+
+test('invalid linked snapshots fail without mutating personal data or silently clearing saved reading history',()=>{
+  const row=linkedRow('arc_own',{linkedBookId:'emotion'}),original=structuredClone(row);
+  for(const change of [{bookId:'invalid'},{currentPage:201},{currentPage:-1},{totalPages:0},{readingSessions:null},
+    {active:'yes'},{startedAt:0},{updatedAt:Infinity},{readingSessions:[{id:'bad',seconds:-1,createdAt:2}]}]){
+    assert.throws(()=>archive.mergeLinkedRows([row],[sharedSnapshot(change)],'owner-a'));
+    assert.deepEqual(row,original);
+  }
+  assert.throws(()=>archive.mergeLinkedRows([row],[sharedSnapshot(),sharedSnapshot()],'owner-a'),/중복/);
+});
+
+test('independent archive histories are never automatically replaced by ISBN or title matching',()=>{
+  const saved={id:'independent',seconds:300,startPage:0,endPage:12,createdAt:100};
+  for(const isbn of ['', '9781234567890']){
+    const row=linkedRow('arc_independent',{isbn,readingSessions:[saved],notes:[{id:'note',text:'개인 기록',createdAt:100}]});
+    const snapshot=sharedSnapshot({book:archive.prepare({...sharedSnapshot().book,isbn})});
+    const rows=archive.mergeLinkedRows([row],[snapshot],'owner-a');
+    assert.equal(rows.length,2);assert.deepEqual(rows[0],row);assert.equal(rows[1].virtual,true);
+    assert.equal(rows[0].book.linkedBookId,'');assert.equal(rows[1].book.linkedBookId,'emotion');
+  }
+});
+
+test('linked legacy history survives storage and note edits while shared snapshots update without double counting',()=>{
+  const independent={id:'independent',seconds:300,startPage:0,endPage:12,createdAt:100};
+  const row=linkedRow('arc_legacy',{linkedBookId:'emotion',readingSessions:[independent,sharedSnapshot().readingSessions[0]]});
+  let merged=archive.mergeLinkedRows([row],[sharedSnapshot()],'owner-a')[0];
+  assert.equal(archive.totalReadingSeconds(merged.book),420);assert.deepEqual(merged.book.linkedSessionIds,['shared_log']);
+  merged.book=archive.decode(archive.encode(archive.upsertNote(merged.book,{id:'note',text:'유지된 기록',createdAt:3000})));
+  merged=archive.mergeLinkedRows([merged],[sharedSnapshot({readingSessions:[]})],'owner-a')[0];
+  assert.deepEqual(merged.book.readingSessions,[independent]);assert.equal(merged.book.notes[0].text,'유지된 기록');
+  assert.deepEqual(merged.book.linkedSessionIds,[]);
+  assert.deepEqual(archive.prepare({title:'이전 책'}).linkedSessionIds,[]);
+  for(const linkedSessionIds of ['id',['bad id'],Array(1),Array.from({length:10001},(_,i)=>'id_'+i)])assert.throws(()=>archive.prepare({title:'책',linkedSessionIds}));
+  const conflicting=linkedRow('arc_conflict',{linkedBookId:'emotion',readingSessions:[{...sharedSnapshot().readingSessions[0],seconds:999}]});
+  assert.throws(()=>archive.mergeLinkedRows([conflicting],[sharedSnapshot()],'owner-a'),/다른 내용/);
 });

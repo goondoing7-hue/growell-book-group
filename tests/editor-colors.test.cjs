@@ -45,6 +45,7 @@ function harness(){
       for(const option of context.rtColorOptions(kind))palette.append(new Element('button',{'data-rt-color-kind':kind,'data-rt-color':option.value}));
     }
     for(const cmd of ['bold','italic','underline','strike','ol','ul','quote','code','clear','undo','redo','fontsize','link'])controls.append(new Element('button',{'data-rt-cmd':cmd}));
+    for(let i=1;i<=7;i++)controls.append(new Element('button',{'data-rt-size':String(i)}));
     context.bindRichTextToolbar(editor);
     return controls;
   }
@@ -121,5 +122,35 @@ test('generated toolbar has distinct apply/palette buttons and keeps all existin
     assert.equal((markup.match(new RegExp('data-rt-palette="'+kind+'"','g'))||[]).length,1);
     assert.match(markup,new RegExp('id="rt-'+kind+'-palette"[^>]*hidden'));
   }
-  for(const cmd of ['undo','redo','bold','italic','underline','strike','fontsize','ol','ul','quote','code','link','clear'])assert.ok(markup.includes('data-rt-cmd="'+cmd+'"'),cmd);
+  for(const cmd of ['undo','redo','bold','italic','underline','strike','ol','ul','quote','code','link','clear'])assert.ok(markup.includes('data-rt-cmd="'+cmd+'"'),cmd);
+  assert.ok(markup.indexOf('data-rt-size')<markup.indexOf('data-rt-cmd'));
+  assert.match(markup,/data-rt-size="3"[^>]*>16<\/button>/);
+});
+
+test('numeric font size restores selected text after toolbar blur and supports smaller and larger sizes',()=>{
+  const h=harness();h.select(3,12);h.selection.removeAllRanges();h.selection.addRange(range(h.outside));
+  h.click('[data-rt-size="6"]');h.click('[data-rt-size="2"]');
+  assert.deepEqual(h.commands.filter(c=>c.cmd==='fontSize'),[
+    {cmd:'fontSize',value:'6',cssMode:false,start:3,end:12},
+    {cmd:'fontSize',value:'2',cssMode:false,start:3,end:12}
+  ]);
+  assert.equal(h.controls.querySelector('[data-rt-size="2"]').getAttribute('aria-pressed'),'true');
+  assert.equal(h.drafts,2);
+});
+
+test('numeric size at the caret sets the next typing size without selecting the entire note',()=>{
+  const h=harness();h.select(7,7);h.click('[data-rt-size="4"]');
+  assert.deepEqual(h.commands.find(c=>c.cmd==='fontSize'),{cmd:'fontSize',value:'4',cssMode:false,start:7,end:7});
+});
+
+test('isolated archive toolbar cleanup preserves the underlying composer listeners and change target',()=>{
+  const h=harness();let changes=0;
+  const controls=new Element(),button=controls.append(new Element('button',{'data-rt-size':'5'}));
+  const cleanup=h.context.bindRichTextToolbar(h.editor,{controls,isolated:true,onChange:()=>changes++});
+  h.select(1,4);controls.fire('pointerdown',{target:button});controls.fire('click',{target:button});
+  assert.equal(changes,1);assert.equal(h.drafts,0);
+  assert.equal(h.document.events.selectionchange.length,2);
+  cleanup();assert.equal(h.document.events.selectionchange.length,1);
+  const markup=h.context.rtToolbarHtml('archive');
+  assert.match(markup,/aria-controls="archive-rt-text-palette"/);
 });
