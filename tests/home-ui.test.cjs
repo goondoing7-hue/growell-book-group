@@ -50,7 +50,7 @@ function harness(){
     ymd:()=> '2026-09-21',habitWithPendingChecks:habit=>({...habit,checkedDates:habit.checkedDates||[]}),
     habitSaveIntents:{},sharedPostsLoadState:'ready',
     memberLoadState:{privateEntries:'ready',habits:'ready',readingMeta:'ready',readingLogs:'ready'},
-    readingTimer:null,readingTimerRestoreOwner:'me',readingSaveAttempt:null,readingSavePanelOpen:false,readingEndPage:null,
+    readingTimer:null,readingParkedSessions:{},readingTimerRestoreOwner:'me',readingSaveAttempt:null,readingSavePanelOpen:false,readingEndPage:null,
     readingTimerStorageOwner:null,readingTimerStorageSnapshot:null,readingTimerStorageWritable:true,
     readingSaveBusy:false,readingSaveError:false,readingFinishKind:'finish',readingTimerIntervalId:null,
     readingNoteReturn:null,readingHomeReturn:false,readingHomeDialogFor:null,readingHomeDialogPosition:null,
@@ -241,14 +241,16 @@ test('home timer start opens the selected reading book with its saved page and p
   assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,c.readingTimer.id);assert.equal(c.readingHomeReturn,true);
   assert.equal(c.readingTimer.bookId,'thought');assert.equal(c.readingTimer.userId,'me');
   assert.equal(c.readingTimer.startPage,42);assert.equal(c.readingTimer.running,true);
-  const saved=JSON.parse(storage.get('growell_reading_timer_v2:me'));
-  assert.equal(saved.timer.id,c.readingTimer.id);assert.equal(saved.timer.startPage,42);
+  const saved=JSON.parse(storage.get(c.readingTimerStorageKey('me')));
+  assert.equal(saved.v,3);assert.equal(saved.timer.id,c.readingTimer.id);assert.equal(saved.timer.startPage,42);
+  assert.equal(storage.size,1,'the home action persists one authoritative timer envelope');
 });
 
 test('home returns to the active reading book without replacing its accumulated timer',()=>{
-  const {c,controls}=harness();
+  const {c,controls,storage}=harness();
   c.STATE.readingMeta.latest={userId:'me',bookId:'thought',currentPage:42,updatedAt:200};
   c.readingTimer=GrowellReadingTimer.create({id:'active-reading',userId:'me',bookId:'emotion',startPage:12,running:false,elapsedMs:65000},Date.now());
+  c.readingParkedSessions.thought={timer:GrowellReadingTimer.create({id:'parked-reading',userId:'me',bookId:'thought',startPage:42,running:false,elapsedMs:5000},Date.now()),attempt:null,endPage:45,noteReturn:null,returnView:'mine'};
   const html=c.homeHtml(),match=html.match(/data-reading-start="([^"]+)"/);
   assert.equal(match&&match[1],'emotion');assert.ok(html.includes('타이머로 돌아가기'));
   assert.match(html,/data-reading-elapsed>00:01:05/);
@@ -257,6 +259,8 @@ test('home returns to the active reading book without replacing its accumulated 
   assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,'active-reading');
   assert.equal(c.readingTimer.id,'active-reading');assert.equal(c.readingTimer.elapsedMs,65000);
   assert.equal(c.readingTimer.startPage,12);assert.equal(c.readingTimer.running,false);
+  const parked=JSON.parse(storage.get(c.readingTimerStorageKey('me'))).parked.thought;
+  assert.equal(parked.timer.id,'parked-reading');assert.equal(parked.timer.elapsedMs,5000);assert.equal(parked.timer.running,false);assert.equal(parked.endPage,45);
 });
 
 test('home note-choice close retires only its popup and preserves the reading session',()=>{

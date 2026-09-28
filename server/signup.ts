@@ -98,8 +98,12 @@ Deno.serve(async (req: Request) => {
       return await failAfterCreation('profile_failed')
     }
     createdProfileId = profile.id
-    const { error: hintError } = await supabase.from('profile_secrets').insert({ user_id: profile.id, pw_hint: pwHint, updated_at: Date.now() })
-    if (hintError) return await failAfterCreation('hint_save_failed')
+    // Required hint and notification outbox are one transaction. The scheduled
+    // worker sends later; delivery failures never roll back a valid signup.
+    const { data: finalized, error: hintError } = await supabase.rpc('growell_finalize_signup', {
+      p_profile_id: profile.id, p_auth_user_id: createdAuthId, p_pw_hint: pwHint,
+    })
+    if (hintError || finalized?.hintSaved !== true || finalized?.notificationQueued !== true) return await failAfterCreation('hint_save_failed')
     return json({ ok: true, pendingApproval: true, profile, hintSaved: true })
   } catch {
     return await failAfterCreation('signup_unavailable')

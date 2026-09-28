@@ -12,6 +12,7 @@ function section(start,end){
 }
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+let timerSequence=0;
 function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta:{}},failMeta=0,loseResponse=0,beforeMeta,authSession,refreshError=null}={}){
   let clock=now,metaFailures=failMeta,lostResponses=loseResponse;
   const auth={session:authSession===undefined?{access_token:'synthetic-token',expires_at:1000000000000,user:{id:'auth-'+owner}}:authSession,refreshError,getCalls:0,refreshCalls:0};
@@ -40,7 +41,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
     localStorage:{getItem:key=>memory.has(key)?memory.get(key):null,setItem:(key,value)=>{storageWrites.push({key,value});memory.set(key,value);},removeItem:key=>memory.delete(key)},
     sessionStorage:{setItem(){}},urlFromPhoto:()=>null,render(){},showToast:(...args)=>toasts.push(args),
     bookById:id=>books.find(book=>book.id===id),isBookLocked:()=>false,
-    myCurrentPage:()=>0,uid:()=> 'rl-test',esc:value=>String(value),fmtDurationHuman:seconds=>seconds+'초',
+    myCurrentPage:()=>0,uid:()=> 'rl-test-'+(++timerSequence),esc:value=>String(value),fmtDurationHuman:seconds=>seconds+'초',
     sb:{auth:{
       getSession(){auth.getCalls++;return Promise.resolve({data:{session:auth.session},error:null});},
       refreshSession(){auth.refreshCalls++;return Promise.resolve({data:{session:auth.session},error:auth.refreshError});}
@@ -94,7 +95,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
 
 function timerBrowserEvents(fixture){
   const {c}=fixture,buttons=new Map(),documentEvents={},windowEvents={};
-  for(const id of ['btn-reading-toggle-pause','btn-reading-done','btn-reading-cancel']){
+  for(const id of ['btn-reading-toggle-pause','btn-reading-done','btn-reading-cancel','btn-reading-save-back']){
     const handlers={};buttons.set(id,{addEventListener:(event,handler)=>{handlers[event]=handler;},click:()=>handlers.click()});
   }
   const originalElement=c.document.getElementById;
@@ -106,6 +107,159 @@ function timerBrowserEvents(fixture){
   c.bindReadingTimerEvents();
   return {buttons,documentEvents,windowEvents};
 }
+
+test('switching shared books parks the previous timer and restores each original ID paused without counting time away',()=>{
+  const memory=new Map(),first=harness({memory,now:0}),{c}=first;
+  c.location.hash='#/';c.startReading('emotion');const emotionId=c.readingTimer.id;
+  c.readingTimer=domain.setCountdown(c.readingTimer,60000,0);c.readingEndPage=14;c.persistReadingTimer();
+  first.setNow(5000);c.location.hash='#/book/thought/mine';c.startReading('thought');const thoughtId=c.readingTimer.id;
+  assert.notEqual(thoughtId,emotionId);assert.equal(c.readingTimer.bookId,'thought');assert.equal(c.readingTimer.running,true);
+  const emotion=c.readingParkedSessions.emotion;
+  assert.equal(emotion.timer.id,emotionId);assert.equal(emotion.timer.running,false);assert.equal(emotion.timer.elapsedMs,5000);
+  assert.equal(emotion.returnView,'home');assert.equal(emotion.endPage,14);assert.equal(emotion.timer.targetMs,60000);
+  assert.equal(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))).parked.emotion.timer.elapsedMs,5000);
+  first.setNow(7000);c.startReading('emotion');
+  assert.equal(c.readingTimer.id,emotionId);assert.equal(c.readingTimer.running,false);assert.equal(c.readingTimerElapsedMs(),5000);
+  assert.equal(c.readingEndPage,14);assert.equal(c.readingParkedSessions.thought.timer.elapsedMs,2000);
+  const restored=harness({memory,now:36000000});restored.c.syncReadingTimer();
+  assert.equal(restored.c.readingTimerElapsedMs(),5000);assert.equal(restored.c.readingTimer.running,false);
+  const events=timerBrowserEvents(restored);events.buttons.get('btn-reading-toggle-pause').click();
+  restored.setNow(36001000);assert.equal(restored.c.readingTimerElapsedMs(),6000);
+  restored.c.startReading('thought');
+  assert.equal(restored.c.readingTimer.id,thoughtId);assert.equal(restored.c.readingTimer.running,false);assert.equal(restored.c.readingTimerElapsedMs(),2000);
+  assert.equal(restored.c.readingParkedSessions.emotion.timer.elapsedMs,6000);
+});
+
+test('a completed second book leaves the first book pending and each immutable save attempt can finish without resurrection',async()=>{
+  const memory=new Map(),server={logs:{},meta:{}},first=harness({memory,server,now:10000,failMeta:1}),{c}=first;
+  first.prepared({id:'pending-emotion',elapsedMs:10000,startPage:10});c.readingHomeReturn=true;c.readingFinishKind='complete';c.readingEndPage=300;c.persistReadingTimer();
+  assert.equal(await c.submitReadingLog('emotion',0,300,{}),false);
+  const attempt=clone(c.readingSaveAttempt);
+  c.startReading('thought');const thoughtId=c.readingTimer.id;
+  assert.deepEqual(clone(c.readingParkedSessions.emotion.attempt),attempt);assert.equal(c.readingParkedSessions.emotion.finishKind,'complete');
+  first.setNow(15000);c.readingTimer=domain.pause(c.readingTimer,15000);c.readingTimer.phase='save';c.readingSavePanelOpen=true;c.persistReadingTimer();
+  assert.equal(await c.submitReadingLog('thought',0,8,{}),true);
+  const afterSecond=JSON.parse(memory.get(c.readingTimerStorageKey('reader')));
+  assert.equal(afterSecond.timer,null);assert.equal(afterSecond.parked.emotion.attempt.id,'pending-emotion');assert.equal(afterSecond.parked.thought,undefined);
+  const next=harness({memory,server,now:36000000});next.c.syncReadingTimer();next.c.startReading('emotion');
+  assert.equal(next.c.readingTimer.running,false);assert.equal(next.c.readingSavePanelOpen,true);assert.equal(next.c.readingFinishKind,'complete');assert.equal(next.c.readingEndPage,300);
+  assert.deepEqual(clone(next.c.readingSaveAttempt),attempt);assert.equal(await next.c.submitReadingLog('emotion',0,20,{}),true);
+  assert.equal(Object.keys(server.logs).length,2);assert.equal(server.logs['pending-emotion'].page,300);assert.equal(server.logs[thoughtId].seconds,5);
+  assert.deepEqual(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))),{v:3,timer:null});
+  next.c.startReading('thought');assert.notEqual(next.c.readingTimer.id,thoughtId);assert.equal(next.c.readingTimerElapsedMs(),0);
+});
+
+test('an atomic book switch rolls back on quota failure and the previous running or parked sessions remain recoverable',()=>{
+  const fixture=harness({now:0}),{c,memory}=fixture;c.startReading('emotion');const originalId=c.readingTimer.id;
+  fixture.setNow(5000);const key=c.readingTimerStorageKey('reader'),raw=memory.get(key),write=c.localStorage.setItem;
+  c.localStorage.setItem=()=>{throw new Error('quota');};c.startReading('thought');
+  assert.equal(memory.get(key),raw);assert.equal(c.readingTimer.id,originalId);assert.equal(c.readingTimer.running,true);assert.deepEqual(clone(c.readingParkedSessions),{});
+  c.localStorage.setItem=write;c.startReading('thought');const thoughtId=c.readingTimer.id,switched=memory.get(key);
+  fixture.setNow(8000);c.localStorage.setItem=()=>{throw new Error('quota');};c.startReading('emotion');
+  assert.equal(memory.get(key),switched);assert.equal(c.readingTimer.id,thoughtId);assert.equal(c.readingTimer.running,true);assert.equal(c.readingParkedSessions.emotion.timer.id,originalId);
+  c.localStorage.setItem=write;c.startReading('emotion');
+  assert.equal(c.readingTimer.id,originalId);assert.equal(c.readingTimerElapsedMs(),5000);assert.equal(c.readingParkedSessions.thought.timer.elapsedMs,3000);
+});
+
+test('a stale tab cannot discard parked books or revive the old active book after a newer switch or cancellation',()=>{
+  const memory=new Map(),first=harness({memory,now:0});first.c.startReading('emotion');
+  const sleeping=harness({memory,now:0});sleeping.c.syncReadingTimer();const sleepingEvents=timerBrowserEvents(sleeping);
+  first.setNow(5000);first.c.startReading('thought');const key=first.c.readingTimerStorageKey('reader'),raw=memory.get(key);
+  sleeping.setNow(1000000);sleepingEvents.windowEvents.pagehide();
+  assert.equal(memory.get(key),raw);assert.equal(sleeping.c.readingTimer.bookId,'thought');assert.equal(sleeping.c.readingParkedSessions.emotion.timer.elapsedMs,5000);
+  const events=timerBrowserEvents(first);events.buttons.get('btn-reading-cancel').click();const cancelled=memory.get(key);
+  sleepingEvents.windowEvents.pagehide();assert.equal(memory.get(key),cancelled);assert.equal(sleeping.c.readingTimer,null);
+  sleeping.c.startReading('emotion');assert.equal(sleeping.c.readingTimerElapsedMs(),5000);assert.equal(sleeping.c.readingTimer.running,false);
+});
+
+test('corrupt or foreign parked sessions prevent writes instead of being silently dropped',()=>{
+  const active=domain.create({id:'active',userId:'reader',bookId:'thought'},0);
+  const valid={timer:domain.create({id:'parked',userId:'reader',bookId:'emotion',running:false,elapsedMs:5000},0),attempt:null,endPage:null,noteReturn:null,returnView:'home'};
+  const invalid=[null,[],{emotion:{bad:true}},{emotion:{...valid,timer:{...valid.timer,userId:'other'}}},
+    {emotion:{...valid,timer:{...valid.timer,running:true,startedAt:0}}},{missing:valid},
+    {emotion:{...valid,attempt:{id:'unrecoverable-save'}}},{emotion:{...valid,noteReturn:{type:'mine'}}}];
+  for(const parked of invalid){
+    const fixture=harness(),{c,memory}=fixture,key=c.readingTimerStorageKey('reader'),raw=JSON.stringify({v:3,timer:active,parked});memory.set(key,raw);
+    c.syncReadingTimer();assert.equal(c.readingTimerStorageWritable,false);c.startReading('emotion');c.persistReadingTimer();
+    assert.equal(memory.get(key),raw);assert.equal(c.pauseSharedReadingForArchive('reader'),false);
+  }
+});
+
+test('v2 migration preserves the newest timer and old v2 tabs cannot erase the new parked records',()=>{
+  const memory=new Map(),first=harness({memory,now:5000}),{c}=first;
+  const oldKey=c.previousReadingTimerStorageKey('reader'),ancientKey=c.legacyReadingTimerStorageKey('reader'),key=c.readingTimerStorageKey('reader');
+  const old=JSON.stringify({v:2,timer:domain.create({id:'v2-current',userId:'reader',bookId:'emotion',startPage:20},0),endPage:24,returnView:'home'});
+  memory.set(oldKey,old);memory.set(ancientKey,JSON.stringify({v:1,timer:domain.create({id:'v1-old',userId:'reader',bookId:'thought'},0)}));
+  c.syncReadingTimer();assert.equal(c.readingTimer.id,'v2-current');assert.equal(c.readingEndPage,24);assert.equal(JSON.parse(memory.get(key)).v,3);assert.equal(memory.get(oldKey),old);
+  c.startReading('thought');const latest=memory.get(key);memory.set(oldKey,JSON.stringify({v:2,timer:null}));
+  const next=harness({memory,now:10000});next.c.syncReadingTimer();assert.equal(next.c.readingTimer.bookId,'thought');assert.equal(next.c.readingParkedSessions.emotion.timer.id,'v2-current');assert.equal(memory.get(key),latest);
+  for(const invalid of ['', 'null', 'not-json']){
+    const damaged=new Map([[oldKey,invalid],[ancientKey,old]]),safe=harness({memory:damaged});safe.c.syncReadingTimer();safe.c.startReading('emotion');
+    assert.equal(safe.c.readingTimer,null);assert.equal(damaged.get(oldKey),invalid);assert.equal(damaged.has(key),false,'damaged newer legacy storage never falls back to a stale timer');
+  }
+});
+
+test('parked sessions stay owner-scoped even if persistence occurs immediately after an account change',()=>{
+  const fixture=harness({now:0}),{c,memory}=fixture;c.startReading('emotion');fixture.setNow(1000);c.startReading('thought');
+  const readerKey=c.readingTimerStorageKey('reader'),readerRaw=memory.get(readerKey);
+  c.SESSION={userId:'other',name:'다른 회원'};assert.equal(c.persistReadingTimer(),false);
+  assert.equal(memory.get(readerKey),readerRaw);assert.equal(memory.has(c.readingTimerStorageKey('other')),false);
+  c.syncReadingTimer();assert.equal(c.readingTimer,null);assert.deepEqual(clone(c.readingParkedSessions),{});
+  c.SESSION={userId:'reader',name:'독서회원'};c.syncReadingTimer();assert.equal(c.readingTimer.bookId,'thought');assert.equal(c.readingParkedSessions.emotion.timer.elapsedMs,1000);
+});
+
+test('archive start pauses shared reading durably while wrong owners, in-flight saves, and failed storage cannot start another timer',()=>{
+  const fixture=harness({now:0}),{c,memory}=fixture;c.startReading('emotion');fixture.setNow(5000);
+  const key=c.readingTimerStorageKey('reader'),before=memory.get(key);
+  assert.equal(c.pauseSharedReadingForArchive('other'),false);assert.equal(memory.get(key),before);
+  c.readingSaveBusy=true;assert.equal(c.pauseSharedReadingForArchive('reader'),false);c.startReading('thought');assert.equal(c.readingTimer.bookId,'emotion');c.readingSaveBusy=false;
+  const write=c.localStorage.setItem;c.localStorage.setItem=()=>{throw new Error('quota');};
+  assert.equal(c.pauseSharedReadingForArchive('reader'),false);assert.equal(c.readingTimer.running,true);assert.equal(memory.get(key),before);
+  c.localStorage.setItem=write;assert.equal(c.pauseSharedReadingForArchive('reader'),true);
+  assert.equal(c.readingTimer.running,false);assert.equal(c.readingTimerElapsedMs(),5000);
+  fixture.setNow(36000000);assert.equal(c.readingTimerElapsedMs(),5000);assert.equal(JSON.parse(memory.get(key)).timer.elapsedMs,5000);
+});
+
+test('every shared resume path pauses archive timers first and a failed archive pause leaves shared reading stopped',async()=>{
+  const fixture=harness({now:0}),{c}=fixture,calls=[];let allowed=false;
+  c.GrowellArchiveTimer={pauseOthers:owner=>{calls.push(owner);return allowed;}};
+  c.startReading('emotion');assert.equal(c.readingTimer,null);allowed=true;c.startReading('emotion');assert.equal(c.readingTimer.running,true);
+  const events=timerBrowserEvents(fixture);events.buttons.get('btn-reading-toggle-pause').click();assert.equal(c.readingTimer.running,false);
+  allowed=false;events.buttons.get('btn-reading-toggle-pause').click();assert.equal(c.readingTimer.running,false);
+  allowed=true;events.buttons.get('btn-reading-toggle-pause').click();assert.equal(c.readingTimer.running,true);
+  events.buttons.get('btn-reading-done').click();allowed=false;events.buttons.get('btn-reading-save-back').click();assert.equal(c.readingTimer.phase,'save');
+  allowed=true;events.buttons.get('btn-reading-save-back').click();assert.equal(c.readingTimer.running,true);assert.ok(calls.length>=6);assert.ok(calls.every(owner=>owner==='reader'));
+  const notes=noteHarness({now:5000});notes.c.GrowellArchiveTimer={pauseOthers:()=>allowed};await notes.c.openReadingNote('mine');
+  allowed=false;assert.equal(notes.c.completeReadingNote('mine','emotion'),false);assert.equal(notes.c.readingTimer.running,false);assert.ok(notes.c.readingNoteReturn);
+  allowed=true;assert.equal(notes.c.completeReadingNote('mine','emotion'),true);assert.equal(notes.c.readingTimer.running,true);assert.equal(notes.c.readingTimerElapsedMs(),5000);
+});
+
+test('real archive and shared controllers alternate without overlapping elapsed time or changing saved reading totals',()=>{
+  const archiveTimer=require('../archiveTimer.js'),memory=new Map(),fixture=harness({memory,now:0}),{c}=fixture;
+  let now=0;const advance=value=>{now=value;fixture.setNow(value);};
+  const storage=c.localStorage;Object.defineProperty(storage,'length',{get:()=>memory.size});storage.key=index=>Array.from(memory.keys())[index]||null;
+  c.GrowellArchiveTimer={pauseOthers:owner=>archiveTimer.pauseOthers(owner,undefined,{storage,now:()=>now})};
+  c.startReading('emotion');advance(5000);
+  const archive=archiveTimer.createController({ownerId:'reader',book:{id:'arc-synthetic',title:'개인 독서',currentPage:0,pageCount:200},storage,now:()=>now,
+    adapter:{getOwnerId:()=>c.SESSION.userId,beforeStart:owner=>c.pauseSharedReadingForArchive(owner)}});
+  assert.equal(c.readingTimer.running,false);assert.equal(c.readingTimerElapsedMs(),5000);assert.equal(archive.state().timer.running,true);
+  advance(9000);const events=timerBrowserEvents(fixture);events.buttons.get('btn-reading-toggle-pause').click();
+  archive.poll();assert.equal(archive.state().timer.running,false);assert.equal(archive.elapsed(),4000);assert.equal(c.readingTimer.running,true);
+  advance(12000);assert.equal(archive.resume(),true);assert.equal(c.readingTimer.running,false);assert.equal(c.readingTimerElapsedMs(),8000);
+  advance(15000);c.startReading('thought');archive.poll();
+  assert.equal(c.readingTimer.bookId,'thought');assert.equal(c.readingTimer.running,true);assert.equal(c.readingParkedSessions.emotion.timer.elapsedMs,8000);
+  assert.equal(archive.state().timer.running,false);assert.equal(archive.elapsed(),7000);
+  assert.deepEqual(clone(c.STATE.readingLogs),{});assert.deepEqual(clone(c.STATE.readingMeta),{},'only explicit completion updates saved shared totals');
+});
+
+test('switching books preserves a note handoff and countdown, and returning excludes the entire writing interval',async()=>{
+  const memory=new Map(),first=noteHarness({memory,now:5000});first.c.readingHomeReturn=true;await first.c.openReadingNote('mine');
+  const handoff=clone(first.c.readingNoteReturn),id=first.c.readingTimer.id;first.setNow(10000);first.c.startReading('thought');
+  assert.deepEqual(clone(first.c.readingParkedSessions.emotion.noteReturn),handoff);assert.equal(first.c.readingParkedSessions.emotion.returnView,'home');
+  const next=noteHarness({memory,now:36000000});next.c.readingTimerRestoreOwner=null;next.c.syncReadingTimer();next.c.startReading('emotion');
+  assert.equal(next.c.readingTimer.id,id);assert.equal(next.c.readingTimer.running,false);assert.deepEqual(clone(next.c.readingNoteReturn),handoff);
+  assert.equal(next.c.readingTimer.targetMs,60000);assert.equal(next.c.completeReadingNote('mine','emotion'),true);assert.equal(next.c.readingTimerElapsedMs(),5000);
+});
 
 test('a frozen tab cannot overwrite another tab pause on pagehide or count the hours away',()=>{
   const memory=new Map(),active=harness({memory,now:0});active.c.startReading('emotion');
@@ -147,7 +301,7 @@ test('a saved timer stays completed when a sleeping tab later persists its old r
   const key=active.c.readingTimerStorageKey('reader'),completed=memory.get(key);
   sleeping.setNow(36000000);events.windowEvents.pagehide();
   assert.equal(memory.get(key),completed);assert.equal(sleeping.c.readingTimer,null);
-  assert.deepEqual(JSON.parse(completed),{v:2,timer:null});assert.equal(Object.keys(server.logs).length,1);
+  assert.deepEqual(JSON.parse(completed),{v:3,timer:null});assert.equal(Object.keys(server.logs).length,1);
 });
 
 test('a stale tab restores the other tab immutable failed attempt without replacing its time or page',async()=>{
@@ -190,7 +344,7 @@ test('a long paused session survives missing auth and saves its exact frozen rec
   assert.equal(await reconnected.c.submitReadingLog('emotion',0,70,{}),true);
   assert.equal(Object.keys(server.logs).length,1);assert.equal(server.logs[frozen.id].seconds,35459);
   assert.equal(server.logs[frozen.id].page,50);assert.equal(server.logs[frozen.id].created_at,frozen.createdAt);
-  assert.equal(reconnected.c.readingTimer,null);assert.deepEqual(JSON.parse(memory.get(key)),{v:2,timer:null});
+  assert.equal(reconnected.c.readingTimer,null);assert.deepEqual(JSON.parse(memory.get(key)),{v:3,timer:null});
 });
 
 test('a preserved reading attempt is never submitted through a different authenticated account',async()=>{
@@ -220,7 +374,7 @@ test('failed metadata save keeps a frozen retry payload, then clears timer only 
   assert.equal(c.STATE.readingLogs[frozen.id].seconds,10);assert.equal(c.STATE.readingMeta.emotion_reader.currentPage,15);
   assert.equal(c.readingTimer,null);assert.equal(c.readingSaveAttempt,null);assert.equal(c.readingSavePanelOpen,false);
   assert.equal(c.readingHistoryOpenFor,'emotion');assert.equal(c.readingSaveBusy,false);
-  assert.deepEqual(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))),{v:2,timer:null});
+  assert.deepEqual(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))),{v:3,timer:null});
 });
 
 test('a lost insert response is verified against the existing row without duplicating reading time',async()=>{
@@ -383,7 +537,7 @@ test('countdown reset, cancellation and owner logout close an obsolete completio
   assert.equal(dialogs.size,1);c.clearMemberSession();assert.equal(dialogs.size,0);
 });
 
-test('v1 migration creates an independent v2 session that survives old tabs overwriting or deleting v1',()=>{
+test('v1 migration creates an independent current session that survives old tabs overwriting or deleting v1',()=>{
   const memory=new Map(),first=harness({memory,now:2000});
   const oldTimer={id:'old-running',userId:'reader',bookId:'emotion',startPage:12,createdAt:0,startedAt:0,elapsedMs:0,running:true,targetMs:60000,goalReached:false,phase:'timer'};
   const oldKey=first.c.legacyReadingTimerStorageKey('reader'),newKey=first.c.readingTimerStorageKey('reader');
@@ -391,7 +545,7 @@ test('v1 migration creates an independent v2 session that survives old tabs over
   first.c.syncReadingTimer();
   assert.equal(first.c.readingTimer.id,'old-running');assert.equal(first.c.readingTimerElapsedMs(),2000);
   assert.equal(memory.get(oldKey),original,'migration never edits or deletes the old record');
-  assert.equal(JSON.parse(memory.get(newKey)).v,2);
+  assert.equal(JSON.parse(memory.get(newKey)).v,3);
   memory.delete(oldKey);
   const next=harness({memory,now:65000});next.c.syncReadingTimer();
   assert.equal(next.c.readingTimerElapsedMs(),65000);assert.equal(next.c.readingTimer.running,true);
@@ -407,8 +561,8 @@ test('v1 migration creates an independent v2 session that survives old tabs over
   assert.equal(memory.get(oldKey),original);
 });
 
-test('v2 values are authoritative even when empty or unreadable and never revive a valid v1 timer',()=>{
-  for(const value of ['not-json','',JSON.stringify({v:2,timer:null}),'null']){
+test('current storage values are authoritative even when empty or unreadable and never revive a valid v1 timer',()=>{
+  for(const value of ['not-json','',JSON.stringify({v:3,timer:null}),'null']){
     const {c,memory}=harness();
     const old=JSON.stringify({v:1,timer:domain.create({id:'old',userId:'reader',bookId:'emotion'},0)});
     memory.set(c.legacyReadingTimerStorageKey('reader'),old);memory.set(c.readingTimerStorageKey('reader'),value);
@@ -417,7 +571,7 @@ test('v2 values are authoritative even when empty or unreadable and never revive
     assert.equal(memory.get(c.legacyReadingTimerStorageKey('reader')),old);
   }
   const blank=harness();blank.c.syncReadingTimer();
-  assert.deepEqual(JSON.parse(blank.memory.get(blank.c.readingTimerStorageKey('reader'))),{v:2,timer:null},'an empty first load records that migration already completed');
+  assert.deepEqual(JSON.parse(blank.memory.get(blank.c.readingTimerStorageKey('reader'))),{v:3,timer:null},'an empty first load records that migration already completed');
 });
 
 test('migrating a failed v1 save retains its immutable retry snapshot and does not duplicate a saved log',async()=>{

@@ -3,6 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
+  'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css',
   'materialsMedia.js', ...require('../vendor/pdfjs/manifest.json').files,
   'timerAlerts.js', 'timer-alert-sw.js',
   'dailyVerses.js', 'memberAccess.js', 'bookDetails.js', 'bookDetails.css',
@@ -23,6 +24,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/archive-domain.test.cjs', 'tests/archive-timer.test.cjs', 'tests/archive-integration.test.cjs', 'tests/archive-ui.test.cjs', 'tests/book-search.test.cjs', 'tests/signup-notifications.test.cjs',
   'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
   'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs',
   'tests/timer-alerts.test.cjs',
@@ -35,6 +37,8 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'api/book-search.js',
+  'server/signup-notifications.sql', 'server/signup-notifications-verification.sql', 'server/signup-notification-worker.ts', 'server/signup-notifications-schedule.sql', 'server/signup-notifications.md',
   'server/signup.ts', 'server/member-approval.sql', 'server/member-approval-verification.sql', 'server/member-approval-notes.md',
   'server/worksheet-locks.sql', 'server/worksheet-locks-verification.sql', 'server/question-replies.sql', 'server/question-replies-verification.sql',
   'server/question-reply-editing.sql', 'server/question-reply-editing-verification.sql',

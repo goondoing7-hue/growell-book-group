@@ -1065,6 +1065,7 @@
 <link rel="stylesheet" href="home.css">
 <link rel="stylesheet" href="community.css">
 <link rel="stylesheet" href="privateCategories.css">
+<link rel="stylesheet" href="archive.css">
 <link rel="stylesheet" href="habits.css">
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
@@ -1104,6 +1105,9 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="privateCrypto.js"></script>
 <script src="privateCategories.js"></script>
+<script src="archiveDomain.js"></script>
+<script src="archiveTimer.js"></script>
+<script src="archive.js"></script>
 <script src="dailyVerses.js"></script>
 <script id="app-script">
 (function(){
@@ -2040,6 +2044,7 @@ function closeStaleComposersForRoute(r){
    끊기지 않는다. readingTimer가 있으면 mineTabHtml이 실행/일시정지 화면을 그리고,
    bindEvents가 매 렌더마다 표시용 setInterval을 다시 건다(이전 것은 그때그때 정리). */
 var readingTimer = null; // GrowellReadingTimer session, isolated and persisted per member on this device.
+var readingParkedSessions = {};
 var readingTimerIntervalId = null;
 var readingSavePanelOpen = false; // 완료를 눌러 "저장" 화면으로 전환된 상태인지
 var readingEditOpenFor = null; // bookId whose 현재 페이지 수정 폼이 열려있는지 (총 페이지는 책마다 고정값이라 더 이상 여기서 다루지 않음)
@@ -2104,6 +2109,7 @@ function currentRoute(){
   }
   if(parts[0]==='login'){ return {view:'login'}; }
   if(parts[0]==='about'){ return {view:'about'}; }
+  if(parts[0]==='archive'){ return {view:'archive'}; }
   if(parts[0]==='community'){
     return {view:'community', postId:parts[1]==='post' ? parts[2] : null, page:Math.max(1, parseInt(parts[1],10)||1)};
   }
@@ -2169,6 +2175,7 @@ function clearMemberSession(){
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.reset();
   if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
   if(typeof GrowellBookDetails!=='undefined')GrowellBookDetails.reset();
+  if(typeof GrowellArchive!=='undefined')GrowellArchive.reset();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
   if(typeof pendingProfileAvatar!=='undefined') pendingProfileAvatar=undefined;
@@ -3441,8 +3448,45 @@ function fmtDurationHuman(totalSeconds){
   return s+'초';
 }
 function readingDataReady(){return memberLoadState.readingMeta==='ready' && memberLoadState.readingLogs==='ready';}
-function readingTimerStorageKey(owner){return 'growell_reading_timer_v2:'+encodeURIComponent(owner);}
+function readingTimerStorageKey(owner){return 'growell_reading_timer_v3:'+encodeURIComponent(owner);}
+function previousReadingTimerStorageKey(owner){return 'growell_reading_timer_v2:'+encodeURIComponent(owner);}
 function legacyReadingTimerStorageKey(owner){return 'growell_reading_timer_v1:'+encodeURIComponent(owner);}
+function captureReadingTimerState(){
+  return {timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn,returnView:readingHomeReturn?'home':'mine'};
+}
+function applyReadingTimerState(state){
+  state=state||{};readingTimer=state.timer||null;readingSaveAttempt=state.attempt||null;
+  readingSavePanelOpen=!!(readingTimer&&readingTimer.phase==='save');readingFinishKind=state.finishKind==='complete'?'complete':'finish';
+  readingEndPage=state.endPage===undefined?null:state.endPage;readingNoteReturn=state.noteReturn||null;readingHomeReturn=state.returnView==='home';
+}
+function restoreReadingTimerState(stored,owner,parked){
+  var timer=GrowellReadingTimer.restore(stored&&stored.timer,owner,BOOKS.map(function(b){return b.id;}),Date.now());
+  if(!timer||(parked&&timer.running))return null;
+  var book=bookById(timer.bookId),state={timer:timer,attempt:null,finishKind:stored.finishKind==='complete'?'complete':'finish',endPage:null,noteReturn:GrowellReadingTimer.restoreNoteHandoff(stored.noteReturn,timer),returnView:stored.returnView==='home'?'home':'mine'};
+  if(parked&&stored.noteReturn&&!state.noteReturn)return null;
+  if(stored.endPage!==null&&stored.endPage!==undefined){
+    if(GrowellReadingTimer.validatePages(timer.startPage,stored.endPage,book.totalPages).ok)state.endPage=Number(stored.endPage);
+    else if(parked)return null;
+  }
+  var attempt=stored.attempt;
+  if(attempt&&timer.phase==='save'&&attempt.id===timer.id&&attempt.userId===owner&&attempt.bookId===book.id&&attempt.startPage===timer.startPage&&Number.isSafeInteger(attempt.seconds)&&attempt.seconds>0&&attempt.seconds===Math.floor(GrowellReadingTimer.elapsed(timer,Date.now())/1000)&&Number.isSafeInteger(attempt.createdAt)&&attempt.createdAt>=0&&GrowellReadingTimer.validatePages(attempt.startPage,attempt.page,book.totalPages).ok){
+    state.attempt={id:attempt.id,userId:attempt.userId,bookId:attempt.bookId,startPage:attempt.startPage,page:attempt.page,seconds:attempt.seconds,createdAt:attempt.createdAt};
+  }else if(parked&&attempt)return null;
+  return state;
+}
+function restoreParkedReadingStates(stored,owner,active){
+  var source=stored?stored.parked:undefined,parked={},ids={};
+  if(source===undefined)return parked;
+  if(!source||typeof source!=='object'||Array.isArray(source))return null;
+  if(active)ids[active.timer.id]=true;
+  var keys=Object.keys(source);if(keys.length>BOOKS.length)return null;
+  for(var i=0;i<keys.length;i++){
+    var key=keys[i],state=restoreReadingTimerState(source[key],owner,true);
+    if(!state||state.timer.bookId!==key||(active&&active.timer.bookId===key)||ids[state.timer.id])return null;
+    parked[key]=state;ids[state.timer.id]=true;
+  }
+  return parked;
+}
 /* Frozen tabs can receive storage events late. Compare the last observed value
    before acting or persisting so an old running timer cannot replace a pause,
    pending save, or completed marker written by another tab. */
@@ -3456,21 +3500,46 @@ function refreshReadingTimerFromStorage(){
     }
     if(readingTimerStorageOwner===owner && current===readingTimerStorageSnapshot)return false;
     readingTimerRestoreOwner=null;syncReadingTimer();return true;
-  }catch(e){readingTimerMemoryWarning=true;return false;}
+  }catch(e){readingTimerStorageWritable=false;readingTimerMemoryWarning=true;return false;}
 }
 function persistReadingTimer(){
   if(!SESSION) return false;
   if(refreshReadingTimerFromStorage())return false;
   if(!readingTimerStorageWritable){readingTimerMemoryWarning=true;return false;}
   try{
-    var key=readingTimerStorageKey(SESSION.userId),serialized;
-    if(readingTimer && readingTimer.userId===SESSION.userId) serialized=JSON.stringify({v:2,timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn,returnView:readingHomeReturn?'home':'mine'});
-    // Keep a completed marker so the read-only v1 migration cannot resurrect an old timer.
-    else serialized=JSON.stringify({v:2,timer:null});
+    if(restoreParkedReadingStates({parked:readingParkedSessions},SESSION.userId,readingTimer&&readingTimer.userId===SESSION.userId?captureReadingTimerState():null)===null){readingTimerMemoryWarning=true;return false;}
+    var key=readingTimerStorageKey(SESSION.userId),payload={v:3,timer:null};
+    if(readingTimer && readingTimer.userId===SESSION.userId)Object.assign(payload,captureReadingTimerState());
+    // Current and parked books share one atomic write. A completed current timer
+    // cannot leave behind a second copy that reappears when that book is opened.
+    if(Object.keys(readingParkedSessions).length)payload.parked=readingParkedSessions;
+    var serialized=JSON.stringify(payload);
     if(serialized!==readingTimerStorageSnapshot)localStorage.setItem(key,serialized);
     readingTimerStorageOwner=SESSION.userId;readingTimerStorageSnapshot=serialized;
     readingTimerMemoryWarning=false;return true;
   }catch(e){readingTimerMemoryWarning=true;return false;}
+}
+function commitReadingTimerState(next,parked){
+  var before=captureReadingTimerState(),oldParked=readingParkedSessions,owner=SESSION&&SESSION.userId,snapshot=readingTimerStorageSnapshot;
+  applyReadingTimerState(next);if(parked)readingParkedSessions=parked;
+  if(persistReadingTimer())return true;
+  // A refreshed tab/account already owns the newer state; never roll it back.
+  if(SESSION&&SESSION.userId===owner&&readingTimerStorageSnapshot===snapshot){applyReadingTimerState(before);readingParkedSessions=oldParked;}
+  readingTimerMemoryWarning=true;return false;
+}
+function pauseArchiveReadingBeforeSharedStart(){
+  if(typeof GrowellArchiveTimer==='undefined'||typeof GrowellArchiveTimer.pauseOthers!=='function')return true;
+  try{if(GrowellArchiveTimer.pauseOthers(SESSION.userId)===true)return true;}catch(e){}
+  showToast('다른 책의 읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);return false;
+}
+function pauseSharedReadingForArchive(owner){
+  if(!SESSION||SESSION.userId!==owner||readingSaveBusy)return false;
+  refreshReadingTimerFromStorage();syncReadingTimer();
+  if(!readingTimerStorageWritable||readingSaveBusy)return false;
+  if(!readingTimer)return true;
+  if(readingTimer.userId!==owner)return false;
+  var next=captureReadingTimerState();next.timer=GrowellReadingTimer.pause(readingTimer,Date.now());
+  return commitReadingTimerState(next);
 }
 function prepareReadingTimerAlerts(){
   if(typeof GrowellTimerAlerts==='undefined')return;
@@ -3526,27 +3595,22 @@ function notifyReadingCountdown(){
 function syncReadingTimer(){
   if(!SESSION) return;
   if(readingTimerRestoreOwner!==SESSION.userId){
-    readingTimerRestoreOwner=SESSION.userId;readingTimer=null;readingSaveAttempt=null;readingSavePanelOpen=false;readingSaveBusy=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;
+    readingTimerRestoreOwner=SESSION.userId;readingTimer=null;readingParkedSessions={};readingSaveAttempt=null;readingSavePanelOpen=false;readingSaveBusy=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;
     try{
       var current=localStorage.getItem(readingTimerStorageKey(SESSION.userId)),migrate=current===null;
       readingTimerStorageOwner=SESSION.userId;readingTimerStorageSnapshot=current;readingTimerStorageWritable=false;
-      // Old open tabs may still overwrite v1. Once v2 exists, including a null or
-      // unreadable value, it is authoritative and must never fall back to v1.
-      var stored=JSON.parse((migrate?localStorage.getItem(legacyReadingTimerStorageKey(SESSION.userId)):current)||'null');
-      readingTimer=GrowellReadingTimer.restore(stored && stored.timer,SESSION.userId,BOOKS.map(function(b){return b.id;}),Date.now());
-      readingTimerStorageWritable=(migrate && stored===null) || !!readingTimer || !!(stored && stored.v===2 && stored.timer===null);
-      if(readingTimer){
-        readingHomeReturn=stored.returnView==='home';
-        readingNoteReturn=GrowellReadingTimer.restoreNoteHandoff(stored.noteReturn,readingTimer);
-        readingSavePanelOpen=readingTimer.phase==='save';readingFinishKind=stored.finishKind==='complete'?'complete':'finish';
-        var attempt=stored.attempt, book=bookById(readingTimer.bookId);
-        if(stored.endPage!==null && stored.endPage!==undefined && GrowellReadingTimer.validatePages(readingTimer.startPage,stored.endPage,book.totalPages).ok) readingEndPage=Number(stored.endPage);
-        if(attempt && readingTimer.phase==='save' && attempt.id===readingTimer.id && attempt.userId===SESSION.userId && attempt.bookId===book.id && attempt.startPage===readingTimer.startPage && Number.isSafeInteger(attempt.seconds) && attempt.seconds>0 && attempt.seconds===Math.floor(GrowellReadingTimer.elapsed(readingTimer,Date.now())/1000) && Number.isSafeInteger(attempt.createdAt) && attempt.createdAt>=0 && GrowellReadingTimer.validatePages(attempt.startPage,attempt.page,book.totalPages).ok){
-          readingSaveAttempt={id:attempt.id,userId:attempt.userId,bookId:attempt.bookId,startPage:attempt.startPage,page:attempt.page,seconds:attempt.seconds,createdAt:attempt.createdAt};
-          readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());readingTimer.phase='save';readingSavePanelOpen=true;
-        }
-      }
-      if(migrate&&(stored===null||readingTimer))persistReadingTimer();
+      // v1/v2 tabs cannot preserve parked books. Read those keys only once;
+      // any v3 value, including a completed or damaged one, stays authoritative.
+      var source=current;
+      if(migrate){source=localStorage.getItem(previousReadingTimerStorageKey(SESSION.userId));if(source===null)source=localStorage.getItem(legacyReadingTimerStorageKey(SESSION.userId));}
+      var stored=JSON.parse(source||'null');
+      if(stored&&[1,2,3].indexOf(stored.v)<0){readingTimerMemoryWarning=true;return;}
+      var active=restoreReadingTimerState(stored,SESSION.userId,false);
+      var parked=restoreParkedReadingStates(stored,SESSION.userId,active);
+      if(parked===null){readingTimerMemoryWarning=true;return;}
+      readingTimerStorageWritable=(migrate&&source===null)||!!active||!!(stored&&(stored.v===2||stored.v===3)&&stored.timer===null);
+      if(readingTimerStorageWritable){readingParkedSessions=parked;applyReadingTimerState(active);}
+      if(migrate&&readingTimerStorageWritable)persistReadingTimer();
     }catch(e){/* Keep an unreadable stored session intact so it is never silently overwritten on load. */}
   }
   if(readingTimer){
@@ -3561,6 +3625,7 @@ function pauseReadingBeforeLogout(){
   if(SESSION)refreshReadingTimerFromStorage();
   if(SESSION && readingTimer && readingTimer.userId===SESSION.userId){readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());persistReadingTimer();}
   readingTimerRestoreOwner=null;readingSaveAttempt=null;readingSaveBusy=false;readingSaveError=false;readingCountdownOpen=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;readingHomeDialogFor=null;
+  readingParkedSessions={};
   closeReadingHomeDialog();closeReadingCountdownNotice();
 }
 function isReadingHomeRoute(){return !location.hash || location.hash==='#' || location.hash==='#/';}
@@ -3595,16 +3660,17 @@ function showReadingHomeDialog(){
 }
 function startReading(bookId){
   if(!SESSION){location.hash='#/login';return;}
+  if(readingSaveBusy){showToast('읽은 기록을 저장한 뒤 다른 책을 시작해주세요.',true);return;}
   refreshReadingTimerFromStorage();
   syncReadingTimer();
   var book=bookById(bookId);
   if(!book || isBookLocked(book)) return;
   if(!readingDataReady()){showToast('독서 진도를 불러온 뒤 시작해주세요.',true);return;}
+  if(readingSaveBusy){showToast('읽은 기록을 저장한 뒤 다른 책을 시작해주세요.',true);return;}
+  if(!readingTimerStorageWritable){showToast('보관된 독서 기록을 확인하지 못했어요. 새로고침 후 다시 시도해주세요.',true);return;}
   prepareReadingTimerAlerts();
   var fromHome=isReadingHomeRoute();
-  if(readingTimer){
-    var activeBook=bookById(readingTimer.bookId);if(!activeBook || isBookLocked(activeBook))return;
-    if(readingTimer.bookId!==bookId) showToast('읽고 있던 책을 먼저 이어서 읽거나 마무리해주세요.');
+  if(readingTimer&&readingTimer.bookId===bookId){
     readingHomeReturn=fromHome;
     readingHomeDialogFor=fromHome?readingTimer.id:null;
     if(readingNoteReturn){returnToReadingTimer();return;}
@@ -3612,10 +3678,18 @@ function startReading(bookId){
     if(!fromHome)location.hash='#/book/'+readingTimer.bookId+'/mine';
     render();return;
   }
-  readingTimer=GrowellReadingTimer.create({id:uid('rl'),userId:SESSION.userId,bookId:bookId,startPage:myCurrentPage(bookId)},Date.now());
-  readingTimerRestoreOwner=SESSION.userId;readingSavePanelOpen=false;readingSaveAttempt=null;readingSaveError=false;readingFinishKind='finish';readingEndPage=null;readingNoteReturn=null;
-  readingHomeReturn=fromHome;readingHomeDialogFor=fromHome?readingTimer.id:null;readingHomeDialogPosition=null;
-  persistReadingTimer();if(!fromHome)location.hash='#/book/'+bookId+'/mine';render();
+  var parked=Object.assign({},readingParkedSessions),next=parked[bookId],previous=readingTimer;
+  if(next)delete parked[bookId];
+  else{
+    if(!pauseArchiveReadingBeforeSharedStart())return;
+    next={timer:GrowellReadingTimer.create({id:uid('rl'),userId:SESSION.userId,bookId:bookId,startPage:myCurrentPage(bookId)},Date.now()),attempt:null,finishKind:'finish',endPage:null,noteReturn:null,returnView:fromHome?'home':'mine'};
+  }
+  if(previous){var paused=captureReadingTimerState();paused.timer=GrowellReadingTimer.pause(previous,Date.now());parked[previous.bookId]=paused;}
+  next=Object.assign({},next,{returnView:fromHome?'home':'mine'});
+  if(!commitReadingTimerState(next,parked)){showToast('읽은 시간을 보관하지 못해 책을 바꾸지 않았어요. 다시 시도해주세요.',true);render();return;}
+  readingTimerRestoreOwner=SESSION.userId;readingSaveError=false;readingSaveFailure='';readingCountdownOpen=false;
+  closeReadingCountdownNotice();readingHomeDialogFor=fromHome?readingTimer.id:null;readingHomeDialogPosition=null;
+  if(!fromHome)location.hash='#/book/'+bookId+'/mine';render();
 }
 function todayReadSeconds(bookId){
   var today=ymd(new Date());
@@ -3664,7 +3738,9 @@ function openReadingNote(type){
   if(type==='mine' && memberLoadState.privateEntries!=='ready'){showToast('개인 기록을 먼저 불러온 뒤 다시 열어주세요.',true);return;}
   var handoff=GrowellReadingTimer.beginNote(readingTimer,type,Date.now());
   if(!handoff){syncReadingTimer();render();return;}
-  readingTimer=handoff.timer;readingNoteReturn=handoff.handoff;readingCountdownOpen=false;persistReadingTimer();
+  var next=captureReadingTimerState();next.timer=handoff.timer;next.noteReturn=handoff.handoff;
+  if(!commitReadingTimerState(next)){showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();return;}
+  readingCountdownOpen=false;
   var opened=false;
   return openComposerWithDraft(type,bookId,null,function(draft){
     if(!SESSION || SESSION.userId!==owner || !readingTimer || readingTimer.id!==timerId)return;
@@ -3676,8 +3752,11 @@ function openReadingNote(type){
     var editor=document.getElementById('note-editor');if(editor){editor.scrollIntoView({block:'center'});editor.focus();}
   }).then(function(){
     if(!opened && SESSION && SESSION.userId===owner && readingTimer && readingTimer.id===timerId){
-      var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());if(resumed)readingTimer=resumed;
-      readingNoteReturn=null;persistReadingTimer();render();
+      if(refreshReadingTimerFromStorage()){render();return;}
+      var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());
+      if(resumed&&resumed.running&&!pauseArchiveReadingBeforeSharedStart()){render();return;}
+      var next=captureReadingTimerState();if(resumed)next.timer=resumed;next.noteReturn=null;
+      commitReadingTimerState(next);render();
     }
   });
 }
@@ -3687,7 +3766,10 @@ function completeReadingNote(type,bookId){
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || !readingNoteReturn || readingNoteReturn.type!==type || readingNoteReturn.bookId!==bookId)return false;
   var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());
   if(!resumed)return false;
-  readingTimer=resumed;readingNoteReturn=null;readingHomeDialogFor=readingHomeReturn?readingTimer.id:null;persistReadingTimer();location.hash=readingHomeReturn?'#/':'#/book/'+bookId+'/mine';return true;
+  if(resumed.running&&!pauseArchiveReadingBeforeSharedStart())return false;
+  var next=captureReadingTimerState();next.timer=resumed;next.noteReturn=null;
+  if(!commitReadingTimerState(next)){showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);return false;}
+  readingHomeDialogFor=readingHomeReturn?readingTimer.id:null;location.hash=readingHomeReturn?'#/':'#/book/'+bookId+'/mine';return true;
 }
 function returnToReadingTimer(){
   if(!readingNoteReturn)return;
@@ -3712,24 +3794,27 @@ function bindReadingTimerEvents(){
   app.querySelectorAll('[data-reading-start]').forEach(function(b){b.addEventListener('click',function(){startReading(b.getAttribute('data-reading-start'));});});
   on('btn-reading-toggle-pause',function(){
     if(!readingTimer || readingSaveBusy)return;
-    readingNoteReturn=null;
-    if(!readingTimer.running)prepareReadingTimerAlerts();
-    readingTimer=readingTimer.running?GrowellReadingTimer.pause(readingTimer,Date.now()):GrowellReadingTimer.resume(readingTimer,Date.now());
-    persistReadingTimer();render();
+    if(!readingTimer.running){if(!pauseArchiveReadingBeforeSharedStart())return;prepareReadingTimerAlerts();}
+    var next=captureReadingTimerState();next.noteReturn=null;
+    next.timer=readingTimer.running?GrowellReadingTimer.pause(readingTimer,Date.now()):GrowellReadingTimer.resume(readingTimer,Date.now());
+    if(!commitReadingTimerState(next))showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();
   });
   on('btn-reading-cancel',function(){
     if(!readingTimer || readingSaveBusy || readingSaveAttempt)return;
     if(!confirm('이번 독서를 취소할까요? 저장한 이전 기록은 유지되지만, 이번에 읽은 시간은 남지 않아요.'))return;
-    closeReadingHomeDialog();readingHomeReturn=false;readingTimer=null;readingSavePanelOpen=false;readingCountdownOpen=false;readingSaveAttempt=null;readingNoteReturn=null;persistReadingTimer();render();
+    if(!commitReadingTimerState(null)){showToast('취소 상태를 보관하지 못했어요. 다시 시도해주세요.',true);render();return;}
+    closeReadingHomeDialog();readingHomeReturn=false;readingCountdownOpen=false;render();
   });
   on('btn-reading-done',function(){
-    if(!readingTimer)return;
-    readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());readingTimer.phase='save';readingSavePanelOpen=true;readingCountdownOpen=false;readingNoteReturn=null;
-    persistReadingTimer();render();
+    if(!readingTimer||readingSaveBusy)return;
+    var next=captureReadingTimerState();next.timer=GrowellReadingTimer.pause(readingTimer,Date.now());next.timer.phase='save';next.noteReturn=null;
+    if(commitReadingTimerState(next))readingCountdownOpen=false;else showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();
   });
   on('btn-reading-save-back',function(){
-    if(!readingTimer || readingSaveAttempt)return;
-    prepareReadingTimerAlerts();readingTimer=GrowellReadingTimer.resume(readingTimer,Date.now());readingSavePanelOpen=false;persistReadingTimer();render();
+    if(!readingTimer || readingSaveAttempt||readingSaveBusy)return;
+    if(!pauseArchiveReadingBeforeSharedStart())return;
+    prepareReadingTimerAlerts();var next=captureReadingTimerState();next.timer=GrowellReadingTimer.resume(readingTimer,Date.now());
+    if(!commitReadingTimerState(next))showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();
   });
   on('btn-reading-countdown',function(){readingCountdownOpen=!readingCountdownOpen;render();});
   function updateCountdownSelection(){
@@ -3874,7 +3959,7 @@ function headerHtml(route){
     '<a class="brand" href="#/" aria-label="GROWELL 홈"><svg class="brand-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.2 5 3.2 2.5 4.5v14c3-1.1 6.5-1 9.5 1.5 3-2.5 6.5-2.6 9.5-1.5v-14C19 3.2 15.5 3.2 12 5.5Z"/><path d="M12 5.5V20"/></svg><span>GROWELL</span></a>' +
     '<div class="header-actions">'+right+'</div>' +
   '</div></div><div class="header-inner header-nav-row"><nav class="primary-nav" aria-label="주요 메뉴">'+navHtml+'</nav>' +
-    '<span class="member-space-label">'+svgIcon(I_LOCK)+'<span>'+(SESSION?'회원 공간':'독서모임')+'</span></span>' +
+    '<a class="nav-pill archive-nav'+(route.view==='archive'?' is-active':'')+'" href="#/archive"'+(route.view==='archive'?' aria-current="page"':'')+'>아카이브</a>' +
   '</div></header>';
 }
 
@@ -5810,10 +5895,11 @@ function bindPrivateCategoryEvents(app){
 }
 function mineTabHtml(book, postId){
   if(!SESSION){ return loginGateHtml('나의 공간은 로그인한 본인만 볼 수 있어요.'); }
+  var archiveRecords = GrowellArchive.recordsHtml();
   var loadStatus = memberDataStatusHtml('privateEntries');
-  if(loadStatus) return readingCardHtml(book)+loadStatus;
+  if(loadStatus) return readingCardHtml(book)+archiveRecords+loadStatus;
   var categoryState=privateCategoryContext(book.id),categoryFilter=privateCategoryFilter(book.id);
-  var entries = Object.values(STATE.privateEntries).filter(function(e){ return e.bookId===book.id && e.userId===SESSION.userId && !GrowellPrivateCategories.isSettingsEntry(e); }).sort(function(a,b){ return b.createdAt-a.createdAt; });
+  var entries = Object.values(STATE.privateEntries).filter(function(e){ return e.bookId===book.id && e.userId===SESSION.userId && !GrowellPrivateCategories.isSettingsEntry(e) && !GrowellArchiveDomain.isArchiveEntry(e); }).sort(function(a,b){ return b.createdAt-a.createdAt; });
   var matching=categoryFilter==='all'?entries:entries.filter(function(e){var cached=privateEntryCategoryKeys[e.id];return cached&&cached.data===e.data&&GrowellPrivateCategories.key(cached.noteType,categoryState.categories)===categoryFilter;});
   var selected=postId?entries.find(function(e){return e.id===postId;}):matching[0];
   var writing=!postId && mineComposerOpenFor===book.id;
@@ -5834,7 +5920,7 @@ function mineTabHtml(book, postId){
     : '<div class="empty">아직 나의 공간에 남긴 기록이 없어요.</div>';
   setTimeout(function(){ decryptListInto(entries); }, 0);
   var detail=writing?composer:spaceDetailBackHtml(book,'mine')+(selected?mineEntryDetailHtml(book,selected):'<div class="empty">'+(postId?'기록을 찾을 수 없어요.':'오늘 마음에 남은 문장을 기록해보세요.')+'</div>');
-  return spaceHeadingHtml(book,'mine')+readingCard+'<p class="space-private-note">'+svgIcon(I_LOCK)+' 로그인한 나에게만 보이는 공간이에요.</p>'+privateCategoryControlsHtml(book.id)+searchRow+'<p class="space-feed-count" data-private-count>나의 기록 '+matching.length+'개 · 최신순</p>'+spaceWorkspaceHtml(grid,detail,postId,writing);
+  return spaceHeadingHtml(book,'mine')+readingCard+archiveRecords+'<p class="space-private-note">'+svgIcon(I_LOCK)+' 로그인한 나에게만 보이는 공간이에요.</p>'+privateCategoryControlsHtml(book.id)+searchRow+'<p class="space-feed-count" data-private-count>나의 기록 '+matching.length+'개 · 최신순</p>'+spaceWorkspaceHtml(grid,detail,postId,writing);
 }
 function decryptListInto(entries){
   if(!SESSION)return;
@@ -5843,7 +5929,7 @@ function decryptListInto(entries){
   ensureKey().then(function(key){
     if(!key||!stillCurrent()) return;
     var learnedCategories=false;
-    var done = entries.filter(function(e){return e.userId===owner&&!GrowellPrivateCategories.isSettingsEntry(e);}).map(function(e){
+    var done = entries.filter(function(e){return e.userId===owner&&!GrowellPrivateCategories.isSettingsEntry(e)&&!GrowellArchiveDomain.isArchiveEntry(e);}).map(function(e){
       var node = document.querySelector('[data-mine-body="'+e.id+'"]');
       var badgesEl = document.querySelector('[data-mine-badges="'+e.id+'"]');
       var tile = document.querySelector('[data-mine-tile="'+e.id+'"]');
@@ -6532,6 +6618,8 @@ function render(){
     html += homeCommunityHtml(route);
   } else if(route.view==='about'){
     html += welcomeHomeHtml();
+  } else if(route.view==='archive'){
+    html += GrowellArchive.html();
   } else {
     html += homeHtml();
   }
@@ -6578,6 +6666,7 @@ function bindEvents(route){
   bindPrivateCategoryEvents(app);
   GrowellMemberAccess.bind();
   GrowellBookDetails.bind();
+  GrowellArchive.bind();
   app.querySelectorAll('[data-retry-community]').forEach(function(button){button.addEventListener('click',function(){sharedPostsLoadState='idle';render();});});
 
   var themeBtn = document.getElementById('btn-theme');
@@ -7442,6 +7531,57 @@ document.addEventListener('click', function(e){
 GrowellBookDetails.configure({
   bookById:bookById,currentPage:function(id){return SESSION&&readingDataReady()?myCurrentPage(id):null;},
   sessionUserId:function(){return SESSION&&SESSION.userId;}
+});
+GrowellArchive.configure({
+  session:function(){return SESSION;},status:function(){return memberLoadState.privateEntries;},
+  statusHtml:function(){return memberDataStatusHtml('privateEntries');},entries:ownPrivateEntries,
+  render:render,toast:showToast,reload:function(){loadMemberData().then(render);render();},
+  beforeTimerStart:function(ownerId){var paused=pauseSharedReadingForArchive(ownerId);if(paused)render();return paused;},
+  catalog:function(){return BOOKS.map(function(b){var details=GrowellBookDetails.details(b.id);return {title:b.title,authors:[b.author],publisher:b.publisher,coverUrl:b.cover,description:details?details.overview:b.subtitle||'',isbn:details?details.isbn:'',sourceUrl:details?details.infoUrl:'',source:'growell',pageCount:b.totalPages||null};});},
+  read:async function(entries){
+    var session=SESSION,epoch=saveSessionEpoch,material=session&&session.keyB64;if(!session)throw new Error('로그인해주세요.');
+    function guard(){if(SESSION!==session||epoch!==saveSessionEpoch||SESSION.keyB64!==material)throw new Error('로그인 정보가 바뀌었어요.');}
+    if(entries.some(function(entry){return entry.userId!==session.userId||!GrowellArchiveDomain.isArchiveEntry(entry);}))throw new Error('내 아카이브만 열 수 있어요.');
+    var key=await ensureKey();if(!key)throw new Error('개인 기록을 열지 못했어요.');
+    guard();
+    var result=await Promise.all(entries.map(async function(entry){return {entry:entry,book:GrowellArchiveDomain.decode(await decryptPrivateRecord(entry,key))};}));
+    guard();return result;
+  },
+  save:async function(row,book,createId){
+    var session=SESSION,epoch=saveSessionEpoch,material=session&&session.keyB64;
+    function guard(){if(!session||SESSION!==session||SESSION.keyB64!==material||epoch!==saveSessionEpoch||memberLoadState.privateEntries!=='ready')throw new Error('로그인과 연결 상태를 확인해주세요.');}
+    guard();var text=GrowellArchiveDomain.encode(book),existing=row&&row.entry;
+    if(existing&&(!GrowellArchiveDomain.isArchiveEntry(existing)||existing.userId!==session.userId))throw new Error('내 기록만 수정할 수 있어요.');
+    var id=existing?existing.id:GrowellArchiveDomain.recordId(session.userId,createId||uid('arc'));
+    if(existing&&(!STATE.privateEntries[id]||STATE.privateEntries[id].data!==existing.data||STATE.privateEntries[id].iv!==existing.iv))throw new Error('다른 곳에서 수정된 기록이에요. 다시 열어주세요.');
+    var key=await ensureKey();guard();if(!key)throw new Error('개인 기록을 열지 못했어요.');
+    var enc=await encryptPrivateRecord({id:id,userId:session.userId},key,text);guard();
+    var saveError=null,opts={render:false,onFailure:function(err){saveError=err;}};
+    if(existing){opts.expectedPrivateEntries={};opts.expectedPrivateEntries[id]=existing.data;opts.expectedPrivateIVs={};opts.expectedPrivateIVs[id]=existing.iv;}
+    var ok=await saveState(function(next){
+      guard();
+      if(existing&&(!next.privateEntries[id]||next.privateEntries[id].data!==existing.data||next.privateEntries[id].iv!==existing.iv))throw new Error('다른 곳에서 수정된 기록이에요. 다시 열어주세요.');
+      if(!existing&&next.privateEntries[id])throw new Error('이미 저장된 기록이에요. 다시 열어주세요.');
+      next.privateEntries[id]={id:id,bookId:GrowellArchiveDomain.STORAGE_BOOK_ID,userId:session.userId,iv:enc.iv,data:enc.data,createdAt:existing?existing.createdAt:Date.now(),updatedAt:existing?Date.now():null};
+    },opts);
+    guard();
+    if(!ok){
+      // An insert can commit before the response is lost. Keep the dialog's ID on
+      // retries, and confirm only the same owner's exact plaintext before success.
+      var result=await sb.from('private_entries').select('*').eq('id',id).eq('user_id',session.userId).maybeSingle();guard();
+      if(result&&!result.error&&result.data){
+        var stored=mapPrivateEntryRow(result.data);
+        if(stored.id!==id||stored.userId!==session.userId||!GrowellArchiveDomain.isArchiveEntry(stored)||existing&&stored.createdAt!==existing.createdAt)throw new Error('저장된 기록을 확인하지 못했어요. 다시 불러와 주세요.');
+        var storedBook;try{storedBook=GrowellArchiveDomain.decode(await decryptPrivateRecord(stored,key));}catch(e){guard();throw new Error('다른 기기에서 수정된 기록을 확인하지 못했어요. 다시 불러와 주세요.');}guard();
+        if(GrowellArchiveDomain.encode(storedBook)!==text)throw new Error('이 책이 이미 다른 내용으로 저장되어 있어요. 아카이브를 다시 불러온 뒤 수정해주세요.');
+        var local=STATE.privateEntries[id];
+        if(local&&(local.data!==stored.data||local.iv!==stored.iv)&&(!existing||local.data!==existing.data||local.iv!==existing.iv))throw new Error('다른 곳에서 수정된 기록이에요. 다시 열어주세요.');
+        STATE.privateEntries[id]=stored;ok=true;
+      }
+    }
+    if(!ok)throw new Error(saveError&&saveError.message==='private-record-conflict'?'다른 기기에서 수정된 기록이에요. 다시 불러온 뒤 수정해주세요.':'저장하지 못했어요. 입력한 내용은 그대로 있으니 연결을 확인하고 다시 시도해주세요.');
+    return {entry:STATE.privateEntries[id],book:GrowellArchiveDomain.prepare(book)};
+  }
 });
 /* ---------------- member access adapter ---------------- */
 GrowellMemberAccess.configure({

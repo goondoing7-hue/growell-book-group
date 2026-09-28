@@ -20,7 +20,8 @@ function harness(){
     publicAuthorHtml:(id,name)=>'<button type="button" data-community-author="'+esc(id)+'">'+esc(name)+'</button>',
     commentsForPost:()=>[{}],SESSION:{userId:'owner',name:'독서회원',keyB64:'key-a'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{}},sharedPostsLoadState:'ready',shareFeedFilter:{},
-    GrowellPrivateCategories:privateCategories,memberLoadState:{privateEntries:'ready'},
+    GrowellPrivateCategories:privateCategories,GrowellArchiveDomain:require('../archiveDomain.js'),
+    GrowellArchive:{recordsHtml:()=>'<section data-archive-records><h3>아카이브 기록</h3></section>'},memberLoadState:{privateEntries:'ready'},
     ensureKey:()=>Promise.resolve('synthetic-key'),decryptPrivateRecord:()=>Promise.resolve(privateCategories.encode([])),
     document:{getElementById:()=>null,querySelector:()=>null},
     currentRoute:()=>({view:'book',bookId:'emotion',tab:'mine'}),render:()=>renders.push(true),
@@ -131,6 +132,30 @@ test('personal reading timer remains present during loading, writing and selecte
   const loading=c.mineTabHtml(book,'mine');assert.ok(loading.includes('data-loading'));assert.ok(loading.includes('data-reading-timer'));
 });
 
+test('personal workspace mounts the archive record collection once below reading and separately from note categories',()=>{
+  const {c}=harness();
+  let recordCalls=0;
+  c.GrowellArchive.recordsHtml=(...args)=>{
+    assert.equal(args.length,0,'the personal archive spans books rather than the current meeting-book category');
+    assert.equal(c.SESSION.userId,'owner');recordCalls++;
+    return '<section data-archive-records><h3>아카이브 기록</h3></section>';
+  };
+  installCategories(c,[{id:'pcat_journal',label:'일기'}]);
+  c.STATE.privateEntries.mine=entry('mine');
+  for(const state of ['list','writing','detail','loading']){
+    c.mineComposerOpenFor=state==='writing'?'emotion':null;
+    c.memberDataStatusHtml=()=>state==='loading'?'<div data-loading></div>':'';
+    const markup=c.mineTabHtml(book,state==='detail'?'mine':undefined);
+    assert.equal((markup.match(/data-archive-records/g)||[]).length,1);
+    assert.ok(markup.indexOf('data-archive-records')>markup.indexOf('data-reading-timer'));
+    if(state!=='loading')assert.ok(markup.indexOf('data-archive-records')<markup.indexOf('data-private-category-filter'));
+  }
+  assert.equal(recordCalls,4);
+  c.SESSION=null;
+  const guest=c.mineTabHtml(book);
+  assert.match(guest,/data-login-gate/);assert.doesNotMatch(guest,/data-archive-records/);assert.equal(recordCalls,4);
+});
+
 test('private thumbnail and detail appear only after guarded decryption and are never written back to encrypted STATE',async()=>{
   for(const change of [null,c=>{c.SESSION={userId:'another',keyB64:'key-b'};},c=>{c.SESSION.keyB64='key-b';},c=>{c.saveSessionEpoch++;}]){
     const {c}=harness(),pending=deferred(),writes=[];
@@ -173,6 +198,22 @@ test('private settings rows are excluded from record lists, counts, direct links
   const empty=c.mineTabHtml(book);
   assert.match(empty,/나의 기록 0개/);assert.match(empty,/아직 나의 공간에 남긴 기록이 없어요/);
   assert.ok(!empty.includes('data-mine-tile='));
+});
+
+test('encrypted archive rows stay out of personal note counts, direct links and decryption',async()=>{
+  const {c,scheduled,decrypted}=harness(),archive=c.GrowellArchiveDomain;
+  const id=archive.recordId('owner','arc_read_book');
+  c.STATE.privateEntries={mine:entry('mine'),[id]:entry(id)};
+  const markup=c.mineTabHtml(book);
+  assert.match(markup,/나의 기록 1개/);
+  assert.ok(!markup.includes(id),'archive metadata is not a personal note tile');
+  scheduled.forEach(run=>run());assert.deepEqual(decrypted.map(e=>e.id),['mine']);
+  assert.match(c.mineTabHtml(book,id),/기록을 찾을 수 없어요/);
+  let decryptCalls=0;
+  c.decryptPrivateRecord=()=>{decryptCalls++;return Promise.resolve('{}');};
+  c.document.querySelector=()=>({innerHTML:'',querySelector:()=>null});c.enhanceLinkPreviews=()=>{};
+  vm.runInContext(section('function decryptListInto(', '/* ---------------- render: worksheet tab'),c);
+  c.decryptListInto([c.STATE.privateEntries[id]]);await flush();assert.equal(decryptCalls,0);
 });
 
 test('private category labels are escaped in controls, list rows and composing while legacy notes stay unclassified',()=>{

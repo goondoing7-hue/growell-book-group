@@ -18,7 +18,7 @@ const valid=()=>({loginId:'New_Member',name:' 새 회원 ',password:'FixturePass
 function harness(failure={}){
   let handler;
   const calls=[];
-  const state={auth:false,avatar:false,profile:null,hint:null,existingAccount:true};
+  const state={auth:false,avatar:false,profile:null,hint:null,notification:false,existingAccount:true};
   async function stage(name,data,apply){
     calls.push(name);
     if(failure[name]==='throw')throw new Error('synthetic network error');
@@ -28,6 +28,12 @@ function harness(failure={}){
     return {data,error:null};
   }
   const client={
+    rpc(name,input){
+      assert.equal(name,'growell_finalize_signup');
+      assert.equal(input.p_profile_id,freshProfileId);assert.equal(input.p_auth_user_id,freshAuthId);
+      assert.equal(input.p_pw_hint,'fixture hint');
+      return stage('hint',{hintSaved:true,notificationQueued:true},()=>{state.hint=input.p_pw_hint;state.notification=true;});
+    },
     auth:{admin:{
       createUser:input=>{assert.equal(input.email,'new_member@growell.internal');return stage('create',{user:{id:freshAuthId}},()=>{state.auth=true;});},
       deleteUser:id=>{assert.equal(id,freshAuthId,'cleanup must use only the newly created Auth ID');return stage('delete-auth',null,()=>{state.auth=false;});}
@@ -60,7 +66,7 @@ function harness(failure={}){
           }
           if(table==='profiles'&&action==='delete'){
             assert.deepEqual(filters,[['auth_user_id',freshAuthId]],'no existing profile cleanup is permitted');
-            return stage('delete-profile',null,()=>{state.profile=null;});
+            return stage('delete-profile',null,()=>{state.profile=null;state.notification=false;});
           }
           if(table==='profile_secrets'&&action==='delete'){
             assert.deepEqual(filters,[['user_id',freshProfileId]]);
@@ -117,6 +123,7 @@ test('successful signup stores required photo and hint and returns only pending 
   assert.equal(res.body.hintSaved,true);assert.equal(res.body.pwHint,undefined);assert.equal(res.body.profile.pw_hint,undefined);
   assert.deepEqual(h.calls,['lookup','create','upload','profile','hint']);
   assert.equal(h.state.auth,true);assert.equal(h.state.avatar,true);assert.equal(h.state.hint,'fixture hint');
+  assert.equal(h.state.notification,true);
 });
 
 test('duplicate IDs and pre-creation failures never clean up an existing account',async()=>{
@@ -142,6 +149,7 @@ test('hint save errors and uncertain responses cannot report signup success or l
     const h=harness({hint:fault}),res=await h.request();
     assert.equal(res.status,500);assert.equal(res.body.ok,undefined);assert.equal(res.body.hintSaved,undefined);
     assert.equal(h.state.auth,false);assert.equal(h.state.avatar,false);assert.equal(h.state.profile,null);assert.equal(h.state.hint,null);
+    assert.equal(h.state.notification,false,'compensation removes any notice for the failed application');
     assert.deepEqual(h.calls.slice(-4),['delete-hint','delete-avatar','delete-profile','delete-auth']);
     assert.equal(h.state.existingAccount,true);
   }
