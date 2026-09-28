@@ -21,8 +21,14 @@
 .book-toc-heading>span{font-size:12px;color:var(--primary);white-space:nowrap}
 .book-toc-note{font-size:12px;color:var(--ink-soft);margin:0 0 12px}
 .book-toc{margin:0;padding:0;list-style:none}
-.book-toc-part{color:var(--ink-soft);font-size:12px;font-weight:700;padding:20px 8px 6px}
+.book-toc-part{color:var(--ink);font-size:15px;font-weight:750;padding:25px 9px 7px}
+.book-toc-chapter{margin-top:10px}
+.book-toc-sections{margin:0;padding:0 0 8px 12px;list-style:none}
 .book-toc-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 9px;border-bottom:1px solid var(--line);border-radius:4px;font-size:14px}
+.book-toc-chapter-heading{border-bottom:0}
+.book-toc-chapter-heading .book-toc-title{font-weight:750}
+.book-toc-sections .book-toc-row{font-size:13px;padding-top:8px;padding-bottom:8px}
+.book-toc-sections .book-toc-title{font-weight:450}
 .book-toc-row>div{display:flex;align-items:baseline;flex-wrap:wrap;column-gap:9px;row-gap:2px;min-width:0}
 .book-toc-label{color:var(--ink-soft);font-size:12px;white-space:nowrap}
 .book-toc-title{font-weight:550}
@@ -41,4 +47,6 @@
   .book-details-overview p{font-size:13px}
   .book-toc-row{font-size:13px;padding:10px 8px}
   .book-toc-row>div{column-gap:7px}
+  .book-toc-part{font-size:14px;padding-left:8px}
+  .book-toc-sections{padding-left:8px}
 }
