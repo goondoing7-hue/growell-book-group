@@ -118,6 +118,42 @@
 .habit-kind-icon{width:16px;height:16px;flex:none;}
 .habit-kind-hint{font-size:13px;line-height:1.65;color:var(--ink-soft);margin:9px 0 12px;}
 .habit-kind-picker .habit-kind-hint{margin-bottom:0;}
+/* Reading habit setup uses a native dialog, with its own compact controls. */
+.habit-compose-dialog{box-sizing:border-box;width:calc(100% - 32px);max-width:560px;max-height:90vh;max-height:90dvh;inset:0;margin:auto;padding:0;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);box-shadow:0 20px 70px rgba(24,43,32,.22);overflow:auto;overscroll-behavior:contain;-webkit-tap-highlight-color:transparent;font-size:14px;line-height:1.6;}
+.habit-compose-dialog::backdrop{background:rgba(22,40,30,.44);}
+.habit-compose-dialog [hidden]{display:none!important;}
+.habit-compose-dialog .habit-form{padding:26px;margin:0;border:0;border-radius:inherit;background:transparent;box-shadow:none;}
+.habit-compose-dialog .composer-head{align-items:center;gap:12px;}
+.habit-compose-dialog .composer-head h4,.habit-compose-dialog #habit-form-title{margin:0;font-size:20px;font-weight:750;line-height:1.4;}
+.habit-compose-dialog .composer-head button{flex:none;min-width:40px;min-height:40px;}
+.habit-compose-dialog .habit-form-row label,.habit-compose-dialog .habit-kind-picker legend{font-size:14px;}
+.habit-compose-dialog .habit-form-hint{color:var(--ink-soft);font-size:13px;line-height:1.65;}
+.habit-reading-settings{padding:14px 16px;margin:0 0 20px;border:1px solid var(--line);border-radius:13px;background:var(--brand-soft,var(--surface-2));}
+.habit-reading-toggle{display:flex;align-items:center;gap:9px;min-height:28px;margin:0;color:var(--ink);font-size:14px;font-weight:700;line-height:1.5;cursor:pointer;}
+.habit-reading-toggle input[type=checkbox]{appearance:auto;box-sizing:border-box;flex:0 0 18px;width:18px;height:18px;min-height:0;max-width:18px;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;accent-color:var(--brand-green,var(--primary));cursor:pointer;}
+.habit-reading-settings [data-habit-reading-fields]{margin-top:14px;}
+.habit-reading-settings [data-habit-reading-fields]>label{display:block;margin:0 0 6px;color:var(--ink-soft);font-size:14px;font-weight:600;}
+.habit-reading-settings select{box-sizing:border-box;display:block;width:100%;max-width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line-strong,var(--line));border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px;line-height:1.4;}
+.habit-reading-settings [data-habit-reading-status]{margin:8px 0;color:var(--ink-soft);font-size:13px;line-height:1.65;overflow-wrap:anywhere;}
+.habit-reading-settings [data-habit-reading-status]:empty{display:none;}
+.habit-reading-target-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0 2px;}
+.habit-reading-target-head label{margin:0;color:var(--ink-soft);font-size:14px;font-weight:600;}
+.habit-reading-target-head output{flex:none;color:var(--brand-green,var(--primary));font-size:16px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.habit-reading-settings input[type=range]{appearance:auto;box-sizing:border-box;display:block;width:100%;max-width:100%;height:36px;min-height:36px;margin:2px 0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;accent-color:var(--brand-green,var(--primary));cursor:pointer;}
+.habit-reading-settings .habit-form-hint{margin:6px 0 0;}
+.habit-reading-settings :is(input,select):focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:3px;}
+.habit-reading-settings :is(input,select):disabled{opacity:.55;cursor:default;}
+.habit-reading-progress{padding:14px 15px;margin:18px 0 0;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-size:13px;line-height:1.6;}
+.habit-reading-progress-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--ink-soft);}
+.habit-reading-progress-head>span{font-size:13px;font-weight:600;}
+.habit-reading-progress-head>strong{flex:none;color:var(--ink);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.habit-reading-progress>p{margin:5px 0 10px;color:var(--ink-soft);font-size:13px;line-height:1.6;overflow-wrap:anywhere;}
+.habit-reading-progress>p:last-child{margin-bottom:0;}
+.habit-reading-track{height:6px;margin:0 0 8px;border-radius:999px;background:var(--line);overflow:hidden;}
+.habit-reading-track>span{display:block;max-width:100%;height:100%;border-radius:inherit;background:var(--brand-green,var(--primary));}
+.habit-reading-progress>small{display:block;color:var(--ink-soft);font-size:12px;line-height:1.6;font-variant-numeric:tabular-nums;}
+.habit-reading-progress.is-achieved{border-color:var(--line-strong,var(--line));background:var(--brand-soft,var(--surface-2));}
+.habit-reading-progress.is-achieved .habit-reading-progress-head>strong{color:var(--brand-green,var(--primary));}
 .habit-hist-modal{max-width:620px;max-height:calc(100dvh - 40px);overflow:auto;overscroll-behavior:contain;padding:25px;}
 .habit-hist-modal .composer-head{align-items:flex-start;gap:12px;margin-bottom:12px;}
 .habit-hist-modal .composer-head h4{font-size:22px;line-height:1.45;margin:4px 0;}
@@ -156,6 +192,9 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
  .habit-record-actions{gap:8px;padding-top:14px;margin-top:16px;}.habit-record-actions button{font-size:13px;}
  .habit-wday-dot{width:33px;height:auto;}.habit-week-grid{gap:3px;}
  .habit-form-grid{grid-template-columns:1fr;gap:13px;}.habit-form{padding:18px;}
+ .habit-compose-dialog{border-radius:18px;}.habit-compose-dialog .habit-form{padding:20px 18px;}
+ .habit-reading-settings{padding:13px;margin-bottom:18px;}.habit-reading-settings input[type=range]{height:42px;min-height:42px;}
+ .habit-reading-progress{padding:12px 13px;margin-top:16px;}.habit-reading-progress-head{gap:8px;}
  .habit-hist-overlay{padding:12px;align-items:center;}.habit-hist-modal{padding:19px 16px;border-radius:20px;max-height:calc(100dvh - 24px);}
  .habit-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.habit-stat{padding:13px;}
  .habit-hist-grid{gap:4px;}.habit-hist-cell{min-height:42px;font-size:13px;}

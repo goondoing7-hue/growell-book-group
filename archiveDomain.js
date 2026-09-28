@@ -121,8 +121,12 @@
     var start = integer(value.startPage == null ? 0 : value.startPage,0,100000,'시작 쪽수');
     var end = integer(value.endPage == null ? start : value.endPage,0,100000,'마지막 쪽수');
     if(end < start) throw new RangeError('마지막 쪽수는 시작 쪽수보다 작을 수 없어요.');
-    return {id:itemId(value.id),seconds:integer(value.seconds,0,31536000,'읽은 시간'),
+    var session={id:itemId(value.id),seconds:integer(value.seconds,0,31536000,'읽은 시간'),
       startPage:start,endPage:end,createdAt:timestamp(value.createdAt,'기록 시각')};
+    // Keep legacy display defaults, but do not treat an inferred starting page
+    // as a known reading range when calculating a daily reading goal.
+    if(value.startPage==null || value.startPageKnown===false)session.startPageKnown=false;
+    return session;
   }
   function prepareNote(value){
     if(!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('독서 노트가 올바르지 않아요.');
@@ -285,9 +289,17 @@
     // independent archive sessions remain private history after a link is added.
     var previous=book.readingSessions.filter(function(session){return book.linkedSessionIds.indexOf(session.id)<0;});
     progressFields.readingSessions.forEach(function(session){
-      var existing=previous.find(function(saved){return saved.id===session.id;});
-      if(existing&&JSON.stringify(existing)!==JSON.stringify(session))throw new Error('같은 독서 기록이 다른 내용으로 저장되어 있어요.');
-      if(!existing)previous.push(session);
+      var index=previous.findIndex(function(saved){return saved.id===session.id;});
+      if(index<0){previous.push(session);return;}
+      var existing=previous[index];
+      if(JSON.stringify(existing)!==JSON.stringify(session)){
+        var oldRange=Object.assign({},existing),newRange=Object.assign({},session);
+        delete oldRange.startPageKnown;delete newRange.startPageKnown;
+        if(JSON.stringify(oldRange)!==JSON.stringify(newRange))throw new Error('같은 독서 기록이 다른 내용으로 저장되어 있어요.');
+        // This provenance flag was absent in older saved shared snapshots.
+        // A metadata-only difference must not hide otherwise identical history.
+        previous[index]=Object.assign({},existing,{startPageKnown:false});
+      }
     });
     return prepare(Object.assign({},book,progressFields,{readingSessions:previous}));
   }

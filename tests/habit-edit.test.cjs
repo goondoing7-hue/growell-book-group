@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
+const readingHabits=require('../readingHabit.js');
 const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 function harness(){
   const original={id:'h1',userId:'owner',bookId:'emotion',name:'이전 이름',place:'집',time:'밤',goal:'10분',startDate:'2026-09-01',endDate:'2026-09-30',checkedDates:['2026-09-01'],createdAt:123,compatibilityField:'preserved'};
@@ -54,6 +55,62 @@ test('habit server round trip retains kind and reads older rows as doing',()=>{
   assert.equal(row.behavior_type,'avoid');assert.equal(row.id,'h1');assert.deepEqual(Array.from(row.checked_dates),['2026-09-22']);
 });
 
+const readingGoal=(extra={})=>({bookId:'archive-one',linkedBookId:'',targetPages:10,...extra});
+const archiveRow=(extra={})=>({entry:{id:'archive-one',userId:'owner'},book:{title:'읽는 책',linkedBookId:'',deleted:false,readingSessions:[]},...extra});
+function connectArchive(h,snapshot={status:'ready',rows:[archiveRow()]}){
+  h.c.GrowellReadingHabits=readingHabits;h.c.habitArchiveSnapshot=()=>snapshot;return snapshot;
+}
+
+test('habit database mapper and serializer round trip reading goals without changing checks or legacy goal text',()=>{
+  const c={GrowellReadingHabits:readingHabits};vm.createContext(c);
+  vm.runInContext(source.slice(source.indexOf('function mapHabitRow('),source.indexOf('\nvar STATE =')),c);
+  vm.runInContext(source.slice(source.indexOf('var GENERIC_COLLECTIONS ='),source.indexOf('function diffDict(')),c);
+  const raw={id:'h1',book_id:'emotion',user_id:'owner',name:'읽기',goal:'  기존 목표\n매일 읽기  ',behavior_type:'avoid',checked_dates:['2026-09-01','2026-09-22'],created_at:123,updated_at:456};
+  const plain=c.mapHabitRow(raw),legacyRow=c.GENERIC_COLLECTIONS.habits.toRow(plain);
+  assert.equal(plain.readingGoal,null);assert.equal(legacyRow.goal,raw.goal);
+  plain.readingGoal=readingGoal();const saved=c.GENERIC_COLLECTIONS.habits.toRow(plain);
+  assert.equal(typeof saved.goal,'string');assert.notEqual(saved.goal,raw.goal);assert.equal(saved.readingGoal,undefined);
+  const restored=c.mapHabitRow(saved);
+  assert.deepEqual({...restored.readingGoal},readingGoal());assert.equal(restored.goal,raw.goal);
+  for(const key of ['id','bookId','userId','name','behaviorType','createdAt','updatedAt'])assert.equal(restored[key],plain[key]);
+  assert.deepEqual(Array.from(restored.checkedDates),raw.checked_dates);
+  assert.equal(c.GENERIC_COLLECTIONS.habits.toRow({...restored,readingGoal:null}).goal,raw.goal);
+});
+
+test('reading habit creation accepts only a ready exact owned and current book connection',()=>{
+  const valid=harness();connectArchive(valid);valid.c.submitHabit('emotion',{...payload,readingGoal:readingGoal()},null);
+  const saved={habits:{}};valid.apply(saved);assert.deepEqual({...saved.habits['new-id'].readingGoal},readingGoal());
+  const cases=[
+    {status:'loading',rows:[archiveRow()]},{status:'error',rows:[archiveRow()]},
+    {status:'ready',rows:[]},
+    {status:'ready',rows:[archiveRow({entry:{id:'archive-one',userId:'foreign'}})]},
+    {status:'ready',rows:[archiveRow({book:{title:'지운 책',deleted:true,linkedBookId:''}})]},
+    {status:'ready',rows:[archiveRow({book:{title:'연결이 바뀐 책',linkedBookId:'thought'}})]}
+  ];
+  for(const snapshot of cases){
+    const h=harness();connectArchive(h,snapshot);
+    h.c.submitHabit('emotion',{...payload,readingGoal:readingGoal()},null);h.c.editHabit('h1',{...payload,readingGoal:readingGoal()},null);
+    assert.equal(h.saves(),0,JSON.stringify(snapshot));assert.equal(h.toasts.length,2);assert.equal(h.original.name,'이전 이름');
+  }
+  for(const targetPages of [0,1.5,100001]){
+    const h=harness();connectArchive(h);h.c.submitHabit('emotion',{...payload,readingGoal:readingGoal({targetPages})},null);assert.equal(h.saves(),0);
+  }
+});
+
+test('editing the selected reading book or target preserves latest checks; explicit null disables only the connection',()=>{
+  const h=harness();h.original.readingGoal=readingGoal();
+  connectArchive(h,{status:'ready',rows:[archiveRow({entry:{id:'archive-two',userId:'owner'},book:{title:'다음 책',linkedBookId:'thought',deleted:false}})]});
+  const nextGoal=readingGoal({bookId:'archive-two',linkedBookId:'thought',targetPages:25});
+  h.c.editHabit('h1',{...payload,readingGoal:nextGoal},null);
+  const latest=structuredClone(h.c.STATE);latest.habits.h1.checkedDates.push('2026-09-22');h.apply(latest);
+  assert.deepEqual({...latest.habits.h1.readingGoal},nextGoal);assert.deepEqual(Array.from(latest.habits.h1.checkedDates),['2026-09-01','2026-09-22']);
+  assert.equal(latest.habits.h1.createdAt,123);assert.equal(latest.habits.h1.bookId,'emotion');assert.equal(latest.habits.h1.compatibilityField,'preserved');
+  h.c.STATE=latest;h.c.editHabit('h1',{...payload,readingGoal:null},null);const disabled=structuredClone(latest);h.apply(disabled);
+  assert.equal(disabled.habits.h1.readingGoal,null);assert.equal(disabled.habits.h1.goal,payload.goal);assert.deepEqual(Array.from(disabled.habits.h1.checkedDates),['2026-09-01','2026-09-22']);
+  h.c.editHabit('h1',payload,null);const queued=structuredClone(latest);queued.habits.h1.readingGoal={...nextGoal,targetPages:30};h.apply(queued);
+  assert.equal(queued.habits.h1.readingGoal.targetPages,30,'older edits without the reading field keep the latest goal');
+});
+
 function cardHarness(){
   class Today extends Date{constructor(...args){super(...(args.length?args:[2026,8,22,12]));}}
   const c={Date:Today,GrowellHabits:require('../habitDomain.js'),habitSaveIntents:{},habitHistoryView:'progress',habitHistoryMonth:null,
@@ -73,6 +130,31 @@ test('habit card shows successes against the whole target period rather than ela
   assert.match(html,/habit-detail-arrow" data-habit-history="h1"/);
   assert.doesNotMatch(html,/<details|data-habit-view=|habit-week-grid|habit-hist-grid/);
   assert.deepEqual(h.checkedDates,['2026-09-20','2026-09-21']);
+});
+
+test('saved reading ranges display goal achievement without marking a habit successful until its manual check',()=>{
+  const c=cardHarness(),habit={id:'h1',userId:'owner',name:'매일 읽기',startDate:'2026-09-20',endDate:'2026-09-29',checkedDates:['2026-09-21'],readingGoal:readingGoal()};
+  const rows=[archiveRow({book:{title:'<오늘의 책>',readingSessions:[
+    {id:'morning',startPage:20,endPage:26,createdAt:new Date(2026,8,22,9).getTime()},
+    {id:'evening',startPage:26,endPage:31,createdAt:new Date(2026,8,22,11).getTime()}
+  ]}})],snapshot={status:'ready',rows};
+  Object.assign(c,{SESSION:{userId:'owner'},GrowellReadingHabits:readingHabits,GrowellArchive:{readingSnapshot:()=>snapshot},readingDataReady:()=>true,memberLoadState:{readingLogs:'ready',readingMeta:'ready'}});
+  const before=JSON.stringify({habit,rows});let html=c.habitCardHtml(habit);
+  assert.match(html,/habit-reading-progress is-achieved/);assert.match(html,/목표 달성/);assert.match(html,/11 \/ 10쪽 · 성공은 직접 체크해주세요/);
+  assert.match(html,/aria-valuenow="10" aria-valuetext="11쪽 읽음 · 목표 10쪽"/);assert.match(html,/&lt;오늘의 책&gt;/);
+  assert.match(html,/data-habit-day="h1\|2026-09-22" aria-pressed="false"/);assert.equal(JSON.stringify({habit,rows}),before);
+  habit.checkedDates.push('2026-09-22');html=c.habitCardHtml(habit);assert.match(html,/data-habit-day="h1\|2026-09-22" aria-pressed="true"/);
+  assert.match(html,/목표 달성/);assert.equal(JSON.stringify(rows),JSON.stringify(JSON.parse(before).rows));
+});
+
+test('reading summary never reports success from a stale load, unavailable owner or deleted book',()=>{
+  const c=cardHarness(),habit={id:'h1',readingGoal:readingGoal()},snapshot={status:'ready',rows:[archiveRow()]};
+  Object.assign(c,{SESSION:{userId:'owner'},GrowellReadingHabits:readingHabits,GrowellArchive:{readingSnapshot:()=>snapshot},readingDataReady:()=>false,memberLoadState:{readingLogs:'loading',readingMeta:'ready'}});
+  assert.match(c.habitReadingProgressHtml(habit),/불러오는 중/);assert.doesNotMatch(c.habitReadingProgressHtml(habit),/목표 달성|progressbar/);
+  c.memberLoadState.readingLogs='error';assert.match(c.habitReadingProgressHtml(habit),/불러오지 못/);
+  c.readingDataReady=()=>true;c.SESSION={userId:'other'};assert.match(c.habitReadingProgressHtml(habit),/연결된 책이 책장에 없어요/);
+  c.SESSION={userId:'owner'};snapshot.rows[0].book.deleted=true;assert.match(c.habitReadingProgressHtml(habit),/연결된 책이 책장에 없어요/);
+  c.SESSION=null;assert.match(c.habitReadingProgressHtml(habit),/불러오는 중/);
 });
 test('ongoing habits do not invent a goal percentage and ended or future habits cannot check today',()=>{
   const c=cardHarness(),ongoing={id:'h1',name:'계속 읽기',startDate:'2026-09-20',checkedDates:['2026-09-21']};
@@ -281,6 +363,67 @@ function popupHarness(){
   navigate('#/book/emotion/habit');
   return {c,browser,buttons,modal,entries,back,navigate,get html(){return html;},get renders(){return renders;}};
 }
+
+function composerHarness(){
+  const h=popupHarness(),c=h.c,dialogs=[],saves=[];
+  Object.assign(c,{habitComposerDialog:null,habitFormOpenFor:null,habitEditingId:null,saveSessionEpoch:1,memberLoadState:{habits:'ready',readingLogs:'ready',readingMeta:'ready'},
+    GrowellReadingHabits:readingHabits,GrowellArchive:{readingSnapshot:()=>({status:'ready',rows:[archiveRow()]})},readingDataReady:()=>true,
+    bookById:id=>({id,title:'모임 책'}),showToast(){},uid:()=> 'new-habit',saveState:(mutate,options)=>saves.push({mutate,options})});
+  c.document.body={appendChild:node=>{node.isConnected=true;dialogs.push(node);}};
+  c.document.querySelector=()=>null;c.document.getElementById=()=>null;
+  c.document.createElement=tag=>{
+    assert.equal(tag,'dialog');const fields={},listeners={};
+    for(const selector of ['#btn-close-habit-form','#habit-is-reading','#habit-reading-pages','#habit-reading-book','[data-habit-reading-status]',
+      '[data-habit-reading-fields]','[data-habit-text-goal]','#habit-reading-pages-value','#habit-kind-hint','#btn-habit-submit',
+      '#habit-name','#habit-place','#habit-time','#habit-goal','#habit-start-date','#habit-end-date']){
+      fields[selector]={value:selector==='#habit-reading-pages'?'10':'',disabled:false,checked:false,innerHTML:'',focus(){c.document.activeElement=this;},insertAdjacentHTML(where,html){this.innerHTML+=html;}};
+    }
+    const radio={value:'do'};fields['[name="habit-behavior-type"]:checked']=radio;
+    return {fields,listeners,isConnected:false,open:false,setAttribute(){},querySelector:selector=>fields[selector]||null,
+      querySelectorAll:()=>[radio],addEventListener:(event,callback)=>{listeners[event]=callback;},
+      showModal(){this.open=true;c.document.activeElement=this;},close(){this.open=false;},remove(){this.isConnected=false;}};
+  };
+  vm.runInContext(source.slice(source.indexOf('function habitFormHtml('),source.indexOf('function habitsSectionHtml(')),c);
+  vm.runInContext(source.slice(source.indexOf('function validateHabitPeriod('),source.indexOf('function deleteHabit(')),c);
+  const trigger={isConnected:true,focus(options){assert.equal(options.preventScroll,true);c.document.activeElement=this;}};
+  return {...h,c,dialogs,saves,trigger};
+}
+
+test('native habit composer Back closes only the dialog and restores the same trigger and page position',()=>{
+  const h=composerHarness(),c=h.c;h.browser.scrollY=825;c.document.activeElement=h.trigger;
+  c.openHabitComposer('emotion',null,h.trigger);const dialog=c.habitComposerDialog;
+  assert.equal(dialog.open,true);assert.match(dialog.innerHTML,/id="habit-form-title">새 습관 만들기/);
+  dialog.fields['#habit-name'].value='작성 중';h.back();
+  assert.equal(c.habitComposerDialog,null);assert.equal(dialog.open,false);assert.equal(dialog.isConnected,false);
+  assert.equal(c.document.activeElement,h.trigger);assert.equal(h.browser.scrollY,825);assert.match(h.browser.location.href,/#\/book\/emotion\/habit$/);
+  assert.equal(h.saves.length,0,'closing does not submit the incomplete habit');
+  h.back();assert.match(h.browser.location.href,/#\/book\/emotion\/mine$/);
+});
+
+test('old create and edit save completions cannot close or clear a newer habit composer',()=>{
+  for(const editing of [false,true]){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',editing?'h1':null,h.trigger);
+    const first=c.habitComposerDialog;
+    if(editing)c.editHabit('h1',payload,first.fields['#btn-habit-submit']);else c.submitHabit('emotion',payload,first.fields['#btn-habit-submit']);
+    assert.equal(h.saves.length,1);c.closeHabitComposer();c.openHabitComposer('thought','h2',h.trigger);
+    const second=c.habitComposerDialog;second.fields['#habit-name'].value='두 번째 새 입력';
+    h.saves[0].options.onSuccess();
+    assert.equal(c.habitComposerDialog,second);assert.equal(second.open,true);assert.equal(second.isConnected,true);
+    assert.equal(c.habitFormOpenFor,'thought');assert.equal(c.habitEditingId,'h2');assert.equal(second.fields['#habit-name'].value,'두 번째 새 입력');
+    c.editHabit('h2',payload,second.fields['#btn-habit-submit']);h.saves[1].options.onSuccess();
+    assert.equal(c.habitComposerDialog,null);assert.equal(second.open,false);assert.equal(c.habitFormOpenFor,null);assert.equal(c.habitEditingId,null);
+  }
+});
+
+test('habit composer closes without stealing focus after account change or navigating to another space',()=>{
+  for(const mode of ['owner','route']){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('emotion','h1',h.trigger);const dialog=c.habitComposerDialog;
+    const destination={};c.document.activeElement=destination;h.browser.scrollY=70;
+    if(mode==='owner'){c.SESSION={userId:'other'};c.saveSessionEpoch++;c.refreshHabitComposerBooks();}else h.navigate('#/archive');
+    assert.equal(c.habitComposerDialog,null);assert.equal(dialog.isConnected,false);assert.equal(c.document.activeElement,destination);
+    assert.equal(h.browser.scrollY,70);assert.equal(h.saves.length,0);
+  }
+});
 
 test('week and month popups show only the selected habit and keep the progress detail available',()=>{
   const h=popupHarness(),c=h.c;

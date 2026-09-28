@@ -253,6 +253,21 @@ test('older timer recovery preserves newer progress while a later re-read can mo
   assert.equal(reread.currentPage,20);assert.equal(archive.totalReadingSeconds(reread),160);
 });
 
+test('legacy unknown starting pages retain display and time totals but remain explicitly unknown after storage',()=>{
+  const known={id:'known',seconds:30,startPage:0,endPage:10,createdAt:1000};
+  const missing={id:'missing',seconds:60,endPage:20,createdAt:2000};
+  const marked={id:'marked',seconds:90,startPage:0,endPage:30,createdAt:3000,startPageKnown:false};
+  const input={title:'이전 독서 기록',status:'reading',currentPage:30,totalPages:100,readingSessions:[known,missing,marked]};
+  const original=JSON.stringify(input),prepared=archive.prepare(input),restored=archive.decode(archive.encode(prepared));
+  assert.deepEqual(restored.readingSessions,[known,{...missing,startPage:0,startPageKnown:false},marked]);
+  assert.equal(restored.currentPage,30);assert.equal(archive.totalReadingSeconds(restored),180);
+  assert.deepEqual(archive.prepare(restored),restored);assert.equal(JSON.stringify(input),original);
+  assert.deepEqual(archive.prepare({title:'명시된 기록',readingSessions:[{...known,startPageKnown:true}]}).readingSessions,[known]);
+  const nullStart=archive.prepare({title:'누락된 쪽수',readingSessions:[{...missing,startPage:null}]}).readingSessions[0];
+  assert.equal(nullStart.startPage,0);assert.equal(nullStart.startPageKnown,false);
+  assert.deepEqual(archive.addReadingSession(restored,missing),restored,'retrying a legacy session stays idempotent');
+});
+
 test('corrupt session arrays and invalid reading values fail without dropping the original history',()=>{
   const session={id:'ars_1',seconds:30,startPage:0,endPage:10,createdAt:1000};
   for(const change of [{id:''},{id:'bad/id'},{seconds:-1},{seconds:0.1},{seconds:31536001},{createdAt:0},
@@ -438,4 +453,31 @@ test('linked legacy history survives storage and note edits while shared snapsho
   for(const linkedSessionIds of ['id',['bad id'],Array(1),Array.from({length:10001},(_,i)=>'id_'+i)])assert.throws(()=>archive.prepare({title:'책',linkedSessionIds}));
   const conflicting=linkedRow('arc_conflict',{linkedBookId:'emotion',readingSessions:[{...sharedSnapshot().readingSessions[0],seconds:999}]});
   assert.throws(()=>archive.mergeLinkedRows([conflicting],[sharedSnapshot()],'owner-a'),/다른 내용/);
+});
+
+test('legacy shared snapshots merge start-page provenance conservatively without changing actual reading history',()=>{
+  const shared=sharedSnapshot().readingSessions[0],independent={id:'personal',seconds:300,startPage:10,endPage:20,createdAt:1000};
+  for(const [saved,incoming] of [[shared,{...shared,startPageKnown:false}],[{...shared,startPageKnown:false},shared]]){
+    const row=linkedRow('arc_legacy_flag',{linkedBookId:'emotion',readingSessions:[independent,saved]}),snapshot=sharedSnapshot({readingSessions:[incoming]});
+    const original=JSON.stringify({row,snapshot});
+    const merged=archive.mergeLinkedRows([row],[snapshot],'owner-a')[0];
+    assert.equal(JSON.stringify({row,snapshot}),original,'neither the saved record nor incoming snapshot is mutated');
+    assert.deepEqual(merged.book.readingSessions,[independent,{...shared,startPageKnown:false}]);
+    assert.equal(archive.totalReadingSeconds(merged.book),420);assert.equal(merged.book.currentPage,snapshot.currentPage);
+    assert.deepEqual(archive.decode(archive.encode(merged.book)).readingSessions,merged.book.readingSessions);
+    assert.deepEqual(merged.book.linkedSessionIds,[shared.id]);
+  }
+});
+
+test('legacy shared snapshot metadata compatibility never accepts conflicting pages, time, or timestamp',()=>{
+  const shared=sharedSnapshot().readingSessions[0],row=linkedRow('arc_conflicting_flag',{linkedBookId:'emotion',readingSessions:[shared]});
+  const original=JSON.stringify(row);
+  for(const difference of [{seconds:shared.seconds+1},{createdAt:shared.createdAt+1},{startPage:1},{endPage:shared.endPage+1}]){
+    assert.throws(()=>archive.mergeLinkedRows([row],[sharedSnapshot({readingSessions:[{...shared,...difference,startPageKnown:false}]})],'owner-a'),/다른 내용/);
+    assert.equal(JSON.stringify(row),original);
+  }
+  const distinct={...shared,id:'different_identity',startPageKnown:false};
+  const merged=archive.mergeLinkedRows([row],[sharedSnapshot({readingSessions:[distinct]})],'owner-a')[0];
+  assert.deepEqual(merged.book.readingSessions,[shared,distinct],'different session identities remain separate records');
+  assert.equal(archive.totalReadingSeconds(merged.book),shared.seconds*2);
 });
