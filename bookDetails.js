@@ -111,7 +111,7 @@
   }
   function hintHtml(bookId,page){
     var section=currentSection(bookId,page);
-    return section?'<span class="book-reading-section"><span aria-hidden="true">·</span> 읽는 부분: '+(section.label?escape(section.label)+' · ':'')+escape(section.title)+'</span>':'';
+    return section?'<span class="book-reading-section"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+(section.label?escape(section.label)+' · ':'')+escape(section.title)+'</span></span>':'';
   }
   function coverHtml(book,imageClass){
     if(!book)return '';

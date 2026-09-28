@@ -12,11 +12,11 @@
   }
   var rows=Object.create(null),owner=null,epoch=null,status='idle',requestId=0,lastQuestionBook=null;
   var dialog=null,dialogKind=null,returnFocus=null,drafts=Object.create(null);
-  var authorId=null,authorLimit=12,questionSaving=false,replyDrafts=Object.create(null),replyAttempts=Object.create(null);
+  var authorId=null,authorLimit=12,questionSaving=false,replyDrafts=Object.create(null),replyAttempts=Object.create(null),replyEditDrafts=Object.create(null);
   function member(){return app.SESSION&&app.SESSION.userId;}
   function current(expected){return member()===expected.owner&&app.saveSessionEpoch===expected.epoch;}
   function reset(){
-    requestId++;close(false);rows=Object.create(null);drafts=Object.create(null);replyDrafts=Object.create(null);replyAttempts=Object.create(null);owner=null;epoch=null;status='idle';lastQuestionBook=null;
+    requestId++;close(false);rows=Object.create(null);drafts=Object.create(null);replyDrafts=Object.create(null);replyAttempts=Object.create(null);replyEditDrafts=Object.create(null);owner=null;epoch=null;status='idle';lastQuestionBook=null;
   }
   function ensureOwner(){if(owner!==member()||epoch!==app.saveSessionEpoch){reset();owner=member();epoch=app.saveSessionEpoch;}}
   function syncPrompt(){
@@ -34,7 +34,7 @@
   }
   function promptHtml(book){
     ensureOwner();
-    return '<div class="space-prompt">'+app.svgIcon(app.I_COMMENT)+'<div><small>이번 책으로 함께 생각해요</small><strong data-community-question="'+app.esc(book.id)+'">'+app.esc(root.GrowellCommunity.questionFor(book,rows))+'</strong></div><div class="space-prompt-actions"><button class="btn btn-ghost" type="button" data-space-prompt="'+app.esc(book.id)+'" aria-haspopup="dialog">내 생각 남기기 →</button>'+(app.isAdmin()?'<button class="community-question-edit" type="button" data-question-edit="'+app.esc(book.id)+'" aria-haspopup="dialog">'+app.svgIcon(app.I_EDIT)+' 질문 수정</button>':'')+'</div></div>';
+    return '<div class="space-prompt">'+app.svgIcon(app.I_COMMENT)+'<div><small>함께 고민하고 생각해요.</small><strong data-community-question="'+app.esc(book.id)+'">'+app.esc(root.GrowellCommunity.questionFor(book,rows))+'</strong></div><div class="space-prompt-actions"><button class="btn btn-ghost" type="button" data-space-prompt="'+app.esc(book.id)+'" aria-haspopup="dialog">내 생각 남기기 →</button>'+(app.isAdmin()?'<button class="community-question-edit" type="button" data-question-edit="'+app.esc(book.id)+'" aria-haspopup="dialog">'+app.svgIcon(app.I_EDIT)+' 질문 수정</button>':'')+'</div></div>';
   }
   function close(restore){
     if(!dialog)return;
@@ -106,59 +106,117 @@
     });
   }
   function replyHtml(reply){
-    return '<article class="community-reply" data-question-reply="'+app.esc(reply.id)+'"><div class="community-reply-heading">'+app.avatarHtml(reply.userId,reply.name,'emotion')+'<div><strong>'+app.esc(reply.name)+'</strong><time>'+app.esc(app.fmtPostDate(reply.createdAt))+'</time></div>'+(reply.userId===member()?'<span class="community-reply-mine">내 답변</span>':'')+'</div><p>'+app.esc(reply.body)+'</p></article>';
+    var own=reply.userId===member(),id=app.esc(reply.id);
+    return '<article class="community-reply" data-question-reply="'+id+'"><div class="community-reply-heading">'+app.avatarHtml(reply.userId,reply.name,'emotion')+'<div><strong>'+app.esc(reply.name)+'</strong><time>'+app.esc(app.fmtPostDate(reply.createdAt))+(reply.updatedAt?' · 수정됨':'')+'</time></div>'+(own?'<span class="community-reply-mine">내 답변</span>':'')+'</div><p>'+app.esc(reply.body)+'</p>'+(own?'<div class="community-reply-actions"><button type="button" data-reply-action="edit" data-reply-id="'+id+'">수정</button><button type="button" data-reply-action="delete" data-reply-id="'+id+'">삭제</button></div><div data-reply-editor></div>':'')+'</article>';
   }
   function openReplies(bookId,trigger){
     if(!member()||app.homeUnlockedIds().indexOf(bookId)<0)return;
     var book=app.bookById(bookId);if(!book)return;
-    var node=makeDialog('replies',trigger),expected={owner:member(),epoch:app.saveSessionEpoch},thread=null,key=null;
+    var node=makeDialog('replies',trigger),expected={owner:member(),epoch:app.saveSessionEpoch},thread=null,key=null,editors=Object.create(null),mutationVersion=0,threadVersion=0,threadLoading=false,pageCursor=null;
     function live(){return dialog===node&&current(expected);}
-    node.innerHTML='<div class="community-dialog-head"><div><small class="community-reply-book">'+app.esc(book.title)+'</small><h2 id="community-dialog-title">이번 책으로 함께 생각해요</h2></div><button type="button" class="icon-btn" data-community-close aria-label="질문과 답변 닫기">'+app.svgIcon(app.I_CLOSE)+'</button></div><div data-reply-content><p class="community-question-message" role="status">질문과 답변을 불러오는 중이에요…</p></div>';
+    node.innerHTML='<div class="community-dialog-head"><div><small class="community-reply-book">'+app.esc(book.title)+'</small><h2 id="community-dialog-title">함께 고민하고 생각해요.</h2></div><button type="button" class="icon-btn" data-community-close aria-label="질문과 답변 닫기">'+app.svgIcon(app.I_CLOSE)+'</button></div><div data-reply-content><p class="community-question-message" role="status">질문과 답변을 불러오는 중이에요…</p></div>';
     node.querySelector('[data-community-close]').onclick=function(){if(!questionSaving)close();};node.showModal();trackDialog(node,'replies');
     function loadThread(keepDraft){
+      var version=++threadVersion;threadLoading=true;
       return Promise.resolve().then(function(){if(!live())return null;return app.sb.rpc('growell_get_question_replies',{p_book_id:bookId,p_before_id:null});}).then(function(result){
-        if(!live())return;
+        if(!live()||version!==threadVersion)return;
         if(!result||result.error)throw result&&result.error||new Error('reply-load-failed');
         var previousKey=key,next=root.GrowellCommunity.replyThread(result.data,bookId);
-        thread=next;key=bookId+':'+thread.revision;
+        thread=next;key=bookId+':'+thread.revision;editors=Object.create(null);pageCursor=thread.replies.length?thread.replies[0].id:null;
         if(keepDraft&&previousKey&&replyDrafts[previousKey])replyDrafts[key]=replyDrafts[previousKey];
         if(thread.revision>0)rows[bookId]={question:thread.question,revision:thread.revision};else delete rows[bookId];syncPrompt();
         renderThread();
       }).catch(function(){
-        if(!live())return;
+        if(!live()||version!==threadVersion)return;
         var content=node.querySelector('[data-reply-content]');
         if(thread){node.querySelector('[data-reply-message]').textContent='답변을 불러오지 못했어요. 작성 중인 내용은 그대로 있어요.';return;}
         content.innerHTML='<p class="community-question-message" role="alert">질문과 답변을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p><button type="button" class="btn btn-secondary" data-reply-retry>다시 불러오기</button>';
         content.querySelector('[data-reply-retry]').onclick=function(){this.disabled=true;loadThread(false);};
-      });
+      }).finally(function(){if(live()&&version===threadVersion)threadLoading=false;});
     }
     function renderThread(){
       if(!live())return;
       node.querySelector('[data-reply-content]').innerHTML='<blockquote class="community-reply-question">'+app.esc(thread.question)+'</blockquote><section class="community-replies" aria-label="이 질문에 대한 답변">'+(thread.hasMore?'<button class="btn btn-ghost community-reply-more" type="button" data-reply-more>이전 답변 더 보기</button>':'')+'<div data-reply-list>'+(thread.replies.map(replyHtml).join('')||'<p class="community-reply-empty">아직 답변이 없어요. 첫 생각을 들려주세요.</p>')+'</div></section><form class="community-question-form community-reply-form"><label for="community-reply-input">이 질문에 대한 내 생각</label><textarea id="community-reply-input" rows="3" maxlength="4000" placeholder="편하게 생각을 나눠주세요." required>'+app.esc(replyDrafts[key]||'')+'</textarea><div class="community-question-meta"><span>모임원과 함께 보는 답변이에요.</span><span data-reply-count></span></div><p class="community-question-message" data-reply-message role="status" aria-live="polite"></p><div class="community-dialog-actions"><button class="btn btn-primary" type="submit">답변 남기기</button></div></form>';
-      var form=node.querySelector('form'),input=node.querySelector('textarea'),save=form.querySelector('[type="submit"]'),message=node.querySelector('[data-reply-message]');
+      var form=node.querySelector('form'),input=node.querySelector('textarea'),save=form.querySelector('[type="submit"]'),message=node.querySelector('[data-reply-message]'),list=node.querySelector('[data-reply-list]');
+      function rowNode(id){return Array.from(list.querySelectorAll('[data-question-reply]')).find(function(row){return row.getAttribute('data-question-reply')===id;});}
+      function ownReply(id){return thread.replies.find(function(reply){return reply.id===id&&reply.userId===expected.owner;});}
+      function editKey(id){return key+':'+id;}
+      function syncBusy(){
+        input.disabled=questionSaving;save.disabled=questionSaving;node.querySelector('[data-community-close]').disabled=questionSaving;
+        list.querySelectorAll('[data-reply-action], [data-reply-edit-input]').forEach(function(control){var state=editors[control.getAttribute('data-reply-id')];control.disabled=questionSaving||!!(state&&state.conflict&&['save','confirm-delete'].indexOf(control.getAttribute('data-reply-action'))>=0);});
+      }
+      function showEditor(id,focus){
+        var row=rowNode(id),state=editors[id],scroll=node.scrollTop;if(!row)return;
+        var panel=row.querySelector('[data-reply-editor]');if(!panel)return;
+        var actionsNode=row.querySelector('.community-reply-actions');if(actionsNode)actionsNode.hidden=!!state;
+        if(!state){panel.innerHTML='';node.scrollTop=scroll;return;}
+        var safeId=app.esc(id),actions='<div class="community-reply-edit-actions"><button class="btn btn-secondary" type="button" data-reply-action="cancel" data-reply-id="'+safeId+'">취소</button><button class="btn '+(state.mode==='delete'?'community-reply-delete-confirm':'btn-primary')+'" type="button" data-reply-action="'+(state.mode==='delete'?'confirm-delete':'save')+'" data-reply-id="'+safeId+'">'+(state.mode==='delete'?'삭제':'저장')+'</button></div>';
+        panel.innerHTML='<div class="community-reply-editor">'+(state.mode==='delete'?'<p>이 답변을 삭제할까요?</p>':'<label>내 답변 수정<textarea rows="3" maxlength="4000" data-reply-edit-input data-reply-id="'+safeId+'">'+app.esc(state.draft)+'</textarea></label>'+(state.restored?'<p class="community-reply-draft-note">이전에 작성하던 내용이에요. 현재 답변을 확인한 뒤 저장해주세요.</p>':''))+'<p class="community-question-message" role="status" aria-live="polite" data-reply-edit-message>'+app.esc(state.error||'')+'</p>'+actions+'</div>';
+        syncBusy();node.scrollTop=scroll;if(focus){var target=panel.querySelector(state.mode==='delete'?'[data-reply-action="cancel"]':'textarea');if(target)target.focus({preventScroll:true});}
+      }
+      function finishEditor(id){
+        var row=rowNode(id),scroll=node.scrollTop;delete editors[id];showEditor(id,false);node.scrollTop=scroll;
+        if(row){var edit=row.querySelector('[data-reply-action="edit"]');if(edit)edit.focus({preventScroll:true});}
+      }
+      function mutateReply(id,remove){
+        var previous=ownReply(id),state=editors[id];if(!previous||!state||state.conflict||questionSaving||threadLoading||!live())return;
+        var body=root.GrowellCommunity.replyText(state.draft);
+        if(!remove&&!root.GrowellCommunity.validReply(body)){state.error='답변을 1자 이상, 2,000자 이내로 적어주세요.';showEditor(id,true);return;}
+        if(!remove&&body===previous.body){delete replyEditDrafts[editKey(id)];finishEditor(id);message.textContent='변경된 내용이 없어요.';return;}
+        // Keep this row/revision/body unchanged after an uncertain response; retry is idempotent.
+        var args={p_id:id,p_expected_reply_revision:previous.replyRevision};if(!remove)args.p_body=body;
+        questionSaving=true;mutationVersion++;state.error='';syncBusy();var revision=threadVersion;
+        Promise.resolve().then(function(){if(!live())return null;return app.sb.rpc(remove?'growell_delete_question_reply':'growell_update_question_reply',args);}).then(function(result){
+          if(!live()||revision!==threadVersion)return;if(!result||result.error)throw result&&result.error||new Error('reply-change-failed');
+          var row=rowNode(id),scroll=node.scrollTop;
+          if(remove){root.GrowellCommunity.deletedReply(result.data,previous);thread.replies=thread.replies.filter(function(reply){return reply.id!==id;});if(row)row.remove();if(!thread.replies.length)list.innerHTML='<p class="community-reply-empty">아직 답변이 없어요. 첫 생각을 들려주세요.</p>';}
+          else{var updated=root.GrowellCommunity.editedReply(result.data,previous,body);thread.replies=thread.replies.map(function(reply){return reply.id===id?updated:reply;});if(row)row.outerHTML=replyHtml(updated);}
+          delete replyEditDrafts[editKey(id)];delete editors[id];node.scrollTop=scroll;message.textContent=remove?'답변을 삭제했어요.':'답변을 수정했어요.';
+          var savedRow=rowNode(id),target=remove?input:savedRow&&savedRow.querySelector('[data-reply-action="edit"]');if(target)target.focus({preventScroll:true});
+        }).catch(function(error){
+          if(!live()||revision!==threadVersion)return;
+          state.conflict=!!(error&&error.code==='40001');state.error=state.conflict?'다른 곳에서 답변이 변경되었어요. 작성한 내용은 유지했어요. 팝업을 닫고 다시 열어 최신 답변을 확인해주세요.':(remove?'삭제를 확인하지 못했어요. 답변은 그대로 표시되니 다시 눌러주세요.':'수정을 확인하지 못했어요. 작성한 내용은 그대로 있으니 다시 눌러주세요.');showEditor(id,false);
+        }).finally(function(){if(live()&&revision===threadVersion){questionSaving=false;syncBusy();}});
+      }
+      list.addEventListener('input',function(event){
+        var control=event.target;if(!control.matches('[data-reply-edit-input]')||!live()||questionSaving)return;
+        var id=control.getAttribute('data-reply-id'),state=editors[id];if(state&&state.mode==='edit'){state.draft=control.value;replyEditDrafts[editKey(id)]=control.value;}
+      });
+      list.addEventListener('click',function(event){
+        var button=event.target.closest('[data-reply-action]');if(!button||!list.contains(button)||!live()||questionSaving||threadLoading)return;
+        event.preventDefault();event.stopPropagation();var id=button.getAttribute('data-reply-id'),reply=ownReply(id),action=button.getAttribute('data-reply-action');if(!reply)return;
+        if(action==='edit'){var savedDraft=replyEditDrafts[editKey(id)];editors[id]={mode:'edit',draft:savedDraft===undefined?reply.body:savedDraft,restored:savedDraft!==undefined&&savedDraft!==reply.body};showEditor(id,true);}
+        else if(action==='delete'){editors[id]={mode:'delete'};showEditor(id,true);}
+        else if(action==='cancel'){delete replyEditDrafts[editKey(id)];finishEditor(id);}
+        else if(action==='save')mutateReply(id,false);
+        else if(action==='confirm-delete')mutateReply(id,true);
+      });
       function capture(){replyDrafts[key]=input.value;node.querySelector('[data-reply-count]').textContent=Array.from(input.value.trim()).length+' / 2,000';}
       input.addEventListener('input',capture);capture();
       var more=node.querySelector('[data-reply-more]');
       if(more)more.onclick=function(){
-        if(more.disabled)return;more.disabled=true;var previousHeight=node.scrollHeight,previousScroll=node.scrollTop;
-        app.sb.rpc('growell_get_question_replies',{p_book_id:bookId,p_before_id:thread.replies[0].id}).then(function(result){
+        if(more.disabled||questionSaving||threadLoading||!pageCursor)return;more.disabled=true;var previousHeight=node.scrollHeight,previousScroll=node.scrollTop,version=mutationVersion,currentThread=threadVersion;
+        app.sb.rpc('growell_get_question_replies',{p_book_id:bookId,p_before_id:pageCursor}).then(function(result){
           if(!live())return;if(result.error)throw result.error;
+          if(currentThread!==threadVersion)return;
+          if(version!==mutationVersion){more.disabled=false;return;}
           var older=root.GrowellCommunity.replyThread(result.data,bookId);
           if(older.revision!==thread.revision)throw new Error('question-changed');
           var known=new Set(thread.replies.map(function(reply){return reply.id;}));
           var incoming=older.replies.filter(function(reply){return !known.has(reply.id);});
-          thread.replies=incoming.concat(thread.replies);thread.hasMore=older.hasMore;
+          thread.replies=incoming.concat(thread.replies);thread.hasMore=older.hasMore;if(older.replies.length)pageCursor=older.replies[0].id;
+          var empty=list.querySelector('.community-reply-empty');if(incoming.length&&empty)empty.remove();
           node.querySelector('[data-reply-list]').insertAdjacentHTML('afterbegin',incoming.map(replyHtml).join(''));
           if(!thread.hasMore)more.remove();else more.disabled=false;
           node.scrollTop=previousScroll+(node.scrollHeight-previousHeight);
-        }).catch(function(){if(live()){more.disabled=false;message.textContent='이전 답변을 불러오지 못했어요. 다시 눌러주세요.';}});
+        }).catch(function(){if(live()&&currentThread===threadVersion){more.disabled=false;if(version===mutationVersion)message.textContent='이전 답변을 불러오지 못했어요. 다시 눌러주세요.';}});
       };
       form.addEventListener('submit',function(event){
-        event.preventDefault();if(questionSaving||!live())return;
+        event.preventDefault();if(questionSaving||threadLoading||!live())return;
         var text=root.GrowellCommunity.replyText(input.value);capture();
         if(!root.GrowellCommunity.validReply(text)){message.textContent='답변을 1자 이상, 2,000자 이내로 적어주세요.';input.focus();return;}
         if(!replyAttempts[key]||replyAttempts[key].body!==text)replyAttempts[key]={id:root.crypto.randomUUID(),body:text};
-        var attempt=replyAttempts[key];questionSaving=true;input.disabled=true;save.disabled=true;save.textContent='남기는 중…';node.querySelector('[data-community-close]').disabled=true;message.textContent='';
+        var attempt=replyAttempts[key];questionSaving=true;mutationVersion++;syncBusy();save.textContent='남기는 중…';message.textContent='';
         Promise.resolve().then(function(){if(!live())return null;return app.sb.rpc('growell_add_question_reply',{p_id:attempt.id,p_book_id:bookId,p_expected_revision:thread.revision,p_body:attempt.body});}).then(function(result){
           if(!live())return;if(!result||result.error)throw result&&result.error||new Error('reply-save-failed');
           var reply=root.GrowellCommunity.replyRow(result.data,bookId,thread.revision);
@@ -172,9 +230,9 @@
           message.textContent=error&&error.code==='40001'?'질문이 바뀌었어요. 새 질문을 확인하고 답변 내용을 다시 살펴주세요.':'답변 저장을 확인하지 못했어요. 작성한 내용은 그대로 있으니 다시 눌러주세요.';
           if(error&&error.code==='40001'){
             var refresh=document.createElement('button');refresh.type='button';refresh.className='btn btn-secondary community-reply-refresh';refresh.textContent='새 질문 확인';message.appendChild(refresh);
-            refresh.onclick=function(){refresh.disabled=true;loadThread(true);};
+            refresh.onclick=function(){if(questionSaving||threadLoading||!live())return;refresh.disabled=true;loadThread(true);};
           }
-        }).finally(function(){if(live()){questionSaving=false;input.disabled=false;save.disabled=false;save.textContent='답변 남기기';node.querySelector('[data-community-close]').disabled=false;}});
+        }).finally(function(){if(live()){questionSaving=false;syncBusy();save.textContent='답변 남기기';}});
       });
     }
     loadThread(false);

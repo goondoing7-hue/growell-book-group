@@ -64,7 +64,7 @@ test('the full nested contents highlight only the reading subsection and preserv
   assert.match(html,/rel="noopener noreferrer"/);
   assert.doesNotMatch(Book.bodyHtml(book,null),/aria-current="location"|현재 0쪽/);
   assert.equal(Book.hintHtml('emotion',null),'');
-  assert.match(Book.hintHtml('emotion',90),/읽는 부분: 2장/);
+  assert.match(Book.hintHtml('emotion',90),/읽는 부분:<\/span> <span class="book-reading-title">2장/);
   assert.match(Book.hintHtml('emotion',90),/이유 없는 분노는 없다_울분/);
 });
 

@@ -37,6 +37,7 @@ const TEST_FILES = Object.freeze([
 const PUBLISH_FILES = Object.freeze([
   'server/signup.ts', 'server/member-approval.sql', 'server/member-approval-verification.sql', 'server/member-approval-notes.md',
   'server/worksheet-locks.sql', 'server/worksheet-locks-verification.sql', 'server/question-replies.sql', 'server/question-replies-verification.sql',
+  'server/question-reply-editing.sql', 'server/question-reply-editing-verification.sql',
   ...DEPLOY_FILES, ...TEST_FILES,
   'package.json', 'package-lock.json', 'vercel.json', '.gitignore',
   '.github/workflows/verify.yml', 'README.md', 'DEPLOYMENT.md', 'AGENTS.md', 'AUTH_SETUP.md', 'server/member-read-policy.sql', 'server/oauth-members.sql', 'server/oauth-interface.md',

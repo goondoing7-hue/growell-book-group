@@ -2,7 +2,7 @@
 .book-cover-trigger img{display:block;max-width:100%}
 .book-cover-trigger:focus-visible{outline:3px solid var(--primary);outline-offset:5px}
 .book-reading-section{display:block;margin-top:7px;color:var(--ink-soft);font-size:12px;font-weight:500;line-height:1.6;overflow-wrap:anywhere}
-.book-reading-section>span{margin-right:3px}
+.book-reading-marker{margin-right:3px}
 .book-details-dialog{box-sizing:border-box;width:min(640px,calc(100% - 28px));max-height:calc(100dvh - 32px);margin:auto;padding:0;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);font-family:var(--font-body);overflow:hidden;box-shadow:0 24px 80px #14231c33}
 .book-details-dialog::backdrop{background:#13271b66;backdrop-filter:blur(3px)}
 .book-details-dialog[open]{display:flex;flex-direction:column}
@@ -39,6 +39,9 @@
 .book-details-sources>span{flex-basis:100%}
 .book-details-sources a{color:inherit;text-underline-offset:3px}
 @media(max-width:480px){
+  .book-page .book-reading-marker{display:none}
+  .book-page .book-reading-label{display:block;font-size:11px}
+  .book-page .book-reading-title{display:block;margin-top:2px;color:var(--ink);font-weight:600}
   .book-details-header{padding:13px 16px}
   .book-details-body{padding:19px 16px}
   .book-details-book{gap:15px;margin-bottom:23px}

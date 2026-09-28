@@ -1,6 +1,9 @@
 .mine-categories{margin:20px 0 16px;min-width:0}
 .mine-category-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .mine-category-head strong{font-size:15px}
+.mine-category-settings{flex:none;width:44px;height:44px}
+.mine-category-settings svg{width:20px;height:20px}
+.mine-category-settings:focus-visible{outline:2px solid var(--space-green);outline-offset:3px}
 .mine-categories p,.mine-category-status{font-size:14px;color:var(--ink-soft);line-height:1.7;margin:8px 0}
 .mine-category-filters{display:flex;flex-wrap:wrap;gap:7px}
 .mine-category-filters button{font:inherit;font-size:14px;font-weight:600;padding:8px 13px;border:1px solid var(--line);border-radius:20px;background:var(--surface);color:var(--ink);max-width:100%;overflow-wrap:anywhere;cursor:pointer}

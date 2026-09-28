@@ -1304,6 +1304,7 @@ var I_PAUSE='<path d="M7 5.5h3.4v13H7ZM13.6 5.5H17v13h-3.4Z" stroke-linejoin="ro
 var I_TIMER='<circle cx="12" cy="14" r="8"/><path d="M9 2h6M12 2v4M18 6l2-2M12 10v5" stroke-linecap="round"/>';
 var I_CHECK='<path d="M5 12.5l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/>';
 var I_EDIT='<path d="M14.7 4.6 19.4 9.3 8.2 20.5H3.5v-4.7Z" stroke-linejoin="round"/><path d="M12.6 6.7l4.7 4.7" stroke-linecap="round"/>';
+var I_SETTINGS='<path d="m9.5 3-.5 2.2-1.8 1-2.2-.6-2.5 4.3L4.2 11v2L2.5 14.1 5 18.4l2.2-.6 1.8 1 .5 2.2h5l.5-2.2 1.8-1 2.2.6 2.5-4.3-1.7-1.1v-2l1.7-1.1L19 5.6l-2.2.6-1.8-1-.5-2.2Z" stroke-linejoin="round"/><circle cx="12" cy="12" r="3"/>';
 var I_SPARK='<path d="M12 3.2c.45 2.75 1.15 4.6 2.35 5.8 1.2 1.2 3.05 1.9 5.8 2.35-2.75.45-4.6 1.15-5.8 2.35-1.2 1.2-1.9 3.05-2.35 5.8-.45-2.75-1.15-4.6-2.35-5.8-1.2-1.2-3.05-1.9-5.8-2.35 2.75-.45 4.6-1.15 5.8-2.35 1.2-1.2 1.9-3.05 2.35-5.8Z" stroke-linejoin="round"/>';
 var NOTE_TYPES = [
   {key:'quote', label:'책 속 문장', icon:I_BOOKMARK},
@@ -5624,7 +5625,7 @@ function privateCategoryControlsHtml(bookId){
   if(state.status==='loading')return '<p class="mine-category-status" role="status">나의 카테고리를 불러오고 있어요…</p>';
   if(state.status!=='ready')return '<p class="mine-category-status" role="alert">카테고리를 열지 못했어요. 기존 설정은 유지됩니다. <button class="btn btn-sm" data-private-category-retry="'+bookId+'">다시 불러오기</button></p>';
   var selected=privateCategoryFilter(bookId),options=[{key:'all',label:'전체'}].concat(state.categories.map(function(c){return {key:c.id,label:c.label};}));
-  return '<section class="mine-categories" aria-label="나의 카테고리"><div class="mine-category-head"><strong>나의 카테고리</strong><button class="btn btn-sm" type="button" data-private-category-manage="'+bookId+'">'+svgIcon(I_EDIT)+' 카테고리 설정</button></div>'+
+  return '<section class="mine-categories" aria-label="나의 카테고리"><div class="mine-category-head"><strong>나의 카테고리</strong><button class="icon-btn mine-category-settings" type="button" data-private-category-manage="'+bookId+'" aria-label="카테고리 설정" title="카테고리 설정" aria-haspopup="dialog">'+svgIcon(I_SETTINGS)+'</button></div>'+
     (!state.categories.length?'<p>나에게 맞는 카테고리를 직접 만들어 보세요.</p>':'')+
     '<div class="mine-category-filters">'+options.map(function(c){return '<button type="button" class="'+(selected===c.key?'is-selected':'')+'" data-private-category-filter="'+esc(c.key)+'" data-book="'+bookId+'" aria-pressed="'+(selected===c.key)+'">'+esc(c.label)+'</button>';}).join('')+'</div></section>';
 }

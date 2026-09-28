@@ -21,8 +21,19 @@
   function replyText(value){return typeof value==='string'?value.trim():'';}
   function validReply(value){var text=replyText(value);return !!text&&Array.from(text).length<=2000;}
   function replyRow(row,bookId,revision){
-    if(!row||typeof row.id!=='string'||!row.id||row.book_id!==bookId||Number(row.question_revision)!==revision||typeof row.user_id!=='string'||!row.user_id||!validReply(row.body)||!Number.isFinite(Date.parse(row.created_at)))throw new Error('reply-load-invalid');
-    return {id:row.id,bookId:bookId,revision:revision,userId:row.user_id,name:typeof row.user_name==='string'?row.user_name:'모임원',body:replyText(row.body),createdAt:row.created_at};
+    if(!row||typeof row.id!=='string'||!row.id||row.book_id!==bookId||Number(row.question_revision)!==revision||typeof row.user_id!=='string'||!row.user_id||!validReply(row.body)||!Number.isFinite(Date.parse(row.created_at))||row.deleted===true)throw new Error('reply-load-invalid');
+    var replyRevision=row.reply_revision===undefined?0:Number(row.reply_revision),updatedAt=row.updated_at==null?null:row.updated_at;
+    if(!Number.isSafeInteger(replyRevision)||replyRevision<0||(updatedAt!==null&&!Number.isFinite(Date.parse(updatedAt))))throw new Error('reply-load-invalid');
+    return {id:row.id,bookId:bookId,revision:revision,userId:row.user_id,name:typeof row.user_name==='string'?row.user_name:'모임원',body:replyText(row.body),createdAt:row.created_at,replyRevision:replyRevision,updatedAt:updatedAt};
+  }
+  function editedReply(data,previous,body){
+    var reply=replyRow(data,previous.bookId,previous.revision);
+    if(reply.id!==previous.id||reply.userId!==previous.userId||reply.body!==replyText(body)||reply.replyRevision!==previous.replyRevision+1||reply.createdAt!==previous.createdAt||!reply.updatedAt)throw new Error('reply-update-invalid');
+    return reply;
+  }
+  function deletedReply(data,previous){
+    if(!data||data.deleted!==true||data.id!==previous.id||data.book_id!==previous.bookId||Number(data.question_revision)!==previous.revision||data.user_id!==previous.userId||Number(data.reply_revision)!==previous.replyRevision+1)throw new Error('reply-delete-invalid');
+    return previous.id;
   }
   function replyThread(data,bookId){
     if(!data||data.book_id!==bookId||!Object.prototype.hasOwnProperty.call(defaults,bookId)||!validQuestion(data.question)||!Number.isSafeInteger(Number(data.revision))||Number(data.revision)<0||!Array.isArray(data.replies)||typeof data.has_more!=='boolean')throw new Error('reply-load-invalid');
@@ -44,5 +55,5 @@
       return timestamp(b.createdAt)-timestamp(a.createdAt)||a.id.localeCompare(b.id);
     });
   }
-  return {defaults:defaults,question:question,validQuestion:validQuestion,questionRows:questionRows,questionFor:questionFor,replyText:replyText,validReply:validReply,replyRow:replyRow,replyThread:replyThread,authorPosts:authorPosts};
+  return {defaults:defaults,question:question,validQuestion:validQuestion,questionRows:questionRows,questionFor:questionFor,replyText:replyText,validReply:validReply,replyRow:replyRow,editedReply:editedReply,deletedReply:deletedReply,replyThread:replyThread,authorPosts:authorPosts};
 });

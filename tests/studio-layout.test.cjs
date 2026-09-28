@@ -14,7 +14,7 @@ const book={id:'emotion',accent:'emotion'};
 function harness(){
   const scheduled=[],decrypted=[],renders=[];
   const c={URL,Promise,Array,Object,JSON,String,esc,stripHtml:value=>String(value).replace(/<[^>]*>/g,''),
-    fmtPostDate:()=> '오늘',fmtDate:()=> '2026. 9. 23.',svgIcon:()=>'',I_BACK:'',I_LOCK:'',I_EDIT:'',I_TRASH:'',
+    fmtPostDate:()=> '오늘',fmtDate:()=> '2026. 9. 23.',svgIcon:()=>'',I_BACK:'',I_LOCK:'',I_EDIT:'',I_SETTINGS:'',I_TRASH:'',
     NOTE_TYPE_INSIGHT:{key:'insight',label:'통찰 정리'},NOTE_TYPES:[],INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],
     noteTypeOf:key=>key==='thought'?{key,label:'내 생각'}:null,
     publicAuthorHtml:(id,name)=>'<button type="button" data-community-author="'+esc(id)+'">'+esc(name)+'</button>',
