@@ -69,7 +69,7 @@
     return '<header class="book-details-header"><h2 id="book-details-title">책 소개와 목차</h2><button class="icon-btn" type="button" data-book-details-close aria-label="책 소개 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>'+
       '<div class="book-details-body"><div class="book-details-book"><img src="'+escape(book.cover)+'" alt=""><div><h3>'+escape(book.title)+'</h3><p>'+escape(book.author)+' · '+escape(book.publisher)+'<br>'+info.totalPages+'쪽</p></div></div>'+
       '<section class="book-details-overview"><h3>어떤 책인가요?</h3><p>'+escape(info.overview)+'</p><h3>저자 소개</h3><p>'+escape(info.authorIntro)+'</p></section>'+
-      '<section class="book-details-contents"><div class="book-toc-heading"><h3>장별 목차 요약</h3>'+(section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">쪽수와 읽는 챕터는 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.</p><ol class="book-toc">'+toc+'</ol></section>'+
+      '<section class="book-details-contents"><div class="book-toc-heading"><h3>장별 목차 요약</h3>'+(section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">읽고 있는 부분은 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.</p><ol class="book-toc">'+toc+'</ol></section>'+
       '<footer class="book-details-sources"><span>종이책 기준 · ISBN '+info.isbn+'</span><a href="'+info.previewUrl+'" target="_blank" rel="noopener noreferrer">원래 목차 보기 ↗</a><a href="'+info.infoUrl+'" target="_blank" rel="noopener noreferrer">도서 정보 출처 ↗</a></footer></div>';
   }
   function open(bookId,trigger){

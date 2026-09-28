@@ -27,7 +27,7 @@
 .book-toc-label{color:var(--ink-soft);font-size:12px;white-space:nowrap}
 .book-toc-title{font-weight:550}
 .book-toc-page{flex:none;min-width:40px;text-align:right;color:var(--ink-soft);font-size:12px;font-variant-numeric:tabular-nums}
-.book-toc-row.is-current{background:var(--primary-soft);box-shadow:inset 3px 0 0 var(--primary)}
+.book-toc-row.is-current{background:var(--primary-soft)}
 .book-toc-current{font-size:10px;font-weight:700;color:var(--primary);white-space:nowrap}
 .book-details-sources{display:flex;flex-wrap:wrap;gap:7px 14px;margin-top:20px;font-size:11px;color:var(--ink-soft)}
 .book-details-sources>span{flex-basis:100%}
