@@ -71,7 +71,7 @@ test('history popup closes on account or route change and the summary never expa
   c.readingHistoryOpenFor=book.id;assert.equal(c.readingStatusBodyHtml(book),'');
 });
 
-test('compact My Space card keeps timer and history beside progress and page editing below the status',()=>{
+test('compact My Space card keeps timer and history beside progress and page editing in the status row',()=>{
   const {c,book}=historyDialogHarness();
   Object.assign(c,{myCurrentPage:()=>20,readingNoteReturn:false,readingTimer:null,readingSavePanelOpen:false,readingEditOpenFor:null,
     I_TIMER:'timer',I_EDIT:'edit',GrowellBookDetails:{coverHtml:()=>'<img alt="책 표지">',hintHtml:()=>'<span>읽는 부분: 첫 장</span>'}});
@@ -84,8 +84,9 @@ test('compact My Space card keeps timer and history beside progress and page edi
     assert.ok(actions.includes('id="'+id+'"'));
   }
   assert.doesNotMatch(actions,/btn-reading-edit-open/);
-  const footer=markup.slice(markup.indexOf('<div class="reading-card-footer">'));
-  assert.match(footer,/id="btn-reading-edit-open"/);
+  const statusRow=markup.slice(markup.indexOf('<div class="reading-split-right">'));
+  assert.match(statusRow,/읽는 중[\s\S]*총 읽은 시간[\s\S]*id="btn-reading-edit-open"/);
+  assert.doesNotMatch(markup,/reading-card-footer/);
   for(const id of ['btn-reading-start','btn-reading-edit-open','btn-reading-history-toggle'])assert.equal((markup.match(new RegExp('id="'+id+'"','g'))||[]).length,1);
   assert.match(markup.slice(markup.indexOf('<div class="reading-split-right">')),/읽는 중[\s\S]*총 읽은 시간/);
   assert.doesNotMatch(markup,/노트 작성|reading-log-list|reading-toggle-row/);

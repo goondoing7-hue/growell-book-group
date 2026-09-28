@@ -101,7 +101,7 @@ function harness(initialRows=[]){
 test('empty review and reading period are accessible edit targets and Back preserves book dialog position',async()=>{
   const h=harness([makeRow('quick')]),detail=await h.open('quick');detail.scrollTop=240;const body=detail.querySelector('.archive-dialog-body');body.scrollTop=95;
   for(const kind of ['review','period']){
-    const trigger=detail.querySelector('[data-archive-field="'+kind+'"]');assert.equal(trigger.tagName,'BUTTON');assert.equal(trigger.getAttribute('aria-haspopup'),'dialog');assert.ok(trigger.getAttribute('aria-label'));
+    const trigger=detail.querySelector('[data-archive-field="'+kind+'"]');assert.equal(trigger.tagName,'BUTTON');assert.equal(trigger.getAttribute('aria-haspopup'),'dialog');assert.ok(trigger.getAttribute('aria-label'));assert.equal(trigger.querySelector('svg'),null);
     await trigger.click();const editor=h.body.querySelector('.archive-detail-field-dialog');assert.equal(editor.open,true);assert.equal(detail.open,true);
     const history=h.history.filter(item=>item.key==='archive-field').at(-1);assert.equal(history.options.canClose(),true);history.options.close();
     assert.equal(h.body.querySelector('.archive-detail-field-dialog'),null);assert.equal(detail.open,true);assert.equal(detail.scrollTop,240);assert.equal(body.scrollTop,95);assert.equal(trigger.focused,true);
@@ -143,7 +143,7 @@ test('reading statistics and calendar use owned active books, and period edits r
     makeRow('reading',{startDate:'2026-08-28'}),makeRow('unread',{status:'unread'}),makeRow('trash',{deleted:true}),makeRow('foreign',{},'other')]);
   h.c.Date=class extends Date{constructor(...args){super(...(args.length?args:['2026-09-28T12:00:00+09:00']));}};
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../archiveCalendar.js'),'utf8'),h.c);
-  await h.mount();const stats=h.body.querySelector('.archive-reading-stats');assert.deepEqual(stats.querySelectorAll('.archive-stat-value').map(node=>node.textContent),['4','1','1','1']);assert.doesNotMatch(stats.textContent,/평균 별점|개의 감상/);
+  await h.mount();const stats=h.body.querySelector('.archive-reading-stats');assert.deepEqual(stats.querySelectorAll('.archive-stat-value').map(node=>node.textContent),['4','1','1','1']);assert.deepEqual(stats.querySelectorAll('.archive-stat-label').map(node=>node.textContent),['총 등록한 책','이번 달 완독한 책','읽는 중인 책','올해 완독한 책']);assert.doesNotMatch(stats.textContent,/평균 별점|개의 감상/);
   await stats.querySelector('[data-archive-calendar]').click();const calendar=h.body.querySelector('.archive-calendar-dialog');assert.equal(calendar.open,true);
   await calendar.querySelector('[data-calendar-shift="-1"]').click();calendar.scrollTop=310;
   const bar=calendar.querySelector('[data-calendar-book="'+Domain.recordId('owner','arc_reading')+'"]');assert.ok(bar);await bar.click();const detail=h.body.querySelector('.archive-dialog');assert.equal(detail.open,true);assert.equal(calendar.open,true);
@@ -413,7 +413,8 @@ test('reading history is an icon popup whose Back leaves the existing book detai
   const original=makeRow('history',{readingSessions:[{id:'read',seconds:80,startPage:20,endPage:30,createdAt:1000}]});const h=harness([original]),detail=await h.open('history');assert.equal(detail.querySelector('details.archive-sessions'),null);assert.ok(detail.querySelector('[data-archive-timer]'));assert.ok(detail.querySelector('[data-archive-edit-icon]'));const trigger=detail.querySelector('[data-archive-history]');await trigger.click();const popup=h.body.querySelector('.archive-sessions-dialog');assert.match(popup.textContent,/읽은 기록|p. 20–30|10쪽 읽음|1분/);h.history.filter(item=>item.key==='archive-sessions').at(-1).options.close();assert.equal(h.body.querySelector('.archive-sessions-dialog'),null);assert.equal(detail.open,true);assert.equal(trigger.focused,true);assert.deepEqual(h.rows()[0].book.readingSessions,original.book.readingSessions);
   assert.equal(detail.querySelector('.archive-reading-icons [data-archive-edit]'),null);
   const footer=detail.querySelector('.archive-reading-footer');assert.ok(footer.querySelector('[data-archive-note-add]'));
-  await footer.querySelector('[data-archive-edit]').click();assert.ok(detail.querySelector('#archive-form'));
+  assert.equal(footer.querySelector('[data-archive-edit]'),null);const meta=detail.querySelector('.archive-reading-meta');assert.ok(meta.querySelector('.archive-state'));assert.ok(meta.querySelector('.archive-time'));
+  await meta.querySelector('[data-archive-edit]').click();assert.ok(detail.querySelector('#archive-form'));
 });
 
 test('archive composer saves page and background with the existing photo while preserving note identity',async()=>{

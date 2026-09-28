@@ -5531,7 +5531,7 @@ function readingCardHtml(book,inDialog){
       '<div class="composer-foot"><span class="hint">나에게만 보여요</span><button type="button" class="btn btn-primary btn-sm" id="btn-reading-edit-save" data-book="'+book.id+'">저장</button></div>' +
     '</div>';
   }
-  /* 진도 옆에는 타이머·기록을, 상태와 누적 시간 아래 오른쪽에는 수정을 표시한다. */
+  /* 진도 옆에는 타이머·기록을, 상태와 누적 시간 줄 오른쪽에는 수정을 표시한다. */
   var pct = total>0 ? Math.max(0, Math.min(100, Math.round(current/total*100))) : 0;
   var timerLabel=readingTimer&&readingTimer.bookId===book.id?'타이머로 돌아가기':'타이머로 읽기 시작';
   return '<div class="card reading-card reading-split-card reading-compact-card">' +
@@ -5543,7 +5543,7 @@ function readingCardHtml(book,inDialog){
       '<div class="reading-card-actions" role="group" aria-label="독서 관리">'+
           '<button type="button" class="icon-btn reading-play-btn" id="btn-reading-start" data-book="'+book.id+'" data-reading-start="'+book.id+'" aria-haspopup="dialog" aria-label="'+timerLabel+'" title="'+timerLabel+'">'+svgIcon(I_TIMER)+'</button>' +
           readingHistoryButtonHtml(book)+
-      '</div></div><div class="reading-split-right">'+readingStatusPanelHtml(book,false)+'</div><div class="reading-card-footer">'+
+      '</div></div><div class="reading-split-right">'+readingStatusPanelHtml(book,false)+
         '<button type="button" class="icon-btn reading-edit-btn js-reading-edit-open" id="btn-reading-edit-open" data-book="'+book.id+'" aria-label="현재 페이지 수정" title="현재 페이지 수정">'+svgIcon(I_EDIT)+'</button></div></div>';
 }
 /* ---------------- 습관 만들기(전용 탭) ----------------
