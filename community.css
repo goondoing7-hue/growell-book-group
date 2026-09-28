@@ -93,6 +93,9 @@
 }
 .book-page .nt-set{gap:6px}
 .book-page .nt-pill{font-size:13px;min-height:38px}
+.mine-fixed-categories .mine-category-filters{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.65fr) minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,1.6fr);gap:6px;max-width:620px}
+.mine-fixed-categories .mine-category-filters button{white-space:nowrap;padding:9px 5px;min-height:40px}
+@media(max-width:640px){.mine-fixed-categories .mine-category-filters{gap:3px}.mine-fixed-categories .mine-category-filters button{font-size:12px;padding:8px 2px;letter-spacing:-.025em}}
 @media(max-width:640px){
  .book-page.wrap{padding-left:16px;padding-right:16px}
  .book-page .book-banner{display:block!important;padding:22px 0 18px}

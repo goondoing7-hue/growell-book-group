@@ -1,7 +1,8 @@
--- OPTIONAL ACTIVATION, only after sender verification and worker deployment.
--- First save the SAME random worker secret in Edge Function secrets as
--- GROWELL_NOTIFICATION_WORKER_SECRET and Supabase Vault as
--- growell_signup_notification_worker_secret. Never paste a secret in this file.
+-- OPTIONAL ACTIVATION, only after Gmail verification and worker deployment.
+-- signup-notifications.sql generates the internal worker token inside Vault.
+-- The worker validates it via a service-only RPC; no second Edge secret entry
+-- is needed. GROWELL_GMAIL_APP_PASSWORD is saved directly in Edge secrets.
+-- Never paste either secret into this file or output a Vault decrypted value.
 begin;
 create extension if not exists pg_cron;
 create extension if not exists pg_net with schema extensions;

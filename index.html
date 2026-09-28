@@ -1892,7 +1892,7 @@ function captureComposerDraft(){
   var photo = el.querySelector('#photo-preview img');
   var gauge = el.querySelector('#gauge-range');
   var editor = el.querySelector('#note-editor');
-  var fields = {noteType:selected('.nt-pill.is-sel','data-nt')||null,
+  var fields = {noteType:selected('.nt-pill.is-sel','data-nt')||selected('#nt-set','data-original-note-type')||null,
     title:field('note-title'), page:field('note-page'), html:editor ? editor.innerHTML : '',
     photo:photo ? {dataUrl:photo.getAttribute('src'), mimeType:'image/jpeg'} : null,
     checkin:gauge ? Number(gauge.value) : (selected('[data-checkin-val].is-sel','data-checkin-val')||null),
@@ -2110,7 +2110,7 @@ function currentRoute(){
   if(!h) return {view:'home'};
   var parts = h.split('/');
   if(parts[0]==='book' && parts[1]){
-    var br = {view:'book', bookId:parts[1], tab:parts[2]||'share'};
+    var br = {view:'book', bookId:parts[1], tab:parts[2]||'mine'};
     if(parts[3]==='post' && parts[4]){ br.postId = parts[4]; }
     return br;
   }
@@ -3584,7 +3584,7 @@ function showReadingCountdownNotice(){
   document.body.appendChild(dialog);dialog.showModal();
   if(typeof GrowellPopupHistory!=='undefined'){
     // The timer can be remounted immediately after a countdown settles.
-    if(readingHomeDialogFor===timerId&&isReadingHomeRoute())GrowellPopupHistory.open('reading-home',{close:closeReadingHomeDialog});
+    if(readingHomeDialogFor===timerId&&isReadingTimerDialogRoute(currentRoute()))GrowellPopupHistory.open('reading-home',{close:closeReadingHomeDialog});
     GrowellPopupHistory.open('reading-countdown-ended',{close:acknowledge});
   }
 }
@@ -3641,20 +3641,23 @@ function pauseReadingBeforeLogout(){
   closeReadingHomeDialog();closeReadingCountdownNotice();
 }
 function isReadingHomeRoute(){return !location.hash || location.hash==='#' || location.hash==='#/';}
+function isReadingTimerDialogRoute(route){
+  return readingHomeReturn?route.view==='home':!!(readingTimer&&route.view==='book'&&route.bookId===readingTimer.bookId&&(route.tab||'mine')==='mine');
+}
 function readingHomeDialogHtml(route){
-  if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || readingHomeDialogFor!==readingTimer.id || route.view!=='home'){
+  if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || readingHomeDialogFor!==readingTimer.id || readingNoteReturn || !isReadingTimerDialogRoute(route)){
     readingHomeDialogFor=null;return '';
   }
   var book=bookById(readingTimer.bookId);
   if(!book || isBookLocked(book)){readingHomeDialogFor=null;return '';}
-  return '<dialog class="reading-home-dialog" id="reading-home-dialog" data-reading-key="'+esc(readingTimer.id+':'+readingTimer.phase)+'" aria-labelledby="reading-home-title"><div class="reading-home-dialog-heading"><h2 id="reading-home-title">'+(readingSavePanelOpen?'읽은 기록 저장':'독서 타이머')+'</h2><button type="button" class="icon-btn" data-reading-home-close aria-label="타이머 닫고 홈으로 돌아가기">'+svgIcon(I_CLOSE)+'</button></div>'+readingCardHtml(book,true)+'</dialog>';
+  return '<dialog class="reading-home-dialog" id="reading-home-dialog" data-reading-key="'+esc(readingTimer.id+':'+readingTimer.phase)+'" aria-labelledby="reading-home-title"><div class="reading-home-dialog-heading"><h2 id="reading-home-title">'+(readingSavePanelOpen?'읽은 기록 저장':'독서 타이머')+'</h2><button type="button" class="icon-btn" data-reading-home-close aria-label="타이머 닫고 '+(readingHomeReturn?'홈':'나의 공간')+'으로 돌아가기">'+svgIcon(I_CLOSE)+'</button></div>'+readingCardHtml(book,true)+'</dialog>';
 }
 function closeReadingHomeDialog(){
   readingHomeDialogFor=null;readingHomeDialogPosition=null;
   var dialog=document.getElementById('reading-home-dialog');
   if(dialog && dialog.open && dialog.close)dialog.close();
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-home');
-  var trigger=isReadingHomeRoute() && document.querySelector && document.querySelector('[data-reading-start]');
+  var trigger=document.querySelector && document.querySelector('[data-reading-start]');
   if(trigger && trigger.focus)trigger.focus({preventScroll:true});
 }
 function showReadingHomeDialog(){
@@ -3684,7 +3687,7 @@ function startReading(bookId){
   var fromHome=isReadingHomeRoute();
   if(readingTimer&&readingTimer.bookId===bookId){
     readingHomeReturn=fromHome;
-    readingHomeDialogFor=fromHome?readingTimer.id:null;
+    readingHomeDialogFor=readingTimer.id;
     if(readingNoteReturn){returnToReadingTimer();return;}
     persistReadingTimer();
     if(!fromHome)location.hash='#/book/'+readingTimer.bookId+'/mine';
@@ -3700,7 +3703,7 @@ function startReading(bookId){
   next=Object.assign({},next,{returnView:fromHome?'home':'mine'});
   if(!commitReadingTimerState(next,parked)){showToast('읽은 시간을 보관하지 못해 책을 바꾸지 않았어요. 다시 시도해주세요.',true);render();return;}
   readingTimerRestoreOwner=SESSION.userId;readingSaveError=false;readingSaveFailure='';readingCountdownOpen=false;
-  closeReadingCountdownNotice();readingHomeDialogFor=fromHome?readingTimer.id:null;readingHomeDialogPosition=null;
+  closeReadingCountdownNotice();readingHomeDialogFor=readingTimer.id;readingHomeDialogPosition=null;
   if(!fromHome)location.hash='#/book/'+bookId+'/mine';render();
 }
 function todayReadSeconds(bookId){
@@ -3716,7 +3719,7 @@ function activeReadingStripHtml(route){
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || route.view==='home' || (route.view==='book' && route.bookId===readingTimer.bookId && route.tab==='mine' && !route.postId)) return '';
   var book=bookById(readingTimer.bookId);if(!book)return '';
   var status=readingNoteReturn?'기록 중 · 잠시 멈춤':readingSavePanelOpen?'독서 기록 저장 중':readingTimer.running?'책 읽는 중':'잠시 멈춤';
-  return '<aside class="reading-active-strip wrap" aria-label="진행 중인 독서"><div class="reading-active-info">'+svgIcon(I_TIMER)+'<div><span class="reading-active-title">'+esc(book.title)+'</span><span class="reading-active-status">'+status+'</span></div></div><strong class="reading-active-elapsed mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong>'+(readingNoteReturn?'<button class="btn btn-sm" type="button" data-reading-return>타이머로 돌아가기</button>':'<a class="btn btn-sm" href="#/book/'+book.id+'/mine">'+(readingSavePanelOpen?'기록 저장하기':'타이머로 돌아가기')+'</a>')+'</aside>';
+  return '<aside class="reading-active-strip wrap" aria-label="진행 중인 독서"><div class="reading-active-info">'+svgIcon(I_TIMER)+'<div><span class="reading-active-title">'+esc(book.title)+'</span><span class="reading-active-status">'+status+'</span></div></div><strong class="reading-active-elapsed mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong>'+(readingNoteReturn?'<button class="btn btn-sm" type="button" data-reading-return>타이머로 돌아가기</button>':'<button class="btn btn-sm" type="button" data-reading-start="'+book.id+'">'+(readingSavePanelOpen?'기록 저장하기':'타이머로 돌아가기')+'</button>')+'</aside>';
 }
 function readingCountdownHtml(){
   var left=GrowellReadingTimer.remaining(readingTimer,Date.now()),minutes=left===null?20:Math.max(1,Math.min(1439,Math.ceil(left/60000)));
@@ -3781,7 +3784,7 @@ function completeReadingNote(type,bookId){
   if(resumed.running&&!pauseArchiveReadingBeforeSharedStart())return false;
   var next=captureReadingTimerState();next.timer=resumed;next.noteReturn=null;
   if(!commitReadingTimerState(next)){showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);return false;}
-  readingHomeDialogFor=readingHomeReturn?readingTimer.id:null;location.hash=readingHomeReturn?'#/':'#/book/'+bookId+'/mine';return true;
+  readingHomeDialogFor=readingTimer.id;location.hash=readingHomeReturn?'#/':'#/book/'+bookId+'/mine';return true;
 }
 function returnToReadingTimer(){
   if(!readingNoteReturn)return;
@@ -3945,7 +3948,7 @@ function headerHtml(route){
     var b = n.book;
     var active = route.view==='book' && route.bookId===b.id;
     var locked = isBookLocked(b);
-    return '<a class="nav-pill'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' href="#/book/'+b.id+'/share">'+b.area+(locked?svgIcon(I_LOCK,'0 0 24 24'):'')+'</a>';
+    return '<a class="nav-pill'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' href="#/book/'+b.id+'/mine">'+b.area+(locked?svgIcon(I_LOCK,'0 0 24 24'):'')+'</a>';
   }).join('');
   var admin = isAdmin();
   var right;
@@ -4350,7 +4353,7 @@ function welcomeHomeHtml(){
   }).join('');
   var tl = BOOKS.map(function(b, idx){
     var locked = isBookLocked(b);
-    return '<a class="tl-item" href="#/book/'+b.id+'/share">' +
+    return '<a class="tl-item" href="#/book/'+b.id+'/mine">' +
       '<div class="tl-cover'+(locked?' is-locked':'')+'"><img src="'+b.cover+'" alt="'+esc(b.title)+' 표지" loading="lazy">' +
         (locked?'<span class="tl-lock-overlay">'+svgIcon(I_LOCK)+'</span>':'') +
         '<span class="tl-num" style="color:var(--'+b.accent+'-ink)">'+String(idx+1).padStart(2,'0')+'</span></div>' +
@@ -4992,17 +4995,16 @@ function noteComposerHtml(book, opts){
     editing = draft.variants[draftMode];
     if(draftType!=='share') opts.selectedNoteType = editing.noteType;
     if(draftType==='materials') opts.extraHtml = matComposerExtraHtml(editing);
-  } else if(editing && (editing.noteType==='insight')!==(draftMode==='insight')){
+  } else if(draftType!=='mine' && editing && (editing.noteType==='insight')!==(draftMode==='insight')){
     editing = null;
   }
   // Keep legacy summary records and drafts editable without offering the retired category for new notes.
   var types = opts.noteTypes || NOTE_TYPES.filter(function(t){return t.key!=='summary' || (editing && editing.noteType==='summary');}).concat(opts.extraNoteTypes||[]);
   if(draftType==='mine'){
-    var categories=privateCategoryContext(book.id).categories;
-    types=GrowellPrivateCategories.options(categories);
-    opts.selectedNoteType=GrowellPrivateCategories.key(editing?editing.noteType:opts.selectedNoteType,categories);
+    types=GrowellPrivateCategories.fixedOptions();
+    opts.selectedNoteType=GrowellPrivateCategories.fixedKey(editing?editing.noteType:opts.selectedNoteType)||(editing?'':'thought');
   }
-  var ntSetHtml = '<div class="nt-set" id="nt-set">' + types.map(function(t){
+  var ntSetHtml = '<div class="nt-set" id="nt-set"'+(draftType==='mine'&&editing?' data-original-note-type="'+esc(editing.noteType||'')+'"':'')+'>' + types.map(function(t){
     var sel = opts.selectedNoteType===t.key;
     /* 글쓰기 화면에서 종류를 고르는 이 pill은 (통찰 정리처럼 아이콘이 있는 타입도 포함해)
        항상 자료실 카테고리처럼 글자만으로 표시한다 — 아이콘만 있고 모바일에서 글자가
@@ -5112,7 +5114,7 @@ function insightBodyOf(payload){
   };
 }
 function noteBodyHtml(payload){
-  if(payload.noteType==='insight') return insightBodyOf(payload);
+  if(payload.noteType==='insight'&&!payload.html&&!payload.text) return insightBodyOf(payload);
   var nt = noteTypeOf(payload.noteType);
   var ntBadge = nt ? '<span class="note-badge nt-'+nt.key+'">'+svgIcon(nt.icon)+'<span class="note-badge-label">'+esc(nt.label)+'</span></span>' : '';
   var pageBadge = payload.page ? '<span class="page-badge">p. '+esc(payload.page)+'</span>' : '';
@@ -5404,7 +5406,11 @@ function openReadingHistoryDialog(bookId,trigger){
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('reading-history',{close:closeReadingHistoryDialog});
 }
 /* 상태와 누적 시간은 그대로 두고, 기록 목록은 아이콘으로 별도 팝업에서 연다. */
-function readingStatusPanelHtml(book){
+function readingHistoryButtonHtml(book){
+  var logs=myReadingLogs(book.id);
+  return '<button type="button" class="icon-btn reading-history-button" id="btn-reading-history-toggle" data-book="'+book.id+'" aria-haspopup="dialog" aria-label="읽은 기록 보기'+(logs.length?' ('+logs.length+'회)':'')+'" title="읽은 기록 보기">'+svgIcon(I_DOC)+(logs.length?'<span class="reading-history-count" aria-hidden="true">'+logs.length+'</span>':'')+'</button>';
+}
+function readingStatusPanelHtml(book,includeHistory){
   var status = readingStatusKey(book);
   var statusHtml = status==='done'
     ? '<span class="status-pill reading-status-pill is-done" style="background:var(--'+book.accent+');color:var(--surface)">'+svgIcon(I_CHECK)+'<span>완독</span></span>'
@@ -5413,12 +5419,8 @@ function readingStatusPanelHtml(book){
   var totalSec = totalReadSeconds(book.id);
   var timeHtml = '<div class="reading-total-time">총 읽은 시간 <strong>'+fmtDurationHuman(totalSec)+'</strong></div>';
 
-  var logs = myReadingLogs(book.id);
-  var historyToggle = '<button type="button" class="icon-btn reading-history-button" id="btn-reading-history-toggle" data-book="'+book.id+'" aria-haspopup="dialog" aria-label="읽은 기록 보기'+(logs.length?' ('+logs.length+'회)':'')+'" title="읽은 기록 보기">' +
-    svgIcon(I_DOC)+(logs.length?'<span class="reading-history-count" aria-hidden="true">'+logs.length+'</span>':'')+'</button>';
-
   return '<div class="reading-status-top">'+statusHtml+timeHtml+'</div>' +
-    historyToggle;
+    (includeHistory===false?'':readingHistoryButtonHtml(book));
 }
 /* 기존 저장 완료 상태와 호환하되 기록 목록은 카드 안에 펼치지 않는다. */
 function readingStatusBodyHtml(book){
@@ -5430,11 +5432,11 @@ function readingCardHtml(book,inDialog){
   var total = book.totalPages || 0;
   var current = myCurrentPage(book.id);
 
-  if(readingNoteReturn && readingTimer && readingTimer.bookId===book.id && mineComposerOpenFor===book.id){
+  if(inDialog && readingNoteReturn && readingTimer && readingTimer.bookId===book.id && mineComposerOpenFor===book.id){
     return '<div class="card reading-note-paused"><span>'+svgIcon(I_TIMER)+' 기록 중에는 타이머가 잠시 멈춰요.</span><strong data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong><button type="button" class="btn btn-sm" data-reading-return>타이머로 돌아가기</button></div>';
   }
   /* 완료 → 저장 화면: 경과 시간은 자동, 페이지만 확인/수정하고 저장 (총 페이지는 책마다 고정값) */
-  if(readingSavePanelOpen && readingTimer && readingTimer.bookId===book.id){
+  if(inDialog && readingSavePanelOpen && readingTimer && readingTimer.bookId===book.id){
     var elapsedSave = readingTimerElapsedMs();
     var endPage=readingSaveAttempt?readingSaveAttempt.page:(readingFinishKind==='complete'?total:readingEndPage!==null?readingEndPage:Math.max(current,readingTimer.startPage));
     var pageProgress=GrowellReadingTimer.pageProgress(readingTimer.startPage,endPage,total);
@@ -5451,12 +5453,12 @@ function readingCardHtml(book,inDialog){
     '</div>';
   }
   /* 실행/일시정지 중인 타이머 */
-  if(readingTimer && readingTimer.bookId===book.id){
+  if(inDialog && readingTimer && readingTimer.bookId===book.id){
     var elapsedRun = readingTimerElapsedMs();
     var running = !!readingTimer.running;
     return '<div class="card reading-card reading-timer-card">' +
       '<div class="reading-timer-head">' +
-        (inDialog?'<button type="button" class="btn btn-sm" data-reading-home-close>'+svgIcon(I_BACK)+' 홈</button>':'<a class="btn btn-sm" href="#/">'+svgIcon(I_BACK)+' 홈</a>') +
+        '<button type="button" class="btn btn-sm" data-reading-home-close>'+svgIcon(I_BACK)+' '+(readingHomeReturn?'홈':'나의 공간')+'</button>' +
         '<span class="reading-timer-status" data-reading-status role="status">'+(running?(readingTimer.goalReached?'목표 달성 · 계속 읽는 중':'읽고 있는 중…'):'잠시 멈춤')+'</span>' +
         '<button type="button" class="btn reading-complete-btn btn-sm" id="btn-reading-done">'+svgIcon(I_CHECK)+' 완료</button>' +
       '</div>' +
@@ -5478,28 +5480,19 @@ function readingCardHtml(book,inDialog){
       '<div class="composer-foot"><span class="hint">나에게만 보여요</span><button type="button" class="btn btn-primary btn-sm" id="btn-reading-edit-save" data-book="'+book.id+'">저장</button></div>' +
     '</div>';
   }
-  /* 기본(대기) 상태 — 카드 한 장을 좌/우로 나눔:
-     왼쪽=표지·p.현재/총·퍼센트·진행률 막대·시작/수정 버튼, 오른쪽=읽는 중/완독 상태 표시(자동) + 총 읽은 시간 + 읽은 기록 버튼.
-     버튼을 누르면 그 내용은 카드 아래(전체 너비)로 펼쳐진다. */
+  /* 기본 상태: 진도 옆에 타이머·수정·기록 아이콘을 모으고 상태와 누적 시간은 아래에 표시한다. */
   var pct = total>0 ? Math.max(0, Math.min(100, Math.round(current/total*100))) : 0;
-  return '<div class="card reading-card reading-split-card">' +
-    '<div class="reading-split-row">' +
-      '<div class="reading-split-left">' +
-        '<div class="reading-slim-row">' +
-          '<div class="reading-cover">'+GrowellBookDetails.coverHtml(book)+'</div>' +
-          '<div class="reading-info">' +
-            '<div class="reading-title">'+esc(book.title)+'</div>' +
-            '<div class="reading-pages mono">p. '+current+' / '+total+' <span class="reading-pct">· '+pct+'%</span></div>' +
-            '<div class="reading-bar"><div class="reading-bar-fill" style="width:'+pct+'%"></div></div>'+GrowellBookDetails.hintHtml(book.id,current) +
-          '</div>' +
-          '<button type="button" class="icon-btn reading-play-btn" id="btn-reading-start" data-book="'+book.id+'" data-reading-start="'+book.id+'" aria-label="타이머로 읽기 시작" title="타이머로 읽기 시작">'+svgIcon(I_TIMER)+'</button>' +
-          '<button type="button" class="icon-btn reading-edit-btn js-reading-edit-open" id="btn-reading-edit-open" data-book="'+book.id+'" title="현재 페이지 수정">'+svgIcon(I_EDIT)+'</button>' +
-        '</div>' +
-      '</div>' +
-      '<div class="reading-split-right">' + readingStatusPanelHtml(book) + '</div>' +
-    '</div>' +
-    readingStatusBodyHtml(book) +
-  '</div>';
+  var timerLabel=readingTimer&&readingTimer.bookId===book.id?'타이머로 돌아가기':'타이머로 읽기 시작';
+  return '<div class="card reading-card reading-split-card reading-compact-card">' +
+    '<div class="reading-book-summary"><div class="reading-cover">'+GrowellBookDetails.coverHtml(book)+'</div><div class="reading-info">'+
+      '<div class="reading-title">'+esc(book.title)+'</div>'+GrowellBookDetails.hintHtml(book.id,current)+'</div></div>'+
+    '<div class="reading-progress-actions"><div class="reading-progress-summary">'+
+      '<div class="reading-pages mono">p. '+current+' / '+total+' <span class="reading-pct">· '+pct+'%</span></div>'+
+      '<div class="reading-bar" role="progressbar" aria-label="독서 진도" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+pct+'"><div class="reading-bar-fill" style="width:'+pct+'%"></div></div></div>'+
+      '<div class="reading-card-actions" role="group" aria-label="독서 관리">'+
+          '<button type="button" class="icon-btn reading-play-btn" id="btn-reading-start" data-book="'+book.id+'" data-reading-start="'+book.id+'" aria-haspopup="dialog" aria-label="'+timerLabel+'" title="'+timerLabel+'">'+svgIcon(I_TIMER)+'</button>' +
+          '<button type="button" class="icon-btn reading-edit-btn js-reading-edit-open" id="btn-reading-edit-open" data-book="'+book.id+'" aria-label="현재 페이지 수정" title="현재 페이지 수정">'+svgIcon(I_EDIT)+'</button>'+readingHistoryButtonHtml(book)+
+      '</div></div><div class="reading-split-right">'+readingStatusPanelHtml(book,false)+'</div></div>';
 }
 /* ---------------- 습관 만들기(전용 탭) ----------------
    28~29번 라운드까지는 나의 공간 안의 월간 달력형이었지만, 30번 라운드에서 요청에 따라
@@ -5948,21 +5941,14 @@ function privateCategoryContext(bookId){
 }
 function privateCategoryFilter(bookId){
   var id=GrowellPrivateCategories.recordId(SESSION.userId,bookId),value=privateCategoryFilters[id]||'all';
-  var categories=privateCategoryContext(bookId).categories;
-  return value==='all'||value==='private-archive'||categories.some(function(c){return c.id===value;})?value:'all';
+  return value==='all'||GrowellPrivateCategories.fixedKey(value)?value:'all';
 }
 function privateCategoryLabel(bookId,noteType){
-  var categories=privateCategoryContext(bookId).categories;
-  return GrowellPrivateCategories.key(noteType,categories)==='private-none'?'':GrowellPrivateCategories.label(noteType,categories);
+  return GrowellPrivateCategories.fixedLabel(noteType);
 }
 function privateCategoryControlsHtml(bookId){
-  var state=privateCategoryContext(bookId);
-  if(state.status==='loading')return '<p class="mine-category-status" role="status">나의 카테고리를 불러오고 있어요…</p>';
-  if(state.status!=='ready')return '<p class="mine-category-status" role="alert">카테고리를 열지 못했어요. 기존 설정은 유지됩니다. <button class="btn btn-sm" data-private-category-retry="'+bookId+'">다시 불러오기</button></p>';
-  var selected=privateCategoryFilter(bookId),options=[{key:'all',label:'전체'},{key:'private-archive',label:'아카이브'}].concat(state.categories.map(function(c){return {key:c.id,label:c.label};}));
-  return '<section class="mine-categories" aria-label="나의 카테고리"><div class="mine-category-head"><strong>나의 카테고리</strong><button class="icon-btn mine-category-settings" type="button" data-private-category-manage="'+bookId+'" aria-label="카테고리 설정" title="카테고리 설정" aria-haspopup="dialog">'+svgIcon(I_SETTINGS)+'</button></div>'+
-    (!state.categories.length?'<p>나에게 맞는 카테고리를 직접 만들어 보세요.</p>':'')+
-    '<div class="mine-category-filters">'+options.map(function(c){return '<button type="button" class="'+(selected===c.key?'is-selected':'')+'" data-private-category-filter="'+esc(c.key)+'" data-book="'+bookId+'" aria-pressed="'+(selected===c.key)+'">'+esc(c.label)+'</button>';}).join('')+'</div></section>';
+  var selected=privateCategoryFilter(bookId),options=[{key:'all',label:'전체'}].concat(GrowellPrivateCategories.fixedOptions());
+  return '<section class="mine-categories mine-fixed-categories" aria-label="나의 기록 분류"><div class="mine-category-filters">'+options.map(function(c){return '<button type="button" class="'+(selected===c.key?'is-selected':'')+'" data-private-category-filter="'+esc(c.key)+'" data-book="'+bookId+'" aria-pressed="'+(selected===c.key)+'">'+esc(c.label)+'</button>';}).join('')+'</div></section>';
 }
 function openPrivateCategoryManager(bookId){
   if(!SESSION||memberLoadState.privateEntries!=='ready')return;
@@ -6026,8 +6012,6 @@ function openPrivateCategoryManager(bookId){
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('private-category',{close:closeCategoryDialog});
 }
 function bindPrivateCategoryEvents(app){
-  app.querySelectorAll('[data-private-category-manage]').forEach(function(button){button.addEventListener('click',function(){openPrivateCategoryManager(button.getAttribute('data-private-category-manage'));});});
-  app.querySelectorAll('[data-private-category-retry]').forEach(function(button){button.addEventListener('click',function(){var id=GrowellPrivateCategories.recordId(SESSION.userId,button.getAttribute('data-private-category-retry'));delete privateCategoryStates[id];render();});});
   app.querySelectorAll('[data-private-category-filter]').forEach(function(button){button.addEventListener('click',function(){
     var bookId=button.getAttribute('data-book');privateCategoryFilters[GrowellPrivateCategories.recordId(SESSION.userId,bookId)]=button.getAttribute('data-private-category-filter');
     var route=currentRoute();if(route.postId)location.hash='#/book/'+bookId+'/mine';else render();
@@ -6038,21 +6022,20 @@ function mineTabHtml(book, postId){
   var archiveRecords = GrowellArchive.reflectionHtml(book.id);
   var loadStatus = memberDataStatusHtml('privateEntries');
   if(loadStatus) return readingCardHtml(book)+archiveRecords+loadStatus;
-  var categoryState=privateCategoryContext(book.id),categoryFilter=privateCategoryFilter(book.id);
+  var categoryFilter=privateCategoryFilter(book.id);
   var entries = Object.values(STATE.privateEntries).filter(function(e){ return e.bookId===book.id && e.userId===SESSION.userId && !GrowellPrivateCategories.isSettingsEntry(e) && !GrowellArchiveDomain.isArchiveEntry(e); }).sort(function(a,b){ return b.createdAt-a.createdAt; });
-  var matching=categoryFilter==='all'?entries:entries.filter(function(e){var cached=privateEntryCategoryKeys[e.id];return cached&&cached.data===e.data&&GrowellPrivateCategories.key(cached.noteType,categoryState.categories)===categoryFilter;});
+  var matching=categoryFilter==='all'?entries:entries.filter(function(e){var cached=privateEntryCategoryKeys[e.id];return cached&&cached.data===e.data&&GrowellPrivateCategories.fixedKey(cached.noteType)===categoryFilter;});
   var selected=postId?entries.find(function(e){return e.id===postId;}):matching[0];
   var writing=!postId && mineComposerOpenFor===book.id;
   var readingCard = readingCardHtml(book);
-  if(categoryFilter==='private-archive'&&!postId&&!writing)return spaceHeadingHtml(book,'mine')+readingCard+privateCategoryControlsHtml(book.id)+archiveRecords;
   var mineEditingPost = mineEditingId ? mineEditingPayload : null;
-  var composer = writing && categoryState.status==='ready'
+  var composer = writing
     ? noteComposerHtml(book, {containerId:'mine-composer', closeId:'btn-close-mine-composer', submitId:'btn-mine-submit',
         heading: mineEditingPost?'나의 기록 수정':'오늘의 기록', withCheckin:false, editorLabel:'나만 보는 솔직한 기록을 남겨보세요',
         placeholder:'누구에게도 보이지 않아요. 솔직하게 적어보세요.', hint:'나에게만 보이는 기록으로 저장돼요.',
         submitLabel: mineEditingPost?'수정하기':'기록하기', withBgColor:true, withFontSize:true, editingPost:mineEditingPost,
         selectedNoteType: mineEditingPost?mineEditingPost.noteType:null})
-    : writing?'<p class="mine-category-status">카테고리를 불러온 뒤 기록할 수 있어요.</p>':'';
+    : '';
   var gridId = 'mine-grid-'+book.id;
   var searchRow = entries.length ? feedSearchHtml(gridId, '나의 기록 검색') : '';
   var grid = entries.length
@@ -6085,13 +6068,13 @@ function decryptListInto(entries){
         var known=privateEntryCategoryKeys[e.id];
         if(!known||known.data!==e.data)learnedCategories=true;
         privateEntryCategoryKeys[e.id]={data:e.data,noteType:payload.noteType};
-        var categoryState=privateCategoryContext(e.bookId),categoryLabel=categoryState.status==='ready'?privateCategoryLabel(e.bookId,payload.noteType):'카테고리 불러오는 중';
+        var categoryLabel=privateCategoryLabel(e.bookId,payload.noteType);
         var categoryBadge=categoryLabel?'<span class="mine-category-badge">'+esc(categoryLabel)+'</span>':'';
         var nb = noteBodyHtml(payload);
         if(node){ node.innerHTML = nb.mediaHtml + (nb.bodyHtml ? '<div class="post-body">'+nb.bodyHtml+'</div>' : ''); }
         if(badgesEl) badgesEl.innerHTML = categoryBadge+(payload.page?'<span class="page-badge">p. '+esc(payload.page)+'</span>':'');
         if(tile){
-          tile.setAttribute('data-private-note-category',GrowellPrivateCategories.key(payload.noteType,categoryState.categories));
+          tile.setAttribute('data-private-note-category',GrowellPrivateCategories.fixedKey(payload.noteType));
           if(tileMedia) tileMedia.innerHTML = spaceListContentHtml(payload,e.createdAt,'나에게만 공개',categoryLabel);
           if(tileBadges) tileBadges.innerHTML = categoryBadge;
           var plain = payload.html!=null ? stripHtml(payload.html) : (payload.text||'');
@@ -6703,9 +6686,10 @@ function adminLockPanelHtml(book){
   '</div>';
 }
 function bookPageHtml(book, tab, postId){
+  tab=tab||'mine';
   var locked = isBookLocked(book);
   var adminPreview = isAdmin();
-  var tabs = [['share','나눔 공간'],['mine','나의 공간'],['worksheet','활동지'],['materials','자료실'],['habit','습관']];
+  var tabs = [['mine','나의 공간'],['share','나눔 공간'],['worksheet','활동지'],['materials','자료실'],['habit','습관']];
   var tabBar = '<nav class="book-tabs" aria-label="'+esc(book.area)+' 책의 다섯 공간">' + tabs.map(function(t){
     var restricted=t[0]==='worksheet'&&!canAccessWorksheet(book.id);
     return '<button type="button" class="book-tab'+(tab===t[0]?' is-active':'')+'" aria-current="'+(tab===t[0]?'page':'false')+'" data-book-tab="'+t[0]+'" data-book-id="'+book.id+'"'+(restricted?' title="관리자가 잠근 활동지예요." aria-label="활동지 · 잠김"':'')+'>'+t[1]+(restricted?'<span class="book-tab-lock" aria-hidden="true">'+svgIcon(I_LOCK)+'</span>':'')+'</button>';
@@ -6750,7 +6734,7 @@ function render(){
   } else if(route.view==='book'){
     var book = bookById(route.bookId);
     if(!book){ html += '<div class="wrap"><div class="empty">책을 찾을 수 없어요.</div></div>'; }
-    else { html += bookPageHtml(book, route.tab||'share', route.postId); }
+    else { html += bookPageHtml(book, route.tab||'mine', route.postId); }
   } else if(route.view==='admin-users'){
     html += adminUsersHtml();
   } else if(route.view==='profile-edit'){
@@ -7000,7 +6984,7 @@ function bindEvents(route){
   /* note type pills — 수정 화면을 열 때는 기존 타입이 미리 선택된 채(is-sel) 그려지므로
      그 표시를 초기값으로 읽어들인다. */
   var ntSet = document.getElementById('nt-set');
-  var selectedNoteType = (ntSet && ntSet.querySelector('.nt-pill.is-sel')) ? ntSet.querySelector('.nt-pill.is-sel').getAttribute('data-nt') : null;
+  var selectedNoteType = (ntSet && ntSet.querySelector('.nt-pill.is-sel')) ? ntSet.querySelector('.nt-pill.is-sel').getAttribute('data-nt') : (ntSet&&ntSet.getAttribute('data-original-note-type')||null);
   if(ntSet){
     ntSet.querySelectorAll('[data-nt]').forEach(function(p){
       p.addEventListener('click', function(){
@@ -7694,7 +7678,9 @@ function archiveSharedNotes(){
         var payload;try{payload=JSON.parse(raw);}catch(e){payload={text:raw};}
         if(!payload||typeof payload!=='object'||Array.isArray(payload))return null;
         var book=bookById(entry.bookId),html=typeof payload.html==='string'?sanitizeHtml(payload.html):'',text=html?stripHtml(html):String(payload.text||'');
-        return {id:entry.id,userId:session.userId,bookId:book.id,bookTitle:book.title,coverUrl:book.cover,title:String(payload.title||''),text:text,html:html,createdAt:entry.createdAt,genres:[],themes:[book.id]};
+        var page=(typeof payload.page==='number'||typeof payload.page==='string')&&String(payload.page).trim()!==''?Number(payload.page):null;
+        if(!Number.isInteger(page)||page<0||page>100000)page=null;
+        return {id:entry.id,userId:session.userId,bookId:book.id,bookTitle:book.title,coverUrl:book.cover,title:String(payload.title||''),text:text,html:html,photo:safePhotoUrl(payload.photo&&payload.photo.dataUrl)||'',page:page,createdAt:entry.createdAt,categoryId:GrowellPrivateCategories.fixedKey(payload.noteType),genres:[],themes:[book.id]};
       }catch(e){return null;}
     }));
     if(current()){cache.notes=notes.filter(Boolean);render();}
@@ -7727,7 +7713,7 @@ function archiveSharedCatalog(){
   return BOOKS.map(function(b){
     var details=GrowellBookDetails.details(b.id);
     return {bookId:b.id,linkedBookId:b.id,themes:[b.id],genres:details&&details.genres?details.genres.slice():[],genreSource:details&&details.genreSource||'',title:b.title,authors:[b.author],publisher:b.publisher,coverUrl:b.cover,
-      description:details?details.overview:b.subtitle||'',isbn:details?details.isbn:'',sourceUrl:details?details.infoUrl:'',
+      description:details?details.overview:b.subtitle||'',authorIntro:details?details.authorIntro:'',isbn:details?details.isbn:'',sourceUrl:details?details.infoUrl:'',
       source:'growell',pageCount:b.totalPages||null,totalPages:b.totalPages||null,status:'unread'};
   });
 }

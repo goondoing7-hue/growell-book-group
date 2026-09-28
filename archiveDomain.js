@@ -13,6 +13,7 @@
   var MAX_COVER_DATA_CHARS = 700 * 1024;
   var MAX_RECORD_CHARS = 8 * 1024 * 1024;
   var THEME_IDS = ['emotion','thought','body','action'];
+  var NOTE_CATEGORIES = ['quote','thought','question','insight'];
   var NOTE_BACKGROUNDS = ['#EFE6D8','#E4EEE6','#F3E1E6','#E1EAF3','#E9E2F2','#F4EDE0'];
 
   function validOwner(value){
@@ -132,6 +133,7 @@
     if(updated !== null && updated < created) throw new RangeError('수정 시각이 기록 시각보다 빠를 수 없어요.');
     if(value.deleted !== undefined && typeof value.deleted !== 'boolean') throw new TypeError('노트 상태가 올바르지 않아요.');
     return {id:itemId(value.id),text:body,title:text(value.title,300,'노트 제목'),html:text(value.html,100000,'노트 서식'),
+      category:choice(value.category,NOTE_CATEGORIES,'노트 분류'),
       page:value.page == null || value.page === '' ? null : integer(value.page,0,100000,'노트 쪽수'),
       bgColor:choice(value.bgColor,NOTE_BACKGROUNDS,'노트 배경색'),photo:url(value.photo,'노트 사진',true),
       createdAt:created,updatedAt:updated,deleted:value.deleted === true};
@@ -177,6 +179,7 @@
       isbn:text(value.isbn,80,'ISBN'),
       coverUrl:url(value.coverUrl,'표지',true),
       description:text(value.description,16000,'책 소개'),
+      authorIntro:text(value.authorIntro,8000,'저자 소개'),
       tableOfContents:text(value.tableOfContents,20000,'목차'),
       sourceUrl:url(value.sourceUrl,'책 정보',false),
       source:text(value.source,80,'검색 출처'),

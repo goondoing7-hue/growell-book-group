@@ -100,6 +100,16 @@ test('draft identity isolates accounts, books, new notes, and edit targets',asyn
   assert.equal(saved.data.size,1); assert.ok(node.attrs['data-draft-key'].includes('entry-1'));
 });
 
+test('editing an old private category preserves it in drafts until a fixed category is explicitly selected',async()=>{
+  const {ctx,mount}=setup(),node=mount('mine','standard','book-a','entry-old',{noteType:null});
+  const lookup=node.querySelector;node.querySelector=selector=>selector==='#nt-set'?{getAttribute:()=> 'pcat_original'}:lookup(selector);
+  const first=ctx.captureComposerDraft();await flush(ctx);
+  assert.equal(ctx.composerDrafts[first.key].variants.standard.noteType,'pcat_original');
+  node.values.noteType='question';ctx.captureComposerDraft();await flush(ctx);
+  assert.equal(ctx.composerDrafts[first.key].variants.standard.noteType,'question');
+  assert.equal(ctx.composerDrafts[first.key].variants.standard.html,'<b>소중한 개인 기록</b>');
+});
+
 test('success clears only the submitted form and ignores late encryption completions',async()=>{
   const {ctx,saved,mount,unmount}=setup();
   mount(); const token=ctx.captureComposerDraft();

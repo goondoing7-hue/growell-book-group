@@ -8,6 +8,10 @@
   var FORMAT = 'growell-private-categories-v1';
   var NONE_KEY = 'private-none';
   var NONE_LABEL = '분류 없음';
+  var FIXED_TYPES = [{key:'quote',label:'책 속 문장'},{key:'thought',label:'내 생각'},{key:'question',label:'의문점'},{key:'insight',label:'통찰 정리'}];
+  function fixedOptions(){return FIXED_TYPES.map(function(type){return {key:type.key,label:type.label};});}
+  function fixedKey(noteType){return FIXED_TYPES.some(function(type){return type.key===noteType;})?noteType:'';}
+  function fixedLabel(noteType){var type=FIXED_TYPES.find(function(type){return type.key===noteType;});return type?type.label:'';}
 
   function validScopeId(value){
     return typeof value === 'string' && value.length > 0 && value === value.trim();
@@ -68,5 +72,6 @@
   }
 
   return {recordId:recordId, isSettingsEntry:isSettingsEntry, prepare:prepare, encode:encode,
-    decode:decode, options:options, key:key, label:label};
+    decode:decode, options:options, key:key, label:label,
+    fixedOptions:fixedOptions,fixedKey:fixedKey,fixedLabel:fixedLabel};
 });

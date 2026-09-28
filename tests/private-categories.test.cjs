@@ -7,6 +7,17 @@ const vm=require('node:vm');
 const categories=require('../privateCategories.js');
 const sample=[{id:'pcat_journal',label:'나의 일기'},{id:'pcat_ideas-2',label:'읽고 떠오른 생각'}];
 
+test('fixed note types are independent of legacy custom settings and never infer a replacement category',()=>{
+  const before=categories.encode(sample),options=categories.fixedOptions();
+  assert.deepEqual(options,[{key:'quote',label:'책 속 문장'},{key:'thought',label:'내 생각'},{key:'question',label:'의문점'},{key:'insight',label:'통찰 정리'}]);
+  for(const type of options){assert.equal(categories.fixedKey(type.key),type.key);assert.equal(categories.fixedLabel(type.key),type.label);}
+  for(const type of [null,undefined,'','pcat_journal','private-none','private-archive','summary','QUOTE']){
+    assert.equal(categories.fixedKey(type),'');assert.equal(categories.fixedLabel(type),'');
+  }
+  options[0].label='changed';assert.equal(categories.fixedOptions()[0].label,'책 속 문장');
+  assert.equal(categories.encode(sample),before);assert.deepEqual(categories.decode(before),sample);
+});
+
 test('private category settings identify the exact owner and book record only',()=>{
   assert.equal(categories.recordId('owner-a','emotion'),'private_categories_emotion_owner-a');
   const entry={id:categories.recordId('owner-a','emotion'),userId:'owner-a',bookId:'emotion'};

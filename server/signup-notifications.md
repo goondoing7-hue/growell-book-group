@@ -1,59 +1,72 @@
-# 가입 승인 요청 이메일 → 카카오메일 알리미
+# 가입 승인 요청 Gmail 알림
 
-수신 주소는 사용자가 지정한 `goondoing7@kakao.com`이다. 가입 신청이 접수되면 관리자에게 메일을 보내고, 휴대폰 알림은 카카오메일의 공식 **메일 알리미** 설정을 이용한다. GROWELL 이름의 별도 카카오 알림톡을 발송하는 기능은 아니다.
+사용자가 지정한 **goondoing7@gmail.com** 계정으로 발신하고 같은 주소로 승인 요청을 받는다. 별도 도메인이나 Resend 계정은 필요 없다. Gmail 앱 비밀번호는 사용자가 Supabase **Edge Function Secrets**에 직접 입력한다. 이 문서와 테스트만으로 실제 발송·수신이 확인된 것은 아니다.
 
-## 현재 준비 상태
-
-2026-09-28 알림 대기열 SQL을 임시 데이터의 ROLLBACK 검증 후 운영에 적용하고, 이를 사용하는 가입 함수를 배포했다. 이메일 서식·발송 워커와 회귀 테스트도 준비했다. 발송 워커와 예약 실행은 아직 활성화하지 않았다. **확인된 발신 도메인, Resend 키, 발송 함수 배포, 예약 실행이 모두 준비되어야 실제 발송된다.** 실제 수신 확인을 하지 않은 상태를 발송 완료로 표시하지 않는다.
-
-## 발송되는 내용
-
-- 제목: `[GROWELL] 새 가입 승인 요청`
-- 가입자 이름, 로그인 아이디, 한국 시간의 신청 시각
-- `https://growell-book.vercel.app/#/admin/users`의 가입 신청 목록 링크
-- 관리자 로그인 후 직접 승인한다. 메일 열기나 링크 미리보기로 자동 승인하지 않는다.
-
-비밀번호, 비밀번호 힌트, 암호화 키, 프로필 사진, 개인 기록은 이메일에 넣지 않는다. 외부 메일 서비스에는 위 최소 정보만 전달한다.
-
-## 서버 동작
-
-1. 기존 `signup` 함수는 사진과 프로필을 만든 뒤 `growell_finalize_signup`을 호출한다. 필수 힌트와 알림 대기열을 같은 DB 트랜잭션에 저장한다. 같은 신청을 다시 확정해도 힌트·프로필을 덮어쓰거나 알림을 중복 생성하지 않는다.
-2. 가입 실패 보상으로 이번에 만든 프로필을 삭제하면 해당 알림도 FK로 함께 제거한다. 대기열은 즉시 발송하지 않고 2분 뒤부터 처리하므로 초기 보상 처리 시간을 둔다. 이 시간에도 사진·힌트·프로필이 준비되지 않은 계정은 발송 대상이 아니다.
-3. 별도 `signup-notification-worker`가 1분마다 실행되어 최대 4건을 순서대로 처리한다. 정상 상황의 알림은 접수 후 약 2~3분 뒤 발송된다. 가입 화면은 이메일 API 응답을 기다리지 않는다.
-4. 발송 대상으로 확보하기 전에 승인·거절·탈퇴로 처리된 신청은 대기열에서 취소한다. 발송 확보 직후 승인된 경우 이미 진행 중인 메일 한 건이 도착할 수 있다. 잠금/임대와 고정 Resend idempotency key로 중복 워커와 일시적인 전송 오류를 처리한다. 최초 발송 때의 발신자·수신자·신청자 스냅샷을 유지한다.
-5. Resend의 중복 방지 기간은 24시간이다. 응답이 불확실한 알림은 최초 시도 후 23시간 또는 10회 시도에 도달하면 자동 재전송하지 않고 `review`로 남긴다. 운영자가 Resend 내역을 확인한 뒤 처리한다. 임의로 새 ID를 만들어 재발송하지 않는다.
-6. `sent`는 Resend가 메일 ID를 반환한 상태다. 실제 받은편지함 도착이나 카카오 알림 표시까지 보장하는 상태가 아니다. 반송·차단 여부는 Resend 발송 내역과 수신함에서 확인한다.
+2026-09-28 운영 적용: 임시 데이터 ROLLBACK 검증 통과 후 SQL을 COMMIT했고, 발송 함수를 배포했다. 실제 `verify` 응답 200과 `connectionVerified:true`, 고정 테스트 메일의 Gmail `INBOX` 도착을 확인했으며 분당 예약 실행을 활성화했다. 실제 회원을 시험용으로 가입·승인하거나 기존 신청을 소급 생성하지 않았다.
 
 ## 필요한 설정
 
-Supabase Edge Function secrets에만 다음을 넣는다. 키는 저장소, 정적 `dist/`, 브라우저 저장소, SQL 파일에 넣지 않는다.
+| 위치 | 이름 | 설정 |
+| --- | --- | --- |
+| Supabase Edge Function Secrets | `GROWELL_GMAIL_APP_PASSWORD` | 해당 Gmail 계정에서 생성한 16자리 앱 비밀번호. 표시용 공백은 제거한다. 일반 로그인 비밀번호가 아니다. |
+| Supabase 기본 제공 환경 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | 기본 제공 값을 사용하며 새 값으로 덮어쓰지 않는다. |
+| Supabase Vault | `growell_signup_notification_worker_secret` | 마이그레이션이 내부에서 임의 값을 생성한다. 이미 있으면 유지한다. 직접 읽거나 채팅·도구 입력으로 옮기지 않는다. |
 
-| 이름 | 값 |
-| --- | --- |
-| `RESEND_API_KEY` | 해당 발신 도메인에 이메일 발송 권한이 있는 Resend 키 |
-| `GROWELL_SIGNUP_FROM` | Resend에서 검증한 소유 도메인의 발신 이메일 주소. 이름 없이 이메일 주소만 입력 |
-| `GROWELL_NOTIFICATION_WORKER_SECRET` | 예측 불가능한 32~256자 값. Vault에도 같은 값을 저장 |
+`GROWELL_NOTIFICATION_WORKER_SECRET`, `GROWELL_SIGNUP_FROM`, `RESEND_API_KEY`는 이 워커에 필요 없다. SMTP 설정은 `smtp.gmail.com:465`, 즉시 TLS, 인증서 검증 사용으로 고정했다. SMTP 라이브러리는 Supabase 공식 예제의 Nodemailer 9 계열에서 검토한 `npm:nodemailer@9.0.1`로 고정했다. 라이브러리를 올릴 때 오류 단계 분류도 다시 확인한다.
 
-Supabase의 기존 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`는 런타임 제공 값을 그대로 사용한다. 수신자는 요청 입력이 아니라 서버 상수 `goondoing7@kakao.com`으로 고정했다. `onboarding@resend.dev`를 실제 운영 발신자로 자동 선택하지 않는다. 카카오메일 수신 주소는 발신 도메인 검증을 대신하지 않는다.
+앱 비밀번호 생성에는 Google 2단계 인증이 필요하며 계정 정책에 따라 사용할 수 없을 수 있다. 일반 Google 비밀번호를 바꾸면 앱 비밀번호가 취소될 수 있으므로 새 앱 비밀번호를 서버에서 갱신한다. 비밀번호, 내부 워커 토큰, 서비스 키를 저장소·정적 배포 파일·브라우저 저장소·SQL 결과·로그에 넣지 않는다.
 
-## 적용 순서
+## 알림 내용과 인증
 
-1. 기존 운영 `signup` 소스를 보존한다. **새 signup 소스보다 SQL이 먼저 적용되어야 한다.** 기존 signup은 새 테이블/함수를 사용하지 않으므로 SQL 적용 전에 계속 동작한다.
-2. `signup-notifications.sql` 마지막 `COMMIT`을 제외하고 `signup-notifications-verification.sql`을 붙여 DB 소유자로 실행한다. 임시 프로필 하나의 범위 안에서 RPC 권한, 원자적 저장, 변경된 힌트 거절, 재시도, 임대, 발송 완료, 23시간 제한, 승인 후 취소, 보상 삭제를 검증하고 ROLLBACK한다. 검증 SQL은 메일을 보내지 않는다.
-3. 검증에 통과한 마이그레이션만 별도로 COMMIT한다. 새 `signup.ts`를 기존 `signup` Edge Function에 배포한다. SQL이 없는데 신규 signup만 배포하면 최종 가입 단계가 실패한다.
-4. 확인된 발신 도메인과 키를 준비한다. `signup-notification-worker.ts` 전체를 같은 이름의 새 Edge Function에 배포한다. 이 함수만 `verify_jwt=false`로 설정한다. 대신 매 요청의 `x-growell-worker-secret`을 자체 검증한다. 일반 앱/브라우저에는 호출 기능이나 비밀 값을 넣지 않는다.
-5. Vault에 `growell_signup_notification_worker_secret` 이름으로 워커와 같은 값을 저장한다. 값은 SQL 편집기에 하드코딩하지 않고 Vault 관리 화면으로 입력한다. `signup-notifications-schedule.sql`을 검토한 뒤 실행하여 1분 간격 작업을 등록한다. 이 별도 파일은 키·도메인 확인 전에 실행하지 않는다.
-6. 승인받은 임시 가입으로 수신 메일의 이름·아이디·시각·링크를 확인한다. 받은 메일을 연다고 자동 승인되지 않는지, 관리자 로그인 후 승인해야만 회원 기능을 이용하는지 확인한다. 실제 회원을 시험용으로 만들거나 변경하지 않는다.
-7. 휴대폰 카카오메일에서 메일 알리미를 켜고 해당 메일 도착의 카카오톡 알림을 확인한다. 이 마지막 설정은 사용자의 카카오메일/카카오톡 계정에서 완료해야 한다.
+- 제목: `[GROWELL] 새 가입 승인 요청`
+- 가입자 이름, 로그인 아이디, 한국 시간의 신청 시각
+- 가입 신청 확인: `https://growell-book.vercel.app/#/admin/users`
+- 관리자 로그인 후 직접 승인한다. 링크를 열거나 미리 본다고 승인되지 않는다.
 
-## 운영 점검과 중단
+비밀번호·힌트·사진·개인 기록은 메일에 포함하지 않는다. 요청에서 주소·SMTP 서버·제목·본문을 받지 않는다. 발신자와 SMTP envelope 수신자 모두 서버에 고정했다.
 
-- 대기열을 조회할 수 있는 역할은 서버 서비스 역할/DB 소유자뿐이다. 일반 회원과 승인 대기 회원에는 테이블 접근, 확정/임대/완료 RPC 실행 권한이 없다.
-- `pending`: 다음 예약 실행 대기, `sending`: 2분 임대 중, `sent`: 제공자 접수 완료, `cancelled`: 이미 처리된 신청, `review`: 운영 확인 필요.
-- 발송을 중단하려면 해당 Cron 작업을 비활성화한다. 대기 중 신청과 기존 회원/개인 기록은 삭제하지 않는다.
-- 함수에 키가 없거나 발신 설정이 잘못되면 503 `notification_not_configured`를 반환하며 대기열을 임대하지 않는다. 키·발신 설정을 고친 후 예약 실행을 재개하면 아직 승인 대기인 신청만 처리한다.
-- 네트워크/429/5xx는 일정 간격으로 재시도한다. 제공자가 명확히 거부한 발신 주소, 잘못된 요청 또는 다른 본문의 동일 idempotency key는 `review`에서 확인한다.
-- 확정 DB 쓰기 자체가 실패하면 기존 가입 실패 보상이 실행된다. 이메일 제공자의 장애 때문에 완료된 회원 신청을 삭제하거나 승인 상태를 바꾸지는 않는다.
-- 기존 신청을 일괄 소급 발송하지 않는다. 필요하면 해당 신청자와 승인 상태를 확인한 후 별도 범위로 처리한다.
+워커는 `verify_jwt=false`로 배포하지만 공개 호출을 허용하지 않는다. `x-growell-worker-secret` 길이를 먼저 검사하고, 내장 서비스 키로 **서비스 역할만 호출할 수 있는** `growell_authorize_signup_notification_worker` RPC를 실행한다. 이 RPC는 Vault 내부 값과 입력의 SHA-256 해시를 비교하여 boolean만 반환한다. 불일치는 401, 인증 DB 장애는 503이며 SMTP나 대기열 claim을 하지 않는다. Cron은 같은 Vault 값을 서버 내부에서 헤더로 넣으므로 운영자가 토큰을 복사할 필요가 없다.
 
-참고: [카카오메일 공식 안내](https://www.kakaocorp.com/page/service/service/KakaoMail), [Resend 발신 도메인](https://resend.com/docs/dashboard/domains/introduction), [Resend idempotency key 24시간](https://resend.com/docs/dashboard/emails/idempotency-keys), [Supabase 예약 함수·Vault](https://supabase.com/docs/guides/functions/schedule-functions).
+## 대기열과 중복 방지
+
+1. 기존 가입 흐름의 `growell_finalize_signup`은 필수 힌트와 알림 한 건을 같은 DB 트랜잭션에 저장한다. 같은 신청 재확정은 기존 정보를 덮어쓰거나 알림을 중복 생성하지 않는다. 가입 실패로 신규 프로필을 삭제하면 알림도 FK로 삭제한다.
+2. 새 알림은 2분 뒤부터 처리한다. 워커는 1분 간격으로 최대 1건씩 처리한다. 밀린 신청이 없다면 접수 후 약 2~3분 뒤 SMTP를 시도한다. 이미 승인·거절·탈퇴 처리된 신청은 claim 전에 취소한다. claim 직후 승인한 경우 이미 진행 중인 한 건이 도착할 수 있다.
+3. 첫 claim에서 `provider=gmail_smtp`, 발신자·수신자와 최초 시각을 기록한다. 이후에도 같은 스냅샷을 사용하며 다른 전송 경로로 자동 변경하지 않는다. 앱 비밀번호가 없거나 형식이 잘못되면 `notification_not_configured`만 반환하고 큐를 가져가지 않는다.
+4. **SMTP에는 재전송 중복 방지 키가 없다.** DNS 실패, 실제 connect 시스템 호출 실패, DATA 이전 명령에서 명확한 4xx 응답을 받은 경우만 재시도한다. 재시도는 간격을 늘리며 최대 10회·최초 23시간으로 제한한다. 이 시간은 운영 제한이며 SMTP 중복 방지 유효기간이 아니다.
+5. 일반 연결 끊김·시간 초과, DATA 이후 불명확한 결과, SMTP 응답은 받았으나 DB 결과 저장에 실패한 경우는 자동 재전송하지 않는다. 특히 Nodemailer의 `command=CONN` 오류도 DATA 이후 발생할 수 있으므로 안전한 재시도로 간주하지 않는다. `sending` 임대가 만료되면 `review / smtp_delivery_uncertain`로 이동한다. SQL도 명확한 `smtp_before_data_temporary` 이외 오류는 `retryable=true`가 와도 재시도를 차단한다.
+6. `sent`는 고정 수신자와 최종 SMTP 250 응답을 확인한 상태다. 받은편지함 도착·휴대폰 알림까지 확인한 상태는 아니다. `Message-ID`는 Gmail 검색·수동 확인용이며 중복 방지 보장은 아니다.
+
+## 기존 설치 업그레이드
+
+기존 Resend용 SQL이 설치되어 있으므로 아래 순서를 지킨다. 회원 정보·힌트·승인 상태는 유지하며 기존 신청을 소급 생성하지 않는다.
+
+1. 기존 알림 Cron이 있다면 중단한다. Gmail 마이그레이션은 `provider` 열과 인증 RPC, `growell_claim_signup_notification_v2`를 추가한다. 기존 claim RPC는 업그레이드 필요 오류만 내도록 교체하여 옛 워커의 오발송을 막는다.
+2. `signup-notifications.sql`의 마지막 `COMMIT`을 빼고 `signup-notifications-verification.sql`을 이어 실행한다. 임시 프로필 하나로 원자적 가입 확정, 권한, Vault 인증, 고정 주소, 제공자 스냅샷, 정상 완료, 안전한 재시도, 만료된 SMTP 임대·불명확한 결과의 재발송 차단, 승인 후 취소·보상 삭제를 확인하고 **ROLLBACK**한다. 검증 과정은 외부 메일을 보내지 않고 토큰을 출력하지 않는다.
+3. 통과 후 원본 마이그레이션을 COMMIT한다. 여러 번 적용해도 내부 토큰을 다시 만들거나 기존 Gmail 시도를 초기화하지 않는다. 예전 `attempts>0` 행은 `legacy_resend`로 표시한다. 그중 `pending/sending`은 발송 여부를 추정할 수 없으므로 `provider_migration_review`로 보관한다. 이미 `sent/cancelled`인 상태는 유지한다.
+4. `signup-notification-worker.ts`를 동일 이름의 Supabase Edge Function으로 배포한다. 앱 비밀번호는 사용자가 Secrets 화면에서 직접 저장한다. 기존 `signup` 함수는 다시 바꿀 필요가 없다.
+5. 아래 `verify` 호출로 TLS·인증을 확인한다. 이후 같은 방식으로 `action`만 `test`로 바꾸어 고정된 자기 자신에게 연결 테스트 메일 한 건을 보낼 수 있다. `test`는 명시적으로 한 번만 실행하고 불명확한 응답을 자동 재시도하지 않는다. 테스트 발송은 실제 가입·승인 처리나 큐 생성 없이 진행된다.
+6. 수신을 확인한 뒤 `signup-notifications-schedule.sql`로 분당 작업을 등록·재개한다. 사용자는 Gmail 앱에서 해당 계정 알림을 켠다. 카카오톡 직접 알림 기능은 아니다.
+
+다음은 DB 소유자가 실행하는 연결 확인 예시다. 토큰은 DB 안에서만 사용하고 결과로 반환하지 않는다. `pg_net` 확장이 필요하다.
+
+```sql
+select net.http_post(
+  url:='https://oxaeecawijnetwmvggjs.supabase.co/functions/v1/signup-notification-worker',
+  headers:=jsonb_build_object('Content-Type','application/json',
+    'x-growell-worker-secret',(select decrypted_secret from vault.decrypted_secrets
+      where name='growell_signup_notification_worker_secret')),
+  body:='{"action":"verify"}'::jsonb,
+  timeout_milliseconds:=45000
+);
+```
+
+`verify`는 `{ok:true,connectionVerified:true}`, `test`의 SMTP 접수 성공은 `{ok:true,accepted:true}`를 반환한다. 두 모드 모두 회원 알림 큐를 처리하지 않는다. 기본 `{}` 또는 `{"action":"process"}`는 정상 대기열 처리이므로 테스트 대신 무심코 실행하지 않는다. 응답에는 제공자 원문·비밀번호·토큰이 포함되지 않는다.
+
+## 운영 확인
+
+- `pending`: 대기 또는 안전한 재시도, `sending`: 2분 임대, `sent`: SMTP 접수, `cancelled`: 이미 처리된 가입, `review`: 운영 확인 필요.
+- `review`는 Gmail의 받은편지함·보낸편지함에서 해당 신청과 `rfc822msgid:growell-signup-v1-알림UUID@gmail.com`을 확인한다. 전송 여부가 불명확하면 다시 보내지 않는다. 임의로 `pending`으로 돌리거나 새 UUID를 생성해 우회하지 않는다.
+- `smtp_auth_failed`는 앱 비밀번호·계정 설정을, `smtp_rejected`는 Gmail 제한을 확인한다. 큐의 오류에는 민감한 원문 대신 고정 코드만 저장한다.
+- 알림을 멈추려면 Cron만 중단한다. 큐·회원·개인 기록을 삭제하지 않는다. 메일 장애로 정상 접수된 가입을 삭제하거나 자동 승인하지 않는다.
+
+공식 자료: [Supabase SMTP 예제](https://github.com/supabase/supabase/blob/master/examples/edge-functions/supabase/functions/send-email-smtp/index.ts), [Nodemailer SMTP 설정](https://nodemailer.com/smtp), [오류 구조](https://nodemailer.com/errors), [Google 앱 비밀번호](https://support.google.com/mail/answer/185833?hl=ko), [Supabase Vault](https://supabase.com/docs/guides/database/vault), [Supabase 예약 함수](https://supabase.com/docs/guides/functions/schedule-functions).

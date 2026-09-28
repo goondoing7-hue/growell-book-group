@@ -167,21 +167,22 @@ test('each private space supplies its own theme to archive reflections instead o
   assert.deepEqual(seen,['emotion','thought','body','action']);
 });
 
-test('archive is a built-in category immediately after all and opens theme notes without decrypting unrelated entries',()=>{
+test('private filters are fixed note types and retired filters fall back to all without changing existing records',()=>{
   const {c,scheduled,decrypted}=harness(),id=installCategories(c,[{id:'pcat_journal',label:'일기'}]);
   c.STATE.privateEntries.mine=entry('mine');
   const controls=c.privateCategoryControlsHtml(book.id),filters=[...controls.matchAll(/data-private-category-filter="([^"]+)"/g)].map(match=>match[1]);
-  assert.deepEqual(filters,['all','private-archive','pcat_journal']);
-  assert.equal(c.privateCategoryContext(book.id).categories.some(category=>category.id==='private-archive'),false,'the built-in filter is not a custom category setting');
-  c.privateCategoryFilters[id]='private-archive';assert.equal(c.privateCategoryFilter(book.id),'private-archive');
+  assert.deepEqual(filters,['all','quote','thought','question','insight']);
+  assert.doesNotMatch(controls,/data-private-category-manage|data-private-category-retry|카테고리 설정|pcat_journal/);
+  const before=JSON.stringify(c.STATE.privateEntries);
+  c.privateCategoryFilters[id]='private-archive';assert.equal(c.privateCategoryFilter(book.id),'all');
   const markup=c.mineTabHtml(book);
-  assert.match(markup,/data-private-category-filter="private-archive"[^>]*aria-pressed="true"/);
+  assert.match(markup,/data-private-category-filter="all"[^>]*aria-pressed="true"/);
   assert.equal((markup.match(/data-archive-reflection="emotion"/g)||[]).length,1);
   assert.ok(markup.indexOf('data-private-category-filter')>markup.indexOf('data-reading-timer'));
-  assert.ok(markup.indexOf('data-archive-reflection')>markup.indexOf('data-private-category-filter'));
-  assert.doesNotMatch(markup,/data-mine-entry=|data-mine-tile=|data-private-count|id="mine-composer"/);
-  scheduled.forEach(run=>run());assert.deepEqual(decrypted,[],'archive-only filtering does not decrypt the existing ordinary note list');
-  c.privateCategoryStates[id].categories=[];assert.equal(c.privateCategoryFilter(book.id),'private-archive','removing a custom category cannot remove the built-in archive filter');
+  assert.ok(markup.indexOf('data-archive-reflection')<markup.indexOf('data-private-category-filter'));
+  assert.match(markup,/data-mine-tile="mine"/);
+  scheduled.forEach(run=>run());assert.deepEqual(decrypted.map(row=>row.id),['mine']);
+  assert.equal(JSON.stringify(c.STATE.privateEntries),before);
   assert.ok(c.STATE.privateEntries.mine);
 });
 
@@ -189,6 +190,37 @@ test('archive filtering preserves explicit private-note links and the writing fl
   const {c}=harness(),id=installCategories(c,[]);c.STATE.privateEntries.mine=entry('mine');c.privateCategoryFilters[id]='private-archive';
   const detail=c.mineTabHtml(book,'mine');assert.match(detail,/data-mine-entry="mine"/);assert.doesNotMatch(detail,/기록을 찾을 수 없어요/);
   c.mineComposerOpenFor='emotion';const writing=c.mineTabHtml(book);assert.equal((writing.match(/id="mine-composer"/g)||[]).length,1);assert.equal((writing.match(/data-archive-reflection="emotion"/g)||[]).length,1);
+});
+
+test('fixed private filters select only matching decrypted types and keep legacy notes available in all',()=>{
+  const {c}=harness(),id=installCategories(c,[{id:'pcat_journal',label:'일기'}]);
+  for(const [name,type] of [['old','pcat_journal'],['quote-note','quote'],['thought-note','thought']]){
+    c.STATE.privateEntries[name]=entry(name);c.privateEntryCategoryKeys[name]={data:'encrypted-record',noteType:type};
+  }
+  const before=JSON.stringify(c.STATE.privateEntries);
+  c.privateCategoryFilters[id]='quote';
+  const filtered=c.mineTabHtml(book);assert.match(filtered,/나의 기록 1개/);assert.match(filtered,/data-mine-entry="quote-note"/);
+  const linked=c.mineTabHtml(book,'old');assert.match(linked,/data-mine-entry="old"/,'explicit links continue to open a legacy note');
+  c.privateCategoryFilters[id]='all';const all=c.mineTabHtml(book);assert.match(all,/나의 기록 3개/);assert.match(all,/data-mine-tile="old"/);
+  assert.equal(JSON.stringify(c.STATE.privateEntries),before);
+});
+
+test('book category entry defaults to My Space while explicit sharing links and lock gates remain unchanged',()=>{
+  const {c}=harness();c.location={hash:''};
+  vm.runInContext(section('function currentRoute(){',"window.addEventListener('hashchange'"),c);
+  for(const id of ['emotion','thought','body','action']){
+    c.location.hash='#/book/'+id;assert.equal(c.currentRoute().tab,'mine');
+    c.location.hash='#/book/'+id+'/share/post/public-note';assert.equal(c.currentRoute().tab,'share');assert.equal(c.currentRoute().postId,'public-note');
+  }
+  Object.assign(c,{isBookLocked:()=>false,isAdmin:()=>false,canAccessWorksheet:()=>true,readingDataReady:()=>false,
+    GrowellBookDetails:{coverHtml:()=>'<div data-cover></div>'},mineTabHtml:()=>'<section data-private-space></section>',shareTabHtml:()=>'<section data-sharing-space></section>',
+    worksheetTabHtml:()=>'',materialsTabHtml:()=>'',habitTabHtml:()=>'',lockedBookGateHtml:()=>'<section data-locked></section>'});
+  vm.runInContext(section('function bookPageHtml(', '/* ---------------- master render'),c);
+  const entry=c.bookPageHtml({...book,area:'감정',title:'모임 책'});
+  assert.ok(entry.indexOf('data-book-tab="mine"')<entry.indexOf('data-book-tab="share"'));
+  assert.match(entry,/data-private-space/);assert.doesNotMatch(entry,/data-sharing-space/);
+  assert.match(c.bookPageHtml(book,'share'),/data-sharing-space/);
+  c.isBookLocked=()=>true;const locked=c.bookPageHtml(book);assert.match(locked,/data-locked/);assert.doesNotMatch(locked,/data-private-space|data-sharing-space/);
 });
 
 test('private thumbnail and detail appear only after guarded decryption and are never written back to encrypted STATE',async()=>{
@@ -251,31 +283,33 @@ test('encrypted archive rows stay out of personal note counts, direct links and 
   c.decryptListInto([c.STATE.privateEntries[id]]);await flush();assert.equal(decryptCalls,0);
 });
 
-test('private category labels are escaped in controls, list rows and composing while legacy notes stay unclassified',()=>{
+test('fixed category labels and composing preserve legacy note contents and original category until explicitly changed',()=>{
   const {c}=harness(),label='<b>"내 생각" & 일기</b>';
   installCategories(c,[{id:'pcat_journal',label}]);
   const controls=c.privateCategoryControlsHtml(book.id);
-  assert.ok(controls.includes(esc(label)));assert.ok(!controls.includes(label));
+  assert.ok(!controls.includes(label));assert.ok(!controls.includes(esc(label)));
   assert.doesNotMatch(controls,/data-private-category-filter="private-none"|분류 없음/);
-  for(const noteType of ['thought','summary','quote','question','pcat_deleted']){
+  for(const noteType of ['summary','pcat_journal','pcat_deleted']){
     const resolved=c.privateCategoryLabel(book.id,noteType);
     assert.equal(resolved,'');
     const row=c.spaceListContentHtml({title:'기존 글',noteType},1,'나에게만 공개',resolved);
     assert.doesNotMatch(row,/분류 없음|책 속 문장|내용 요약|의문점|space-list-meta"> ·/);
   }
   const row=c.spaceListContentHtml({title:'내 글',noteType:'pcat_journal'},1,'나에게만 공개',c.privateCategoryLabel(book.id,'pcat_journal'));
-  assert.ok(row.includes(esc(label)));assert.ok(!row.includes(label));
+  assert.ok(!row.includes(esc(label)));assert.ok(!row.includes(label));
+  for(const type of privateCategories.fixedOptions())assert.equal(c.privateCategoryLabel(book.id,type.key),type.label);
   c.composerDrafts={};c.composerEditId=()=>null;c.composerDraftKey=()=> 'synthetic-draft';
   c.rtToolbarHtml=()=>'';c.I_IMG='';c.I_CLOSE='';c.I_COMMENT='';
   vm.runInContext(section('function noteComposerHtml(', 'function noteCtaHtml('),c);
-  for(const noteType of ['thought','pcat_journal','pcat_deleted']){
+  for(const noteType of ['thought','insight','pcat_journal','pcat_deleted']){
     const original={noteType,title:'보존할 제목',html:'<p>원래 기록</p>'};
     const html=c.noteComposerHtml(book,{containerId:'mine-composer',editingPost:original});
     assert.match(html,/원래 기록/);assert.match(html,/보존할 제목/);
-    assert.ok(html.includes(esc(label)));assert.ok(!html.includes(label));
-    assert.doesNotMatch(html,/data-nt="(?:thought|quote|summary|question|insight)"/);
-    const expected=noteType==='pcat_journal'?'pcat_journal':'private-none';
-    assert.ok(html.includes('is-sel" data-nt="'+expected+'"'));
+    assert.ok(!html.includes(label));
+    assert.deepEqual([...html.matchAll(/data-nt="([^"]+)"/g)].map(match=>match[1]),['quote','thought','question','insight']);
+    assert.ok(html.includes('data-original-note-type="'+noteType+'"'));
+    if(privateCategories.fixedKey(noteType))assert.ok(html.includes('is-sel" data-nt="'+noteType+'"'));
+    else assert.doesNotMatch(html,/nt-pill[^>]*is-sel/);
     assert.equal(original.noteType,noteType,'rendering never rewrites the saved legacy category');
   }
 });
@@ -285,7 +319,7 @@ test('deleted private categories resolve to unclassified and stale active filter
   c.STATE.privateEntries.mine=entry('mine');
   c.privateEntryCategoryKeys.mine={data:c.STATE.privateEntries.mine.data,noteType:'pcat_removed'};
   c.privateCategoryFilters[id]='pcat_removed';
-  assert.equal(c.privateCategoryFilter(book.id),'pcat_removed');
+  assert.equal(c.privateCategoryFilter(book.id),'all');
   const before=JSON.stringify(c.STATE.privateEntries.mine);
   c.privateCategoryStates[id].categories=[{id:'pcat_keep',label:'일기'}];
   assert.equal(c.privateCategoryFilter(book.id),'all');
@@ -327,8 +361,9 @@ test('category loading fails closed for foreign identities and corrupt encrypted
   c.STATE.privateEntries[id]=entry(id);const before=JSON.stringify(c.STATE);
   c.decryptPrivateRecord=()=>Promise.resolve('{corrupt settings');
   const state=c.privateCategoryContext('emotion');await flush();
-  assert.equal(state.status,'error');assert.match(c.privateCategoryControlsHtml('emotion'),/기존 설정은 유지/);
-  c.mineComposerOpenFor='emotion';assert.doesNotMatch(c.mineTabHtml(book),/id="mine-composer"/);
+  assert.equal(state.status,'error');assert.match(c.privateCategoryControlsHtml('emotion'),/책 속 문장/);
+  assert.doesNotMatch(c.privateCategoryControlsHtml('emotion'),/data-private-category-manage/);
+  c.mineComposerOpenFor='emotion';assert.match(c.mineTabHtml(book),/id="mine-composer"/,'fixed categories do not depend on obsolete category-setting decryption');
   assert.equal(JSON.stringify(c.STATE),before);
   c.STATE.privateEntries[id].data='new-encrypted-settings';
   c.decryptPrivateRecord=()=>Promise.resolve(privateCategories.encode([{id:'pcat_recovered',label:'복구한 분류'}]));

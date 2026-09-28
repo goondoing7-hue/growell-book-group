@@ -70,6 +70,30 @@ test('history popup closes on account or route change and the summary never expa
   c.readingHistoryOpenFor=book.id;assert.equal(c.readingStatusBodyHtml(book),'');
 });
 
+test('compact My Space card keeps progress and all three management actions together, with status below',()=>{
+  const {c,book}=historyDialogHarness();
+  Object.assign(c,{myCurrentPage:()=>20,readingNoteReturn:false,readingTimer:null,readingSavePanelOpen:false,readingEditOpenFor:null,
+    I_TIMER:'timer',I_EDIT:'edit',GrowellBookDetails:{coverHtml:()=>'<img alt="책 표지">',hintHtml:()=>'<span>읽는 부분: 첫 장</span>'}});
+  vm.runInContext(section('function readingStatusKey(book){','function myReadingLogs(bookId){'),c);
+  vm.runInContext(section('function readingCardHtml(', '/* ---------------- 습관 만들기(전용 탭)'),c);
+  const markup=c.readingCardHtml(book);
+  assert.match(markup,/p\. 20 \/ 200/);assert.match(markup,/10%/);assert.match(markup,/aria-valuenow="10"/);
+  const actions=markup.slice(markup.indexOf('class="reading-card-actions"'),markup.indexOf('<div class="reading-split-right">'));
+  for(const id of ['btn-reading-start','btn-reading-edit-open','btn-reading-history-toggle']){
+    assert.ok(actions.includes('id="'+id+'"'));assert.equal((markup.match(new RegExp('id="'+id+'"','g'))||[]).length,1);
+  }
+  assert.match(markup.slice(markup.indexOf('<div class="reading-split-right">')),/읽는 중[\s\S]*총 읽은 시간/);
+  assert.doesNotMatch(markup,/노트 작성|reading-log-list|reading-toggle-row/);
+  for(const state of [{running:true},{running:false},{running:false,save:true},{running:false,note:true}]){
+    c.readingTimer={id:'same-reading',bookId:book.id,running:state.running};
+    c.readingSavePanelOpen=!!state.save;c.readingNoteReturn=state.note?{type:'mine'}:null;c.mineComposerOpenFor=book.id;
+    const active=c.readingCardHtml(book);
+    assert.match(active,/reading-compact-card/);assert.match(active,/aria-label="타이머로 돌아가기"/);
+    assert.doesNotMatch(active,/reading-timer-card|reading-save-card|reading-note-paused|노트 작성/);
+    assert.match(active,/p\. 20 \/ 200/);
+  }
+});
+
 let timerSequence=0;
 function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta:{}},failMeta=0,loseResponse=0,beforeMeta,authSession,refreshError=null}={}){
   let clock=now,metaFailures=failMeta,lostResponses=loseResponse;
@@ -807,6 +831,42 @@ test('home completion keeps its popup and paused retry state until save succeeds
   await c.submitReadingLog('emotion',0,25,null);
   assert.equal(c.location.hash,'#/');assert.equal(c.readingHomeDialogFor,null);assert.equal(dialog.open,false);assert.equal(c.readingTimer,null);
   assert.equal(c.STATE.readingMeta.emotion_reader.currentPage,25);assert.equal(Object.keys(server.logs).length,1);
+});
+
+test('My Space timer opens its original paused session in a popup and Back keeps the same space and pending save',async()=>{
+  const fixture=harness({now:0}),{c,setNow,server,memory}=fixture,popups=new Map();
+  c.GrowellPopupHistory={open:(key,options)=>popups.set(key,options),closed:key=>popups.delete(key)};
+  c.startReading('emotion');const id=c.readingTimer.id;
+  const events=timerBrowserEvents(fixture);
+  setNow(5000);events.buttons.get('btn-reading-toggle-pause').click();
+  assert.equal(c.readingTimer.running,false);c.closeReadingHomeDialog();setNow(3600000);
+  c.startReading('emotion');
+  assert.equal(c.readingTimer.id,id);assert.equal(c.readingTimerElapsedMs(),5000);assert.equal(c.readingTimer.running,false);
+  assert.equal(c.readingHomeReturn,false);assert.equal(c.readingHomeDialogFor,id);assert.equal(c.location.hash,'#/book/emotion/mine');
+  c.svgIcon=()=>'';c.I_CLOSE='close';
+  c.readingCardHtml=(book,inDialog)=>{assert.equal(book.id,'emotion');assert.equal(inDialog,true);return c.readingSavePanelOpen?'<div data-save-view></div>':'<div data-timer-view></div>';};
+  assert.match(c.readingHomeDialogHtml(c.currentRoute()),/타이머 닫고 나의 공간으로 돌아가기[\s\S]*data-timer-view/);
+  const dialog=c.document.createElement('dialog');dialog.id='reading-home-dialog';c.document.body.appendChild(dialog);c.showReadingHomeDialog();
+  popups.get('reading-home').close();assert.equal(dialog.open,false);assert.equal(c.location.hash,'#/book/emotion/mine');
+  assert.equal(JSON.parse(memory.get(c.readingTimerStorageKey('reader'))).timer.id,id);
+  c.startReading('emotion');c.showReadingHomeDialog();events.buttons.get('btn-reading-done').click();
+  assert.match(c.readingHomeDialogHtml(c.currentRoute()),/data-save-view/);assert.equal(c.readingSavePanelOpen,true);
+  popups.get('reading-home').close();assert.equal(c.readingTimer.phase,'save');assert.equal(c.readingTimerElapsedMs(),5000);
+  c.startReading('emotion');c.showReadingHomeDialog();await c.submitReadingLog('emotion',0,25,null);
+  assert.equal(c.location.hash,'#/book/emotion/mine');assert.equal(dialog.open,false);assert.equal(c.readingHomeDialogFor,null);assert.equal(c.readingTimer,null);
+  assert.equal(server.logs[id].seconds,5);assert.equal(server.logs[id].page,25);
+});
+
+test('My Space timer popup leaves note writing visible and reopens only after returning from the note',async()=>{
+  const {c}=noteHarness({now:5000});c.readingHomeReturn=false;c.readingHomeDialogFor=c.readingTimer.id;
+  c.svgIcon=()=>'';c.I_CLOSE='close';c.readingCardHtml=()=>'<div data-timer-view></div>';
+  await c.openReadingNote('mine');
+  assert.equal(c.readingHomeDialogHtml(c.currentRoute()),'');assert.equal(c.readingHomeDialogFor,null);
+  assert.equal(c.readingNoteReturn.type,'mine');assert.equal(c.readingTimer.running,false);
+  assert.equal(c.completeReadingNote('mine','emotion'),true);
+  assert.equal(c.location.hash,'#/book/emotion/mine');assert.match(c.readingHomeDialogHtml(c.currentRoute()),/data-timer-view/);
+  c.location.hash='#/book/emotion/share';assert.equal(c.readingHomeDialogHtml(c.currentRoute()),'');
+  c.location.hash='#/book/emotion/mine';assert.equal(c.readingHomeDialogHtml(c.currentRoute()),'');
 });
 
 test('home note handoff returns to the home popup after a matching saved note, including refresh',async()=>{

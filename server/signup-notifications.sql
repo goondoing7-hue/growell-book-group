@@ -2,6 +2,33 @@
 -- No emails are sent by this migration. Existing applicants are not backfilled.
 begin;
 
+-- The scheduler token is generated and kept inside Vault. No SQL result, Edge
+-- environment variable, browser, repository or operator tool needs its value.
+create extension if not exists supabase_vault with schema vault;
+create extension if not exists pgcrypto with schema extensions;
+do $worker_secret$
+begin
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('growell_signup_notification_worker_secret',0));
+  if not exists(select 1 from vault.secrets where name='growell_signup_notification_worker_secret') then
+    perform vault.create_secret(replace(gen_random_uuid()::text||gen_random_uuid()::text,'-',''),
+      'growell_signup_notification_worker_secret','GROWELL signup notification scheduler; do not expose');
+  end if;
+end
+$worker_secret$;
+create or replace function public.growell_authorize_signup_notification_worker(p_secret text)
+returns boolean language plpgsql security definer set search_path=''
+as $function$
+declare expected text;
+begin
+  if p_secret is null or char_length(p_secret) not between 32 and 256 then return false;end if;
+  select decrypted_secret into expected from vault.decrypted_secrets where name='growell_signup_notification_worker_secret';
+  if expected is null or char_length(expected) not between 32 and 256 then return false;end if;
+  return extensions.digest(p_secret,'sha256')=extensions.digest(expected,'sha256');
+end
+$function$;
+revoke all on function public.growell_authorize_signup_notification_worker(text) from public,anon,authenticated;
+grant execute on function public.growell_authorize_signup_notification_worker(text) to service_role;
+
 create table if not exists public.growell_signup_notifications (
   id uuid primary key default gen_random_uuid(),
   profile_id text not null unique references public.profiles(id) on delete cascade,
@@ -21,6 +48,23 @@ create table if not exists public.growell_signup_notifications (
   last_error text,
   template_version integer not null default 1 check(template_version=1)
 );
+-- Additive migration for installations with the former Resend queue. A provider
+-- is chosen once, at the first claim; changing server secrets cannot reroute it.
+alter table public.growell_signup_notifications add column if not exists provider text;
+do $provider_constraint$
+begin
+  if not exists(select 1 from pg_catalog.pg_constraint where conrelid='public.growell_signup_notifications'::regclass
+    and conname='growell_signup_notifications_provider_check') then
+    alter table public.growell_signup_notifications add constraint growell_signup_notifications_provider_check
+      check(provider is null or provider in ('gmail_smtp','legacy_resend'));
+  end if;
+end
+$provider_constraint$;
+-- We cannot prove whether a legacy attempt was accepted. Preserve its snapshot
+-- and sent/cancelled history; quarantine unfinished attempts instead of resending.
+update public.growell_signup_notifications set provider='legacy_resend' where provider is null and attempts>0;
+update public.growell_signup_notifications set status='review',last_error='provider_migration_review',lease_token=null,lease_until=null
+  where provider='legacy_resend' and status in ('pending','sending');
 alter table public.growell_signup_notifications enable row level security;
 revoke all on table public.growell_signup_notifications from public,anon,authenticated;
 grant select,insert,update,delete on table public.growell_signup_notifications to service_role;
@@ -58,38 +102,57 @@ $function$;
 revoke all on function public.growell_finalize_signup(text,uuid,text) from public,anon,authenticated;
 grant execute on function public.growell_finalize_signup(text,uuid,text) to service_role;
 
--- Claim exactly one job. Concurrent workers use SKIP LOCKED and a distinct lease.
--- The first sender and recipient are frozen so retry payloads stay identical.
+-- Disable the old entry point: an old worker must not claim Gmail jobs and send
+-- through its previous provider. Retain the signature for additive deployment.
 create or replace function public.growell_claim_signup_notification(p_sender text,p_recipient text,p_profile_id text default null)
+returns setof public.growell_signup_notifications language plpgsql security definer set search_path=''
+as $function$
+begin
+  raise exception 'Notification worker upgrade required' using errcode='55000';
+end
+$function$;
+revoke all on function public.growell_claim_signup_notification(text,text,text) from public,anon,authenticated;
+grant execute on function public.growell_claim_signup_notification(text,text,text) to service_role;
+
+-- Claim exactly one pending job. There is deliberately no expired-sending path.
+create or replace function public.growell_claim_signup_notification_v2(p_provider text,p_sender text,p_recipient text,p_profile_id text default null)
 returns setof public.growell_signup_notifications language plpgsql security definer set search_path=''
 as $function$
 declare job_id uuid;
 begin
-  if p_sender is null or p_recipient is null or p_sender !~ '^[^[:space:]<>@]+@[^[:space:]<>@]+\.[^[:space:]<>@]+$'
-      or p_recipient !~ '^[^[:space:]<>@]+@[^[:space:]<>@]+\.[^[:space:]<>@]+$' then
+  if p_provider is distinct from 'gmail_smtp' or p_sender is distinct from 'goondoing7@gmail.com'
+      or p_recipient is distinct from 'goondoing7@gmail.com' then
     raise exception 'Invalid notification configuration' using errcode='22023';
   end if;
   update public.growell_signup_notifications n set status='cancelled',lease_token=null,lease_until=null,last_error='application_reviewed'
     where (p_profile_id is null or n.profile_id=p_profile_id) and n.status in ('pending','sending') and not exists(select 1 from public.profiles p
       join public.profile_secrets s on s.user_id=p.id
       where p.id=n.profile_id and p.approval_status='pending' and p.is_deleted=false and p.is_admin=false);
-  -- Resend deduplication lasts 24 hours. Stop uncertain retries before it expires.
+  -- SMTP has no deduplication key. This includes crashes before/after SMTP and
+  -- loss of the database acknowledgment: no second claim is permitted.
+  update public.growell_signup_notifications set status='review',lease_token=null,lease_until=null,last_error='smtp_delivery_uncertain'
+    where (p_profile_id is null or profile_id=p_profile_id) and status='sending' and (lease_until is null or lease_until<=now());
+  update public.growell_signup_notifications set status='review',lease_token=null,lease_until=null,last_error='invalid_delivery_snapshot'
+    where (p_profile_id is null or profile_id=p_profile_id) and status='pending'
+      and ((provider is not null and provider<>p_provider) or (sender is not null and sender<>p_sender)
+        or (recipient is not null and recipient<>p_recipient) or (attempts>0 and (provider is null or sender is null or recipient is null)));
+  -- Only proved pre-DATA temporary failures can reach pending again. Bound
+  -- those retries as well, without treating this as an SMTP deduplication window.
   update public.growell_signup_notifications set status='review',lease_token=null,lease_until=null,last_error='retry_window_elapsed'
-    where (p_profile_id is null or profile_id=p_profile_id) and status in ('pending','sending') and (attempts>=10 or first_attempt_at<now()-interval '23 hours')
-      and (lease_until is null or lease_until<=now());
+    where (p_profile_id is null or profile_id=p_profile_id) and status='pending' and (attempts>=10 or first_attempt_at<now()-interval '23 hours');
   select id into job_id from public.growell_signup_notifications
-    where (p_profile_id is null or profile_id=p_profile_id) and (status='pending' or (status='sending' and lease_until<=now())) and available_at<=now()
+    where (p_profile_id is null or profile_id=p_profile_id) and status='pending' and available_at<=now()
     order by requested_at,id limit 1 for update skip locked;
   if job_id is null then return; end if;
   return query update public.growell_signup_notifications set
     status='sending',attempts=attempts+1,first_attempt_at=coalesce(first_attempt_at,now()),
     lease_token=gen_random_uuid(),lease_until=now()+interval '2 minutes',
-    sender=coalesce(sender,p_sender),recipient=coalesce(recipient,p_recipient)
+    provider=coalesce(provider,p_provider),sender=coalesce(sender,p_sender),recipient=coalesce(recipient,p_recipient)
     where id=job_id returning *;
 end
 $function$;
-revoke all on function public.growell_claim_signup_notification(text,text,text) from public,anon,authenticated;
-grant execute on function public.growell_claim_signup_notification(text,text,text) to service_role;
+revoke all on function public.growell_claim_signup_notification_v2(text,text,text,text) from public,anon,authenticated;
+grant execute on function public.growell_claim_signup_notification_v2(text,text,text,text) to service_role;
 
 create or replace function public.growell_finish_signup_notification(p_id uuid,p_lease_token uuid,p_provider_id text default null,p_error text default null,p_retryable boolean default false)
 returns boolean language plpgsql security definer set search_path=''
@@ -100,11 +163,14 @@ begin
     raise exception 'Invalid delivery result' using errcode='22023';
   end if;
   if p_provider_id is null and coalesce(p_error,'') not in
-    ('rate_limited','provider_unavailable','invalid_sender','invalid_request','network_error','unexpected_response','provider_rejected','idempotency_conflict') then
+    ('rate_limited','provider_unavailable','invalid_sender','invalid_request','network_error','unexpected_response','provider_rejected','idempotency_conflict',
+     'smtp_before_data_temporary','smtp_auth_failed','smtp_rejected','smtp_delivery_uncertain') then
     raise exception 'Invalid delivery error' using errcode='22023';
   end if;
   update public.growell_signup_notifications set
-    status=case when p_provider_id is not null then 'sent' when p_retryable and attempts<10 and first_attempt_at>=now()-interval '23 hours' then 'pending' else 'review' end,
+    status=case when p_provider_id is not null then 'sent'
+      when p_retryable and provider='gmail_smtp' and p_error='smtp_before_data_temporary'
+        and attempts<10 and first_attempt_at>=now()-interval '23 hours' then 'pending' else 'review' end,
     provider_id=p_provider_id,sent_at=case when p_provider_id is not null then now() else null end,
     last_error=p_error,lease_token=null,lease_until=null,
     available_at=now()+make_interval(secs=>least(3600,30*power(2,least(attempts,7)))::integer)

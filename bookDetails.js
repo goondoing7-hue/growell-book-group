@@ -149,18 +149,107 @@
       '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">읽고 있는 부분은 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.</p><ol class="book-toc">'+toc+'</ol></section>'+
       '<footer class="book-details-sources"><span>종이책 기준 · ISBN '+info.isbn+'</span><a href="'+info.previewUrl+'" target="_blank" rel="noopener noreferrer">원래 목차 보기 ↗</a><a href="'+info.infoUrl+'" target="_blank" rel="noopener noreferrer">도서 정보 출처 ↗</a></footer></div>';
   }
-  function open(bookId,trigger){
-    if(!app||!details(bookId))return;
-    var book=app.bookById(bookId);if(!book)return;
+  function archiveEdition(book){
+    if(!book)return null;
+    if(book.linkedBookId&&details(book.linkedBookId))return book.linkedBookId;
+    var isbn=String(book.isbn||'').replace(/[-\s]/g,'');
+    return Object.keys(catalog).find(function(id){return catalog[id].isbn===isbn;})||null;
+  }
+  function archivePage(book,page){
+    page=Number(page==null?book&&book.currentPage:page);
+    var total=Number(book&&book.totalPages);
+    return Number.isInteger(page)&&page>0&&(!total||page<=total)?page:null;
+  }
+  function archiveToc(book){
+    var total=Number(book&&book.totalPages),context='';
+    return String(book&&book.tableOfContents||'').split(/\r?\n/).map(function(line,index){
+      var title=line.trim();if(!title)return null;
+      // Only explicit page suffixes are interpreted. Chapter numbers and years
+      // within titles are not page information, and no missing page is guessed.
+      var match=title.match(/^(.*?)\s*(?:[·ㆍ•‧|]\s*|\.{2,}\s*|…+\s*)(?:p\.?\s*)?(\d{1,6})(?:\s*(?:쪽|페이지|p(?:age)?\.?))?\s*$/i)
+        || title.match(/^(.*?)\s+(?:p\.?\s*)?(\d{1,6})\s*(?:쪽|페이지|p(?:age)?\.?)\s*$/i)
+        || title.match(/^(.*?)\s+p\.?\s*(\d{1,6})\s*$/i);
+      var page=match?Number(match[2]):null;
+      if(!page||page<1||(total>0&&page>total)){page=null;match=null;}
+      if(match&&match[1].trim())title=match[1].trim();else page=null;
+      var heading=title.match(/^((?:제\s*)?\d+\s*(?:부|장)|(?:part|chapter)\s+\d+)(?:\s*[.:|·\-]\s*|\s+)(.+)$/i);
+      if(heading)context=heading[1];
+      return {id:'archive-toc-'+index,title:title,page:page,label:heading?'':context,heading:!!heading};
+    }).filter(Boolean);
+  }
+  function currentArchiveSection(book,page){
+    var current=archivePage(book,page),edition=archiveEdition(book);if(current===null)return null;
+    if(edition)return currentSection(edition,current);
+    var section=null,rows=archiveToc(book),index=-1;
+    rows.forEach(function(row,at){if(row.page!==null&&row.page<=current&&(!section||row.page>=section.page)){section=row;index=at;}});
+    // A later entry without its own start page can begin anywhere in this
+    // interval. Keep the precise known start, but do not extend its highlight
+    // across an unknown following section or through the rest of the book.
+    if(section&&current>section.page){
+      for(var i=index+1;i<rows.length;i++){
+        if(rows[i].page!==null)break;
+        return null;
+      }
+    }
+    return section;
+  }
+  function archivePositionNote(book,page){
+    var edition=archiveEdition(book),rows=edition?details(edition).chapters:archiveToc(book);
+    if(!rows.length)return '목차 정보가 아직 없어요.';
+    var pages=rows.filter(function(row){return row.page!==null;}).map(function(row){return row.page;});
+    if(!pages.length)return '목차 쪽수 정보가 없어 읽는 항목을 표시할 수 없어요.';
+    var first=Math.min.apply(null,pages);
+    if(page<first)return '쪽수가 확인된 첫 목차는 '+first+'쪽부터예요.';
+    return '일부 목차의 쪽수가 없어 현재 읽는 항목을 정확히 표시할 수 없어요.';
+  }
+  function hintArchiveHtml(book,page){
+    var current=archivePage(book,page);if(current===null)return '';
+    var section=currentArchiveSection(book,current),title=section?((section.label?section.label+' · ':'')+section.title):current+'쪽';
+    return '<span class="book-reading-section book-archive-reading-section"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+escape(title)+'</span>'+(!section?'<span class="book-reading-unavailable">'+archivePositionNote(book,current)+'</span>':'')+'</span>';
+  }
+  function archiveSafeUrl(value,image){
+    if(image&&root.GrowellArchiveDomain&&root.GrowellArchiveDomain.safeCoverUrl)return root.GrowellArchiveDomain.safeCoverUrl(value);
+    var text=String(value||'');if(image&&/^\/?covers\/[A-Za-z0-9_/-]+\.(?:jpe?g|png|webp)$/i.test(text))return text;
+    try{var url=new URL(text);return url.protocol==='https:'&&url.hostname&&!url.username&&!url.password?url.href:'';}catch(e){return '';}
+  }
+  function archiveSourceUrl(book){
+    var href=archiveSafeUrl(book.sourceUrl,false);if(!href||book.source!=='yes24')return href;
+    try{var url=new URL(href),match=url.pathname.match(/^\/(?:Product\/Goods|goods(?:\/detail)?)\/(\d+)\/?$/i);return /^(?:www\.|m\.)?yes24\.com$/i.test(url.hostname)&&match?'https://www.yes24.com/Product/Goods/'+match[1]:'';}catch(e){return '';}
+  }
+  function archiveBodyHtml(book,page){
+    book=book||{};var edition=archiveEdition(book),current=archivePage(book,page);
+    if(edition){
+      var original=app&&app.bookById(edition),known=original||{id:edition,title:book.title,author:Array.isArray(book.authors)?book.authors.join(' · '):'',publisher:book.publisher,cover:archiveSafeUrl(book.coverUrl,true)};
+      return bodyHtml(known,current);
+    }
+    var rows=archiveToc(book),section=currentArchiveSection(book,page),cover=archiveSafeUrl(book.coverUrl,true),source=archiveSourceUrl(book);
+    var authors=Array.isArray(book.authors)?book.authors.join(' · '):String(book.authors||''),total=Number(book.totalPages),pageKnown=rows.some(function(row){return row.page!==null;});
+    var toc=rows.map(function(row){var selected=section&&section.id===row.id;return '<li class="book-toc-row'+(row.heading?' book-toc-chapter-heading':'')+(selected?' is-current':'')+'"'+(selected?' aria-current="location"':'')+'><div><span class="book-toc-title">'+escape(row.title)+'</span>'+(selected?'<span class="book-toc-current">읽는 중</span>':'')+'</div>'+(row.page!==null?'<span class="book-toc-page">'+row.page+'쪽</span>':'')+'</li>';}).join('');
+    return '<header class="book-details-header"><h2 id="book-details-title">책 소개와 목차</h2><button class="icon-btn" type="button" data-book-details-close aria-label="책 소개 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>'+
+      '<div class="book-details-body"><div class="book-details-book">'+(cover?'<img src="'+escape(cover)+'" alt="" referrerpolicy="no-referrer">':'')+'<div><h3>'+escape(book.title||'나의 책')+'</h3><p>'+escape([authors,book.publisher].filter(Boolean).join(' · '))+(Number.isInteger(total)&&total>0?'<br>'+total+'쪽':'')+'</p></div></div>'+
+      '<section class="book-details-overview book-archive-overview"><h3>어떤 책인가요?</h3><p>'+escape(book.description||'등록된 책 소개가 없습니다.')+'</p><h3>저자 소개</h3><p>'+escape(book.authorIntro||(authors?authors+' · 별도의 저자 소개 정보가 없습니다.':'등록된 저자 소개가 없습니다.'))+'</p></section>'+
+      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(current!==null?'<span>현재 '+current+'쪽</span>':'')+'</div><p class="book-toc-note">'+(current!==null&&!section?archivePositionNote(book,current):pageKnown?'읽고 있는 부분은 제공된 목차의 시작 쪽수를 기준으로 표시해요.':rows.length?'목차 쪽수 정보가 없어 읽는 항목은 표시하지 않아요.':'등록된 목차 정보가 없습니다.')+'</p>'+(toc?'<ol class="book-toc book-archive-toc">'+toc+'</ol>':'')+'</section>'+
+      '<footer class="book-details-sources">'+(book.isbn?'<span>ISBN '+escape(book.isbn)+'</span>':'')+(source?'<a href="'+escape(source)+'" target="_blank" rel="noopener noreferrer">'+(book.source==='yes24'?'도서 정보: YES24':'도서 정보 출처')+' ↗</a>':'')+'</footer></div>';
+  }
+  function showDialog(html,trigger){
     close(false);returnFocus=trigger||root.document.activeElement;
     var node=root.document.createElement('dialog');dialog=node;
     node.className='book-details-dialog';node.setAttribute('aria-labelledby','book-details-title');
-    node.innerHTML=bodyHtml(book,app.currentPage(bookId));root.document.body.appendChild(node);
+    node.innerHTML=html;root.document.body.appendChild(node);
     node.querySelector('[data-book-details-close]').onclick=function(){close();};
     node.addEventListener('cancel',function(event){event.preventDefault();close();});
     node.addEventListener('click',function(event){if(event.target!==node)return;var rect=node.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)close();});
     node.showModal();
     if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('book-details',{close:function(){if(dialog===node)close();}});
+  }
+  function openArchive(book,page,trigger){
+    if(!app||!app.sessionUserId()||!book)return;
+    owner=app.sessionUserId();showDialog(archiveBodyHtml(book,page),trigger);
+  }
+  function open(bookId,trigger){
+    if(!app||!details(bookId))return;
+    var book=app.bookById(bookId);if(!book)return;
+    showDialog(bodyHtml(book,app.currentPage(bookId)),trigger);
   }
   function bind(){
     if(!app)return;
@@ -169,5 +258,5 @@
   }
   function reset(){close(false);owner=null;}
   if(root.addEventListener)root.addEventListener('hashchange',function(){close(false);});
-  return {configure:configure,bind:bind,reset:reset,open:open,close:close,coverHtml:coverHtml,hintHtml:hintHtml,currentSection:currentSection,details:details,bodyHtml:bodyHtml};
+  return {configure:configure,bind:bind,reset:reset,open:open,close:close,coverHtml:coverHtml,hintHtml:hintHtml,currentSection:currentSection,details:details,bodyHtml:bodyHtml,openArchive:openArchive,hintArchiveHtml:hintArchiveHtml,currentArchiveSection:currentArchiveSection,archiveBodyHtml:archiveBodyHtml,archiveToc:archiveToc};
 });

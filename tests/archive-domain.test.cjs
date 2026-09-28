@@ -81,6 +81,34 @@ test('legacy archives without contents remain readable and contents have a Unico
   for(const tableOfContents of [[],{},42,true])assert.throws(()=>archive.prepare({title:'책',tableOfContents}),/형식/);
 });
 
+test('fixed note categories survive reading, edits and storage without classifying old notes',()=>{
+  const legacy=archive.upsertNote({title:'책',status:'reading',totalPages:100},{id:'old',text:'기존 기록',createdAt:100});
+  assert.equal(legacy.notes[0].category,'');
+  let book=legacy;
+  for(const category of ['quote','thought','question','insight']){
+    book=archive.upsertNote(book,{id:category,text:category,category,createdAt:200});
+  }
+  book=archive.addReadingSession(book,{id:'reading_categories',seconds:60,startPage:0,endPage:20,createdAt:300});
+  book=archive.upsertNote(book,{...book.notes[1],text:'다듬은 문장',category:'insight',updatedAt:400});
+  const restored=archive.decode(archive.encode(archive.removeNote(book,'question',500)));
+  assert.equal(restored.notes[0].category,'');
+  assert.equal(restored.notes[1].category,'insight');
+  assert.equal(restored.notes[1].createdAt,200);
+  assert.equal(restored.notes.find(n=>n.id==='question').category,'question');
+  assert.equal(restored.notes.find(n=>n.id==='question').deleted,true);
+  for(const category of ['emotion','pcat_custom',42,{},[]])assert.throws(()=>archive.upsertNote(book,{id:'invalid',text:'기록',category,createdAt:600}));
+});
+
+test('optional author introduction stays plain text and survives archive storage without inventing metadata',()=>{
+  assert.equal(archive.prepare({title:'기존 책'}).authorIntro,'');
+  const authorIntro='<b>저자 이름</b>은 글을 쓰는 작가이다.\n두 번째 소개 문장이다.';
+  const book=archive.decode(archive.encode({title:'책',authorIntro}));
+  assert.equal(book.authorIntro,authorIntro);
+  assert.equal(archive.upsertNote(book,{id:'author_note',text:'문장',createdAt:1}).authorIntro,authorIntro);
+  assert.throws(()=>archive.prepare({title:'책',authorIntro:'가'.repeat(8001)}),/8000/);
+  assert.throws(()=>archive.prepare({title:'책',authorIntro:{}}),/형식/);
+});
+
 test('unrated books are distinct from five-star ratings and invalid ratings fail',()=>{
   for(const rating of [undefined,null,'',0,'0']) assert.equal(archive.prepare(sample({rating})).rating,0);
   for(const rating of [1,2,3,4,5,'1','5']) assert.equal(archive.prepare(sample({rating})).rating,Number(rating));

@@ -80,7 +80,7 @@ function harness(){
   const events={},nodes=[],opened=[],closed=[];
   let member='member-a';
   const trigger={isConnected:true,focused:false,focus(options){this.focused=options;},getAttribute(){return 'emotion';}};
-  const c={Number,Object,String,Array,console,addEventListener(name,fn){events[name]=fn;},
+  const c={Number,Object,String,Array,URL,console,addEventListener(name,fn){events[name]=fn;},
     GrowellPopupHistory:{open(key,options){opened.push({key,options});},closed(key){closed.push(key);}},
     document:{activeElement:trigger,body:{appendChild(node){nodes.push(node);}},querySelectorAll(){return [trigger];},createElement(){
       const closeButton={};return {open:false,isConnected:true,events:{},innerHTML:'',setAttribute(){},querySelector(){return closeButton;},
@@ -107,4 +107,85 @@ test('route and account changes close private reading-position context; stale ca
   h.events.hashchange();assert.equal(h.nodes[1].open,false);
   h.click();h.setMember('member-b');h.api.bind();assert.equal(h.nodes[2].open,false);
   h.click();h.api.reset();assert.equal(h.nodes[3].open,false);
+});
+
+test('archive table of contents retains explicit pages and never treats chapter numbers or years as pages',()=>{
+  const archive={title:'목차 테스트',totalPages:300,tableOfContents:'프롤로그 ·004\n1장 내 이야기...26\n첫 부분 30쪽\n두 번째 부분 p. 42\n숫자로 시작하는 1984\n2장 다음 이야기\n한 걸음 … 101\n잘못된 쪽수 · 999'};
+  const rows=Book.archiveToc(archive);
+  assert.deepEqual(rows.map(row=>row.page),[4,26,30,42,null,null,101,null]);
+  assert.equal(rows[1].title,'1장 내 이야기');assert.equal(rows[3].label,'1장');
+  assert.equal(rows[4].title,'숫자로 시작하는 1984');assert.equal(rows[7].title,'잘못된 쪽수 · 999');
+  assert.equal(Book.currentArchiveSection(archive,29).title,'1장 내 이야기');
+  assert.equal(Book.currentArchiveSection(archive,30).title,'첫 부분');
+  assert.equal(Book.currentArchiveSection(archive,100),null);
+  assert.equal(Book.currentArchiveSection(archive,101).title,'한 걸음');
+  for(const page of [-1,0,301,Infinity,2.5])assert.equal(Book.currentArchiveSection(archive,page),null);
+  const html=Book.archiveBodyHtml(archive,101);
+  assert.equal((html.match(/aria-current="location"/g)||[]).length,1);
+  assert.match(html,/is-current[^]*한 걸음[^]*101쪽/);
+  assert.match(Book.hintArchiveHtml(archive,101),/2장 · 한 걸음/);
+});
+
+test('archive intros use only supplied metadata and explain unavailable section page numbers',()=>{
+  const archive={title:'책 이름',authors:['저자 A'],publisher:'출판사',description:'첫 줄\n두 번째 줄',authorIntro:'제공된 작가 소개이다.',currentPage:12,totalPages:200,tableOfContents:'1장 첫 이야기\n2장 다음 이야기'};
+  const html=Book.archiveBodyHtml(archive,12);
+  assert.match(html,/어떤 책인가요\?/);assert.match(html,/첫 줄\n두 번째 줄/);assert.match(html,/제공된 작가 소개이다\./);
+  assert.match(html,/현재 12쪽/);assert.match(html,/목차 쪽수 정보가 없어/);assert.match(html,/1장 첫 이야기/);
+  assert.doesNotMatch(html,/aria-current="location"|읽는 중/);assert.equal(Book.currentArchiveSection(archive,12),null);
+  assert.match(Book.hintArchiveHtml(archive,12),/12쪽[^]*목차 쪽수 정보가 없어/);
+  assert.match(Book.hintArchiveHtml({...archive,tableOfContents:''},12),/목차 정보가 아직 없어요/);
+  assert.match(Book.archiveBodyHtml({title:'새 책',authors:['작가']},0),/별도의 저자 소개 정보가 없습니다/);
+  assert.doesNotMatch(Book.archiveBodyHtml(archive,999),/aria-current="location"|현재 12쪽/);
+});
+
+test('archive reading hints distinguish pages before the first known section from missing page metadata',()=>{
+  const archive={title:'책',totalPages:200,tableOfContents:'1장 시작 ·12\n2장 다음 ·50'};
+  assert.equal(Book.currentArchiveSection(archive,5),null);
+  const hint=Book.hintArchiveHtml(archive,5),html=Book.archiveBodyHtml(archive,5);
+  assert.match(hint,/5쪽[^]*첫 목차는 12쪽부터/);assert.doesNotMatch(hint,/쪽수 정보가 없어/);
+  assert.match(html,/현재 5쪽[^]*첫 목차는 12쪽부터/);assert.doesNotMatch(html,/aria-current="location"/);
+  assert.equal(Book.currentArchiveSection(archive,49).title,'1장 시작');
+  assert.match(Book.hintArchiveHtml({linkedBookId:'emotion',totalPages:364},2),/첫 목차는 4쪽부터/);
+});
+
+test('an unpaged later section prevents the previous chapter from staying highlighted indefinitely',()=>{
+  const archive={title:'일부 쪽수만 있는 책',totalPages:300,tableOfContents:'1장 시작 ·12\n2장 알려지지 않은 시작\n3장 다시 확인됨 ·100\n마지막 이야기'};
+  assert.equal(Book.currentArchiveSection(archive,12).title,'1장 시작');
+  for(const page of [13,50,99,101,299]){
+    assert.equal(Book.currentArchiveSection(archive,page),null);
+    assert.match(Book.hintArchiveHtml(archive,page),/일부 목차의 쪽수가 없어/);
+    assert.doesNotMatch(Book.archiveBodyHtml(archive,page),/aria-current="location"/);
+  }
+  assert.equal(Book.currentArchiveSection(archive,100).title,'3장 다시 확인됨');
+  assert.equal(Book.currentArchiveSection({...archive,tableOfContents:'1장 시작 ·12\n마지막 이야기 ·100'},299).title,'마지막 이야기');
+});
+
+test('archive linked edition or matching ISBN reuses the exact curated subsections without matching by title',()=>{
+  const archive={title:book.title,authors:[book.author],coverUrl:'covers/emotion.jpg',totalPages:364,currentPage:90};
+  for(const identity of [{linkedBookId:'emotion'},{isbn:'979-11-93388-26-6'}]){
+    const matched={...archive,...identity};assert.equal(Book.currentArchiveSection(matched,90).title,'이유 없는 분노는 없다_울분');
+    assert.match(Book.archiveBodyHtml(matched,90),/나만 없어지면 돼_원초적 수치심/);
+    assert.equal((Book.archiveBodyHtml(matched,90).match(/class="book-toc-sections"/g)||[]).length,8);
+  }
+  assert.equal(Book.currentArchiveSection({...archive,isbn:'9780000000000'},90),null);
+  assert.doesNotMatch(Book.archiveBodyHtml(archive,90),/원초적 수치심/);
+});
+
+test('archive detail escapes supplied content and allows only safe cover and source URLs',()=>{
+  const archive={title:'<script>bad</script>',authors:['<img onerror="bad">'],description:'<b onclick="bad">본문</b>',authorIntro:'<script>writer</script>',tableOfContents:'<img onerror="bad"> · 26',coverUrl:'javascript:alert(1)',sourceUrl:'https://username:secret@yes24.com/Product/Goods/3',source:'yes24',currentPage:26};
+  const html=Book.archiveBodyHtml(archive,26);assert.doesNotMatch(html,/<script|<img onerror|javascript:|username:secret/);assert.match(html,/&lt;script&gt;/);
+  assert.doesNotMatch(Book.archiveBodyHtml({...archive,sourceUrl:'https://example.com/Product/Goods/3'}),/href="https:\/\/example.com/);
+  const safe=Book.archiveBodyHtml({...archive,coverUrl:'https://image.yes24.com/cover.jpg',sourceUrl:'https://m.yes24.com/goods/detail/3'});
+  assert.match(safe,/src="https:\/\/image.yes24.com\/cover.jpg"/);assert.match(safe,/href="https:\/\/www.yes24.com\/Product\/Goods\/3"/);
+  assert.match(safe,/rel="noopener noreferrer"/);assert.match(safe,/도서 정보: YES24/);
+});
+
+test('archive book details participate in nested Back cleanup and close on owner change or reset',()=>{
+  const h=harness(),archive={title:'아카이브 책',authors:['작가'],currentPage:12,tableOfContents:'첫 부분 · 10'};
+  h.api.openArchive(archive,12,h.trigger);assert.equal(h.nodes[0].open,true);assert.equal(h.opened[0].key,'book-details');assert.match(h.nodes[0].innerHTML,/첫 부분/);
+  h.opened[0].options.close();assert.equal(h.nodes[0].open,false);assert.equal(h.trigger.focused.preventScroll,true);
+  h.api.openArchive(archive,12,h.trigger);h.setMember('member-b');h.api.bind();assert.equal(h.nodes[1].open,false);
+  h.api.openArchive(archive,12,h.trigger);h.events.hashchange();assert.equal(h.nodes[2].open,false);
+  h.api.openArchive(archive,12,h.trigger);h.api.reset();assert.equal(h.nodes[3].open,false);
+  h.setMember(null);h.api.openArchive(archive,12,h.trigger);assert.equal(h.nodes.length,4);
 });
