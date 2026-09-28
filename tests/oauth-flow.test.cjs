@@ -14,7 +14,7 @@ function harness(options={}){
     console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,
     STATE:{users:{},posts:{},comments:{},privateEntries:{},habits:{},readingMeta:{},readingLogs:{},worksheets:{},materialNotes:{}},SESSION:null,
     authFlowEpoch:0,saveSessionEpoch:0,sharedPostsLoadState:'idle',BOOTING:true,BOOT_FAILED:false,
-    GrowellOAuth:OAuth,GrowellMemberAccess:MemberAccess,keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
+    GrowellOAuth:OAuth,GrowellMemberAccess:MemberAccess,GrowellPasswordHint:require('../passwordHint.js'),keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
     location:{href:url.href,hash:url.hash||'#/',pathname:url.pathname,search:url.search,assign(url){calls.push(['redirect',url]);}},
     history:{replaceState(a,b,value){calls.push(['clean-url',value]);const next=new URL(value,c.location.href);Object.assign(c.location,{href:next.href,hash:next.hash,pathname:next.pathname,search:next.search});}},
     localStorage:{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)},
@@ -65,6 +65,32 @@ test('hidden social entry points make no provider probe or launch and leave only
     assert.match(markup,mode==='login'?/id="li-pw"/:/id="su-pw"/);
   }
   assert.ok(!calls.some(call=>['provider-settings','oauth','redirect','signout','clear'].includes(call[0])));
+});
+
+test('choosing another authentication form clears only the previous status message',()=>{
+  const handlers={},nodes={};
+  for(const id of ['link-forgot-password','link-back-to-login'])nodes[id]={addEventListener:(event,callback)=>{handlers[id]=callback;}};
+  const tabs=['signup','login'].map(mode=>({getAttribute:()=>mode,addEventListener:(event,callback)=>{handlers[mode]=callback;}}));
+  const c={authMode:'login',oauthMessage:'가입 승인 대기 중이에요.',authFlowEpoch:12,
+    document:{getElementById:id=>nodes[id]||null},app:{querySelectorAll:()=>tabs},bindProfilePhotoPicker(){},render(){}};
+  vm.createContext(c);vm.runInContext(section("  app.querySelectorAll('[data-auth-tab]')",'  var grantAdminBtn ='),c);
+  for(const [id,mode] of [['signup','signup'],['login','login'],['link-forgot-password','forgot'],['link-back-to-login','login']]){
+    c.oauthMessage='이전 안내';handlers[id]();assert.equal(c.authMode,mode);assert.equal(c.oauthMessage,'');assert.equal(c.authFlowEpoch,12);
+  }
+});
+
+test('signup completion is a standalone confirmation without authentication tabs or forms and returns to login',()=>{
+  const {c}=harness({guest:true}),handlers={};
+  c.authMode='signup-complete';c.svgIcon=()=>'<svg/>';c.I_CHECK='';
+  vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
+  const markup=c.loginHtml();
+  assert.match(markup,/가입 신청이 완료되었어요/);assert.match(markup,/관리자가 승인하면 로그인할 수 있어요\./);
+  assert.match(markup,/id="link-back-to-login">로그인 화면으로<\/button>/);
+  assert.doesNotMatch(markup,/data-auth-tab|id="(?:li|su)-(?:id|pw)|<input|<select/);
+  c.document.getElementById=id=>id==='link-back-to-login'?{addEventListener:(event,callback)=>{handlers.back=callback;}}:null;
+  c.app={querySelectorAll:()=>[]};c.bindProfilePhotoPicker=()=>{};
+  vm.runInContext(section("  app.querySelectorAll('[data-auth-tab]')",'  var grantAdminBtn ='),c);
+  handlers.back();assert.equal(c.authMode,'login');assert.match(c.loginHtml(),/id="li-id"/);
 });
 
 test('native login restores from persistent storage in a fresh app with no tab session storage',async()=>{

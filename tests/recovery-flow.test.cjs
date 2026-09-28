@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const {webcrypto} = require('node:crypto');
 global.crypto = webcrypto;
 const vault = require('../privateCrypto.js');
+const PasswordHint=require('../passwordHint.js');
 const source = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const profile = {id:'u-reader', loginId:'reader', name:'독서회원', authUserId:'11111111-1111-4111-8111-111111111111', salt:'salt'};
 function section(start, end) {
@@ -46,7 +47,7 @@ async function harness({entries=[], password, beforeWrite, ownerCheck, resetResu
   const context={
     console,Promise,Date,Uint8Array,TextEncoder,TextDecoder,Blob,atob,btoa,crypto:webcrypto,
     setTimeout:()=>0,clearInterval(){},
-    GrowellPrivateCrypto:vault,
+    GrowellPrivateCrypto:vault,GrowellPasswordHint:PasswordHint,
     STATE:{users:{[profile.id]:copy(profile)},posts:{},comments:{},privateEntries:Object.fromEntries(entries.map(entry=>[entry.id,copy(entry)])),
       worksheets:{},materialNotes:{},habits:{},readingMeta:{},readingLogs:{},bookLocks:{},announcement:{next:{},reading:{}}},
     SESSION:{userId:profile.id,name:profile.name,keyB64:await vault.exportKey(password)},
@@ -162,7 +163,7 @@ test('export creates a valid recovery file before the first private record exist
 
 test('missing recovery file blocks password-reset server calls',async()=>{
   const {c,calls}=await harness();
-  await c.doForgotPassword('reader','hint','new-password','new-password',{});
+  await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{});
   assert.equal(calls.length,0);assert.equal(c.pendingPrivateRecovery,null);
 });
 
@@ -170,7 +171,7 @@ test('guest recovery uses a Boolean owner RPC without loading member profiles or
   const {c,calls,rpcCalls,logins}=await harness();
   c.selectedResetRecovery=await vault.parseRecovery(JSON.stringify(await vault.recoveryFile(profile,[await vault.newKey()],[])));
   c.STATE.users={};c.SESSION=null;
-  assert.equal(await c.doForgotPassword('reader','hint','new-password','new-password',{}),true);
+  assert.equal(await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{}),true);
   assert.deepEqual(rpcCalls,[{name:'growell_recovery_owner_matches',body:{p_login_id:'reader',p_user_id:profile.id,p_auth_user_id:profile.authUserId}}]);
   assert.deepEqual(calls.map(copy),[{name:'reset-password',body:{loginId:'reader',hint:'hint',newPassword:'new-password'}}]);
   assert.deepEqual(logins,[{id:'reader',pw:'new-password'}]);
@@ -185,7 +186,7 @@ test('invalid recovery-file selection clears any prior file and blocks password 
   resetInput.files=[{size:8,text:async()=> 'not-json'}];
   await resetInput.listeners.change();
   assert.equal(c.selectedResetRecovery,null);assert.match(nodes['fp-recovery-status'].textContent,/복구 파일/);
-  await c.doForgotPassword('reader','hint','new-password','new-password',{});
+  await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{});
   assert.equal(calls.length,0);
 });
 
@@ -193,7 +194,7 @@ test('a well-formed recovery file from a different login or account blocks passw
   for(const otherProfile of [{...profile,id:'other',loginId:'other'}, {...profile,id:'other'}, {...profile,authUserId:'22222222-2222-4222-8222-222222222222'}]){
     const {c,calls}=await harness();
     c.selectedResetRecovery=await vault.parseRecovery(JSON.stringify(await vault.recoveryFile(otherProfile,[await vault.newKey()],[])));
-    await c.doForgotPassword('reader','hint','new-password','new-password',{});
+    await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{});
     assert.equal(calls.length,0,JSON.stringify(otherProfile));
     assert.equal(c.pendingPrivateRecovery,null);
   }
@@ -207,7 +208,7 @@ test('a corrupted recovery-key fingerprint is rejected by selection before reset
   c.bindPrivateRecovery();resetInput.files=[{size:text.length,text:async()=>text}];
   await resetInput.listeners.change();
   assert.equal(c.selectedResetRecovery,null);
-  await c.doForgotPassword('reader','hint','new-password','new-password',{});
+  await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{});
   assert.equal(calls.length,0);
 });
 
@@ -215,7 +216,7 @@ test('only strict true from the server allows reset, regardless of cached member
   for(const response of [{data:false,error:null},{data:null,error:null},{data:{ok:true},error:null},{data:true,error:new Error('network unavailable')}]){
     const {c,calls,logins}=await harness({ownerCheck:()=>response});
     c.selectedResetRecovery=await vault.recoveryFile(profile,[await vault.newKey()],[]);
-    assert.equal(await c.doForgotPassword('reader','hint','new-password','new-password',{}),false);
+    assert.equal(await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{}),false);
     assert.equal(calls.length,0);assert.equal(logins.length,0);assert.equal(c.pendingPrivateRecovery,null);
   }
 });
@@ -225,7 +226,7 @@ test('a malformed key or missing Auth identity is rejected locally before either
     const {c,calls,rpcCalls}=await harness();
     c.selectedResetRecovery=await vault.recoveryFile(profile,[await vault.newKey()],[]);
     corrupt(c.selectedResetRecovery);
-    assert.equal(await c.doForgotPassword('reader','hint','new-password','new-password',{}),false);
+    assert.equal(await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{}),false);
     assert.equal(rpcCalls.length,0);assert.equal(calls.length,0);assert.equal(c.pendingPrivateRecovery,null);
   }
 });
@@ -238,7 +239,7 @@ test('changing the file or member session while ownership is checked cannot rese
     const {c,calls,logins}=await harness({ownerCheck:()=>{started();return pending;}});
     c.selectedResetRecovery=await vault.recoveryFile(profile,[await vault.newKey()],[]);
     const button={disabled:false};
-    const attempt=c.doForgotPassword('reader','hint','new-password','new-password',button);
+    const attempt=c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',button);
     await entered;
     assert.equal(button.disabled,true);
     change(c);release({data:true,error:null});
@@ -253,9 +254,9 @@ test('repeated submission during an owner check sends one reset request',async()
   const entered=new Promise(resolve=>{started=resolve;});
   const {c,calls,rpcCalls}=await harness({ownerCheck:()=>{started();return pending;}});
   c.selectedResetRecovery=await vault.recoveryFile(profile,[await vault.newKey()],[]);
-  const first=c.doForgotPassword('reader','hint','new-password','new-password',{});
+  const first=c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{});
   await entered;
-  assert.equal(await c.doForgotPassword('reader','hint','new-password','new-password',{}),false);
+  assert.equal(await c.doForgotPassword('reader',{questionId:'legacy',answer:'hint'},'new-password','new-password',{}),false);
   release({data:true,error:null});
   assert.equal(await first,true);assert.equal(rpcCalls.length,1);assert.equal(calls.length,1);
 });
@@ -263,7 +264,26 @@ test('repeated submission during an owner check sends one reset request',async()
 test('the existing server hint check must succeed before a kit is queued or login begins',async()=>{
   const {c,calls,logins,toasts}=await harness({resetResult:{__status:400,ok:false}});
   c.selectedResetRecovery=await vault.recoveryFile(profile,[await vault.newKey()],[]);
-  assert.equal(await c.doForgotPassword('reader','wrong-hint','new-password','new-password',{}),false);
+  assert.equal(await c.doForgotPassword('reader',{questionId:'legacy',answer:'wrong-hint'},'new-password','new-password',{}),false);
   assert.equal(calls.length,1);assert.equal(logins.length,0);assert.equal(c.pendingPrivateRecovery,null);
   assert.equal(toasts.at(-1).message,'아이디 또는 힌트가 일치하지 않아요.');
+});
+
+test('question-based password recovery sends the same bounded digest as signup after the existing owner check',async()=>{
+  const {c,calls,rpcCalls,logins}=await harness();
+  const hint={questionId:'childhood_place',answer:'  우리 동네  '};
+  c.selectedResetRecovery=await vault.recoveryFile(profile,[await vault.newKey()],[]);
+  assert.equal(await c.doForgotPassword('reader',hint,'new-password','new-password',{}),true);
+  assert.equal(rpcCalls.length,1);
+  assert.deepEqual(calls.map(copy),[{name:'reset-password',body:{loginId:'reader',hint:await PasswordHint.encode(hint),newPassword:'new-password'}}]);
+  assert.equal(logins.length,1);vault.assertOwner(c.pendingPrivateRecovery,profile);
+});
+
+test('missing question or answer cannot fall back to a raw hint or contact recovery services',async()=>{
+  for(const hint of ['hint',{questionId:'',answer:'hint'},{questionId:'first_school',answer:''},{questionId:'unknown',answer:'hint'}]){
+    const {c,calls,rpcCalls,logins}=await harness();
+    c.selectedResetRecovery=await vault.recoveryFile(profile,[await vault.newKey()],[]);
+    await c.doForgotPassword('reader',hint,'new-password','new-password',{});
+    assert.equal(calls.length,0);assert.equal(rpcCalls.length,0);assert.equal(logins.length,0);assert.equal(c.pendingPrivateRecovery,null);
+  }
 });

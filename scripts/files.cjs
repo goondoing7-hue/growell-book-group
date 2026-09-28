@@ -6,9 +6,9 @@ const DEPLOY_FILES = Object.freeze([
   'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
   'materialsMedia.js', ...require('../vendor/pdfjs/manifest.json').files,
   'timerAlerts.js', 'timer-alert-sw.js',
-  'dailyVerses.js', 'memberAccess.js', 'bookDetails.js', 'bookDetails.css',
+  'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css',
   'dailyVerseDomain.js', 'popupHistory.js',
-  'index.html', 'privacy.html', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
+  'index.html', 'privacy.html', 'guide.html', 'covers/guide-og.png', 'covers/guide-og.svg', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
   'habitDomain.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
@@ -26,7 +26,7 @@ const DEPLOY_FILES = Object.freeze([
 const TEST_FILES = Object.freeze([
   'tests/archive-shared-notes.test.cjs', 'tests/archive-calendar.test.cjs', 'tests/archive-stats.test.cjs',
   'tests/archive-domain.test.cjs', 'tests/archive-timer.test.cjs', 'tests/archive-integration.test.cjs', 'tests/archive-ui.test.cjs', 'tests/book-search.test.cjs', 'tests/signup-notifications.test.cjs',
-  'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
+  'tests/password-hint.test.cjs', 'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
   'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs',
   'tests/timer-alerts.test.cjs',
   'tests/daily-verse.test.cjs', 'tests/popup-history.test.cjs',
@@ -40,6 +40,7 @@ const TEST_FILES = Object.freeze([
 const PUBLISH_FILES = Object.freeze([
   'api/book-search.js',
   'server/signup-notifications.sql', 'server/signup-notifications-verification.sql', 'server/signup-notification-worker.ts', 'server/signup-notifications-schedule.sql', 'server/signup-notifications.md',
+  'server/signup-optional-photo.md', 'server/signup-optional-photo.sql', 'server/signup-optional-photo-verification.sql',
   'server/signup.ts', 'server/member-approval.sql', 'server/member-approval-verification.sql', 'server/member-approval-notes.md',
   'server/worksheet-locks.sql', 'server/worksheet-locks-verification.sql', 'server/question-replies.sql', 'server/question-replies-verification.sql',
   'server/question-reply-editing.sql', 'server/question-reply-editing-verification.sql',

@@ -1,4 +1,4 @@
-// GROWELL signup: profile photo required; every new application awaits approval.
+// GROWELL signup: profile photo optional; every new application awaits approval.
 // Service credentials are supplied by the existing Supabase runtime only.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 const CORS = {
@@ -30,21 +30,25 @@ Deno.serve(async (req: Request) => {
   if (typeof password !== 'string' || password.length < 8) return json({ error: 'weak_password' }, 400)
   if (password.length > 1024) return json({ error: 'invalid_password' }, 400)
   if (typeof salt !== 'string' || !/^[a-f0-9]{32}$/.test(salt)) return json({ error: 'invalid_salt' }, 400)
-  if (typeof input.avatarDataUrl !== 'string' || !input.avatarDataUrl) return json({ error: 'missing_avatar' }, 400)
-  const image = /^data:image\/(jpeg|png|webp|gif);base64,([a-z0-9+/]+={0,2})$/i.exec(input.avatarDataUrl)
-  if (!image || image[2].length > 8 * 1024 * 1024) return json({ error: 'invalid_avatar' }, 400)
-  let bytes: Uint8Array
-  try {
-    bytes = Uint8Array.from(atob(image[2]), c => c.charCodeAt(0))
-    if (!bytes.length) return json({ error: 'invalid_avatar' }, 400)
-  } catch { return json({ error: 'invalid_avatar' }, 400) }
-  // Validate the declared image's signature before creating any account.
-  const type = image[1].toLowerCase()
-  const valid = type === 'jpeg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
-    : type === 'png' ? [137,80,78,71,13,10,26,10].every((b,i) => bytes[i] === b)
-    : type === 'gif' ? String.fromCharCode(...bytes.slice(0,6)).match(/^GIF8[79]a$/)
-    : String.fromCharCode(...bytes.slice(0,4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8,12)) === 'WEBP'
-  if (!valid) return json({ error: 'invalid_avatar' }, 400)
+  let avatar: { bytes: Uint8Array, type: string } | null = null
+  if (input.avatarDataUrl !== undefined && input.avatarDataUrl !== null && input.avatarDataUrl !== '') {
+    if (typeof input.avatarDataUrl !== 'string') return json({ error: 'invalid_avatar' }, 400)
+    const image = /^data:image\/(jpeg|png|webp|gif);base64,([a-z0-9+/]+={0,2})$/i.exec(input.avatarDataUrl)
+    if (!image || image[2].length > 8 * 1024 * 1024) return json({ error: 'invalid_avatar' }, 400)
+    let bytes: Uint8Array
+    try {
+      bytes = Uint8Array.from(atob(image[2]), c => c.charCodeAt(0))
+      if (!bytes.length) return json({ error: 'invalid_avatar' }, 400)
+    } catch { return json({ error: 'invalid_avatar' }, 400) }
+    // An attached image keeps the same signature validation as before.
+    const type = image[1].toLowerCase()
+    const valid = type === 'jpeg' ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+      : type === 'png' ? [137,80,78,71,13,10,26,10].every((b,i) => bytes[i] === b)
+      : type === 'gif' ? String.fromCharCode(...bytes.slice(0,6)).match(/^GIF8[79]a$/)
+      : String.fromCharCode(...bytes.slice(0,4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8,12)) === 'WEBP'
+    if (!valid) return json({ error: 'invalid_avatar' }, 400)
+    avatar = { bytes, type }
+  }
   let supabase: ReturnType<typeof createClient> | null = null
   // Set only from a successful createUser response. Never look up an existing
   // Auth ID for compensation: failures must not delete an existing account.
@@ -85,10 +89,13 @@ Deno.serve(async (req: Request) => {
     })
     if (createError || !created?.user) return json({ error: 'create_failed' }, 400)
     createdAuthId = created.user.id
-    avatarPath = `${createdAuthId}/avatar.${type}`
-    const { error: uploadError } = await supabase.storage.from('avatars').upload(avatarPath, bytes, { contentType: `image/${type}`, upsert: false })
-    if (uploadError) return await failAfterCreation('avatar_upload_failed')
-    const avatarUrl = supabase.storage.from('avatars').getPublicUrl(avatarPath).data.publicUrl
+    let avatarUrl: string | null = null
+    if (avatar) {
+      avatarPath = `${createdAuthId}/avatar.${avatar.type}`
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(avatarPath, avatar.bytes, { contentType: `image/${avatar.type}`, upsert: false })
+      if (uploadError) return await failAfterCreation('avatar_upload_failed')
+      avatarUrl = supabase.storage.from('avatars').getPublicUrl(avatarPath).data.publicUrl
+    }
     const { data: profile, error: profileError } = await supabase.from('profiles').insert({
       auth_user_id: createdAuthId, login_id: loginId, name, is_admin: false,
       avatar_url: avatarUrl, pbkdf2_salt: salt, approval_status: 'pending',

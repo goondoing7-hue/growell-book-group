@@ -40,6 +40,29 @@ test('unchanged photo stays intact, while explicit removal clears it',async()=>{
   const c=editHarness(()=>{throw new Error('should not upload');});
   await c.doEditProfile('이름만 수정',undefined);assert.equal(c.STATE.users.a.avatar,'https://example.test/old.jpg');
   await c.doEditProfile('사진 삭제',null);assert.equal(c.STATE.users.a.avatar,null);
+  await c.doEditProfile('사진 없이 저장','');assert.equal(c.STATE.users.a.avatar,null);
+});
+
+test('profile rejects malformed supplied photos while preserving the original profile',async()=>{
+  for(const value of [false,{},'javascript:alert(1)','data:image/svg+xml,<svg/>']){
+    const c=editHarness(()=>{throw new Error('invalid photo must not upload');});
+    await c.doEditProfile('수정',value);assert.equal(c.writes.length,0);assert.equal(c.STATE.users.a.avatar,'https://example.test/old.jpg');
+  }
+});
+
+test('the common footer keeps contact information and places the mobile guide above privacy',()=>{
+  const c={};vm.createContext(c);vm.runInContext(section('function footerHtml(','/* ---------------- render: admin user list'),c);
+  const footer=c.footerHtml();
+  assert.match(footer,/DBKS GROWELL 독서모임/);assert.match(footer,/010-7319-7580/);
+  assert.match(footer,/<div class="footer-links"><a href="\/guide.html">모바일 사용 가이드<\/a><a href="privacy.html">개인정보처리방침<\/a><\/div>/);
+});
+
+test('an absent optional avatar hides its removal button even with common button display styles',()=>{
+  const c={GrowellProfile:profile,esc:String,svgIcon:()=>'<svg/>',I_IMG:''};
+  vm.createContext(c);vm.runInContext(section('function profilePhotoPickerHtml(','function signupFormHtml('),c);
+  assert.match(c.profilePhotoPickerHtml('su',null),/id="btn-su-avatar-clear" hidden/);
+  assert.doesNotMatch(c.profilePhotoPickerHtml('pe','https://example.test/a.jpg'),/id="btn-pe-avatar-clear" hidden/);
+  assert.match(html,/\.profile-photo-block \[hidden\]\{display:none;\}/);
 });
 test('late upload cannot edit the next signed-in member or overwrite former profile',async()=>{
   const upload=deferred(),c=editHarness(()=>upload.promise);

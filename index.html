@@ -195,6 +195,7 @@
   main{flex:1; padding:36px 0 80px;}
   .footer{border-top:1px solid var(--line); padding:26px 0 40px; color:var(--ink-faint); font-size:12.5px;}
   .footer .wrap{display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:space-between; align-items:center;}
+  .footer-links{display:flex;flex-direction:column;align-items:flex-end;gap:8px;margin-left:auto;}
 
   /* hero (poster-layered: blurred cover collage behind large centered type) */
   .hero{position:relative; min-height:320px; display:flex; align-items:center; justify-content:center; text-align:center; overflow:hidden; border-radius:0 0 var(--r-xl) var(--r-xl); margin-bottom:56px; padding:68px 24px;}
@@ -376,6 +377,8 @@
   label.field-label:first-child{margin-top:0;}
   .composer-foot{display:flex; justify-content:space-between; align-items:center; margin-top:14px; gap:10px; flex-wrap:wrap;}
   .hint{font-size:12px; color:var(--ink-faint);}
+  .password-hint-question{width:100%;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--bg);padding:11px 13px;color:var(--ink);font:inherit;font-size:16px;}
+  .profile-photo-block [hidden]{display:none;}
   .err-msg{font-size:12.5px; color:var(--danger); margin-top:8px;}
 
   /* note meta: type pills + page */
@@ -734,6 +737,10 @@
   .auth-card{padding:26px 26px 22px;}
   .auth-card h2{font-size:19px; margin-bottom:4px;}
   .auth-card .sub{font-size:13px; color:var(--ink-soft); margin-bottom:20px;}
+  .signup-complete-card{text-align:center;padding-top:34px;padding-bottom:28px;}
+  .signup-complete-icon{display:flex;align-items:center;justify-content:center;width:56px;height:56px;margin:0 auto 18px;border-radius:50%;background:var(--surface-2);color:var(--primary);}
+  .signup-complete-icon svg{width:28px;height:28px;}
+  .signup-complete-card .sub{margin-top:10px;margin-bottom:26px;line-height:1.7;}
 
   .toast-stack{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); z-index:80; display:flex; flex-direction:column; gap:8px; width:min(92vw,380px);}
   .toast{background:var(--ink); color:var(--bg); padding:12px 16px; border-radius:var(--r-sm); font-size:13px; box-shadow:var(--shadow); text-align:center;}
@@ -1080,6 +1087,7 @@
 <link rel="stylesheet" href="brand.css">
 <script src="popupHistory.js"></script>
 <script src="profile.js"></script>
+<script src="passwordHint.js"></script>
 <script src="memberAccess.js"></script>
 <script src="bookDetails.js"></script>
 <link rel="stylesheet" href="bookDetails.css">
@@ -2630,8 +2638,7 @@ function callEdgeFunction(name, body, accessToken){
 function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
   id = id.trim().toLowerCase();
   name = name.trim();
-  hint = (hint||'').trim();
-  if(!GrowellProfile.safeAvatarUrl(avatar)){showToast('프로필 사진을 등록해주세요. 사진은 필수예요.',true);return;}
+  if(avatar!==null&&avatar!==undefined&&avatar!==''&&!GrowellProfile.safeAvatarUrl(avatar)){showToast('프로필 사진을 다시 선택해주세요.',true);return;}
   if(!name || !id || !pw){ showToast('별명, 아이디, 비밀번호를 모두 입력해주세요.', true); return; }
   if(name.length>30){ showToast('별명은 30자 이내로 입력해주세요.', true); return; }
   /* 아이디는 내부적으로 "아이디@growell.internal" 이메일로 바뀌어 Supabase Auth에 등록되는데,
@@ -2645,7 +2652,7 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
   if(pw!==pw2){ showToast('비밀번호가 서로 달라요. 다시 확인해주세요.', true); return; }
   /* 힌트는 비밀번호를 잊었을 때 본인 확인용 — 나중에 아무도(운영자 포함) 대신 알려줄 수
      없으므로 가입 시점에 반드시 받아둔다. */
-  if(!hint){ showToast('비밀번호 힌트를 입력해주세요. 나중에 비밀번호를 잊었을 때 필요해요.', true); return; }
+  try{hint=GrowellPasswordHint.validate(hint);}catch(error){showToast(error.message,true);return;}
   var dup = false;
   for(var k in STATE.users){ if(STATE.users[k].loginId===id){ dup=true; break; } }
   if(dup){ showToast('이미 사용 중인 아이디예요.', true); return; }
@@ -2657,7 +2664,7 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
   var salt = randomSaltHex();
   authTransition = authTransition.catch(function(){}).then(function(){ return pendingSave; }).then(function(){
     signupGuard();
-    return callEdgeFunction('signup', {loginId:id, password:pw, name:name, adminCode:adminCode, salt:salt, avatarDataUrl:avatar||null, pwHint:hint});
+    return GrowellPasswordHint.encode(hint).then(function(encodedHint){signupGuard();return callEdgeFunction('signup', {loginId:id, password:pw, name:name, adminCode:adminCode, salt:salt, avatarDataUrl:avatar||null, pwHint:encodedHint});});
   })
     .then(function(res){
       signupGuard();
@@ -2678,8 +2685,8 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
     .then(async function(profileRow){
       signupGuard();
       await sb.auth.signOut();signupGuard();
-      pendingSignupAvatar=null;authMode='login';
-      oauthMessage='가입 신청을 보냈어요. 관리자가 승인하면 로그인할 수 있어요.';
+      pendingSignupAvatar=null;authMode='signup-complete';
+      oauthMessage='';
       location.hash='#/login';render();
     })
     .catch(function(err){
@@ -2820,7 +2827,7 @@ function doEditProfile(name, avatarChange, btn){
   name = (name||'').trim();
   if(!name){ showToast('별명을 입력해주세요.', true); return; }
   if(name.length>30){ showToast('별명은 30자 이내로 입력해주세요.', true); return; }
-  if(typeof avatarChange==='string' && !GrowellProfile.safeAvatarUrl(avatarChange)){ showToast('사진을 다시 선택해주세요.', true); return; }
+  if(avatarChange!==undefined && avatarChange!==null && avatarChange!=='' && !GrowellProfile.safeAvatarUrl(avatarChange)){ showToast('사진을 다시 선택해주세요.', true); return; }
   if(btn){ btn.disabled = true; btn.textContent = '저장 중…'; }
   var owner=SESSION.userId, epoch=saveSessionEpoch;
   var cur = STATE.users[owner] || {};
@@ -2829,7 +2836,7 @@ function doEditProfile(name, avatarChange, btn){
   var uploadWork;
   if(avatarChange === undefined){
     uploadWork = Promise.resolve(cur.avatar || null);
-  } else if(avatarChange === null){
+  } else if(avatarChange === null || avatarChange === ''){
     uploadWork = Promise.resolve(null);
   } else {
     uploadWork = uploadPhotoIfNeeded('avatars', authUserId || owner, owner, {dataUrl:avatarChange})
@@ -3017,21 +3024,26 @@ function bindPrivateRecovery(){
    값을 돌려주지 않음) — 그래서 이 입력창은 항상 빈칸에서 시작하고, 저장은 "덮어쓰기"만 한다. */
 function doUpdateHint(hint, btn){
   if(!SESSION) return;
-  hint = (hint||'').trim();
-  if(!hint){ showToast('힌트를 입력해주세요.', true); return; }
+  try{hint=GrowellPasswordHint.validate(hint);}catch(error){showToast(error.message,true);return;}
+  var session=SESSION,epoch=saveSessionEpoch;
+  function guard(){if(SESSION!==session||saveSessionEpoch!==epoch)throw new Error('hint-session-changed');}
   if(btn){ btn.disabled=true; btn.textContent='저장 중…'; }
-  sb.auth.getSession().then(function(sessRes){
+  return GrowellPasswordHint.encode(hint).then(function(encodedHint){guard();return sb.auth.getSession().then(function(sessRes){
+    guard();
     var token = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.access_token;
-    return callEdgeFunction('update-hint', {pwHint:hint}, token);
-  }).then(function(res){
+    if(!token)throw new Error('hint-session-missing');
+    return callEdgeFunction('update-hint', {pwHint:encodedHint}, token);
+  });}).then(function(res){
+    guard();
     if(btn){ btn.disabled=false; btn.textContent='힌트 저장'; }
     if(!res || res.__status!==200 || !res.ok){ showToast('힌트 저장에 실패했어요. 다시 시도해주세요.', true); return; }
     var input = document.getElementById('pe-hint');
     if(input) input.value = '';
-    showToast('비밀번호 힌트를 저장했어요. 잊지 않게 따로 기억해두세요.');
-  }).catch(function(){
+    var question=document.getElementById('pe-hint-question');if(question)question.value='';
+    showToast('비밀번호 확인 질문과 답을 저장했어요. 잊지 않게 기억해주세요.');
+  }).catch(function(error){
     if(btn){ btn.disabled=false; btn.textContent='힌트 저장'; }
-    showToast('힌트 저장에 실패했어요. 다시 시도해주세요.', true);
+    if(error.message!=='hint-session-changed')showToast('힌트 저장에 실패했어요. 다시 시도해주세요.', true);
   });
 }
 /* 비밀번호 찾기 — 아이디 + 가입 때 등록한 힌트가 일치하면 새 비밀번호로 바꿔준다.
@@ -3040,8 +3052,8 @@ function doUpdateHint(hint, btn){
 async function doForgotPassword(id, hint, pw, pw2, btn){
   if(doForgotPassword.busy)return false;
   id = (id||'').trim().toLowerCase();
-  hint = (hint||'').trim();
-  if(!id || !hint){ showToast('아이디와 힌트를 모두 입력해주세요.', true); return; }
+  if(!id){ showToast('아이디를 입력해주세요.', true); return; }
+  try{hint=GrowellPasswordHint.validate(hint,{legacy:true});}catch(error){showToast(error.message,true);return;}
   if(pw.length<8){ showToast('새 비밀번호는 8자 이상으로 만들어주세요.', true); return; }
   if(pw!==pw2){ showToast('비밀번호가 서로 달라요. 다시 확인해주세요.', true); return; }
   if(!selectedResetRecovery){showToast('개인 기록을 보호하려면 먼저 복구 파일을 선택해주세요. 기존 로그인 기기의 프로필에서 저장할 수 있어요.',true);return;}
@@ -3054,6 +3066,7 @@ async function doForgotPassword(id, hint, pw, pw2, btn){
   doForgotPassword.busy=true;
   if(btn){ btn.disabled=true; btn.textContent='확인 중…'; }
   try{
+    var encodedHint=await GrowellPasswordHint.encode(hint,{legacy:true});resetGuard();
     /* Revalidate the keys locally. Only the three account identifiers leave the
        browser; guest clients cannot read member profiles to verify ownership. */
     var resetKit=await GrowellPrivateCrypto.parseRecovery(JSON.stringify(selection));
@@ -3068,7 +3081,7 @@ async function doForgotPassword(id, hint, pw, pw2, btn){
     resetGuard();
     if(ownership.error)throw new Error('recovery-owner-unavailable');
     if(ownership.data!==true){showToast('아이디와 복구 파일의 계정 정보가 일치하지 않아요.',true);return false;}
-    var res=await callEdgeFunction('reset-password',{loginId:id,hint:hint,newPassword:pw});
+    var res=await callEdgeFunction('reset-password',{loginId:id,hint:encodedHint,newPassword:pw});
     resetGuard();
     if(!res || res.__status!==200 || !res.ok){
       /* Keep the existing server-side hint check and its uniform failure message. */
@@ -4033,7 +4046,7 @@ function footerHtml(){
   return '<footer class="footer"><div class="wrap">' +
     '<span>읽고 나누고 생각하며 자라는 우리<br>DBKS GROWELL 독서모임</span>' +
     '<span>관리자 정기성 전도사 · 010-7319-7580</span>' +
-    '<a href="privacy.html">개인정보처리방침</a>' +
+    '<div class="footer-links"><a href="/guide.html">모바일 사용 가이드</a><a href="privacy.html">개인정보처리방침</a></div>' +
   '</div></footer>';
 }
 
@@ -4054,7 +4067,7 @@ function adminUsersHtml(){
       : (isSelf
         ? '<span class="admin-user-meta" style="flex:none">본인</span>'
         : '<button type="button" class="btn btn-ghost btn-sm btn-danger admin-user-delete-btn" data-user-id="'+u.id+'">삭제</button>');
-    if(!isSelf&&!u.isDeleted&&u.approvalStatus==='pending')action='<div class="admin-user-actions"><button type="button" class="btn btn-primary btn-sm" data-review-member="'+esc(u.id)+'" data-decision="approved"'+(!avatarUrl?' disabled title="프로필 사진이 필요해요"':'')+'>가입 승인</button><button type="button" class="btn btn-ghost btn-sm" data-review-member="'+esc(u.id)+'" data-decision="rejected">승인 거절</button></div>';
+    if(!isSelf&&!u.isDeleted&&u.approvalStatus==='pending')action='<div class="admin-user-actions"><button type="button" class="btn btn-primary btn-sm" data-review-member="'+esc(u.id)+'" data-decision="approved">가입 승인</button><button type="button" class="btn btn-ghost btn-sm" data-review-member="'+esc(u.id)+'" data-decision="rejected">승인 거절</button></div>';
     return '<div class="admin-user-row">' + avatar +
       '<div class="admin-user-body">' +
         '<div class="admin-user-top"><span class="admin-user-name">'+esc(u.name)+'</span>'+(u.isAdmin?'<span class="admin-badge">운영자</span>':'')+'</div>' +
@@ -4479,7 +4492,10 @@ function bindOAuthAuthWatcher(){
   oauthWatcherBound=true;
   sb.auth.onAuthStateChange(function(event,session){
     var expected=SESSION && STATE.users[SESSION.userId] && STATE.users[SESSION.userId].authUserId || oauthPending && oauthPending.authUserId || authRestoreUserId;
-    if(event!=='SIGNED_OUT' && (!expected || session && session.user && session.user.id===expected))return;
+    // Guest/sign-up cleanup has no protected member session to invalidate. In
+    // particular, its SIGNED_OUT must not cancel approval-pending feedback.
+    if(!expected)return;
+    if(event!=='SIGNED_OUT' && session && session.user && session.user.id===expected)return;
     var flow=authFlowEpoch;
     // Supabase holds an Auth lock inside this callback; never await another Auth call here.
     setTimeout(function(){
@@ -4553,7 +4569,7 @@ async function completeOAuthMember(name,password,confirmation,button){
     }
     if(response.status==='legacy'){pending.status='legacy';pending.profile=response.profile;throw new Error('oauth-legacy');}
     if(response.status!=='ready'||!response.profile||response.profile.auth_user_id!==pending.authUserId||response.profile.is_deleted)throw new Error('oauth-profile-mismatch');
-    if(!GrowellMemberAccess.approved(response.profile)){oauthMessage=GrowellMemberAccess.message(response.profile.approval_status);await sb.auth.signOut();oauthPending=null;oauthBusy=false;render();return false;}
+    if(!GrowellMemberAccess.approved(response.profile)){oauthMessage=GrowellMemberAccess.message(response.profile.approval_status);oauthPending=null;oauthBusy=false;await sb.auth.signOut();if(flow===authFlowEpoch)render();return false;}
     var keyB64=await GrowellOAuth.unlockVault(password,response.envelope,pending.authUserId);guard();
     var profile=mapProfileRow(response.profile);STATE.users[profile.id]=profile;
     SESSION={userId:profile.id,name:profile.name,keyB64:keyB64,authKind:'oauth'};
@@ -4597,6 +4613,9 @@ function bindOAuthEvents(){
 var authMode = 'login';
 function loginHtml(){
   if(oauthPending)return oauthMemberHtml();
+  if(authMode==='signup-complete'){
+    return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card signup-complete-card" aria-labelledby="signup-complete-title"><div class="signup-complete-icon" aria-hidden="true">'+svgIcon(I_CHECK)+'</div><h2 id="signup-complete-title">가입 신청이 완료되었어요</h2><p class="sub">관리자가 승인하면 로그인할 수 있어요.</p><button type="button" class="btn btn-primary btn-block" id="link-back-to-login">로그인 화면으로</button></section></div></div>';
+  }
   /* 비밀번호 찾기 화면은 로그인/가입 탭 밖의 별도 흐름이라 탭 바 없이 카드만 보여준다. */
   if(authMode==='forgot'){
     return '<div class="wrap"><div class="auth-wrap"><div class="card auth-card">'+forgotPasswordFormHtml()+'</div></div></div>';
@@ -4639,21 +4658,22 @@ function profilePhotoPickerHtml(prefix, avatar){
 function signupFormHtml(){
   return '<h2>함께 읽기 시작해요</h2><p class="sub">나눔 공간에는 생각을, 나의 공간에는 나만의 기록을 남겨보세요.</p>' +
     socialSignupStatusHtml()+(SOCIAL_AUTH_VISIBLE?'<div class="auth-email-heading">회원가입 · 아이디 만들기</div>':'') +
-    '<label class="field-label" style="margin-top:0">프로필 사진 <span style="color:var(--emotion-ink)">필수</span></label>' +
+    '<label class="field-label" style="margin-top:0">프로필 사진 <span style="font-weight:400;color:var(--ink-faint)">(선택)</span></label>' +
     profilePhotoPickerHtml('su',pendingSignupAvatar) +
     '<label class="field-label" for="su-name">별명 (나눔 글에 표시돼요)</label><input type="text" id="su-name" autocomplete="name" maxlength="30">' +
     '<label class="field-label" for="su-id">아이디 <span style="font-weight:400;color:var(--ink-faint)">(영문·숫자로 만들어주세요)</span></label><input type="text" id="su-id" autocomplete="username" placeholder="예) growell01" pattern="[A-Za-z0-9_-]+">' +
     '<label class="field-label" for="su-pw">비밀번호 (8자 이상)</label><input type="password" id="su-pw" autocomplete="new-password">' +
     '<label class="field-label" for="su-pw2">비밀번호 확인</label><input type="password" id="su-pw2" autocomplete="new-password">' +
-    '<label class="field-label" for="su-hint">비밀번호 힌트 <span style="font-weight:400;color:var(--ink-faint)">(비밀번호를 잊었을 때 본인 확인용)</span></label><input type="text" id="su-hint" autocomplete="off" placeholder="예) 어릴 때 키우던 강아지 이름">' +
-    '<p class="profile-account-note">사진을 포함한 가입 신청을 보내면 관리자가 확인해요. 승인 후 로그인할 수 있어요.</p>' +
+    GrowellPasswordHint.formHtml('su') +
+    '<p class="profile-account-note">사진은 선택 사항이에요. 나머지 항목을 입력해 가입 신청을 보내면 관리자가 확인해요. 승인 후 로그인할 수 있어요.</p>' +
     '<button class="btn btn-primary btn-block" style="margin-top:18px" id="btn-do-signup" type="button">가입 신청</button>';
 }
 function forgotPasswordFormHtml(){
   return '<h2>비밀번호 찾기</h2>' +
-    '<p class="sub">아이디·힌트와 개인 기록 복구 파일로 비밀번호를 바꾸고 기록을 복구해요. 복구 파일은 기존 로그인 기기의 프로필에서 먼저 저장해주세요.</p>' +
+    '<p class="sub">가입할 때 선택한 질문과 답, 개인 기록 복구 파일로 비밀번호를 바꾸고 기록을 복구해요. 복구 파일은 기존 로그인 기기의 프로필에서 먼저 저장해주세요.</p>' +
     '<label class="field-label" for="fp-id">아이디</label><input type="text" id="fp-id" autocomplete="username">' +
-    '<label class="field-label" for="fp-hint">비밀번호 힌트</label><input type="text" id="fp-hint" autocomplete="off">' +
+    GrowellPasswordHint.formHtml('fp',{legacy:true}) +
+    '<p class="hint">질문 선택 없이 힌트만 등록한 기존 회원은 “기존 힌트로 확인”을 선택한 뒤 이전 힌트를 입력해주세요.</p>' +
     '<label class="field-label" for="fp-pw">새 비밀번호 (8자 이상)</label><input type="password" id="fp-pw" autocomplete="new-password">' +
     '<label class="field-label" for="fp-pw2">새 비밀번호 확인</label><input type="password" id="fp-pw2" autocomplete="new-password">' +
     '<label class="field-label" for="fp-recovery-file">개인 기록 복구 파일</label><input type="file" id="fp-recovery-file" accept=".json,application/json">' +
@@ -4669,7 +4689,7 @@ function profileEditHtml(){
   return '<div class="wrap"><div class="auth-wrap">' +
     '<div class="card auth-card">' +
       '<h2>내 프로필</h2><p class="sub">나를 표현하는 사진과 별명을 설정해요. 나눔 글과 댓글에도 함께 표시돼요.</p>' +
-      '<label class="field-label" style="margin-top:0">프로필 사진 <span style="color:var(--emotion-ink)">필수</span></label>' +
+      '<label class="field-label" style="margin-top:0">프로필 사진 <span style="font-weight:400;color:var(--ink-faint)">(선택)</span></label>' +
       profilePhotoPickerHtml('pe',avatarSrc) +
       '<label class="field-label" for="pe-name">별명</label><input type="text" id="pe-name" value="'+esc(u.name||'')+'" autocomplete="name" maxlength="30">' +
       '<p class="profile-account-note"><strong>@'+esc(u.loginId||'')+'</strong> · '+(u.isAdmin?'관리자':'일반 회원')+'<br>사진과 별명을 저장하면 다른 기기에서도 같은 프로필로 보여요.</p>' +
@@ -4679,9 +4699,9 @@ function profileEditHtml(){
       '</div>' +
       '<hr style="margin:22px 0; border:none; border-top:1px solid var(--line)">' +
       (SESSION.authKind==='oauth'?'<p class="profile-account-note">간편가입 계정이에요. 개인 기록 비밀번호는 Google·카카오 비밀번호와 별개이며, 현재 변경·초기화 기능은 제공하지 않아요. 복구 파일을 먼저 보관해주세요.</p>':
-      '<label class="field-label" style="margin-top:0" for="pe-hint">비밀번호 힌트 새로 등록/변경</label>' +
-      '<p class="sub" style="margin-top:0; font-size:12.5px">보안을 위해 기존 힌트는 화면에 다시 표시되지 않아요. 바꾸고 싶을 때만 새로 입력해주세요.</p>' +
-      '<input type="text" id="pe-hint" autocomplete="off" placeholder="비밀번호를 잊었을 때 본인 확인용">' +
+      '<h3>비밀번호 확인 질문 등록·변경</h3>' +
+      '<p class="sub" style="margin-top:0; font-size:12.5px">기존 질문과 답은 다시 표시되지 않아요. 변경할 때 새 질문과 답을 함께 입력해주세요.</p>' +
+      GrowellPasswordHint.formHtml('pe') +
       '<button class="btn btn-block" style="margin-top:10px" id="btn-pe-hint-save" type="button">힌트 저장</button>') +
       (SESSION.authKind==='oauth'?'<section class="card" style="padding:18px;margin-top:16px"><h3>개인 기록 복구 파일</h3><p class="sub">기록의 열쇠를 안전한 곳에 보관해주세요. 다른 사람에게 보내지 마세요.</p><button class="btn btn-block" id="btn-private-recovery-export" type="button">복구 파일 저장</button><p class="hint" id="private-recovery-status" role="status"></p></section>':recoveryPanelHtml()) +
     '</div>' +
@@ -6892,7 +6912,7 @@ function bindEvents(route){
   });
 
   app.querySelectorAll('[data-auth-tab]').forEach(function(b){
-    b.addEventListener('click', function(){ authMode = b.getAttribute('data-auth-tab'); render(); });
+    b.addEventListener('click', function(){ authMode = b.getAttribute('data-auth-tab'); oauthMessage=''; render(); });
   });
   var doLoginBtn = document.getElementById('btn-do-login');
   if(doLoginBtn) doLoginBtn.addEventListener('click', function(){
@@ -6902,16 +6922,15 @@ function bindEvents(route){
   var doSignupBtn = document.getElementById('btn-do-signup');
   if(doSignupBtn) doSignupBtn.addEventListener('click', function(){
     var codeEl = document.getElementById('su-admin-code');
-    var hintEl = document.getElementById('su-hint');
-    doSignup(document.getElementById('su-name').value, document.getElementById('su-id').value, document.getElementById('su-pw').value, document.getElementById('su-pw2').value, hintEl?hintEl.value:'', codeEl?codeEl.value:'', pendingSignupAvatar, doSignupBtn);
+    doSignup(document.getElementById('su-name').value, document.getElementById('su-id').value, document.getElementById('su-pw').value, document.getElementById('su-pw2').value, GrowellPasswordHint.readForm(document,'su'), codeEl?codeEl.value:'', pendingSignupAvatar, doSignupBtn);
   });
   var forgotLink = document.getElementById('link-forgot-password');
-  if(forgotLink) forgotLink.addEventListener('click', function(){ authMode = 'forgot'; render(); });
+  if(forgotLink) forgotLink.addEventListener('click', function(){ authMode = 'forgot'; oauthMessage=''; render(); });
   var backToLoginLink = document.getElementById('link-back-to-login');
-  if(backToLoginLink) backToLoginLink.addEventListener('click', function(){ authMode = 'login'; render(); });
+  if(backToLoginLink) backToLoginLink.addEventListener('click', function(){ authMode = 'login'; oauthMessage=''; render(); });
   var doForgotBtn = document.getElementById('btn-do-forgot');
   if(doForgotBtn) doForgotBtn.addEventListener('click', function(){
-    doForgotPassword(document.getElementById('fp-id').value, document.getElementById('fp-hint').value, document.getElementById('fp-pw').value, document.getElementById('fp-pw2').value, doForgotBtn);
+    doForgotPassword(document.getElementById('fp-id').value, GrowellPasswordHint.readForm(document,'fp'), document.getElementById('fp-pw').value, document.getElementById('fp-pw2').value, doForgotBtn);
   });
   var grantAdminBtn = document.getElementById('btn-grant-admin');
   if(grantAdminBtn) grantAdminBtn.addEventListener('click', function(){
@@ -6929,8 +6948,7 @@ function bindEvents(route){
   });
   var peHintSaveBtn = document.getElementById('btn-pe-hint-save');
   if(peHintSaveBtn) peHintSaveBtn.addEventListener('click', function(){
-    var hintEl = document.getElementById('pe-hint');
-    doUpdateHint(hintEl ? hintEl.value : '', peHintSaveBtn);
+    doUpdateHint(GrowellPasswordHint.readForm(document,'pe'), peHintSaveBtn);
   });
 
   /* home: 모임 안내 편집 (admin) */

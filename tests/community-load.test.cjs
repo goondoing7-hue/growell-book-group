@@ -147,5 +147,5 @@ test('an approved member loads only the books whose worksheets are open',async()
 
 test('fresh revoked approval ends the member session before any worksheet request',async()=>{
   const h=harness({unlocked:true}),pending=h.c.loadCommunityForCurrentMember();h.server.profiles[0].approval_status='pending';h.finish();await pending;
-  assert.equal(h.c.SESSION,null);assert.ok(!h.requests.includes('worksheets'));assert.match(h.c.oauthMessage,/관리자 승인/);
+  assert.equal(h.c.SESSION,null);assert.ok(!h.requests.includes('worksheets'));assert.equal(h.c.oauthMessage,'가입 승인 대기 중이에요. 관리자가 승인하면 로그인할 수 있어요.');
 });

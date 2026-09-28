@@ -2,7 +2,7 @@
   'use strict';
   var app=null,locks={},state='idle',request=null,version=0;
   function approved(row){return !!(row&&!row.is_deleted&&row.approval_status==='approved');}
-  function message(status){return status==='rejected'?'가입 신청이 승인되지 않았어요. 관리자에게 문의해주세요.':'관리자 승인을 기다리고 있어요. 승인 후 로그인할 수 있어요.';}
+  function message(status){return status==='rejected'?'가입 신청이 승인되지 않았어요. 관리자에게 문의해주세요.':'가입 승인 대기 중이에요. 관리자가 승인하면 로그인할 수 있어요.';}
   function current(owner,epoch){return app.SESSION&&app.SESSION.userId===owner&&app.saveSessionEpoch===epoch;}
   function info(bookId){return locks[bookId]||{book_id:bookId,locked:true,revision:0};}
   function canOpen(bookId){return !!(app&&app.SESSION&&(app.isAdmin()||(state==='ready'&&info(bookId).locked===false)));}
@@ -51,7 +51,7 @@
         if(!current(owner,epoch))return;
         if(result.error||!result.data)throw new Error('review-failed');
         app.showToast(decision==='approved'?'가입을 승인했어요. 이제 로그인할 수 있어요.':'가입 신청을 승인하지 않았어요.');app.reloadCommunity();
-      }catch(e){if(current(owner,epoch)){button.disabled=false;app.showToast('가입 상태를 변경하지 못했어요. 사진과 관리자 권한을 확인해주세요.',true);}}
+      }catch(e){if(current(owner,epoch)){button.disabled=false;app.showToast('가입 상태를 변경하지 못했어요. 연결과 관리자 권한을 확인해주세요.',true);}}
     });});
   }
   var api={configure:function(adapter){app=adapter;},approved:approved,message:message,info:info,canOpen:canOpen,load:load,reset:reset,panel:panel,bind:bind};

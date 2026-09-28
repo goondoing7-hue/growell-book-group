@@ -31,7 +31,7 @@ function harness(failure={}){
     rpc(name,input){
       assert.equal(name,'growell_finalize_signup');
       assert.equal(input.p_profile_id,freshProfileId);assert.equal(input.p_auth_user_id,freshAuthId);
-      assert.equal(input.p_pw_hint,'fixture hint');
+      assert.equal(input.p_pw_hint,failure.expectedHint||'fixture hint');
       return stage('hint',{hintSaved:true,notificationQueued:true},()=>{state.hint=input.p_pw_hint;state.notification=true;});
     },
     auth:{admin:{
@@ -102,11 +102,12 @@ function harness(failure={}){
   return {request,calls,state};
 }
 
-test('invalid signup shapes, salt, required hint and missing photo fail before any backend call',async()=>{
+test('invalid signup shapes, salt, required hint and malformed attached photo fail before any backend call',async()=>{
   const cases=[null,[],3,'text',{}, {...valid(),name:{}},{...valid(),loginId:{}},
     {...valid(),password:42},{...valid(),password:'short'},{...valid(),salt:123},
-    {...valid(),salt:'bad-salt'},{...valid(),pwHint:''},{...valid(),pwHint:{}},
-    {...valid(),avatarDataUrl:''},{...valid(),avatarDataUrl:'data:text/html;base64,PGgxPkJBRDwvaDE+'},
+    {...valid(),salt:'bad-salt'},{...valid(),pwHint:''},{...valid(),pwHint:{}},{...valid(),pwHint:'   '},
+    {...valid(),avatarDataUrl:{}},{...valid(),avatarDataUrl:0},{...valid(),avatarDataUrl:false},
+    {...valid(),avatarDataUrl:' '},{...valid(),avatarDataUrl:'data:text/html;base64,PGgxPkJBRDwvaDE+'},
     {...valid(),avatarDataUrl:'data:image/png;base64,YmFkLWltYWdl'}];
   for(const body of cases){
     const h=harness(),res=await h.request(body);
@@ -116,7 +117,7 @@ test('invalid signup shapes, salt, required hint and missing photo fail before a
   const h=harness();assert.equal((await h.request(null,{raw:'{'})).status,400);assert.deepEqual(h.calls,[]);
 });
 
-test('successful signup stores required photo and hint and returns only pending ordinary membership',async()=>{
+test('signup with a photo stores it and the required hint and returns only pending ordinary membership',async()=>{
   const h=harness(),res=await h.request();
   assert.equal(res.status,200);assert.equal(res.body.ok,true);assert.equal(res.body.pendingApproval,true);
   assert.equal(res.body.profile.approval_status,'pending');assert.equal(res.body.profile.is_admin,false);
@@ -124,6 +125,24 @@ test('successful signup stores required photo and hint and returns only pending 
   assert.deepEqual(h.calls,['lookup','create','upload','profile','hint']);
   assert.equal(h.state.auth,true);assert.equal(h.state.avatar,true);assert.equal(h.state.hint,'fixture hint');
   assert.equal(h.state.notification,true);
+});
+
+test('signup without an optional photo skips storage and still awaits approval with a hint and notice',async()=>{
+  for(const avatarDataUrl of [undefined,null,'']){
+    const h=harness(),res=await h.request({...valid(),avatarDataUrl});
+    assert.equal(res.status,200);assert.equal(res.body.ok,true);assert.equal(res.body.pendingApproval,true);
+    assert.equal(res.body.profile.avatar_url,null);assert.equal(res.body.profile.approval_status,'pending');
+    assert.equal(res.body.profile.is_admin,false);assert.equal(res.body.hintSaved,true);
+    assert.deepEqual(h.calls,['lookup','create','profile','hint']);
+    assert.equal(h.state.avatar,false);assert.equal(h.state.hint,'fixture hint');assert.equal(h.state.notification,true);
+  }
+});
+
+test('serialized hint question and answer stay a single exact hint value at the server boundary',async()=>{
+  const hint=JSON.stringify({version:1,questionId:'fixture-question',answer:'임시 답변'});
+  const h=harness({expectedHint:hint}),res=await h.request({...valid(),avatarDataUrl:null,pwHint:hint});
+  assert.equal(res.status,200);assert.equal(h.state.hint,hint);assert.equal(res.body.hintSaved,true);
+  assert.doesNotMatch(JSON.stringify(res.body),/fixture-question|임시 답변/);
 });
 
 test('duplicate IDs and pre-creation failures never clean up an existing account',async()=>{
@@ -152,6 +171,17 @@ test('hint save errors and uncertain responses cannot report signup success or l
     assert.equal(h.state.notification,false,'compensation removes any notice for the failed application');
     assert.deepEqual(h.calls.slice(-4),['delete-hint','delete-avatar','delete-profile','delete-auth']);
     assert.equal(h.state.existingAccount,true);
+  }
+});
+
+test('photo-less signup failures clean only new profile, hint and Auth resources without touching storage',async()=>{
+  for(const failure of [{profile:'throw-after'},{hint:'error'},{hint:'throw-after'}]){
+    const h=harness(failure),res=await h.request({...valid(),avatarDataUrl:null});
+    assert.equal(res.status,500);assert.equal(res.body.ok,undefined);
+    assert.equal(h.state.auth,false);assert.equal(h.state.profile,null);assert.equal(h.state.hint,null);
+    assert.equal(h.state.notification,false);assert.equal(h.state.existingAccount,true);
+    assert.ok(!h.calls.includes('upload'));assert.ok(!h.calls.includes('delete-avatar'));
+    assert.ok(h.calls.includes('delete-profile'));assert.ok(h.calls.includes('delete-auth'));
   }
 });
 
