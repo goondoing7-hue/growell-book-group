@@ -423,10 +423,14 @@
   /* rich toolbar + editor */
   .rt-toolbar{display:flex; flex-wrap:wrap; align-items:center; gap:2px; padding:4px 2px 8px; margin-bottom:2px;}
   .rt-toolbar::-webkit-scrollbar{display:none;}
-  .rt-size-row{display:flex;align-items:center;gap:3px;width:100%;padding-bottom:7px;margin-bottom:3px;border-bottom:1px solid var(--line);}
-  .rt-size-row>span{font-size:11px;color:var(--muted);margin-right:4px;}
-  .rt-size-btn{font-size:12px;font-variant-numeric:tabular-nums;min-width:28px;}
-  .rt-size-btn[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent-ink);box-shadow:inset 0 0 0 1px currentColor;}
+  .rt-size-picker{position:relative;flex:none;}
+  .rt-size-icon{display:inline-flex;align-items:baseline;font-family:serif;font-size:18px;font-weight:600;letter-spacing:-2px;}
+  .rt-size-icon small{font-size:12px;}
+  .rt-size-menu{position:absolute;top:calc(100% + 5px);left:0;z-index:30;width:94px;max-height:176px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;touch-action:pan-y;padding:4px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);box-shadow:0 6px 18px #00000014;}
+  .rt-size-menu[hidden]{display:none;}
+  .rt-size-option{display:block;width:100%;padding:8px 12px;border:0;border-radius:4px;background:none;color:var(--ink);font:inherit;font-size:13px;font-variant-numeric:tabular-nums;text-align:left;cursor:pointer;}
+  .rt-size-option[aria-checked="true"],.rt-size-option:hover,.rt-size-option:focus-visible{background:var(--surface-2);outline:none;}
+  .rt-size-option[aria-checked="true"]{font-weight:700;}
   .rt-sep{width:1px; align-self:stretch; margin:4px 4px; background:var(--line); flex:none;}
   .rt-btn{flex:none; width:32px; height:32px; border-radius:8px; border:none; background:none; color:var(--ink-soft); display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:700;}
   .rt-btn:hover{background:var(--surface-2);}
@@ -435,27 +439,26 @@
   .rt-btn.rt-u{text-decoration:underline;}
   .rt-btn.rt-s{text-decoration:line-through;}
   .rt-btn.is-active{color:#262319; box-shadow:inset 0 0 0 1px var(--line-strong);}
-  .rt-color-split{display:inline-flex; align-items:center; flex:none; border:1px solid var(--line); border-radius:8px; overflow:hidden;}
-  .rt-color-split .rt-btn{border-radius:0;}
-  .rt-color-apply{color:var(--rt-color, var(--ink));}
-  .rt-color-apply[data-rt-apply="highlight"] svg{fill:var(--rt-color); stroke:var(--ink-soft); stroke-width:1.5;}
-  .rt-color-apply[data-rt-apply="highlight"]{border-bottom:3px solid var(--rt-color);}
-  .rt-color-letter{font-size:17px; line-height:1; text-decoration:underline; text-decoration-thickness:3px; text-underline-offset:3px;}
-  .rt-color-toggle{width:24px; border-left:1px solid var(--line); font-size:13px;}
-  .rt-color-toggle[aria-expanded="true"]{background:var(--surface-2); color:var(--ink);}
-  .rt-color-panel{padding:12px; margin:0 2px 10px; border:1px solid var(--line); border-radius:10px; background:var(--surface);}
+  .rt-color-split{display:inline-flex;align-items:center;flex:none;border:0;border-radius:0;overflow:visible;}
+  .rt-color-apply{color:var(--rt-color,var(--ink));background:transparent;border:0;box-shadow:none;}
+  .rt-color-apply[data-rt-apply="highlight"] svg{fill:none;stroke:var(--ink-soft);stroke-width:1.8;}
+  .rt-color-apply[data-rt-apply="highlight"] svg path:first-child{fill:var(--rt-color);}
+  .rt-color-letter{font-size:17px;line-height:1;text-decoration:none;}
+  .rt-color-chevron{font-size:10px;line-height:1;color:var(--ink-soft);}
+  .rt-color-toggle{width:20px;font-size:12px;}
+  .rt-color-toggle[aria-expanded="true"]{color:var(--ink);}
+  .rt-color-panel{box-sizing:border-box;position:absolute;z-index:40;left:0;top:100%;width:min(200px,100%);padding:12px;margin:0;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);box-shadow:0 6px 22px #0000001c;overflow-y:auto;overscroll-behavior:contain;}
   .rt-color-panel[hidden]{display:none;}
   .rt-color-label{font-size:12.5px; font-weight:600; color:var(--ink-soft); margin-bottom:8px;}
-  .rt-color-swatches{display:flex; align-items:center; flex-wrap:wrap; gap:6px;}
-  .rt-color-swatch{display:flex; align-items:center; justify-content:center; width:34px; height:34px; padding:5px; border:2px solid transparent; border-radius:8px; background:var(--surface); cursor:pointer;}
-  .rt-color-swatch span{display:block; width:22px; height:22px; border-radius:50%; background:var(--rt-color); border:1px solid var(--line-strong);}
+  .rt-color-swatches{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;}
+  .rt-color-swatch{display:flex;align-items:center;justify-content:center;width:100%;min-width:0;height:34px;padding:4px;border:2px solid transparent;border-radius:5px;background:var(--surface);cursor:pointer;}
+  .rt-color-swatch span{display:block;width:23px;height:23px;border-radius:3px;background:var(--rt-color);border:1px solid var(--line-strong);}
   .rt-color-swatch.is-sel{border-color:var(--accent-c, var(--primary)); background:var(--surface-2);}
-  .rt-color-help{font-size:11.5px; line-height:1.6; color:var(--ink-faint); margin:8px 0 0;}
   @media(max-width:640px){
     .rt-toolbar{gap:4px;}
     .rt-btn{width:40px; height:40px;}
     .rt-color-toggle{width:32px;}
-    .rt-color-swatch{width:40px; height:40px;}
+    .rt-color-swatch{height:40px;}
     .rt-sep{margin:4px 2px;}
   }
   .bg-color-row{display:flex; align-items:center; gap:10px; margin:14px 0 4px; flex-wrap:wrap;}
@@ -2180,6 +2183,7 @@ function clearMemberSession(){
   if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
   if(typeof GrowellBookDetails!=='undefined')GrowellBookDetails.reset();
   if(typeof GrowellArchive!=='undefined')GrowellArchive.reset();
+  if(typeof closeReadingHistoryDialog==='function')closeReadingHistoryDialog();
   if(typeof clearArchiveSharedNotes==='function')clearArchiveSharedNotes();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
@@ -3433,7 +3437,10 @@ function deleteReadingLog(logId, btn){
   var l = STATE.readingLogs[logId];
   if(!l || l.userId!==SESSION.userId) return;
   if(!confirm('이 독서 기록을 삭제할까요?')) return;
-  saveState(function(next){ delete next.readingLogs[logId]; }, {button:btn});
+  var owner=SESSION.userId;
+  return saveState(function(next){ delete next.readingLogs[logId]; }, {button:btn,onSuccess:function(){
+    if(SESSION && SESSION.userId===owner && typeof refreshReadingHistoryDialog==='function')refreshReadingHistoryDialog();
+  }});
 }
 function readingTimerElapsedMs(){
   return readingTimer ? GrowellReadingTimer.elapsed(readingTimer,Date.now()) : 0;
@@ -4680,7 +4687,7 @@ function headerAvatarHtml(){
   if(avatarUrl){ return '<span class="avatar avatar-img"><img src="'+esc(avatarUrl)+'" alt="'+esc(SESSION.name)+'"></span>'; }
   return '<span class="avatar avatar-empty" aria-hidden="true"></span>';
 }
-/* 색 선택은 도구의 설정만 바꾸고, 주 아이콘을 눌렀을 때 선택한 본문에 적용한다. */
+/* 색상 메뉴는 도구줄 위에 겹쳐 열리고, 고른 색은 선택한 글이나 다음 입력에 바로 적용한다. */
 var RT_TEXT_COLORS = [
   {value:'#262319',label:'먹색'}, {value:'#A63A55',label:'빨강'},
   {value:'#A4572D',label:'주황'}, {value:'#386344',label:'초록'},
@@ -4703,20 +4710,20 @@ function rtToolbarHtml(prefix){
   function colorSplit(kind,content){
     var label=rtColorLabel(kind), color=RT_SELECTED_COLORS[kind];
     return '<span class="rt-color-split" role="group" aria-label="'+label+'">' +
-      '<button type="button" class="rt-btn rt-color-apply" data-rt-apply="'+kind+'" style="--rt-color:'+color+'" title="선택한 글에 '+label+' 적용" aria-label="선택한 글에 '+label+' 적용">'+content+'</button>' +
-      '<button type="button" class="rt-btn rt-color-toggle" data-rt-palette="'+kind+'" aria-label="'+label+' 색 고르기" title="'+label+' 색 고르기" aria-expanded="false" aria-controls="'+palettePrefix+kind+'-palette">▾</button>' +
+      '<button type="button" class="rt-btn rt-color-apply" data-rt-apply="'+kind+'" data-rt-palette="'+kind+'" style="--rt-color:'+color+'" title="'+label+' 선택" aria-label="'+label+' 선택" aria-haspopup="menu" aria-expanded="false" aria-controls="'+palettePrefix+kind+'-palette">'+content+'<span class="rt-color-chevron" aria-hidden="true">▾</span></button>' +
     '</span>';
   }
   var palettes=['text','highlight'].map(function(kind){
-    return '<div class="rt-color-panel" id="'+palettePrefix+kind+'-palette" data-rt-color-panel="'+kind+'" role="group" aria-label="'+rtColorLabel(kind)+' 색상" hidden>' +
+    return '<div class="rt-color-panel" id="'+palettePrefix+kind+'-palette" data-rt-color-panel="'+kind+'" role="menu" aria-label="'+rtColorLabel(kind)+' 색상" hidden>' +
       '<div class="rt-color-label">'+rtColorLabel(kind)+' 색상</div><div class="rt-color-swatches">' +
       rtColorOptions(kind).map(function(option){
         var selected=option.value===RT_SELECTED_COLORS[kind];
-        return '<button type="button" class="rt-color-swatch'+(selected?' is-sel':'')+'" data-rt-color-kind="'+kind+'" data-rt-color="'+option.value+'" aria-label="'+option.label+' '+rtColorLabel(kind)+' 선택" title="'+option.label+'" aria-pressed="'+selected+'"><span aria-hidden="true" style="--rt-color:'+option.value+'"></span></button>';
-      }).join('') + '</div><p class="rt-color-help">색을 고른 뒤 본문에서 글을 선택하고 '+rtColorLabel(kind)+' 아이콘을 눌러주세요.</p></div>';
+        return '<button type="button" class="rt-color-swatch'+(selected?' is-sel':'')+'" data-rt-color-kind="'+kind+'" data-rt-color="'+option.value+'" role="menuitemradio" aria-label="'+option.label+' '+rtColorLabel(kind)+' 선택" title="'+option.label+'" aria-checked="'+selected+'"><span aria-hidden="true" style="--rt-color:'+option.value+'"></span></button>';
+      }).join('') + '</div></div>';
   }).join('');
   return '<div class="rt-controls"><div class="rt-toolbar" role="toolbar" aria-label="글쓰기 서식">' +
-    '<div class="rt-size-row" role="group" aria-label="글자 크기"><span>크기</span>'+RT_FONT_SIZES.map(function(px,i){return '<button type="button" class="rt-btn rt-size-btn" data-rt-size="'+(i+1)+'" aria-label="글자 크기 '+px+'" aria-pressed="false">'+px+'</button>';}).join('')+'</div>'+
+    '<div class="rt-size-picker"><button type="button" class="rt-btn rt-size-toggle" data-rt-size-toggle aria-label="글자 크기 선택" title="글자 크기 선택" aria-haspopup="menu" aria-expanded="false" aria-controls="'+palettePrefix+'size-menu"><span class="rt-size-icon" aria-hidden="true">T<small>T</small></span></button>'+
+      '<div class="rt-size-menu" id="'+palettePrefix+'size-menu" data-rt-size-menu role="menu" aria-label="글자 크기" hidden>'+RT_FONT_SIZES.map(function(px,i){return '<button type="button" class="rt-size-option" data-rt-size="'+(i+1)+'" role="menuitemradio" aria-label="글자 크기 '+px+'" aria-checked="false">'+px+'</button>';}).join('')+'</div></div>'+
     '<div class="rt-toolbar-row" role="group" aria-label="글자 서식과 색상">' +
     btn('bold','굵게','B') +
     btn('italic','기울임','I','rt-i') +
@@ -4755,7 +4762,7 @@ function bindRichTextToolbar(noteEditor,options){
       if(!allowCaret) return null;
       range=document.createRange(); range.selectNodeContents(noteEditor); range.collapse(false);
     }
-    noteEditor.focus();
+    noteEditor.focus({preventScroll:true});
     var selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     savedRange=range.cloneRange();
     return selection;
@@ -4764,22 +4771,62 @@ function bindRichTextToolbar(noteEditor,options){
     openPalette='';
     controls.querySelectorAll('[data-rt-color-panel]').forEach(function(el){ el.hidden=true; });
     controls.querySelectorAll('[data-rt-palette]').forEach(function(button){ button.setAttribute('aria-expanded','false'); });
+    controls.querySelectorAll('[data-rt-size-menu]').forEach(function(el){el.hidden=true;});
+    controls.querySelectorAll('[data-rt-size-toggle]').forEach(function(button){button.setAttribute('aria-expanded','false');});
+  }
+  function focusMenuOption(option){
+    option.focus({preventScroll:true});
+    var menu=option.closest('[data-rt-size-menu]')||option.closest('[data-rt-color-panel]');
+    if(!menu||!menu.clientHeight)return;
+    var top=option.offsetTop,bottom=top+option.offsetHeight;
+    if(top<menu.scrollTop)menu.scrollTop=top;
+    else if(bottom>menu.scrollTop+menu.clientHeight)menu.scrollTop=bottom-menu.clientHeight;
+  }
+  function openSizeMenu(focusOption){
+    var menu=controls.querySelector('[data-rt-size-menu]'),toggle=controls.querySelector('[data-rt-size-toggle]');
+    if(!menu||!toggle)return;
+    closePalette();openPalette='size';menu.hidden=false;toggle.setAttribute('aria-expanded','true');
+    var selected=menu.querySelector('[aria-checked="true"]')||menu.querySelector('[data-rt-size="3"]');
+    if(selected){
+      menu.scrollTop=Math.max(0,(selected.offsetTop||0)-(menu.clientHeight||0)/2);
+      if(focusOption)focusMenuOption(selected);
+    }
+  }
+  function positionColorMenu(){
+    if(openPalette!=='text'&&openPalette!=='highlight')return;
+    var menu=controls.querySelector('[data-rt-color-panel="'+openPalette+'"]'),button=controls.querySelector('[data-rt-palette="'+openPalette+'"]');
+    if(!menu||!button||!controls.getBoundingClientRect)return;
+    var box=controls.getBoundingClientRect(),anchor=button.getBoundingClientRect(),panel=menu.getBoundingClientRect();
+    var viewport=window.visualViewport,viewLeft=viewport?viewport.offsetLeft:0,viewTop=viewport?viewport.offsetTop:0;
+    var viewRight=viewLeft+(viewport?viewport.width:window.innerWidth),viewBottom=viewTop+(viewport?viewport.height:window.innerHeight);
+    var minLeft=Math.max(0,viewLeft+8-box.left),maxLeft=Math.max(minLeft,Math.min(box.width-panel.width,viewRight-8-box.left-panel.width));
+    menu.style.left=Math.max(minLeft,Math.min(anchor.left-box.left,maxLeft))+'px';
+    var below=viewBottom-anchor.bottom-12,above=anchor.top-viewTop-12;
+    var up=below<panel.height&&above>below,space=Math.max(80,up?above:below);
+    menu.style.maxHeight=space+'px';
+    menu.style.top=(up?anchor.top-box.top-Math.min(panel.height,space)-6:anchor.bottom-box.top+6)+'px';
+  }
+  function openColorMenu(kind,focusOption){
+    closePalette();openPalette=kind;
+    var menu=controls.querySelector('[data-rt-color-panel="'+kind+'"]'),button=controls.querySelector('[data-rt-palette="'+kind+'"]');
+    if(!menu||!button){closePalette();return;}
+    menu.hidden=false;menu.style.maxHeight='';button.setAttribute('aria-expanded','true');positionColorMenu();
+    if(focusOption){var option=menu.querySelector('[aria-checked="true"]')||menu.querySelector('[data-rt-color]');if(option)focusMenuOption(option);}
   }
   function updateColors(){
     controls.querySelectorAll('[data-rt-apply]').forEach(function(button){
       var kind=button.getAttribute('data-rt-apply'), color=RT_SELECTED_COLORS[kind];
       var option=rtColorOptions(kind).filter(function(o){return o.value===color;})[0];
-      var label='선택한 글에 '+option.label+' '+rtColorLabel(kind)+' 적용';
+      var label=rtColorLabel(kind)+' 선택, 현재 '+option.label;
       button.style.setProperty('--rt-color',color); button.setAttribute('title',label); button.setAttribute('aria-label',label);
     });
     controls.querySelectorAll('[data-rt-color]').forEach(function(button){
       var selected=button.getAttribute('data-rt-color')===RT_SELECTED_COLORS[button.getAttribute('data-rt-color-kind')];
-      button.classList.toggle('is-sel',selected); button.setAttribute('aria-pressed',String(selected));
+      button.classList.toggle('is-sel',selected); button.setAttribute('aria-checked',String(selected));
     });
   }
   function applyColor(kind){
-    var selection=restoreSelection(false);
-    if(!selection || selection.isCollapsed){ showToast('색을 적용할 글을 먼저 선택해주세요.',true); return; }
+    restoreSelection(true);
     var cssMode=false, applied=false;
     try{
       if(document.queryCommandState) cssMode=!!document.queryCommandState('styleWithCSS');
@@ -4824,31 +4871,67 @@ function bindRichTextToolbar(noteEditor,options){
       document.execCommand('styleWithCSS',false,false);
       document.execCommand('fontSize',false,value);
     }finally{try{document.execCommand('styleWithCSS',false,cssMode);}catch(err){}}
-    controls.querySelectorAll('[data-rt-size]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-rt-size')===value));});
+    controls.querySelectorAll('[data-rt-size]').forEach(function(button){button.setAttribute('aria-checked',String(button.getAttribute('data-rt-size')===value));});
+    var toggle=controls.querySelector('[data-rt-size-toggle]');
+    if(toggle){var label='글자 크기 '+RT_FONT_SIZES[Number(value)-1]+', 크기 선택';toggle.setAttribute('aria-label',label);toggle.setAttribute('title',label);}
     rememberSelection();closePalette();changed();
   }
-  listen(controls,'pointerdown',function(event){ if(event.target.closest('button')){rememberSelection();event.preventDefault();} });
-  listen(controls,'mousedown',function(event){ if(event.target.closest('button')){rememberSelection();event.preventDefault();} });
+  function keepToolbarSelection(event){
+    var button=event.target.closest('button');
+    if(button){rememberSelection();if(!button.hasAttribute('data-rt-size')&&!button.hasAttribute('data-rt-color'))event.preventDefault();}
+  }
+  listen(controls,'pointerdown',keepToolbarSelection);
+  listen(controls,'mousedown',keepToolbarSelection);
   listen(controls,'click',function(event){
     var button=event.target.closest('button'); if(!button || !controls.contains(button)) return;
     if(button.hasAttribute('data-rt-size'))applySize(button.getAttribute('data-rt-size'));
+    else if(button.hasAttribute('data-rt-size-toggle')){
+      if(openPalette==='size')closePalette();else openSizeMenu(event.detail===0);
+    }
     else if(button.hasAttribute('data-rt-palette')){
       var kind=button.getAttribute('data-rt-palette'), opening=openPalette!==kind;
-      closePalette();
-      if(opening){openPalette=kind;controls.querySelector('[data-rt-color-panel="'+kind+'"]').hidden=false;button.setAttribute('aria-expanded','true');}
+      if(opening)openColorMenu(kind,event.detail===0);else closePalette();
     }else if(button.hasAttribute('data-rt-color')){
       var selectedKind=button.getAttribute('data-rt-color-kind'), value=button.getAttribute('data-rt-color');
-      if(rtColorOptions(selectedKind).some(function(option){return option.value===value;})) RT_SELECTED_COLORS[selectedKind]=value;
-      updateColors(); closePalette();
-    }else if(button.hasAttribute('data-rt-apply')) applyColor(button.getAttribute('data-rt-apply'));
+      if(!rtColorOptions(selectedKind).some(function(option){return option.value===value;}))return;
+      RT_SELECTED_COLORS[selectedKind]=value;updateColors();applyColor(selectedKind);
+    }
     else if(button.hasAttribute('data-rt-cmd')) runCommand(button.getAttribute('data-rt-cmd'));
   });
   listen(document,'selectionchange',rememberSelection);
   listen(document,'pointerdown',function(event){ if(!controls.contains(event.target)) closePalette(); });
+  listen(controls,'keydown',function(event){
+    var button=event.target.closest('button');if(!button)return;
+    if(button.hasAttribute('data-rt-size-toggle')&&(event.key==='ArrowDown'||event.key==='ArrowUp')){event.preventDefault();openSizeMenu(true);return;}
+    if(button.hasAttribute('data-rt-palette')&&(event.key==='ArrowDown'||event.key==='ArrowUp')){event.preventDefault();openColorMenu(button.getAttribute('data-rt-palette'),true);return;}
+    if((openPalette==='text'||openPalette==='highlight')&&button.hasAttribute('data-rt-color')){
+      var colors=Array.prototype.slice.call(controls.querySelector('[data-rt-color-panel="'+openPalette+'"]').querySelectorAll('[data-rt-color]')),colorIndex=colors.indexOf(button),nextColor=colorIndex;
+      if(event.key==='ArrowRight')nextColor=(colorIndex+1)%colors.length;
+      else if(event.key==='ArrowLeft')nextColor=(colorIndex+colors.length-1)%colors.length;
+      else if(event.key==='ArrowDown')nextColor=(colorIndex+4)%colors.length;
+      else if(event.key==='ArrowUp')nextColor=(colorIndex+colors.length-4)%colors.length;
+      else if(event.key==='Home')nextColor=0;
+      else if(event.key==='End')nextColor=colors.length-1;
+      else if(event.key==='Tab'){closePalette();return;}
+      else return;
+      event.preventDefault();focusMenuOption(colors[nextColor]);return;
+    }
+    if(openPalette!=='size'||!button.hasAttribute('data-rt-size'))return;
+    var options=Array.prototype.slice.call(controls.querySelectorAll('[data-rt-size]')),index=options.indexOf(button),next=index;
+    if(event.key==='ArrowDown')next=(index+1)%options.length;
+    else if(event.key==='ArrowUp')next=(index+options.length-1)%options.length;
+    else if(event.key==='Home')next=0;
+    else if(event.key==='End')next=options.length-1;
+    else if(event.key==='Tab'){closePalette();return;}
+    else return;
+    event.preventDefault();focusMenuOption(options[next]);
+  });
   listen(document,'keydown',function(event){
-    if(event.key==='Escape' && openPalette){var button=controls.querySelector('[data-rt-palette="'+openPalette+'"]');closePalette();event.preventDefault();if(button)button.focus();}
+    if(event.key==='Escape' && openPalette){var button=controls.querySelector(openPalette==='size'?'[data-rt-size-toggle]':'[data-rt-palette="'+openPalette+'"]');closePalette();event.preventDefault();if(button)button.focus({preventScroll:true});}
   });
   listen(noteEditor,'keyup',rememberSelection); listen(noteEditor,'mouseup',rememberSelection);
+  if(window.addEventListener)listen(window,'resize',positionColorMenu);
+  if(window.visualViewport&&window.visualViewport.addEventListener){listen(window.visualViewport,'resize',positionColorMenu);listen(window.visualViewport,'scroll',positionColorMenu);}
   updateColors();
   var cleanup=function(){listeners.forEach(function(remove){remove();});listeners=[];};
   if(!options.isolated)rtToolbarCleanup=cleanup;
@@ -5282,9 +5365,45 @@ function readingHistoryHtml(book){
   }).join('');
   return '<div class="reading-log-list">'+rows+'</div>';
 }
-/* 읽는 중/완독 상태 배지(현재 페이지로 자동 계산되는 값 — 클릭 불가) + 총 읽은 시간 +
-   읽은 기록 버튼 — 대기 카드의 오른쪽 절반에 들어감. 버튼만 노출되고, 누르면 그 내용은
-   카드 아래로(전체 너비) 펼쳐진다. */
+var readingHistoryDialog = null;
+function closeReadingHistoryDialog(){
+  var state=readingHistoryDialog;if(!state)return;
+  readingHistoryDialog=null;readingHistoryOpenFor=null;
+  state.node.close();state.node.remove();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-history');
+  var trigger=state.trigger && state.trigger.isConnected?state.trigger:null;
+  if(!trigger && SESSION && SESSION.userId===state.owner && location.hash===state.route && document.getElementById)trigger=document.getElementById('btn-reading-history-toggle');
+  if(trigger)trigger.focus({preventScroll:true});
+}
+function refreshReadingHistoryDialog(){
+  var state=readingHistoryDialog;if(!state)return;
+  if(!SESSION || SESSION.userId!==state.owner || location.hash!==state.route){closeReadingHistoryDialog();return;}
+  var book=bookById(state.bookId);if(!book || isBookLocked(book)){closeReadingHistoryDialog();return;}
+  var body=state.node.querySelector('[data-reading-history-body]'),position=body.scrollTop;
+  body.innerHTML=readingHistoryHtml(book);body.scrollTop=position;
+  state.node.querySelector('[data-reading-history-count]').textContent=myReadingLogs(book.id).length+'회 · 총 '+fmtDurationHuman(totalReadSeconds(book.id));
+}
+function openReadingHistoryDialog(bookId,trigger){
+  var book=bookById(bookId);
+  if(!SESSION || !book || isBookLocked(book) || !readingDataReady())return;
+  closeReadingHistoryDialog();
+  var node=document.createElement('dialog');node.className='reading-history-dialog';
+  node.setAttribute('aria-labelledby','reading-history-title');
+  node.innerHTML='<header class="reading-history-head"><div><h2 id="reading-history-title">읽은 기록</h2><p>'+esc(book.title)+'</p><small data-reading-history-count></small></div><button class="icon-btn" type="button" data-reading-history-close aria-label="읽은 기록 닫기">'+svgIcon(I_CLOSE)+'</button></header><div class="reading-history-body" data-reading-history-body></div>';
+  readingHistoryDialog={node:node,bookId:book.id,owner:SESSION.userId,route:location.hash,trigger:trigger||document.activeElement};
+  document.body.appendChild(node);refreshReadingHistoryDialog();
+  node.addEventListener('click',function(event){
+    var closeButton=event.target.closest && event.target.closest('[data-reading-history-close]');
+    if(closeButton){closeReadingHistoryDialog();return;}
+    var deleteButton=event.target.closest && event.target.closest('[data-del-reading-log]');
+    if(deleteButton){deleteReadingLog(deleteButton.getAttribute('data-del-reading-log'),deleteButton);return;}
+    if(event.target===node){var rect=node.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)closeReadingHistoryDialog();}
+  });
+  node.addEventListener('cancel',function(event){event.preventDefault();closeReadingHistoryDialog();});
+  node.showModal();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('reading-history',{close:closeReadingHistoryDialog});
+}
+/* 상태와 누적 시간은 그대로 두고, 기록 목록은 아이콘으로 별도 팝업에서 연다. */
 function readingStatusPanelHtml(book){
   var status = readingStatusKey(book);
   var statusHtml = status==='done'
@@ -5295,17 +5414,14 @@ function readingStatusPanelHtml(book){
   var timeHtml = '<div class="reading-total-time">총 읽은 시간 <strong>'+fmtDurationHuman(totalSec)+'</strong></div>';
 
   var logs = myReadingLogs(book.id);
-  var historyOpen = readingHistoryOpenFor===book.id;
-  var historyToggle = '<button type="button" class="reading-toggle-row" id="btn-reading-history-toggle" data-book="'+book.id+'">' +
-    '<span>읽은 기록 보기'+(logs.length?' ('+logs.length+')':'')+'</span>' + readingChevronHtml(historyOpen) +
-  '</button>';
+  var historyToggle = '<button type="button" class="icon-btn reading-history-button" id="btn-reading-history-toggle" data-book="'+book.id+'" aria-haspopup="dialog" aria-label="읽은 기록 보기'+(logs.length?' ('+logs.length+'회)':'')+'" title="읽은 기록 보기">' +
+    svgIcon(I_DOC)+(logs.length?'<span class="reading-history-count" aria-hidden="true">'+logs.length+'</span>':'')+'</button>';
 
   return '<div class="reading-status-top">'+statusHtml+timeHtml+'</div>' +
-    '<div class="reading-toggle-list">' + historyToggle + '</div>';
+    historyToggle;
 }
-/* 읽은 기록 버튼을 눌렀을 때 카드 아래로(좌우 구분 없이 전체 너비) 펼쳐지는 내용 */
+/* 기존 저장 완료 상태와 호환하되 기록 목록은 카드 안에 펼치지 않는다. */
 function readingStatusBodyHtml(book){
-  if(readingHistoryOpenFor===book.id){ return '<div class="reading-split-body">'+readingHistoryHtml(book)+'</div>'; }
   return '';
 }
 function readingCardHtml(book,inDialog){
@@ -7271,14 +7387,13 @@ function bindEvents(route){
   app.querySelectorAll('[data-del-reading-log]').forEach(function(b){
     b.addEventListener('click', function(){ deleteReadingLog(b.getAttribute('data-del-reading-log'), b); });
   });
-  /* 읽은 기록 — 눌러야 펼쳐지는 토글 (읽는 중/완독 상태 표시는 현재 페이지로 자동 계산되는
-     값이라 더 이상 클릭 가능한 컨트롤이 아님) */
+  /* 기록 팝업은 화면이나 계정이 바뀌면 닫고, 같은 화면의 저장 후에는 위치를 유지한다. */
+  refreshReadingHistoryDialog();
   var readingHistoryToggle = document.getElementById('btn-reading-history-toggle');
   if(readingHistoryToggle){
     readingHistoryToggle.addEventListener('click', function(){
       var bid = readingHistoryToggle.getAttribute('data-book');
-      readingHistoryOpenFor = (readingHistoryOpenFor===bid) ? null : bid;
-      render();
+      openReadingHistoryDialog(bid,readingHistoryToggle);
     });
   }
 

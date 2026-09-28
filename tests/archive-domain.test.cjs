@@ -163,6 +163,29 @@ test('browser module exposes archive helpers without requiring Node',()=>{
   assert.equal(browser.GrowellArchiveDomain.encode(sample()),archive.encode(sample()));
 });
 
+test('note page, paper and attachment survive edits and encrypted archive roundtrips',()=>{
+  const jpeg='data:image/jpeg;base64,'+Buffer.from([255,216,255,224,0,16,255,217]).toString('base64');
+  const note={id:'note-media',text:'책 속 문장',html:'<p>책 속 문장</p>',page:103,bgColor:'#E4EEE6',photo:jpeg,createdAt:10};
+  const original=archive.upsertNote(sample(),note);
+  const saved=archive.decode(archive.encode(original));
+  assert.equal(saved.notes[0].page,103);assert.equal(saved.notes[0].bgColor,'#E4EEE6');assert.equal(saved.notes[0].photo,jpeg);
+  const edited=archive.upsertNote(saved,{...saved.notes[0],text:'다시 읽은 문장',updatedAt:20});
+  assert.equal(edited.notes[0].photo,jpeg);assert.equal(edited.notes[0].createdAt,10);
+  const deleted=archive.removeNote(edited,'note-media',30);
+  assert.equal(deleted.notes[0].deleted,true);assert.equal(deleted.notes[0].page,103);assert.equal(deleted.notes[0].photo,jpeg);
+  const legacy=archive.prepare(sample({notes:[{id:'old',text:'기존 기록',createdAt:1}]})).notes[0];
+  assert.equal(legacy.page,null);assert.equal(legacy.bgColor,'');assert.equal(legacy.photo,'');
+});
+
+test('note presentation fields reject unsafe URLs, unsupported paper and invalid page bounds',()=>{
+  const base={id:'note-check',text:'노트',createdAt:1};
+  for(const patch of [{page:-1},{page:100001},{page:1.5},{bgColor:'red;position:fixed'},{bgColor:'#ffffff'},
+    {photo:'javascript:alert(1)'},{photo:'data:image/svg+xml,<svg/>'},{photo:'http://example.org/image.jpg'}]){
+    assert.throws(()=>archive.upsertNote(sample(),{...base,...patch}));
+  }
+  assert.equal(archive.upsertNote(sample(),{...base,page:'0',photo:'https://example.org/note.jpg'}).notes[0].page,0);
+});
+
 test('legacy finished books migrate to completed while new reading states validate page progress',()=>{
   const legacy={format:archive.FORMAT,book:{title:'이전에 읽은 책',pageCount:200,rating:4}};
   const migrated=archive.decode(JSON.stringify(legacy));

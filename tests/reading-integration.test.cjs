@@ -12,6 +12,64 @@ function section(start,end){
 }
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+
+function historyDialogHarness(){
+  const nodes=[],popups=new Map(),focus=[];
+  const book={id:'emotion',title:'테스트 <책>',totalPages:200,accent:'primary'};
+  const c={SESSION:{userId:'reader'},STATE:{readingLogs:{own:{id:'own',bookId:'emotion',userId:'reader',seconds:60,startPage:10,page:20,createdAt:1},other:{id:'other',bookId:'emotion',userId:'other',seconds:900,page:100,createdAt:2}},readingMeta:{emotion_reader:{currentPage:20}}},
+    location:{hash:'#/book/emotion/mine'},bookById:id=>id===book.id?book:null,isBookLocked:()=>false,readingDataReady:()=>true,
+    esc:value=>String(value).replaceAll('<','&lt;').replaceAll('>','&gt;'),fmtDate:()=> '2026.09.28',fmtElapsed:ms=>ms/1000+'초',fmtDurationHuman:seconds=>seconds+'초',
+    svgIcon:value=>'<svg>'+value+'</svg>',I_CLOSE:'close',I_TRASH:'trash',I_DOC:'history',I_CHECK:'check',confirm:()=>true,
+    GrowellPopupHistory:{open:(key,value)=>popups.set(key,value),closed:key=>popups.delete(key)},
+    document:{activeElement:null,body:{appendChild(node){nodes.push(node);}},createElement(){
+      const handlers={},body={innerHTML:'',scrollTop:0},count={textContent:''};
+      return {open:false,removed:false,innerHTML:'',setAttribute(){},querySelector(selector){return selector==='[data-reading-history-body]'?body:count;},
+        addEventListener:(name,handler)=>{handlers[name]=handler;},showModal(){this.open=true;},close(){this.open=false;},remove(){this.removed=true;},
+        fire:(name,event)=>handlers[name](event),body,count};
+    }},saveState(mutate,options){mutate(c.STATE);options.onSuccess();return Promise.resolve(true);}};
+  vm.createContext(c);
+  vm.runInContext(section('function myReadingLogs(bookId){','function saveCurrentPage('),c);
+  vm.runInContext(section('function deleteReadingLog(','function readingTimerElapsedMs('),c);
+  vm.runInContext(section('function readingHistoryHtml(','function readingCardHtml('),c);
+  const trigger={isConnected:true,focus:options=>focus.push(options)};
+  return {c,nodes,popups,trigger,focus,book};
+}
+
+test('reading history icon opens an owner-only popup and Back restores the same space',()=>{
+  const {c,nodes,popups,trigger,focus,book}=historyDialogHarness();
+  c.openReadingHistoryDialog(book.id,trigger);
+  const node=nodes[0];assert.equal(node.open,true);assert.match(node.innerHTML,/테스트 &lt;책&gt;/);
+  assert.match(node.body.innerHTML,/p10-p20/);assert.doesNotMatch(node.body.innerHTML,/900초|data-del-reading-log="other"/);
+  assert.equal(node.count.textContent,'1회 · 총 60초');
+  popups.get('reading-history').close();
+  assert.equal(node.open,false);assert.equal(node.removed,true);assert.equal(c.location.hash,'#/book/emotion/mine');
+  assert.equal(focus.length,1);assert.equal(focus[0].preventScroll,true);
+});
+
+test('deleting history preserves the popup scroll and saved page, and cannot delete another reader log',async()=>{
+  const {c,nodes,trigger}=historyDialogHarness();c.openReadingHistoryDialog('emotion',trigger);
+  const node=nodes[0];node.body.scrollTop=172;
+  await c.deleteReadingLog('other',null);assert.ok(c.STATE.readingLogs.other);
+  await c.deleteReadingLog('own',null);
+  assert.equal(node.open,true);assert.equal(nodes.length,1);assert.equal(node.body.scrollTop,172);
+  assert.match(node.body.innerHTML,/아직 읽은 기록이 없어요/);assert.equal(node.count.textContent,'0회 · 총 0초');
+  assert.equal(c.STATE.readingMeta.emotion_reader.currentPage,20);
+  assert.equal(c.location.hash,'#/book/emotion/mine');
+});
+
+test('history popup closes on account or route change and the summary never expands inline',()=>{
+  for(const change of [c=>{c.SESSION={userId:'other'};},c=>{c.SESSION=null;},c=>{c.location.hash='#/book/emotion/share';}]){
+    const {c,nodes,book}=historyDialogHarness();c.openReadingHistoryDialog(book.id);
+    change(c);c.refreshReadingHistoryDialog();assert.equal(nodes[0].open,false);assert.equal(c.readingHistoryDialog,null);
+  }
+  const {c,book}=historyDialogHarness();c.myCurrentPage=()=>20;
+  vm.runInContext(section('function readingStatusKey(book){','function myReadingLogs(bookId){'),c);
+  const summary=c.readingStatusPanelHtml(book);
+  assert.match(summary,/aria-haspopup="dialog"/);assert.match(summary,/aria-label="읽은 기록 보기 \(1회\)"/);
+  assert.doesNotMatch(summary,/reading-toggle-row|reading-log-list/);
+  c.readingHistoryOpenFor=book.id;assert.equal(c.readingStatusBodyHtml(book),'');
+});
+
 let timerSequence=0;
 function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta:{}},failMeta=0,loseResponse=0,beforeMeta,authSession,refreshError=null}={}){
   let clock=now,metaFailures=failMeta,lostResponses=loseResponse;

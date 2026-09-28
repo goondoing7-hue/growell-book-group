@@ -64,20 +64,32 @@
 .book-page .composer{padding:26px;border-radius:18px;margin:20px 0 26px}
 .book-page .composer-head h3{font-size:22px;font-weight:750}
 .book-page .note-editor{min-height:400px;max-height:none;font-size:17px;line-height:1.95;padding:22px;overflow-wrap:anywhere}
-.rt-controls{container-type:inline-size}
-.rt-toolbar{display:flex;flex-direction:column;align-items:flex-start;gap:3px;max-width:none;overflow:visible;padding:4px 0 8px;touch-action:auto}
-.rt-toolbar-row{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));align-items:center;gap:2px;min-width:0;width:100%;max-width:322px}
-.rt-toolbar .rt-btn{width:100%;min-width:0;height:34px;padding:0;font-size:14px;border-radius:7px}
+.rt-controls{container-type:inline-size;position:relative;overflow:visible}
+.rt-controls .rt-toolbar{display:flex;flex-direction:row;flex-wrap:wrap;align-items:center;gap:3px;max-width:none;overflow:visible;padding:4px 0 8px;touch-action:auto}
+.rt-toolbar-row{display:flex;align-items:center;gap:2px;min-width:0;width:auto;max-width:none}
+.rt-toolbar .rt-btn{width:34px;min-width:0;height:36px;padding:0;font-size:14px;border-radius:7px}
 .rt-toolbar .rt-btn svg{width:16px;height:16px}
-.rt-toolbar .rt-color-split{display:grid;grid-column:span 2;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px;min-width:0;border:0;border-radius:0;overflow:visible}
-.rt-toolbar .rt-color-toggle{width:100%;border-left:0}
-.rt-toolbar .rt-color-apply{background:var(--surface-2);border-bottom:3px solid var(--rt-color)}
+.rt-toolbar .rt-color-split{display:flex;gap:0;min-width:0;border:0;border-radius:0;overflow:visible}
+.rt-toolbar .rt-color-toggle{width:20px;border:0;background:transparent;box-shadow:none}
+.rt-toolbar .rt-color-apply{width:44px;gap:5px}
+.rt-toolbar .rt-color-apply,.rt-toolbar .rt-color-apply:hover,.rt-toolbar .rt-color-apply:active{background:transparent;border:0;box-shadow:none;color:var(--rt-color)}
 .rt-toolbar .rt-color-letter{font-size:16px;text-decoration:none}
-@container (min-width:600px){
- .rt-toolbar{flex-direction:row;align-items:center;gap:2px;flex-wrap:nowrap}
+@container (min-width:430px){
+ .rt-controls .rt-toolbar{gap:2px;flex-wrap:nowrap}
  .rt-toolbar-row{display:contents}
- .rt-toolbar .rt-btn{width:32px;height:32px;flex:none}
- .rt-toolbar .rt-color-split{display:flex}
+ .rt-toolbar .rt-btn{width:24px;height:32px;flex:none}
+ .rt-toolbar .rt-color-apply{width:34px;gap:3px}
+ .rt-toolbar .rt-color-toggle{width:16px}
+}
+@container (min-width:510px){
+ .rt-toolbar .rt-btn{width:28px}
+ .rt-toolbar .rt-color-apply{width:38px}
+ .rt-toolbar .rt-color-toggle{width:18px}
+}
+@container (min-width:600px){
+ .rt-toolbar .rt-btn{width:32px}
+ .rt-toolbar .rt-color-apply{width:44px;gap:5px}
+ .rt-toolbar .rt-color-toggle{width:20px}
 }
 .book-page .nt-set{gap:6px}
 .book-page .nt-pill{font-size:13px;min-height:38px}

@@ -1,3 +1,33 @@
+/* Reading progress stays compact; session history lives in its own popup. */
+.reading-split-card .reading-split-row { flex-direction: column; gap: 16px; }
+.reading-split-card .reading-split-right { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+.reading-split-card .reading-status-top { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 10px 16px; }
+.reading-split-card .reading-total-time { font-size: 13px; }
+.reading-history-button { position: relative; color: var(--ink-soft); }
+.reading-history-count { position: absolute; top: -6px; right: -5px; min-width: 17px; height: 17px; padding: 0 4px; display: grid; place-items: center; box-sizing: border-box; border-radius: 10px; background: var(--surface-2); color: var(--ink-soft); font-size: 10px; font-weight: 650; line-height: 1; }
+.reading-history-dialog { width: min(600px,calc(100% - 32px)); max-height: min(760px,88dvh); padding: 0; box-sizing: border-box; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); color: var(--ink); box-shadow: 0 20px 80px #172b2533; overflow: hidden; }
+.reading-history-dialog[open] { display: flex; flex-direction: column; }
+.reading-history-dialog::backdrop { background: #102a2359; backdrop-filter: blur(3px); }
+.reading-history-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 24px 20px; border-bottom: 1px solid var(--line); }
+.reading-history-head h2 { margin: 0 0 8px; font-size: 22px; line-height: 1.4; }
+.reading-history-head p { margin: 0 0 5px; font-size: 14px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.reading-history-head small { font-size: 12px; color: var(--ink-soft); }
+.reading-history-head .icon-btn { width: 40px; height: 40px; }
+.reading-history-body { overflow-y: auto; overscroll-behavior: contain; padding: 8px 24px 20px; min-height: 0; }
+.reading-history-body .reading-log-list { margin: 0; border: 0; border-radius: 0; background: transparent; }
+.reading-history-body .reading-log-row { padding: 16px 0; }
+.reading-history-body .reading-log-main { gap: 5px; }
+.reading-history-body .reading-log-date { font-size: 12px; }
+.reading-history-body .reading-log-page { font-size: 15px; }
+.reading-history-body .reading-log-delta { display: block; margin-top: 3px; }
+.reading-history-body .reading-log-dur { font-size: 13px; font-variant-numeric: tabular-nums; }
+.reading-history-body .post-del { min-width: 36px; min-height: 36px; }
+@media (max-width: 480px) {
+  .reading-history-head { padding: 20px 18px 16px; }
+  .reading-history-body { padding: 4px 18px 16px; }
+  .reading-history-body .reading-log-side { gap: 3px; }
+}
+
 /* The timer shares GROWELL's paper surfaces and readable type on every screen. */
 .reading-timer-card, .reading-save-card {
   --timer-green: #355b47;
