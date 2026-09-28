@@ -79,7 +79,8 @@
 .habit-week-key-hint{margin-left:auto;color:var(--ink-soft);font-size:11px;font-weight:500;}
 .habit-wday.is-outside{opacity:.45;}
 .habit-card-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:16px;margin-top:0;color:var(--ink-soft);font-size:14px;font-weight:600;}
-.habit-streak{display:inline-flex;align-items:center;gap:8px;line-height:1.5;}
+.habit-streak{display:inline-flex;align-items:center;gap:8px;line-height:20px;}
+.habit-streak>span{display:inline-block;line-height:20px;}
 .habit-streak strong{font-weight:750;}
 .habit-today-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex:none;padding:13px 17px;min-height:48px;border-radius:13px;border:1px solid var(--habit-accent);background:var(--surface);color:var(--habit-accent);font:inherit;font-size:15px;font-weight:750;cursor:pointer;}
 .habit-today-btn.is-checked{background:var(--habit-accent-fill);color:var(--habit-accent-on-fill);}
@@ -97,7 +98,7 @@
 .habit-card-summary svg{width:16px;height:16px;vertical-align:middle;}
 .habit-detail-link svg{transform:scaleX(-1);}
 .habit-save-hint{font-size:12px;line-height:1.65;min-height:1.65em;}
-.habit-streak .habit-streak-flame{width:20px;height:22px;flex:none;}
+.habit-streak .habit-streak-flame{display:block;width:20px;height:20px;flex:0 0 20px;align-self:center;overflow:visible;}
 .habit-form{padding:22px;margin-bottom:20px;cursor:default;}
 .habit-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;}
 .habit-form-row{display:block;margin:0;}.habit-form-row label{display:block;width:auto;font-size:13px;margin-bottom:7px;}

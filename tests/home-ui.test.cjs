@@ -7,6 +7,7 @@ const GrowellHome=require('../homeDomain.js');
 const GrowellHabits=require('../habitDomain.js');
 const GrowellReadingTimer=require('../readingTimerDomain.js');
 const GrowellDailyVerse=require('../dailyVerseDomain.js');
+const GrowellBookDetails=require('../bookDetails.js');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),source.indexOf('function welcomeHomeHtml(){'));
 const announcementSource=source.slice(source.indexOf('function canEditAnnouncement(){'),source.indexOf('function announceEditHtml(){'));
@@ -41,7 +42,7 @@ function control(attrs){
 function harness(){
   const controls={},queued=[],opened=[],renders=[],createdElements=[],toasts=[],storage=new Map();
   const books=[{id:'emotion',title:'감정의 책',totalPages:200},{id:'thought',title:'생각의 책',totalPages:250},{id:'locked',title:'잠긴 책',locked:true}];
-  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
+  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellBookDetails,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
     BOOKS:books,SESSION:{userId:'me',keyB64:'my-key'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{},worksheets:{},habits:{},users:{me:{id:'me',name:'회원'}},readingMeta:{},readingLogs:{},announcement:{reading:{bookId:'emotion'},next:{}}},
     INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],

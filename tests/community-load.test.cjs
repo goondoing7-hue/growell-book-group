@@ -7,10 +7,10 @@ const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 const clone=value=>JSON.parse(JSON.stringify(value));
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a,start);return source.slice(a,b);}
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
-function harness({admin=true,worksheetGate=null}={}){
+function harness({admin=true,worksheetGate=null,unlocked=false}={}){
   const gate=deferred(),requests=[];
   const server={
-    profiles:[{id:'owner',name:'원래 이름',avatar_url:'old-avatar',auth_user_id:'auth-owner',is_admin:admin},{id:'other',name:'다른 회원'}],
+    profiles:[{id:'owner',name:'원래 이름',avatar_url:'old-avatar',auth_user_id:'auth-owner',is_admin:admin,approval_status:'approved'},{id:'other',name:'다른 회원',approval_status:'approved'}],
     posts:[{id:'p1',user_id:'owner',book_id:'emotion',title:'원래 제목',html:'<p>원래 글</p>'},{id:'p2',user_id:'other',book_id:'emotion',title:'원격에서 삭제된 글'}],
     comments:[{id:'c1',user_id:'owner',post_id:'p1',text:'원래 댓글'}],
     material_notes:[{id:'m1',user_id:'owner',book_id:'emotion',html:'원래 자료',drive_links:[]}],
@@ -19,12 +19,14 @@ function harness({admin=true,worksheetGate=null}={}){
     announcement:[{book_id:'global',next_date:'2026-09-25',next_time:'19:00',reading_book_id:'emotion',reading_range:'1장'}]
   };
   let renderCount=0;
-  const c={Promise,SESSION:{userId:'owner'},saveSessionEpoch:1,sharedPostsLoadState:'idle',render(){renderCount++;},
+  const c={Promise,SESSION:{userId:'owner'},saveSessionEpoch:1,sharedPostsLoadState:'idle',BOOKS:[{id:'emotion'},{id:'thought'}],render(){renderCount++;},
+    clearMemberSession(){c.SESSION=null;c.GrowellMemberAccess.reset();c.STATE.worksheets={};c.sharedPostsLoadState='idle';},
     STATE:{users:{},posts:{},comments:{},materialNotes:{},worksheets:{},bookLocks:{},announcement:{next:{date:'2026-09-25',time:'19:00',place:'',note:''},reading:{bookId:'emotion',meetingNo:'',chapter:'',range:'1장',concept:'',note:''}},privateEntries:{private:{iv:'encrypted',data:'secret'}},habits:{keep:{name:'개인 습관'}},readingLogs:{keep:{seconds:10}}},
-    sb:{from(table){requests.push(table);return {select(){return (table==='worksheets'&&worksheetGate?worksheetGate.promise:gate.promise).then(()=>server[table] instanceof Error?{error:server[table],data:null}:{data:clone(server[table]),error:null});}};}}
+    sb:{rpc:async()=>({data:[{book_id:'emotion',locked:!unlocked,revision:1}]}),from(table){requests.push(table);return {select(){return (table==='worksheets'&&worksheetGate?worksheetGate.promise:gate.promise).then(()=>server[table] instanceof Error?{error:server[table],data:null}:{data:clone(server[table]),error:null});}};}}
   };
   vm.createContext(c);vm.runInContext(section('function photoFromUrl(', '\nvar STATE ='),c);
-  vm.runInContext(section('function currentUser()', 'function isAdmin()'),c);
+  vm.runInContext(section('function currentUser()', 'function bookLockInfo('),c);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../memberAccess.js'),'utf8'),c);c.GrowellMemberAccess.configure(c);
   const mappings=[['profiles','users','mapProfileRow','id'],['posts','posts','mapPostRow','id'],['comments','comments','mapCommentRow','id'],['material_notes','materialNotes','mapMaterialNoteRow','id'],['worksheets','worksheets','mapWorksheetRow','id'],['book_locks','bookLocks','mapBookLockRow','book_id']];
   for(const [table,key,mapper,id] of mappings)for(const row of server[table])c.STATE[key][row[id]]=c[mapper](clone(row),c.STATE.users);
   return {c,server,requests,finish:()=>gate.resolve(),renders:()=>renderCount};
@@ -89,7 +91,7 @@ test('an old request failure cannot mark a later session as failed and duplicate
   assert.equal(h.c.sharedPostsLoadState,'ready');assert.equal(h.renders(),0);
 });
 
-test('members never request worksheets and discard stale local worksheet cache without changing server records',async()=>{
+test('members with no open worksheets skip their query and discard stale local worksheet cache',async()=>{
   const h=harness({admin:false}),saved=clone(h.server.worksheets),pending=h.c.loadCommunityForCurrentMember();
   h.finish();await pending;
   assert.ok(!h.requests.includes('worksheets'));
@@ -108,7 +110,8 @@ test('admin worksheet queries start only after fresh profiles verify an active a
     const denied=harness(),load=denied.c.loadCommunityForCurrentMember();
     profileChange(denied.server.profiles[0]);denied.finish();await load;
     assert.ok(!denied.requests.includes('worksheets'));
-    assert.notEqual((denied.c.STATE.users.owner||{}).isAdmin,true);
+    if(denied.c.SESSION)assert.notEqual((denied.c.STATE.users.owner||{}).isAdmin,true);
+    else assert.equal(denied.c.GrowellMemberAccess.canOpen('emotion'),false);
     assert.deepEqual(clone(denied.c.STATE.worksheets),{});
   }
 });
@@ -126,10 +129,23 @@ test('fresh demotion clears cached worksheet access even when another collection
 
 test('role loss during an in-flight admin worksheet response cannot restore cached worksheet contents',async()=>{
   const worksheetGate=deferred(),h=harness({worksheetGate}),pending=h.c.loadCommunityForCurrentMember();
-  h.finish();for(let i=0;i<4;i++)await Promise.resolve();
+  h.finish();await new Promise(resolve=>setImmediate(resolve));
   assert.ok(h.requests.includes('worksheets'));
   h.c.STATE.users.owner.isAdmin=false;h.c.STATE.worksheets={};
   worksheetGate.resolve();await pending;
   assert.equal(h.c.STATE.users.owner.isAdmin,false);
   assert.deepEqual(clone(h.c.STATE.worksheets),{});
+});
+
+test('an approved member loads only the books whose worksheets are open',async()=>{
+  const h=harness({admin:false,unlocked:true});
+  h.server.worksheets.push({id:'locked',user_id:'owner',book_id:'thought',activity_key:'reflection',data:{answer:'잠긴 답변'}});
+  const pending=h.c.loadCommunityForCurrentMember();h.finish();await pending;
+  assert.equal(h.c.sharedPostsLoadState,'ready');assert.ok(h.requests.includes('worksheets'));
+  assert.equal(h.c.STATE.worksheets.w1.data.answer,'원래 응답');assert.equal(h.c.STATE.worksheets.locked,undefined);
+});
+
+test('fresh revoked approval ends the member session before any worksheet request',async()=>{
+  const h=harness({unlocked:true}),pending=h.c.loadCommunityForCurrentMember();h.server.profiles[0].approval_status='pending';h.finish();await pending;
+  assert.equal(h.c.SESSION,null);assert.ok(!h.requests.includes('worksheets'));assert.match(h.c.oauthMessage,/관리자 승인/);
 });

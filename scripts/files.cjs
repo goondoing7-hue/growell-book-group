@@ -5,7 +5,7 @@
 const DEPLOY_FILES = Object.freeze([
   'materialsMedia.js', ...require('../vendor/pdfjs/manifest.json').files,
   'timerAlerts.js', 'timer-alert-sw.js',
-  'dailyVerses.js',
+  'dailyVerses.js', 'memberAccess.js', 'bookDetails.js', 'bookDetails.css',
   'dailyVerseDomain.js', 'popupHistory.js',
   'index.html', 'privacy.html', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
   'habitDomain.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
@@ -23,6 +23,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
   'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs',
   'tests/timer-alerts.test.cjs',
   'tests/daily-verse.test.cjs', 'tests/popup-history.test.cjs',
@@ -34,6 +35,8 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'server/signup.ts', 'server/member-approval.sql', 'server/member-approval-verification.sql', 'server/member-approval-notes.md',
+  'server/worksheet-locks.sql', 'server/worksheet-locks-verification.sql', 'server/question-replies.sql', 'server/question-replies-verification.sql',
   ...DEPLOY_FILES, ...TEST_FILES,
   'package.json', 'package-lock.json', 'vercel.json', '.gitignore',
   '.github/workflows/verify.yml', 'README.md', 'DEPLOYMENT.md', 'AGENTS.md', 'AUTH_SETUP.md', 'server/member-read-policy.sql', 'server/oauth-members.sql', 'server/oauth-interface.md',

@@ -20,3 +20,8 @@
 .profile-account-note{padding:12px 14px;border-radius:12px;background:var(--surface-2);font-size:13px;line-height:1.7;color:var(--ink-soft);margin:18px 0 0;}
 .profile-account-note strong{color:var(--ink);}
 @media(max-width:480px){.auth-card{padding:22px 18px;}.profile-photo-block{padding:15px;}.profile-photo-block .avatar-pick-preview{width:72px;height:72px;}.profile-photo-block .btn{min-height:40px;}}
+.worksheet-access-panel{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px;padding:16px 20px;border:1px solid var(--line);border-radius:16px;background:var(--surface);}
+.worksheet-access-panel p{font-size:13px;color:var(--ink-soft);margin:4px 0 0;}
+.worksheet-access-panel button{flex:none;}
+.admin-user-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+@media(max-width:560px){.worksheet-access-panel{align-items:flex-start;flex-direction:column;}.admin-user-row{flex-wrap:wrap;}.admin-user-actions{margin-left:50px;}}

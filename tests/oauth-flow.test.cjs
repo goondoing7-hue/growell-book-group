@@ -1,9 +1,9 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
-const OAuth=require('../oauthDomain.js'),Private=require('../privateCrypto.js');
+const OAuth=require('../oauthDomain.js'),Private=require('../privateCrypto.js'),MemberAccess=require('../memberAccess.js');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const authId='11111111-2222-3333-4444-555555555555';
-const profile={id:'u-social',auth_user_id:authId,login_id:'social_test',name:'회원',is_admin:false,pbkdf2_salt:'0123456789abcdef0123456789abcdef',is_deleted:false};
+const profile={id:'u-social',auth_user_id:authId,login_id:'social_test',name:'회원',is_admin:false,pbkdf2_salt:'0123456789abcdef0123456789abcdef',is_deleted:false,approval_status:'approved'};
 const user={id:authId,identities:[{provider:'google'}],app_metadata:{providers:['google']}};
 function section(a,b){const start=html.indexOf(a),end=html.indexOf(b,start);assert.ok(start>=0&&end>start);return html.slice(start,end);}
 function harness(options={}){
@@ -11,7 +11,7 @@ function harness(options={}){
     console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,
     STATE:{users:{},posts:{},comments:{},privateEntries:{},habits:{},readingMeta:{},readingLogs:{},worksheets:{},materialNotes:{}},SESSION:null,
     authFlowEpoch:0,saveSessionEpoch:0,sharedPostsLoadState:'idle',BOOTING:true,BOOT_FAILED:false,
-    GrowellOAuth:OAuth,keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
+    GrowellOAuth:OAuth,GrowellMemberAccess:MemberAccess,keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
     location:{href:options.href||'https://app.example/',hash:'#/',assign(url){calls.push(['redirect',url]);}},
     history:{replaceState(a,b,url){calls.push(['clean-url',url]);}},
     localStorage:{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)},
@@ -77,6 +77,15 @@ test('cached session is restored only after verified Auth user and matching own 
 });
 test('unverified cached Auth session cannot restore membership or read profiles',async()=>{
   const {c,calls}=harness({invalidAuth:true});await c.bootApp();assert.equal(c.SESSION,null);assert.ok(!calls.some(v=>v[0]==='read'));
+});
+
+test('cached authentication does not restore pending, rejected or deleted membership',async()=>{
+  for(const extra of [{approval_status:'pending'},{approval_status:'rejected'},{is_deleted:true},{approval_status:undefined}]){
+    const {c,memory,calls}=harness({profile:{...profile,...extra}});
+    memory.set('growell_session',JSON.stringify({userId:profile.id,keyB64:await Private.exportKey(await Private.newKey())}));
+    await c.bootApp();assert.equal(c.SESSION,null);assert.ok(!calls.some(call=>call[0]==='load-member'));
+    assert.ok(calls.some(call=>call[0]==='signout'));
+  }
 });
 test('PKCE callback is exchanged exactly once and code is removed from visible URL',async()=>{
   const {c,calls}=harness({href:'https://app.example/?code=one-time-code',profile:null});await c.bootApp();

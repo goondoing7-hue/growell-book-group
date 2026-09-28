@@ -156,6 +156,24 @@
 .community-author-post h3{font:700 18px/1.55 var(--font-body);margin:5px 0 7px;overflow-wrap:anywhere}
 .community-author-post p{font:500 15px/1.8 var(--font-body);margin:0 0 10px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .community-author-more{display:block;margin:18px auto 0}
+.community-reply-book{display:block;color:var(--space-muted);font-size:12px;line-height:1.6;margin-bottom:5px}
+.community-reply-question{margin:0 0 22px;padding:18px 20px;border-left:3px solid var(--space-green);border-radius:0 12px 12px 0;background:var(--space-soft);font:650 17px/1.75 var(--font-body);overflow-wrap:anywhere}
+.community-replies{border-bottom:1px solid var(--line);margin-bottom:22px;padding-bottom:8px}
+.community-reply{padding:16px 0;border-top:1px solid var(--line)}
+.community-reply:first-child{border-top:0;padding-top:0}
+.community-reply-heading{display:flex;align-items:center;gap:10px;min-width:0}
+.community-reply-heading .avatar{width:34px;height:34px;flex:none;font-size:13px}
+.community-reply-heading>div{min-width:0;flex:1}
+.community-reply-heading strong{display:block;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.community-reply-heading time{display:block;font-size:12px;line-height:1.5;color:var(--space-muted)}
+.community-reply-mine{color:var(--space-green);font-size:11px;white-space:nowrap}
+.community-reply>p{font:500 15px/1.85 var(--font-body);white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0 0}
+.community-reply-empty{font:500 14px/1.8 var(--font-body);color:var(--space-muted);margin:0 0 16px}
+.community-reply-more{display:block;margin:0 auto 16px;font-size:13px}
+.community-reply-form textarea{min-height:108px}
+.community-reply-form .community-dialog-actions{margin-top:12px}
+.community-reply-form .community-question-meta{flex-wrap:wrap}
+.community-reply-refresh{display:block;margin-top:10px}
 @media(max-width:640px){
  .space-prompt>.space-prompt-actions{flex-basis:100%;justify-content:flex-end;flex-wrap:wrap}
  .space-prompt-actions .btn{margin:0}
@@ -166,6 +184,8 @@
  .community-author-post>img{width:62px;height:86px}
  .community-author-post h3{font-size:17px}
  .community-author-post p{font-size:14px}
+ .community-dialog--replies .community-dialog-head h2{font-size:19px}
+ .community-reply-question{font-size:16px;padding:15px 16px}
 }
 
 /* Reading workspace: a quiet record list and a full reading/writing pane. */

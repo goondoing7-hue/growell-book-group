@@ -12,11 +12,11 @@
   }
   var rows=Object.create(null),owner=null,epoch=null,status='idle',requestId=0,lastQuestionBook=null;
   var dialog=null,dialogKind=null,returnFocus=null,drafts=Object.create(null);
-  var authorId=null,authorLimit=12,questionSaving=false;
+  var authorId=null,authorLimit=12,questionSaving=false,replyDrafts=Object.create(null),replyAttempts=Object.create(null);
   function member(){return app.SESSION&&app.SESSION.userId;}
   function current(expected){return member()===expected.owner&&app.saveSessionEpoch===expected.epoch;}
   function reset(){
-    requestId++;close(false);rows=Object.create(null);drafts=Object.create(null);owner=null;epoch=null;status='idle';lastQuestionBook=null;
+    requestId++;close(false);rows=Object.create(null);drafts=Object.create(null);replyDrafts=Object.create(null);replyAttempts=Object.create(null);owner=null;epoch=null;status='idle';lastQuestionBook=null;
   }
   function ensureOwner(){if(owner!==member()||epoch!==app.saveSessionEpoch){reset();owner=member();epoch=app.saveSessionEpoch;}}
   function syncPrompt(){
@@ -34,7 +34,7 @@
   }
   function promptHtml(book){
     ensureOwner();
-    return '<div class="space-prompt">'+app.svgIcon(app.I_COMMENT)+'<div><small>이번 책으로 함께 생각해요</small><strong data-community-question="'+app.esc(book.id)+'">'+app.esc(root.GrowellCommunity.questionFor(book,rows))+'</strong></div><div class="space-prompt-actions"><button class="btn btn-ghost" type="button" data-space-prompt="'+app.esc(book.id)+'">내 생각 남기기 →</button>'+(app.isAdmin()?'<button class="community-question-edit" type="button" data-question-edit="'+app.esc(book.id)+'" aria-haspopup="dialog">'+app.svgIcon(app.I_EDIT)+' 질문 수정</button>':'')+'</div></div>';
+    return '<div class="space-prompt">'+app.svgIcon(app.I_COMMENT)+'<div><small>이번 책으로 함께 생각해요</small><strong data-community-question="'+app.esc(book.id)+'">'+app.esc(root.GrowellCommunity.questionFor(book,rows))+'</strong></div><div class="space-prompt-actions"><button class="btn btn-ghost" type="button" data-space-prompt="'+app.esc(book.id)+'" aria-haspopup="dialog">내 생각 남기기 →</button>'+(app.isAdmin()?'<button class="community-question-edit" type="button" data-question-edit="'+app.esc(book.id)+'" aria-haspopup="dialog">'+app.svgIcon(app.I_EDIT)+' 질문 수정</button>':'')+'</div></div>';
   }
   function close(restore){
     if(!dialog)return;
@@ -105,6 +105,80 @@
       });
     });
   }
+  function replyHtml(reply){
+    return '<article class="community-reply" data-question-reply="'+app.esc(reply.id)+'"><div class="community-reply-heading">'+app.avatarHtml(reply.userId,reply.name,'emotion')+'<div><strong>'+app.esc(reply.name)+'</strong><time>'+app.esc(app.fmtPostDate(reply.createdAt))+'</time></div>'+(reply.userId===member()?'<span class="community-reply-mine">내 답변</span>':'')+'</div><p>'+app.esc(reply.body)+'</p></article>';
+  }
+  function openReplies(bookId,trigger){
+    if(!member()||app.homeUnlockedIds().indexOf(bookId)<0)return;
+    var book=app.bookById(bookId);if(!book)return;
+    var node=makeDialog('replies',trigger),expected={owner:member(),epoch:app.saveSessionEpoch},thread=null,key=null;
+    function live(){return dialog===node&&current(expected);}
+    node.innerHTML='<div class="community-dialog-head"><div><small class="community-reply-book">'+app.esc(book.title)+'</small><h2 id="community-dialog-title">이번 책으로 함께 생각해요</h2></div><button type="button" class="icon-btn" data-community-close aria-label="질문과 답변 닫기">'+app.svgIcon(app.I_CLOSE)+'</button></div><div data-reply-content><p class="community-question-message" role="status">질문과 답변을 불러오는 중이에요…</p></div>';
+    node.querySelector('[data-community-close]').onclick=function(){if(!questionSaving)close();};node.showModal();trackDialog(node,'replies');
+    function loadThread(keepDraft){
+      return Promise.resolve().then(function(){if(!live())return null;return app.sb.rpc('growell_get_question_replies',{p_book_id:bookId,p_before_id:null});}).then(function(result){
+        if(!live())return;
+        if(!result||result.error)throw result&&result.error||new Error('reply-load-failed');
+        var previousKey=key,next=root.GrowellCommunity.replyThread(result.data,bookId);
+        thread=next;key=bookId+':'+thread.revision;
+        if(keepDraft&&previousKey&&replyDrafts[previousKey])replyDrafts[key]=replyDrafts[previousKey];
+        if(thread.revision>0)rows[bookId]={question:thread.question,revision:thread.revision};else delete rows[bookId];syncPrompt();
+        renderThread();
+      }).catch(function(){
+        if(!live())return;
+        var content=node.querySelector('[data-reply-content]');
+        if(thread){node.querySelector('[data-reply-message]').textContent='답변을 불러오지 못했어요. 작성 중인 내용은 그대로 있어요.';return;}
+        content.innerHTML='<p class="community-question-message" role="alert">질문과 답변을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p><button type="button" class="btn btn-secondary" data-reply-retry>다시 불러오기</button>';
+        content.querySelector('[data-reply-retry]').onclick=function(){this.disabled=true;loadThread(false);};
+      });
+    }
+    function renderThread(){
+      if(!live())return;
+      node.querySelector('[data-reply-content]').innerHTML='<blockquote class="community-reply-question">'+app.esc(thread.question)+'</blockquote><section class="community-replies" aria-label="이 질문에 대한 답변">'+(thread.hasMore?'<button class="btn btn-ghost community-reply-more" type="button" data-reply-more>이전 답변 더 보기</button>':'')+'<div data-reply-list>'+(thread.replies.map(replyHtml).join('')||'<p class="community-reply-empty">아직 답변이 없어요. 첫 생각을 들려주세요.</p>')+'</div></section><form class="community-question-form community-reply-form"><label for="community-reply-input">이 질문에 대한 내 생각</label><textarea id="community-reply-input" rows="3" maxlength="4000" placeholder="편하게 생각을 나눠주세요." required>'+app.esc(replyDrafts[key]||'')+'</textarea><div class="community-question-meta"><span>모임원과 함께 보는 답변이에요.</span><span data-reply-count></span></div><p class="community-question-message" data-reply-message role="status" aria-live="polite"></p><div class="community-dialog-actions"><button class="btn btn-primary" type="submit">답변 남기기</button></div></form>';
+      var form=node.querySelector('form'),input=node.querySelector('textarea'),save=form.querySelector('[type="submit"]'),message=node.querySelector('[data-reply-message]');
+      function capture(){replyDrafts[key]=input.value;node.querySelector('[data-reply-count]').textContent=Array.from(input.value.trim()).length+' / 2,000';}
+      input.addEventListener('input',capture);capture();
+      var more=node.querySelector('[data-reply-more]');
+      if(more)more.onclick=function(){
+        if(more.disabled)return;more.disabled=true;var previousHeight=node.scrollHeight,previousScroll=node.scrollTop;
+        app.sb.rpc('growell_get_question_replies',{p_book_id:bookId,p_before_id:thread.replies[0].id}).then(function(result){
+          if(!live())return;if(result.error)throw result.error;
+          var older=root.GrowellCommunity.replyThread(result.data,bookId);
+          if(older.revision!==thread.revision)throw new Error('question-changed');
+          var known=new Set(thread.replies.map(function(reply){return reply.id;}));
+          var incoming=older.replies.filter(function(reply){return !known.has(reply.id);});
+          thread.replies=incoming.concat(thread.replies);thread.hasMore=older.hasMore;
+          node.querySelector('[data-reply-list]').insertAdjacentHTML('afterbegin',incoming.map(replyHtml).join(''));
+          if(!thread.hasMore)more.remove();else more.disabled=false;
+          node.scrollTop=previousScroll+(node.scrollHeight-previousHeight);
+        }).catch(function(){if(live()){more.disabled=false;message.textContent='이전 답변을 불러오지 못했어요. 다시 눌러주세요.';}});
+      };
+      form.addEventListener('submit',function(event){
+        event.preventDefault();if(questionSaving||!live())return;
+        var text=root.GrowellCommunity.replyText(input.value);capture();
+        if(!root.GrowellCommunity.validReply(text)){message.textContent='답변을 1자 이상, 2,000자 이내로 적어주세요.';input.focus();return;}
+        if(!replyAttempts[key]||replyAttempts[key].body!==text)replyAttempts[key]={id:root.crypto.randomUUID(),body:text};
+        var attempt=replyAttempts[key];questionSaving=true;input.disabled=true;save.disabled=true;save.textContent='남기는 중…';node.querySelector('[data-community-close]').disabled=true;message.textContent='';
+        Promise.resolve().then(function(){if(!live())return null;return app.sb.rpc('growell_add_question_reply',{p_id:attempt.id,p_book_id:bookId,p_expected_revision:thread.revision,p_body:attempt.body});}).then(function(result){
+          if(!live())return;if(!result||result.error)throw result&&result.error||new Error('reply-save-failed');
+          var reply=root.GrowellCommunity.replyRow(result.data,bookId,thread.revision);
+          if(reply.id!==attempt.id||reply.userId!==expected.owner||reply.body!==attempt.body)throw new Error('reply-save-invalid');
+          if(!thread.replies.some(function(row){return row.id===reply.id;})){
+            thread.replies.push(reply);var list=node.querySelector('[data-reply-list]'),empty=list.querySelector('.community-reply-empty');if(empty)empty.remove();list.insertAdjacentHTML('beforeend',replyHtml(reply));
+          }
+          delete replyAttempts[key];delete replyDrafts[key];input.value='';capture();message.textContent='답변을 남겼어요.';
+        }).catch(function(error){
+          if(!live())return;
+          message.textContent=error&&error.code==='40001'?'질문이 바뀌었어요. 새 질문을 확인하고 답변 내용을 다시 살펴주세요.':'답변 저장을 확인하지 못했어요. 작성한 내용은 그대로 있으니 다시 눌러주세요.';
+          if(error&&error.code==='40001'){
+            var refresh=document.createElement('button');refresh.type='button';refresh.className='btn btn-secondary community-reply-refresh';refresh.textContent='새 질문 확인';message.appendChild(refresh);
+            refresh.onclick=function(){refresh.disabled=true;loadThread(true);};
+          }
+        }).finally(function(){if(live()){questionSaving=false;input.disabled=false;save.disabled=false;save.textContent='답변 남기기';node.querySelector('[data-community-close]').disabled=false;}});
+      });
+    }
+    loadThread(false);
+  }
   function authorBody(){
     if(!dialog||dialogKind!=='author')return;
     if(!member()){close(false);return;}
@@ -132,6 +206,7 @@
     var changedBook=bookId&&bookId!==lastQuestionBook;lastQuestionBook=bookId;
     if(status==='idle'||changedBook)load(!!changedBook);else syncPrompt();
     document.querySelectorAll('[data-question-edit]').forEach(function(button){button.onclick=function(event){event.preventDefault();event.stopPropagation();openQuestion(button.getAttribute('data-question-edit'),button);};});
+    document.querySelectorAll('[data-space-prompt]').forEach(function(button){button.onclick=function(event){event.preventDefault();event.stopPropagation();openReplies(button.getAttribute('data-space-prompt'),button);};});
     document.querySelectorAll('[data-community-author]').forEach(function(button){button.onclick=function(event){event.preventDefault();event.stopPropagation();openAuthor(button.getAttribute('data-community-author'),button);};});
     if(dialogKind==='author')authorBody();
   }

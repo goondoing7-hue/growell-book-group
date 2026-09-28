@@ -14,7 +14,7 @@ function harness(admin=false){
   const queued=[],toasts=[];
   const c={Date,Promise,esc,svgIcon:()=>'<svg data-lock-icon></svg>',I_LOCK:'',
     SESSION:{userId:'owner',name:'관리자'},saveSessionEpoch:3,
-    STATE:{users:{owner:{id:'owner',isAdmin:admin}},worksheets:{
+    STATE:{users:{owner:{id:'owner',isAdmin:admin,approvalStatus:'approved'}},worksheets:{
       existing:{id:'existing',bookId:'emotion',activityKey:'reflection',userId:'owner',createdAt:1,data:{answer:'기존 기록'}}}},
     worksheetOpenFor:{reflection:true},
     currentUser(){return c.SESSION&&c.STATE.users[c.SESSION.userId]||null;},
@@ -25,21 +25,25 @@ function harness(admin=false){
     showToast:(message,error)=>toasts.push({message,error}),uid:()=> 'w-new',
     saveState:(mutate,options)=>{queued.push({mutate,options});},
     isBookLocked:()=>false,adminLockPanelHtml:()=>'',lockedBookGateHtml:()=>'',
-    mineTabHtml:()=>'',materialsTabHtml:()=>'',habitTabHtml:()=>'',shareTabHtml:()=>''};
+    GrowellBookDetails:{coverHtml:()=>'',hintHtml:()=>''},readingDataReady:()=>false,
+    mineTabHtml:()=>'',materialsTabHtml:()=>'',habitTabHtml:()=>'',shareTabHtml:()=>'',
+    sb:{rpc:async()=>({data:[{book_id:'emotion',locked:false,revision:1},{book_id:'thought',locked:true,revision:1}]})}};
   vm.createContext(c);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../memberAccess.js'),'utf8'),c);
   vm.runInContext(section('function isAdmin()', 'function bookLockInfo(')+
     section('function worksheetTabHtml(', '/* ---------------- render: materials tab')+
     section('function submitWorksheet(', '/* ---------------- render: shell')+
     section('function bookPageHtml(', '/* ---------------- master render'),c);
+  c.GrowellMemberAccess.configure(c);
   return {c,queued,toasts};
 }
 
-test('guest and member worksheet views show only the admin gate without reading activity or response data',()=>{
+test('guests and members of a locked worksheet cannot read its activity or response data',()=>{
   for(const guest of [false,true]){
     const {c}=harness(false);if(guest)c.SESSION=null;
     const unreadable={get worksheet(){assert.fail('restricted worksheet definitions must not be read');}};
     const html=c.worksheetTabHtml(unreadable);
-    assert.match(html,/활동지는 관리자만 열 수 있어요\./);
+    assert.match(html,/관리자가 잠근 활동지/);
     assert.doesNotMatch(html,/textarea|data-ws-submit|ws-roster|관리자 활동 제목|관리자 기록/);
   }
 });
@@ -47,10 +51,10 @@ test('guest and member worksheet views show only the admin gate without reading 
 test('direct worksheet URLs retain a selectable locked tab and never disclose worksheet contents to members',()=>{
   const {c}=harness(false),html=c.bookPageHtml(book,'worksheet');
   const tab=html.match(/<button\b[^>]*data-book-tab="worksheet"[^>]*>[\s\S]*?<\/button>/)[0];
-  assert.match(tab,/book-tab-lock/);assert.match(tab,/aria-label="활동지 · 관리자 전용"/);
-  assert.match(tab,/title="활동지는 관리자만 열 수 있어요\."/);
+  assert.match(tab,/book-tab-lock/);assert.match(tab,/aria-label="활동지 · 잠김"/);
+  assert.match(tab,/title="관리자가 잠근 활동지예요\."/);
   assert.doesNotMatch(tab,/disabled/);
-  assert.match(html,/활동지는 관리자만 열 수 있어요\./);
+  assert.match(html,/관리자가 잠근 활동지/);
   assert.doesNotMatch(html,/data-admin-field|관리자 활동 제목|관리자 활동 설명|다른 관리자 기록/);
 });
 
@@ -69,21 +73,30 @@ test('guest and member direct submit calls never enqueue writes or alter existin
     const before=clone(c.STATE.worksheets);
     c.submitWorksheet('emotion','reflection',{answer:'금지된 변경'},{});
     assert.equal(queued.length,0);assert.deepEqual(clone(c.STATE.worksheets),before);
-    assert.match(toasts[0].message,/관리자만/);
+    assert.match(toasts[0].message,/잠근 활동지/);
   }
 });
 
-test('queued worksheet writes recheck administrator role, account and session epoch',()=>{
+test('queued worksheet writes recheck per-book access, account and session epoch',()=>{
   const changes=[c=>{c.STATE.users.owner.isAdmin=false;},c=>{c.SESSION=null;},
-    c=>{c.STATE.users.other={id:'other',isAdmin:true};c.SESSION={userId:'other',name:'다른 관리자'};},c=>{c.saveSessionEpoch++;}];
+    c=>{c.STATE.users.other={id:'other',isAdmin:true,approvalStatus:'approved'};c.SESSION={userId:'other',name:'다른 관리자'};},c=>{c.saveSessionEpoch++;}];
   for(const change of changes){
     const {c,queued}=harness(true);
     c.submitWorksheet('emotion','reflection',{answer:'변경할 기록'},{});
     assert.equal(queued.length,1);change(c);
     const next=clone(c.STATE),before=clone(next.worksheets);
-    assert.throws(()=>queued[0].mutate(next),/관리자만/);
+    assert.throws(()=>queued[0].mutate(next),/활동지가 잠겨/);
     assert.deepEqual(next.worksheets,before);
   }
+});
+
+test('an approved member can view and submit an opened book worksheet while other books stay locked',async()=>{
+  const {c,queued}=harness(false);await c.GrowellMemberAccess.load();
+  assert.equal(c.canAccessWorksheet('emotion'),true);assert.equal(c.canAccessWorksheet('thought'),false);
+  const markup=c.bookPageHtml(book,'worksheet');assert.match(markup,/data-ws-submit="reflection"/);assert.doesNotMatch(markup,/worksheet-access-panel/);
+  c.submitWorksheet('emotion','reflection',{answer:'회원 답변'},{});assert.equal(queued.length,1);
+  const next=clone(c.STATE);queued[0].mutate(next);assert.equal(next.worksheets.existing.data.answer,'회원 답변');
+  c.GrowellMemberAccess.reset();assert.throws(()=>queued[0].mutate(clone(c.STATE)),/활동지가 잠겨/);
 });
 
 test('authorized worksheet updates preserve the original record identity and creation date',()=>{

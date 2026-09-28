@@ -18,6 +18,18 @@
     return result;
   }
   function questionFor(book,rows){return rows&&rows[book.id]?rows[book.id].question:defaults[book.id]||(book.checkin&&book.checkin.prompt)||'책을 읽으며 어떤 생각이 떠올랐나요?';}
+  function replyText(value){return typeof value==='string'?value.trim():'';}
+  function validReply(value){var text=replyText(value);return !!text&&Array.from(text).length<=2000;}
+  function replyRow(row,bookId,revision){
+    if(!row||typeof row.id!=='string'||!row.id||row.book_id!==bookId||Number(row.question_revision)!==revision||typeof row.user_id!=='string'||!row.user_id||!validReply(row.body)||!Number.isFinite(Date.parse(row.created_at)))throw new Error('reply-load-invalid');
+    return {id:row.id,bookId:bookId,revision:revision,userId:row.user_id,name:typeof row.user_name==='string'?row.user_name:'모임원',body:replyText(row.body),createdAt:row.created_at};
+  }
+  function replyThread(data,bookId){
+    if(!data||data.book_id!==bookId||!Object.prototype.hasOwnProperty.call(defaults,bookId)||!validQuestion(data.question)||!Number.isSafeInteger(Number(data.revision))||Number(data.revision)<0||!Array.isArray(data.replies)||typeof data.has_more!=='boolean')throw new Error('reply-load-invalid');
+    var revision=Number(data.revision),ids=new Set();
+    var replies=data.replies.map(function(row){var reply=replyRow(row,bookId,revision);if(ids.has(reply.id))throw new Error('reply-load-invalid');ids.add(reply.id);return reply;});
+    return {bookId:bookId,question:question(data.question),revision:revision,replies:replies,hasMore:data.has_more};
+  }
   function timestamp(value){
     if(typeof value==='number')return Number.isFinite(value)?value:0;
     if(typeof value!=='string'||!value.trim())return 0;
@@ -32,5 +44,5 @@
       return timestamp(b.createdAt)-timestamp(a.createdAt)||a.id.localeCompare(b.id);
     });
   }
-  return {defaults:defaults,question:question,validQuestion:validQuestion,questionRows:questionRows,questionFor:questionFor,authorPosts:authorPosts};
+  return {defaults:defaults,question:question,validQuestion:validQuestion,questionRows:questionRows,questionFor:questionFor,replyText:replyText,validReply:validReply,replyRow:replyRow,replyThread:replyThread,authorPosts:authorPosts};
 });

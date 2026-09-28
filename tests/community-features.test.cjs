@@ -42,6 +42,66 @@ function popupHarness(kind){
   return Object.assign(h,{opened,closed,nodes,trigger,click(){trigger.onclick({preventDefault(){},stopPropagation(){}});}});
 }
 async function flush(){await new Promise(resolve=>setImmediate(resolve));}
+
+function replyHarness(){
+  const h=harness(),opened=[],closed=[],nodes=[];
+  let serial=0;h.c.crypto={randomUUID:()=> 'reply-'+(++serial)};h.c.STATE={users:{}};
+  const control=()=>({value:'',disabled:false,events:{},isConnected:true,focus(){this.focused=true;},addEventListener(name,handler){this.events[name]=handler;}});
+  const trigger=Object.assign(control(),{getAttribute:()=> 'emotion'});
+  h.c.GrowellPopupHistory={open(key,options){opened.push({key,options});},closed(key){closed.push(key);}};
+  h.c.document={activeElement:trigger,querySelector:()=>null,querySelectorAll:s=>s==='[data-space-prompt]'?[trigger]:[],body:{appendChild(node){nodes.push(node);}},createElement(tag){
+    if(tag==='button')return control();
+    const close=control(),save=control(),input=control(),message=control(),count=control(),form=control(),list={html:'',querySelector:()=>null,insertAdjacentHTML(_,html){this.html+=html;}},content={};
+    form.querySelector=()=>save;message.appendChild=function(child){this.child=child;};
+    Object.defineProperty(content,'innerHTML',{set(markup){this.markup=markup;const match=markup.match(/<textarea[^>]*>([\s\S]*?)<\/textarea>/);if(match)input.value=match[1];}});
+    const node=Object.assign(control(),{controls:{close,save,input,message,count,form,list,content},open:false,setAttribute(){},showModal(){this.open=true;},close(){this.open=false;},remove(){this.isConnected=false;},querySelector(s){return {'[data-community-close]':close,'[data-reply-content]':content,'[data-reply-message]':message,'[data-reply-count]':count,'[data-reply-list]':list,form,textarea:input}[s]||null;}});
+    return node;
+  }};
+  function thread(revision=0,replies=[]){return {data:{book_id:'emotion',question:Domain.defaults.emotion,revision,replies,has_more:false}};}
+  function saved(body,id='reply-1'){return {data:{id,book_id:'emotion',question_revision:0,user_id:'member-a',user_name:'검증 회원',body,created_at:'2026-09-28T10:00:00Z'}};}
+  return Object.assign(h,{opened,closed,nodes,trigger,thread,saved,async open(response){await h.api.load();h.api.bind();h.queue.push(Promise.resolve(response||thread()));trigger.onclick({preventDefault(){},stopPropagation(){}});await flush();return nodes[nodes.length-1];}});
+}
+
+test('question reply popup uses its own thread and Back restores the page and draft',async()=>{
+  const h=replyHarness(),node=await h.open();
+  assert.equal(h.opened[0].key,'community-replies');
+  assert.equal(h.requests.at(-1).name,'growell_get_question_replies');
+  assert.equal(h.requests.at(-1).args.p_book_id,'emotion');
+  node.controls.input.value='질문에 답하는 생각';node.controls.input.events.input();h.opened[0].options.close();
+  assert.equal(node.open,false);assert.equal(h.trigger.focused,true);
+  const reopened=await h.open();assert.equal(reopened.controls.input.value,'질문에 답하는 생각');
+  assert.deepEqual(h.closed,['community-replies']);
+});
+
+test('uncertain answer save retains draft and request identity; confirmed retry creates one comment',async()=>{
+  const h=replyHarness(),node=await h.open();node.controls.input.value='내 답변';node.controls.input.events.input();
+  const pending=deferred();h.queue.push(pending.promise);node.controls.form.events.submit({preventDefault(){}});await flush();
+  assert.equal(h.opened[0].options.canClose(),false);assert.equal(node.controls.save.disabled,true);
+  pending.resolve({error:{code:'network'}});await flush();
+  assert.equal(node.controls.input.value,'내 답변');assert.equal(node.open,true);assert.equal(h.opened[0].options.canClose(),true);
+  const first=h.requests.at(-1);h.queue.push(Promise.resolve(h.saved('내 답변')));node.controls.form.events.submit({preventDefault(){}});await flush();
+  assert.deepEqual(h.requests.at(-1),first);assert.equal(node.controls.input.value,'');
+  assert.equal((node.controls.list.html.match(/data-question-reply/g)||[]).length,1);assert.equal(node.open,true);
+});
+
+test('answers cannot mix book/revision threads; malformed responses and late session responses stay rejected',async()=>{
+  const sample={id:'r',book_id:'emotion',question_revision:2,user_id:'member',user_name:'회원',body:'답변',created_at:'2026-09-28T10:00:00Z'};
+  assert.throws(()=>Domain.replyRow(sample,'emotion',1));assert.throws(()=>Domain.replyRow(sample,'body',2));
+  assert.throws(()=>Domain.replyThread({book_id:'emotion',question:'질문',revision:2,replies:[sample,sample],has_more:false},'emotion'));
+  assert.equal(Domain.validReply('🌱'.repeat(2000)),true);assert.equal(Domain.validReply('🌱'.repeat(2001)),false);
+  const h=replyHarness(),node=await h.open();node.controls.input.value='다른 계정에 보이면 안 되는 답변';
+  const pending=deferred();h.queue.push(pending.promise);node.controls.form.events.submit({preventDefault(){}});await flush();
+  h.api.reset();h.c.SESSION={userId:'member-b'};pending.resolve(h.saved('다른 계정에 보이면 안 되는 답변'));await flush();
+  assert.equal(node.open,false);assert.equal(node.controls.list.html,'');
+});
+
+test('a changed question preserves the answer and requires explicit review of the new question',async()=>{
+  const h=replyHarness(),node=await h.open();node.controls.input.value='보존할 답변';
+  h.queue.push(Promise.resolve({error:{code:'40001'}}));node.controls.form.events.submit({preventDefault(){}});await flush();
+  assert.equal(node.controls.input.value,'보존할 답변');assert.equal(node.controls.message.child.textContent,'새 질문 확인');
+  h.queue.push(Promise.resolve(h.thread(1)));node.controls.message.child.onclick();await flush();
+  assert.equal(node.controls.input.value,'보존할 답변');assert.equal(h.requests.at(-1).name,'growell_get_question_replies');
+});
 test('author popup Back restores its trigger; pagination creates no additional popup entry',async()=>{
   const h=popupHarness('author');await h.api.load();h.api.bind();h.click();
   assert.equal(h.opened.length,1);assert.equal(h.opened[0].key,'community-author');

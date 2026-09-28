@@ -1071,6 +1071,9 @@
 <link rel="stylesheet" href="brand.css">
 <script src="popupHistory.js"></script>
 <script src="profile.js"></script>
+<script src="memberAccess.js"></script>
+<script src="bookDetails.js"></script>
+<link rel="stylesheet" href="bookDetails.css">
 <script src="oauthDomain.js"></script>
 <script src="homeDomain.js"></script>
 <script src="dailyVerseDomain.js"></script>
@@ -1528,7 +1531,7 @@ function urlFromPhoto(photo){ return (photo && photo.dataUrl) ? photo.dataUrl : 
 function readingMetaKey(bookId, userId){ return bookId+'_'+userId; }
 
 function mapProfileRow(r){
-  return {id:r.id, loginId:r.login_id, name:r.name, salt:r.pbkdf2_salt, isAdmin:!!r.is_admin, avatar:r.avatar_url||null, createdAt:r.created_at, authUserId:r.auth_user_id, isDeleted:!!r.is_deleted};
+  return {id:r.id, loginId:r.login_id, name:r.name, salt:r.pbkdf2_salt, isAdmin:!!r.is_admin, avatar:r.avatar_url||null, createdAt:r.created_at, authUserId:r.auth_user_id, isDeleted:!!r.is_deleted, approvalStatus:r.approval_status||'pending'};
 }
 function mapPostRow(r, profilesById){
   var uname = (profilesById[r.user_id]||{}).name || '';
@@ -1597,6 +1600,7 @@ function bootApp(){
     return sb.from('profiles').select('*').eq('auth_user_id',user.id).maybeSingle().then(async function(result){
       guard();if(result.error)throw new Error('profile-load-failed');
       var row=result.data,restored=null;
+      if(row&&!GrowellMemberAccess.approved(row)){oauthMessage=GrowellMemberAccess.message(row.approval_status);SESSION=null;await sb.auth.signOut();return;}
       try{restored=JSON.parse(localStorage.getItem('growell_session')||'null');}catch(e){}
       if(row && row.auth_user_id===user.id && !row.is_deleted && restored && restored.userId===row.id && typeof restored.keyB64==='string'){
         try{await keyFromB64(restored.keyB64);}catch(e){restored=null;}
@@ -1641,23 +1645,24 @@ function loadCommunityForCurrentMember(){
   keys.forEach(function(key){snapshots[key]=communityCollectionSnapshot(STATE[key]);});
   var worksheetAdmin=false;
   function currentSession(){return SESSION&&SESSION.userId===owner&&saveSessionEpoch===epoch;}
-  function mayReadWorksheets(){var user=STATE.users[owner];return worksheetAdmin&&currentSession()&&(!user||(user.isAdmin&&!user.isDeleted));}
+  function mayReadWorksheets(){return currentSession()&&BOOKS.some(function(book){return canAccessWorksheet(book.id);});}
   var profilesRequest=Promise.resolve(sb.from('profiles').select('*')).then(function(result){
     if(!currentSession())return result;
     if(!result||result.error||!Array.isArray(result.data))throw new Error('community-profile-load-failed');
     var profile=result.data.find(function(row){return row.id===owner;});
-    worksheetAdmin=!!(profile&&profile.is_admin===true&&!profile.is_deleted);
+    if(!profile||!GrowellMemberAccess.approved(profile)){clearMemberSession();oauthMessage=GrowellMemberAccess.message(profile&&profile.approval_status);render();throw new Error('membership-pending');}
+    worksheetAdmin=profile.is_admin===true;
     var roleRemoved=STATE.users[owner]&&STATE.users[owner].isAdmin&&!worksheetAdmin;
     // Fresh server permissions supersede cached roles without discarding local profile edits.
     if(STATE.users[owner]&&STATE.users[owner].isAdmin!==worksheetAdmin){
       STATE.users[owner].isAdmin=worksheetAdmin;
       if(snapshots.users[owner]){var baseline=JSON.parse(snapshots.users[owner]);baseline.isAdmin=worksheetAdmin;snapshots.users[owner]=JSON.stringify(baseline);}
     }
-    if(!worksheetAdmin)STATE.worksheets={};
     if(roleRemoved)render();
     return result;
   });
-  var worksheetsRequest=profilesRequest.then(function(){
+  var worksheetsRequest=profilesRequest.then(function(){return GrowellMemberAccess.load();}).then(function(){
+    if(currentSession())Object.keys(STATE.worksheets).forEach(function(id){if(!canAccessWorksheet(STATE.worksheets[id].bookId)){delete STATE.worksheets[id];delete snapshots.worksheets[id];}});
     return mayReadWorksheets()?sb.from('worksheets').select('*'):{data:[],error:null};
   });
   var tables=['profiles','posts','comments','material_notes','worksheets','book_locks','announcement'];
@@ -1667,23 +1672,25 @@ function loadCommunityForCurrentMember(){
     var users={};results[0].data.forEach(function(row){var user=mapProfileRow(row);users[user.id]=user;});
     users=mergeCommunityCollection(users,STATE.users,snapshots.users);
     var worksheetAccess=mayReadWorksheets();
-    if(users[owner])users[owner].isAdmin=worksheetAccess;
+    if(users[owner])users[owner].isAdmin=worksheetAdmin&&!!(STATE.users[owner]&&STATE.users[owner].isAdmin);
     var posts={},comments={},materials={},worksheets={},locks={};
     results[1].data.forEach(function(r){posts[r.id]=mapPostRow(r,users);});
     results[2].data.forEach(function(r){comments[r.id]=mapCommentRow(r,users);});
     results[3].data.forEach(function(r){materials[r.id]=mapMaterialNoteRow(r,users);});
-    if(worksheetAccess)results[4].data.forEach(function(r){worksheets[r.id]=mapWorksheetRow(r,users);});
+    if(worksheetAccess)results[4].data.forEach(function(r){if(canAccessWorksheet(r.book_id))worksheets[r.id]=mapWorksheetRow(r,users);});
     results[5].data.forEach(function(r){locks[r.book_id]=mapBookLockRow(r);});
     var a=results[6].data.find(function(r){return r.book_id==='global';});
     var announcement=a?{next:{date:a.next_date||'',time:a.next_time||'',place:a.next_place||'',note:a.next_note||''},reading:{bookId:a.reading_book_id||'emotion',meetingNo:a.reading_meeting_no||'',chapter:a.reading_chapter||'',range:a.reading_range||'',concept:a.reading_concept||'',note:a.reading_note||''}}:STATE.announcement;
     var merged={users:users,posts:mergeCommunityCollection(posts,STATE.posts,snapshots.posts),comments:mergeCommunityCollection(comments,STATE.comments,snapshots.comments),
       materialNotes:mergeCommunityCollection(materials,STATE.materialNotes,snapshots.materialNotes),worksheets:worksheetAccess?mergeCommunityCollection(worksheets,STATE.worksheets,snapshots.worksheets):{},
       bookLocks:mergeCommunityCollection(locks,STATE.bookLocks,snapshots.bookLocks),announcement:mergeCommunityCollection(announcement,STATE.announcement,snapshots.announcement)};
+    Object.keys(merged.worksheets).forEach(function(id){if(!canAccessWorksheet(merged.worksheets[id].bookId))delete merged.worksheets[id];});
     keys.forEach(function(key){STATE[key]=merged[key];});
     sharedPostsLoadState='ready';render();
   }).catch(function(){if(SESSION&&SESSION.userId===owner&&saveSessionEpoch===epoch){sharedPostsLoadState='error';render();}});
 }
-function isAdmin(){ var u = currentUser(); return !!(u && u.isAdmin); }
+function isAdmin(){ var u = currentUser(); return !!(u && u.isAdmin && !u.isDeleted && u.approvalStatus==='approved'); }
+function canAccessWorksheet(bookId){return GrowellMemberAccess.canOpen(bookId);}
 function bookLockInfo(book){
   var custom = STATE.bookLocks[book.id];
   if(custom) return custom;
@@ -2049,6 +2056,8 @@ function clearMemberSession(){
   editingAnnouncement=false;
   announcementEditDraft=null;
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.reset();
+  if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
+  if(typeof GrowellBookDetails!=='undefined')GrowellBookDetails.reset();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
   if(typeof pendingProfileAvatar!=='undefined') pendingProfileAvatar=undefined;
@@ -2444,6 +2453,7 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
   id = id.trim().toLowerCase();
   name = name.trim();
   hint = (hint||'').trim();
+  if(!GrowellProfile.safeAvatarUrl(avatar)){showToast('프로필 사진을 등록해주세요. 사진은 필수예요.',true);return;}
   if(!name || !id || !pw){ showToast('별명, 아이디, 비밀번호를 모두 입력해주세요.', true); return; }
   if(name.length>30){ showToast('별명은 30자 이내로 입력해주세요.', true); return; }
   /* 아이디는 내부적으로 "아이디@growell.internal" 이메일로 바뀌어 Supabase Auth에 등록되는데,
@@ -2479,6 +2489,7 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
         else if(res && res.error==='weak_password') msg = '비밀번호는 8자 이상으로 만들어주세요.';
         else if(res && res.error==='invalid_id_format') msg = '아이디는 영문, 숫자, -, _ 만 사용할 수 있어요.';
         else if(res && res.error==='missing_hint') msg = '비밀번호 힌트를 입력해주세요.';
+        else if(res && ['missing_avatar','invalid_avatar','avatar_upload_failed'].includes(res.error)) msg = '프로필 사진을 저장하지 못했어요. 사진을 다시 선택해주세요.';
         /* 서버가 돌려준 구체적인 이유가 있으면 그대로 보여준다 — 다음에 또 실패하더라도
            토스트만 보고 바로 원인을 알 수 있게(원래는 무조건 이 문구 하나였음). */
         else if(res && res.detail) msg = '가입에 실패했어요: ' + res.detail;
@@ -2486,27 +2497,15 @@ function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
       }
       return res.profile;
     })
-    .then(function(profileRow){
+    .then(async function(profileRow){
       signupGuard();
-      return sb.auth.signInWithPassword({email:loginEmailFor(id), password:pw}).then(function(authRes){
-        signupGuard();
-        if(authRes.error) throw new Error('가입은 됐지만 자동 로그인에 실패했어요. 로그인 화면에서 다시 시도해주세요.');
-        return deriveKey(pw, salt).then(function(key){ return keyToB64(key); }).then(function(keyB64){
-          signupGuard();
-          var u = mapProfileRow(profileRow);
-          STATE.users[u.id] = u;
-          SESSION = {userId:u.id, name:u.name, keyB64:keyB64};
-          try{ localStorage.setItem('growell_session', JSON.stringify(SESSION)); }catch(e){}
-          memberLoadState = {privateEntries:'ready', habits:'ready', readingLogs:'ready', readingMeta:'ready'};
-          pendingSignupAvatar = null;
-          showToast(u.name+'님, 환영해요.');
-          var r = currentRoute();
-          if(r.view==='login'){ location.hash = '#/'; } else { render(); }
-        });
-      });
+      await sb.auth.signOut();signupGuard();
+      pendingSignupAvatar=null;authMode='login';
+      oauthMessage='가입 신청을 보냈어요. 관리자가 승인하면 로그인할 수 있어요.';
+      location.hash='#/login';render();
     })
     .catch(function(err){
-      if(btn){ btn.disabled=false; btn.textContent='회원가입'; }
+      if(btn){ btn.disabled=false; btn.textContent='가입 신청'; }
       if(flow!==authFlowEpoch) return false;
       showToast((err && err.message) || '가입에 실패했어요. 다시 시도해주세요.', true);
       return false;
@@ -2546,6 +2545,7 @@ function doLogin(id, pw, btn){
   }).then(function(profRes){
     authGuard();
     if(profRes.error || !profRes.data) throw new Error('profile-not-found');
+    if(!GrowellMemberAccess.approved(profRes.data)){oauthMessage=GrowellMemberAccess.message(profRes.data.approval_status);return sb.auth.signOut().then(function(){throw new Error('membership-pending');});}
     var u = mapProfileRow(profRes.data);
     STATE.users[u.id] = u;
     loggedInUser = u;
@@ -2567,6 +2567,7 @@ function doLogin(id, pw, btn){
   }).catch(function(err){
     if(btn){ btn.disabled=false; btn.textContent='로그인'; }
     if(flow!==authFlowEpoch) return false;
+    if(err&&err.message==='membership-pending'){render();return false;}
     if(SESSION){ showToast('로그인은 완료됐어요. 기록 준비를 마치지 못했으니 다시 시도해주세요.', true); render(); }
     else { showToast(err && err.message==='profile-not-found' ? '회원 정보를 불러오지 못했어요. 다시 시도해주세요.' : '로그인하지 못했어요. 아이디·비밀번호와 연결 상태를 확인해주세요.', true); }
     return false;
@@ -3694,7 +3695,7 @@ function bindReadingTimerEvents(){
   }
 }
 function submitWorksheet(bookId, activityKey, data, btn, originalLabel){
-  if(!SESSION||!isAdmin()){ showToast('활동지는 관리자만 열 수 있어요.', true); return; }
+  if(!SESSION||!canAccessWorksheet(bookId)){ showToast('관리자가 잠근 활동지예요.', true); return; }
   var owner=SESSION.userId,epoch=saveSessionEpoch;
   var existingId = null;
   for(var k in STATE.worksheets){
@@ -3703,7 +3704,7 @@ function submitWorksheet(bookId, activityKey, data, btn, originalLabel){
   }
   var id = existingId || uid('w');
   saveState(function(next){
-    if(!SESSION||SESSION.userId!==owner||saveSessionEpoch!==epoch||!isAdmin())throw new Error('활동지는 관리자만 저장할 수 있어요.');
+    if(!SESSION||SESSION.userId!==owner||saveSessionEpoch!==epoch||!canAccessWorksheet(bookId))throw new Error('활동지가 잠겨 있어 저장할 수 없어요.');
     next.worksheets[id] = {id:id, bookId:bookId, activityKey:activityKey, userId:owner, userName:SESSION.name, data:data, createdAt: (existingId?next.worksheets[id].createdAt:Date.now()), updatedAt:Date.now()};
   }, {button:btn, originalLabel:originalLabel||'저장', savingLabel:'저장 중…'});
 }
@@ -3779,7 +3780,7 @@ function adminUsersHtml(){
   if(!isAdmin()){
     return '<div class="wrap"><div class="gate">'+svgIcon(I_LOCK)+'<h3>운영자만 볼 수 있어요</h3><p>가입자 목록은 운영자 권한이 있어야 확인할 수 있어요.</p></div></div>';
   }
-  var users = Object.values(STATE.users).sort(function(a,b){ return b.createdAt-a.createdAt; });
+  var users = Object.values(STATE.users).sort(function(a,b){ return Number(b.approvalStatus==='pending')-Number(a.approvalStatus==='pending')||b.createdAt-a.createdAt; });
   var rows = users.map(function(u){
     var avatarUrl=GrowellProfile.safeAvatarUrl(u.avatar);
     var avatar = avatarUrl
@@ -3791,15 +3792,16 @@ function adminUsersHtml(){
       : (isSelf
         ? '<span class="admin-user-meta" style="flex:none">본인</span>'
         : '<button type="button" class="btn btn-ghost btn-sm btn-danger admin-user-delete-btn" data-user-id="'+u.id+'">삭제</button>');
+    if(!isSelf&&!u.isDeleted&&u.approvalStatus==='pending')action='<div class="admin-user-actions"><button type="button" class="btn btn-primary btn-sm" data-review-member="'+esc(u.id)+'" data-decision="approved"'+(!avatarUrl?' disabled title="프로필 사진이 필요해요"':'')+'>가입 승인</button><button type="button" class="btn btn-ghost btn-sm" data-review-member="'+esc(u.id)+'" data-decision="rejected">승인 거절</button></div>';
     return '<div class="admin-user-row">' + avatar +
       '<div class="admin-user-body">' +
         '<div class="admin-user-top"><span class="admin-user-name">'+esc(u.name)+'</span>'+(u.isAdmin?'<span class="admin-badge">운영자</span>':'')+'</div>' +
-        '<div class="admin-user-meta mono">@'+esc(u.loginId)+' · '+fmtDate(u.createdAt)+' 가입</div>' +
+        '<div class="admin-user-meta mono">@'+esc(u.loginId)+' · '+fmtDate(u.createdAt)+' · '+(u.approvalStatus==='pending'?'승인 대기':u.approvalStatus==='rejected'?'승인 거절':'가입 완료')+'</div>' +
       '</div>' + action +
     '</div>';
   }).join('');
   return '<div class="wrap">' +
-    '<div class="section-head"><h2>가입자 목록</h2><span class="section-sub">'+users.length+'명이 가입했어요</span></div>' +
+    '<div class="section-head"><h2>가입자 목록</h2><span class="section-sub">가입 완료 '+users.filter(function(u){return !u.isDeleted&&u.approvalStatus==='approved';}).length+'명 · 승인 대기 '+users.filter(function(u){return !u.isDeleted&&u.approvalStatus==='pending';}).length+'명</span></div>' +
     '<div class="card admin-user-list">' + (rows || '<div class="empty">아직 가입한 멤버가 없어요.</div>') + '</div>' +
   '</div>';
 }
@@ -4057,9 +4059,9 @@ function memberHomeHtml(){
   var habits=user ? homeHabits() : [], habitStatus=user ? memberDataStatusHtml('habits') : '';
   var completed=habits.filter(function(h){return h.checkedDates.indexOf(today)>=0;}).length;
   var page=user && book ? Math.max(0,Math.min(Number(myCurrentPage(book.id))||0,book.totalPages)) : 0;
-  var cover=book && book.cover ? '<img class="home-book-cover" src="'+esc(book.cover)+'" alt="'+esc(book.title)+' 표지" width="96" height="148" decoding="async">' : '';
+  var cover=book && book.cover ? GrowellBookDetails.coverHtml(book,'home-book-cover') : '';
   var reading=book ? '<div class="home-reading-book">'+cover+'<div class="home-reading-copy"><h2 class="home-book-title">'+esc(book.title)+'</h2>' +
-    '<div class="home-reading-meta">'+page+' / '+book.totalPages+'쪽</div>' +
+    '<div class="home-reading-meta">'+page+' / '+book.totalPages+'쪽</div>'+GrowellBookDetails.hintHtml(book.id,page) +
     '<div class="home-progress" role="progressbar" aria-label="읽은 분량" aria-valuenow="'+page+'" aria-valuemin="0" aria-valuemax="'+book.totalPages+'"><span style="width:'+(page/book.totalPages*100)+'%"></span></div>' +
     '<p class="home-next-page">'+(page>=book.totalPages?'끝까지 읽었어요.':(page+1)+'쪽부터 이어 읽어요.')+'</p></div></div>' +
     (user ? readingTimerSummaryHtml(book)+'<button class="home-primary" type="button" data-reading-start="'+book.id+'"'+(!readingDataReady()?' disabled':'')+'>'+svgIcon(I_TIMER)+(readingTimer?'타이머로 돌아가기':'타이머로 읽기 시작')+'</button><a class="home-link reading-home-record-link" href="#/book/'+book.id+'/mine">나의 독서 기록 →</a>' : '') : '<p class="home-empty">아직 열린 책이 없어요. 모임 안내를 확인해주세요.</p>';
@@ -4289,6 +4291,7 @@ async function completeOAuthMember(name,password,confirmation,button){
     }
     if(response.status==='legacy'){pending.status='legacy';pending.profile=response.profile;throw new Error('oauth-legacy');}
     if(response.status!=='ready'||!response.profile||response.profile.auth_user_id!==pending.authUserId||response.profile.is_deleted)throw new Error('oauth-profile-mismatch');
+    if(!GrowellMemberAccess.approved(response.profile)){oauthMessage=GrowellMemberAccess.message(response.profile.approval_status);await sb.auth.signOut();oauthPending=null;oauthBusy=false;render();return false;}
     var keyB64=await GrowellOAuth.unlockVault(password,response.envelope,pending.authUserId);guard();
     var profile=mapProfileRow(response.profile);STATE.users[profile.id]=profile;
     SESSION={userId:profile.id,name:profile.name,keyB64:keyB64,authKind:'oauth'};
@@ -4374,15 +4377,15 @@ function profilePhotoPickerHtml(prefix, avatar){
 function signupFormHtml(){
   return '<h2>함께 읽기 시작해요</h2><p class="sub">나눔 공간에는 생각을, 나의 공간에는 나만의 기록을 남겨보세요.</p>' +
     socialSignupStatusHtml()+(SOCIAL_AUTH_VISIBLE?'<div class="auth-email-heading">회원가입 · 아이디 만들기</div>':'') +
-    '<label class="field-label" style="margin-top:0">프로필 사진 <span style="font-weight:400;color:var(--ink-faint)">(선택)</span></label>' +
+    '<label class="field-label" style="margin-top:0">프로필 사진 <span style="color:var(--emotion-ink)">필수</span></label>' +
     profilePhotoPickerHtml('su',pendingSignupAvatar) +
     '<label class="field-label" for="su-name">별명 (나눔 글에 표시돼요)</label><input type="text" id="su-name" autocomplete="name" maxlength="30">' +
     '<label class="field-label" for="su-id">아이디 <span style="font-weight:400;color:var(--ink-faint)">(영문·숫자로 만들어주세요)</span></label><input type="text" id="su-id" autocomplete="username" placeholder="예) growell01" pattern="[A-Za-z0-9_-]+">' +
     '<label class="field-label" for="su-pw">비밀번호 (8자 이상)</label><input type="password" id="su-pw" autocomplete="new-password">' +
     '<label class="field-label" for="su-pw2">비밀번호 확인</label><input type="password" id="su-pw2" autocomplete="new-password">' +
     '<label class="field-label" for="su-hint">비밀번호 힌트 <span style="font-weight:400;color:var(--ink-faint)">(비밀번호를 잊었을 때 본인 확인용)</span></label><input type="text" id="su-hint" autocomplete="off" placeholder="예) 어릴 때 키우던 강아지 이름">' +
-    '<label class="field-label" for="su-admin-code">운영자 코드 <span style="font-weight:400;color:var(--ink-faint)">(운영자만 입력하세요)</span></label><input type="text" id="su-admin-code" autocomplete="off" placeholder="선택 입력">' +
-    '<button class="btn btn-primary btn-block" style="margin-top:18px" id="btn-do-signup" type="button">회원가입</button>';
+    '<p class="profile-account-note">사진을 포함한 가입 신청을 보내면 관리자가 확인해요. 승인 후 로그인할 수 있어요.</p>' +
+    '<button class="btn btn-primary btn-block" style="margin-top:18px" id="btn-do-signup" type="button">가입 신청</button>';
 }
 function forgotPasswordFormHtml(){
   return '<h2>비밀번호 찾기</h2>' +
@@ -4404,7 +4407,7 @@ function profileEditHtml(){
   return '<div class="wrap"><div class="auth-wrap">' +
     '<div class="card auth-card">' +
       '<h2>내 프로필</h2><p class="sub">나를 표현하는 사진과 별명을 설정해요. 나눔 글과 댓글에도 함께 표시돼요.</p>' +
-      '<label class="field-label" style="margin-top:0">프로필 사진 <span style="font-weight:400;color:var(--ink-faint)">(선택)</span></label>' +
+      '<label class="field-label" style="margin-top:0">프로필 사진 <span style="color:var(--emotion-ink)">필수</span></label>' +
       profilePhotoPickerHtml('pe',avatarSrc) +
       '<label class="field-label" for="pe-name">별명</label><input type="text" id="pe-name" value="'+esc(u.name||'')+'" autocomplete="name" maxlength="30">' +
       '<p class="profile-account-note"><strong>@'+esc(u.loginId||'')+'</strong> · '+(u.isAdmin?'관리자':'일반 회원')+'<br>사진과 별명을 저장하면 다른 기기에서도 같은 프로필로 보여요.</p>' +
@@ -5126,7 +5129,7 @@ function readingCardHtml(book,inDialog){
       (readingTimer.targetMs!==null?'<p class="reading-countdown-left">남은 시간 <strong class="mono" data-reading-remaining>'+fmtElapsed(GrowellReadingTimer.remaining(readingTimer,Date.now()))+'</strong></p>':'')+
       '<button class="btn reading-countdown-open" id="btn-reading-countdown" type="button" aria-expanded="'+readingCountdownOpen+'">'+svgIcon(I_TIMER)+' 카운트다운 '+(readingTimer.targetMs===null?'설정':'변경')+'</button>'+
       (readingCountdownOpen?readingCountdownHtml():'')+
-      '<div class="reading-timer-book"><div class="reading-cover reading-cover-sm"><img src="'+book.cover+'" alt="'+esc(book.title)+' 표지"></div><div><strong>'+esc(book.title)+'</strong><span>'+esc(book.author||'')+'</span><span>'+readingTimer.startPage+' / '+total+'쪽부터 읽는 중</span><button class="reading-note-open" type="button" data-reading-note="'+book.id+'" aria-haspopup="dialog">'+svgIcon(I_EDIT)+' 노트 작성</button></div></div>' +
+      '<div class="reading-timer-book"><div class="reading-cover reading-cover-sm">'+GrowellBookDetails.coverHtml(book)+'</div><div><strong>'+esc(book.title)+'</strong><span>'+esc(book.author||'')+'</span><span>'+readingTimer.startPage+' / '+total+'쪽부터 읽는 중</span><button class="reading-note-open" type="button" data-reading-note="'+book.id+'" aria-haspopup="dialog">'+svgIcon(I_EDIT)+' 노트 작성</button></div></div>' +
       '<p class="reading-continuity">'+(readingTimerMemoryWarning?'이 기기에 시간을 보관하지 못했어요. 창을 닫기 전에 기록을 저장해주세요.':'화면을 이동해도 타이머는 이어져요. 일시정지한 시간은 제외해요.')+'</p><button class="reading-discard" type="button" id="btn-reading-cancel">이번 독서 취소</button>'+
     '</div>'+readingNoteDialogHtml();
   }
@@ -5147,11 +5150,11 @@ function readingCardHtml(book,inDialog){
     '<div class="reading-split-row">' +
       '<div class="reading-split-left">' +
         '<div class="reading-slim-row">' +
-          '<div class="reading-cover"><img src="'+book.cover+'" alt="'+esc(book.title)+' 표지"></div>' +
+          '<div class="reading-cover">'+GrowellBookDetails.coverHtml(book)+'</div>' +
           '<div class="reading-info">' +
             '<div class="reading-title">'+esc(book.title)+'</div>' +
             '<div class="reading-pages mono">p. '+current+' / '+total+' <span class="reading-pct">· '+pct+'%</span></div>' +
-            '<div class="reading-bar"><div class="reading-bar-fill" style="width:'+pct+'%"></div></div>' +
+            '<div class="reading-bar"><div class="reading-bar-fill" style="width:'+pct+'%"></div></div>'+GrowellBookDetails.hintHtml(book.id,current) +
           '</div>' +
           '<button type="button" class="icon-btn reading-play-btn" id="btn-reading-start" data-book="'+book.id+'" data-reading-start="'+book.id+'" aria-label="타이머로 읽기 시작" title="타이머로 읽기 시작">'+svgIcon(I_TIMER)+'</button>' +
           '<button type="button" class="icon-btn reading-edit-btn js-reading-edit-open" id="btn-reading-edit-open" data-book="'+book.id+'" title="현재 페이지 수정">'+svgIcon(I_EDIT)+'</button>' +
@@ -5296,7 +5299,7 @@ function habitTodayState(habit,today){
   return {checked:checked,canCheck:canCheck,label:canCheck?'성공':today<GrowellHabits.start(habit,today)?'시작 전':'기간 종료'};
 }
 function habitStreakHtml(habit,stats){
-  return '<svg class="habit-streak-flame" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#ed7634" d="M13 2c1 5-3 6-3 10-2-1-3-3-3-5-3 3-4 6-4 9a9 9 0 0 0 18 0c0-5-4-7-4-11-1 2-2 3-3 4 1-3 0-5-1-7Z"/><path fill="#ffd46a" d="M12 12c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-2-4-4-7Z"/></svg><span><strong>'+stats.streak+'일</strong> 연속 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천')+'</span>';
+  return '<svg class="habit-streak-flame" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#ed7634" d="M13 1c1 5-3 6-3 10-2-1-3-3-3-5-2 3-4 6-4 9a9 9 0 0 0 18 0c0-4-3-7-4-10-1 2-2 3-3 4 1-3 0-6-1-8Z"/><path fill="#ffd46a" d="M12 12c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-2-4-4-7Z"/></svg><span><strong>'+stats.streak+'일</strong> 연속 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천')+'</span>';
 }
 function habitCardProgressHtml(stats){
   if(stats.total===null) return '<div class="habit-goal-head"><span>지금까지 <strong>'+stats.success+'일 성공</strong></span><span class="habit-goal-open">나의 속도로 계속</span></div>';
@@ -5879,8 +5882,8 @@ function worksheetFieldHtml(book, activity, mine){
 /* 활동지 — 우선 제목만 읽기 쉽게 한 줄씩 보여주고(작성 완료한 항목은 "완료" 표시),
    눌러야 설명/입력 필드/멤버 기록이 그 아래로 펼쳐진다. */
 function worksheetTabHtml(book){
-  if(!SESSION||!isAdmin())return '<section class="gate" role="status">'+svgIcon(I_LOCK)+'<h3>활동지는 관리자만 열 수 있어요.</h3></section>';
-  return '<div class="ws-list">' + book.worksheet.activities.map(function(act){
+  if(!SESSION||!canAccessWorksheet(book.id))return '<section class="gate" role="status">'+svgIcon(I_LOCK)+'<h3>관리자가 잠근 활동지예요.</h3><p>관리자가 열면 작성할 수 있어요.</p></section>';
+  return GrowellMemberAccess.panel(book.id)+'<div class="ws-list">' + book.worksheet.activities.map(function(act){
     var mine = myWorksheet(book.id, act.key);
     var open = !!worksheetOpenFor[act.key];
     var others = othersWorksheets(book.id, act.key);
@@ -5897,7 +5900,7 @@ function worksheetTabHtml(book){
     var body = '<div class="ws-row-body'+(open?' is-open':'')+'">' +
       '<p class="ws-row-desc">'+esc(act.desc)+'</p>' +
       worksheetFieldHtml(book, act, mine) +
-      '<div class="composer-foot"><span class="hint">활동지 기록은 관리자만 볼 수 있어요</span><button class="btn btn-primary btn-sm" data-ws-submit="'+act.key+'" type="button">'+(mine?'수정하기':'저장하기')+'</button></div>' +
+      '<div class="composer-foot"><span class="hint">열린 활동지의 기록은 모임원과 함께 볼 수 있어요</span><button class="btn btn-primary btn-sm" data-ws-submit="'+act.key+'" type="button">'+(mine?'수정하기':'저장하기')+'</button></div>' +
       '<div class="ws-roster"><div class="ws-roster-title">함께 기록한 멤버</div>'+roster+'</div>' +
     '</div>';
     return '<div class="card ws-activity" data-activity="'+act.key+'" style="--accent-c:var(--'+book.accent+'); --accent-soft:var(--'+book.accent+'-soft); --accent-ink:var(--'+book.accent+'-ink)">' +
@@ -6366,18 +6369,18 @@ function bookPageHtml(book, tab, postId){
   var adminPreview = isAdmin();
   var tabs = [['share','나눔 공간'],['mine','나의 공간'],['worksheet','활동지'],['materials','자료실'],['habit','습관']];
   var tabBar = '<nav class="book-tabs" aria-label="'+esc(book.area)+' 책의 다섯 공간">' + tabs.map(function(t){
-    var restricted=t[0]==='worksheet'&&!adminPreview;
-    return '<button type="button" class="book-tab'+(tab===t[0]?' is-active':'')+'" aria-current="'+(tab===t[0]?'page':'false')+'" data-book-tab="'+t[0]+'" data-book-id="'+book.id+'"'+(restricted?' title="활동지는 관리자만 열 수 있어요." aria-label="활동지 · 관리자 전용"':'')+'>'+t[1]+(restricted?'<span class="book-tab-lock" aria-hidden="true">'+svgIcon(I_LOCK)+'</span>':'')+'</button>';
+    var restricted=t[0]==='worksheet'&&!canAccessWorksheet(book.id);
+    return '<button type="button" class="book-tab'+(tab===t[0]?' is-active':'')+'" aria-current="'+(tab===t[0]?'page':'false')+'" data-book-tab="'+t[0]+'" data-book-id="'+book.id+'"'+(restricted?' title="관리자가 잠근 활동지예요." aria-label="활동지 · 잠김"':'')+'>'+t[1]+(restricted?'<span class="book-tab-lock" aria-hidden="true">'+svgIcon(I_LOCK)+'</span>':'')+'</button>';
   }).join('') + '</nav>';
   var body = tab==='mine' ? mineTabHtml(book, postId) : tab==='worksheet' ? worksheetTabHtml(book) : tab==='materials' ? materialsTabHtml(book, postId) : tab==='habit' ? habitTabHtml(book) : shareTabHtml(book, postId);
   return '<div class="wrap book-page">' +
     '<div class="book-banner" style="--accent-soft:var(--'+book.accent+'-soft); background:var(--'+book.accent+'-soft)">' +
       '<div class="book-banner-inner">' +
-        '<div class="book-banner-cover"><img src="'+book.cover+'" alt="'+esc(book.title)+' 표지"></div>' +
+        '<div class="book-banner-cover">'+GrowellBookDetails.coverHtml(book)+'</div>' +
         '<div class="book-banner-text">' +
           '<div class="eyebrow" style="color:var(--'+book.accent+'-ink)">'+esc(book.area)+' · 함께 읽는 책</div>' +
           '<h1 style="color:var(--'+book.accent+'-ink)">'+esc(book.title)+'</h1>' +
-          '<div class="byline" style="color:var(--'+book.accent+'-ink)">'+esc(book.subtitle)+'</div>' +
+          '<div class="byline" style="color:var(--'+book.accent+'-ink)">'+esc(book.subtitle)+'</div>'+(SESSION&&readingDataReady()?GrowellBookDetails.hintHtml(book.id,myCurrentPage(book.id)):'') +
         '</div>' +
       '</div>' +
     '</div>' +
@@ -6460,7 +6463,8 @@ function bindEvents(route){
   var app = document.getElementById('app');
 
   bindPrivateCategoryEvents(app);
-  app.querySelectorAll('[data-space-prompt]').forEach(function(button){button.addEventListener('click',function(){var open=document.getElementById('btn-open-share-composer');if(open)open.click();});});
+  GrowellMemberAccess.bind();
+  GrowellBookDetails.bind();
   app.querySelectorAll('[data-retry-community]').forEach(function(button){button.addEventListener('click',function(){sharedPostsLoadState='idle';render();});});
 
   var themeBtn = document.getElementById('btn-theme');
@@ -7318,6 +7322,16 @@ document.addEventListener('click', function(e){
   }catch(err){ /* 설치 배너는 부가 기능 — 실패해도 앱 부팅 자체는 계속 진행 */ }
 })();
 
+GrowellBookDetails.configure({
+  bookById:bookById,currentPage:function(id){return SESSION&&readingDataReady()?myCurrentPage(id):null;},
+  sessionUserId:function(){return SESSION&&SESSION.userId;}
+});
+/* ---------------- member access adapter ---------------- */
+GrowellMemberAccess.configure({
+  get SESSION(){return SESSION;},get saveSessionEpoch(){return saveSessionEpoch;},
+  sb:sb,isAdmin:isAdmin,esc:esc,showToast:showToast,render:render,
+  reloadCommunity:function(){sharedPostsLoadState='idle';render();}
+});
 /* ---------------- community dependency adapter ---------------- */
 GrowellCommunityFeatures.configure({
   get SESSION(){return SESSION;},
