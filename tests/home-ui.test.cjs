@@ -121,7 +121,8 @@ test('first-time guests see the dashboard with real book and login actions witho
   c.myCurrentPage=()=>147;
   const html=c.homeHtml();
   assert.ok(html.includes('home-dashboard'));
-  for(const label of ['함께 읽는 책','오늘의 습관','나만 보는 기록','이번 모임','모임원의 새 글']) assert.ok(html.includes(label),label);
+  for(const label of ['함께 읽는 책','오늘의 습관','이번 모임','모임원의 새 글']) assert.ok(html.includes(label),label);
+  assert.doesNotMatch(html,/나만 보는 기록|home-note/);
   assert.ok(html.includes('감정의 책'));assert.match(html,/200\s*쪽/);
   assert.match(html,/<a[^>]*href="#\/login"[^>]*>로그인하고 이어 읽기/);
   assert.ok(!html.includes('role="progressbar"'));assert.ok(!html.includes('147 / 200'));
@@ -129,14 +130,14 @@ test('first-time guests see the dashboard with real book and login actions witho
   assert.ok(!html.includes('data-home-write="'));assert.ok(!html.includes('PRIVATE'));
 });
 
-test('member dashboard keeps own reading progress, habit controls and private composer action',()=>{
+test('member dashboard keeps own reading progress and habit controls without the removed private note card',()=>{
   const {c}=harness();c.myCurrentPage=()=>147;
   c.STATE.habits.mine={id:'mine',bookId:'emotion',userId:'me',name:'나의 독서 습관',checkedDates:['2026-09-21']};
   c.STATE.habits.other={id:'other',bookId:'emotion',userId:'other',name:'OTHER PRIVATE HABIT',checkedDates:['2026-09-21']};
   const html=c.homeHtml();
   assert.ok(html.includes('오늘의 말씀'));assert.ok(html.includes('147 / 200쪽'));
   assert.ok(html.includes('role="progressbar"'));assert.ok(html.includes('1 / 1 완료'));
-  assert.ok(html.includes('data-home-habit="mine"'));assert.ok(html.includes('data-home-write="emotion"'));
+  assert.ok(html.includes('data-home-habit="mine"'));assert.doesNotMatch(html,/data-home-write|나만 보는 기록|home-note/);
   assert.ok(html.includes('href="#/book/emotion/mine"'));assert.ok(!html.includes('OTHER PRIVATE HABIT'));
   assert.ok(!html.includes('로그인하고 이어 읽기'));
 });
@@ -339,17 +340,6 @@ test('home checkbox forwards every rapid intent to the existing save queue and r
   assert.deepEqual(queued,[['h1','2026-09-21',true],['h1','2026-09-21',false],['h1','2026-09-21',true]]);
   c.SESSION={userId:'other'};input.events.change();assert.equal(queued.length,3);
   c.SESSION=null;input.events.change();assert.equal(queued.length,3);
-});
-
-test('home private-write opens the draft on its target route and ignores late callbacks after navigation or account switch',()=>{
-  const h=harness(),button=control({'data-home-write':'emotion'});
-  h.controls['[data-home-write]']=[button];h.c.bindHomeEvents();button.events.click();
-  assert.equal(h.c.location.hash,'#/book/emotion/mine');
-  assert.equal(h.opened.length,1);assert.equal(h.opened[0][0],'mine');assert.equal(h.opened[0][2],null);
-  h.opened[0][3]();assert.equal(h.c.mineComposerOpenFor,'emotion');assert.equal(h.c.mineEditingPayload,null);
-  const rendered=h.renders.length;
-  button.events.click();h.c.location.hash='#/community';h.opened[1][3]();assert.equal(h.renders.length,rendered);
-  button.events.click();h.c.SESSION={userId:'other'};h.opened[2][3]();assert.equal(h.renders.length,rendered);
 });
 
 test('shared feed loading response from the previous account cannot replace current posts',async()=>{

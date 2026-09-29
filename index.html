@@ -4335,14 +4335,23 @@ function refreshHomePosts(){
 }
 function homeHabitRowsHtml(habits){
   var today=ymd(new Date());
+  var readingBooks=habits.some(function(habit){return !!habit.readingGoal;})?habitArchiveSnapshot():null;
   return habits.map(function(habit){
     var checked=habit.checkedDates.indexOf(today)>=0;
     var goal=habit.goal||(GrowellHabits.behaviorType(habit)==='avoid'?'하루 한 번 절제하기':'하루 한 번 실천하기');
     var time=habit.time||'미설정',place=habit.place||'미설정';
     var pending=Object.keys(habitSaveIntents[habit.id]||{}).length>0;
+    var bookTitle='';
+    if(GrowellHabits.behaviorType(habit)==='do'){
+      if(habit.readingGoal){
+        if(readingBooks.status==='ready')bookTitle=GrowellReadingHabits.progress(habit.readingGoal,readingBooks.rows,SESSION.userId,today).bookTitle;
+      }else if(String(habit.name||'').trim()==='독서'){
+        var meetingBook=bookById(habit.bookId);bookTitle=meetingBook?meetingBook.title:'';
+      }
+    }
     return '<li data-home-habit-card="'+esc(habit.id)+'" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><label class="home-habit">' +
       '<input type="checkbox" data-home-habit="'+esc(habit.id)+'"'+(checked?' checked':'')+'>' +
-      '<span class="home-habit-name">'+esc(habit.name)+'</span><small class="home-habit-meta">'+
+      '<span class="home-habit-heading"><span class="home-habit-name">'+esc(habit.name)+'</span>'+(bookTitle?'<small class="home-habit-book" title="'+esc(bookTitle)+'">'+esc(bookTitle)+'</small>':'')+'</span><small class="home-habit-meta">'+
       '<span class="home-habit-meta-goal" title="'+esc('목표 '+goal)+'"><b>목표</b> <span>'+esc(goal)+'</span></span>'+
       '<span class="home-habit-meta-time" title="'+esc('시간 '+time)+'"><b>시간</b> <span>'+esc(time)+'</span></span>'+
       '<span class="home-habit-meta-place" title="'+esc('장소 '+place)+'"><b>장소</b> <span>'+esc(place)+'</span></span></small></label>' +
@@ -4397,8 +4406,6 @@ function memberHomeHtml(){
       '<section class="home-card home-habits" aria-label="오늘의 습관"><div class="home-card-head"><h2>오늘의 습관</h2>'+(user && !habitStatus?'<span class="home-habit-count" data-home-habit-count aria-live="polite">'+completed+' / '+habits.length+' 완료</span>':'')+'</div>' +
       '<div data-home-habit-content>'+(!user ? '<p class="home-guest-hint">책에서 배운 작은 실천을 매일 체크해요.<br>로그인하면 나의 습관이 여기에 보여요.</p>' : (habitStatus || (habits.length ? '<ul class="home-habit-list">'+homeHabitRowsHtml(habits)+'</ul>' : '<p class="home-empty">오늘 실천할 습관을 만들어 보세요.</p>')))+'</div>' +
       '<div class="home-actions">'+habitLinks+'</div></section>' +
-      '<section class="home-card home-note"><div class="home-note-summary"><h2>'+svgIcon(I_LOCK)+' 나만 보는 기록</h2><small>마음에 남은 한 줄을 남겨요.</small></div>' +
-      (!user?'<a class="home-link" href="#/login">로그인하고 쓰기 →</a>':(book?'<button class="home-link" type="button" data-home-write="'+book.id+'">한 줄 남기기 →</button>':''))+'</section>' +
       homeMeetingHtml() +
     '</div>' +
     '<section class="home-community" aria-labelledby="home-community-title"><div class="home-section-head"><div><h2 id="home-community-title">모임원의 새 글</h2><p>최근 공유 글 3개</p></div><a class="home-link" href="#/community">전체 보기 →</a></div>' +
@@ -4436,18 +4443,6 @@ function bindHomeHabitEvents(){
 }
 function bindHomeEvents(){
   bindHomeDailyVerse();bindHomeHabitEvents();
-  document.querySelectorAll('[data-home-write]').forEach(function(button){
-    button.addEventListener('click',function(){
-      var bookId=button.getAttribute('data-home-write'), target='#/book/'+bookId+'/mine', owner=SESSION && SESSION.userId;
-      if(!owner || !bookById(bookId) || isBookLocked(bookById(bookId))) return;
-      location.hash=target;
-      openComposerWithDraft('mine',bookId,null,function(){
-        if(!SESSION || SESSION.userId!==owner || location.hash!==target) return;
-        mineComposerOpenFor=bookId; mineEditingId=null; mineEditingPayload=null; render();
-        var composer=document.getElementById('note-editor'); if(composer) composer.focus();
-      });
-    });
-  });
   document.querySelectorAll('[data-home-retry-posts]').forEach(function(button){button.addEventListener('click',refreshHomePosts);});
 }
 function welcomeHomeHtml(){
@@ -5651,7 +5646,7 @@ function habitOverviewBodyHtml(){
     var content='<span class="habit-overview-item-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><span class="habit-overview-item-text"><strong>'+esc(habit.name)+'</strong><small>'+esc(source)+'</small></span>';
     var kindAttr=' data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"';
     var todayState=habitTodayState(habit,today);
-    var action='<button type="button" class="habit-overview-toggle'+(todayState.checked?' is-checked':'')+'" data-habit-overview-day="'+esc(habit.id)+'|'+today+'" aria-pressed="'+todayState.checked+'" aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':' 체크')+'"'+(!todayState.canCheck?' disabled':'')+'>'+svgIcon(I_CHECK)+'<span>'+todayState.label+'</span></button>';
+    var action='<button type="button" class="habit-overview-toggle'+(todayState.checked?' is-checked':'')+'" data-habit-overview-day="'+esc(habit.id)+'|'+today+'" aria-pressed="'+todayState.checked+'" aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':' 체크')+'"'+(!todayState.canCheck?' disabled':'')+'>'+svgIcon(I_CHECK)+'</button>';
     return '<div class="habit-overview-item" data-habit-overview-id="'+esc(habit.id)+'"'+kindAttr+'><button type="button" class="habit-overview-open" data-habit-overview-open="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' · '+label+' · '+esc(source)+' 진행 상황 보기">'+content+'</button>'+action+'</div>';
   }).join('');
   var intents=habits.reduce(function(all,habit){return all.concat(Object.values(habitSaveIntents[habit.id]||{}));},[]);

@@ -199,7 +199,7 @@ test('overview includes only the current owner across books and immediately refl
   assert.match(html,/다른 책 습관/);assert.match(html,/data-habit-overview-open="otherBook"/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
   assert.match(html,/data-habit-overview-day="mine\|2026-09-22" aria-pressed="true"[^>]*다시 누르면 취소/);
   assert.match(html,/<\/button><button type="button" class="habit-overview-toggle/);
-  assert.match(html,/class="habit-overview-toggle[^>]*>[\s\S]*?<span>성공<\/span><\/button>/);
+  for(const button of html.matchAll(/<button[^>]*class="habit-overview-toggle[^>]*>([\s\S]*?)<\/button>/g))assert.doesNotMatch(button[1],/성공|<span>/);
   assert.doesNotMatch(html,/<a class="habit-overview-item"/);
   assert.deepEqual(c.STATE.habits.mine.checkedDates,[]);
   c.habitSaveIntents.mine['2026-09-22'].status='error';assert.match(c.habitOverviewBodyHtml(),/저장하지 못한 체크/);
