@@ -1846,6 +1846,7 @@ var materialsEditingId = null;
 var habitFormOpenFor = null; // bookId whose 습관 만들기 추가/수정 폼이 열려있는지
 var habitComposerDialog = null;
 var habitNameDialog = null;
+var habitValueGuideDialog = null;
 var habitEditingId = null; // 수정 중인 habit id, 새로 만드는 중이면 null
 var habitHistoryOpenFor = null; // 지난 기록 팝업이 열려있는 habit id (없으면 null)
 var habitHistoryMonth = null; // 팝업에서 보고 있는 달 {y, m}(m은 0=1월 기준) — 열 때마다 이번 달로 초기화
@@ -5789,7 +5790,7 @@ function habitFormHtml(book,editingHabit){
   var h=editingHabit||{name:'',place:'',time:'',goal:'',startDate:ymd(new Date()),endDate:''};
   var kind=GrowellHabits.behaviorType(h),reading=kind==='do'&&!!h.readingGoal,target=reading?h.readingGoal.targetPages:10;
   var start=h.startDate||habitCreatedStr(h),fields=[
-    ['name','습관 이름','text',reading?'독서':h.name,'직접 입력하거나 예시에서 골라보세요',40],
+    ['name','습관 이름','text',reading?'독서':h.name,'직접 입력하거나 가치별로 골라보세요',40],
     ['place','장소','text',h.place,'예: 침실 독서 의자',30],
     ['time','시간','text',h.time,'예: 매일 저녁 9시',30],
     ['goal','목표','text',h.goal,'예: 매일 15분 읽기',40],
@@ -5797,9 +5798,10 @@ function habitFormHtml(book,editingHabit){
     ['end-date','목표일','date',h.endDate,'',0]];
   return '<div class="habit-form" id="habit-form" data-book="'+esc(book.id)+'">'+
     '<div class="composer-head"><h4 id="habit-form-title">'+(editingHabit?'나에게 맞게 습관 수정':'새 습관 만들기')+'</h4><button type="button" class="icon-btn" id="btn-close-habit-form" aria-label="습관 설정 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
+    '<button type="button" class="habit-value-guide-link" id="habit-value-guide-open" aria-haspopup="dialog">7가지 가치, 왜 습관으로 만들까요? <span aria-hidden="true">→</span></button>'+
     '<fieldset class="habit-kind-picker"><legend>습관 종류</legend><div class="habit-kind-options">'+['do','avoid'].map(function(value){return '<label class="habit-kind-option" data-habit-kind="'+value+'"><input type="radio" name="habit-behavior-type" value="'+value+'"'+(kind===value?' checked':'')+'><span>'+habitKindIconHtml({behaviorType:value})+GrowellHabits.behaviorLabel({behaviorType:value})+'</span></label>';}).join('')+'</div><p class="habit-kind-hint" id="habit-kind-hint">'+GrowellHabits.behaviorHint(h)+'</p></fieldset>'+
     '<section class="habit-reading-settings"'+(kind==='avoid'?' hidden':'')+'><label class="habit-reading-toggle"><input type="checkbox" id="habit-is-reading"'+(reading?' checked':'')+(kind==='avoid'?' disabled':'')+'><span>독서 습관</span></label><div data-habit-reading-fields'+(reading?'':' hidden')+'><label for="habit-reading-book">읽을 책</label><select id="habit-reading-book" aria-label="읽을 책"><option value="">책장을 불러오는 중이에요…</option></select><p data-habit-reading-status role="status"></p><div class="habit-reading-target-head"><label for="habit-reading-pages">하루 목표 페이지</label><output id="habit-reading-pages-value" for="habit-reading-pages">'+target+'쪽</output></div><input type="range" id="habit-reading-pages" min="1" max="'+Math.max(100,target)+'" step="1" value="'+target+'"><p class="habit-form-hint">오늘 저장한 읽은 분량으로 확인해요. 성공은 직접 체크해주세요.</p></div></section>'+
-    '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row'+(f[0]==='name'?' habit-name-field':'')+'"'+(f[0]==='goal'?' data-habit-text-goal'+(reading?' hidden':''):'')+'><label for="habit-'+f[0]+'">'+f[1]+'</label><input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+(f[0]==='name'&&reading?' readonly':'')+'>'+(f[0]==='name'?'<button type="button" class="habit-name-picker-button" id="habit-name-picker" aria-haspopup="dialog"'+(reading?' hidden':'')+'>영역별 습관 고르기</button>':'')+'</div>';}).join('')+'</div>'+
+    '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row'+(f[0]==='name'?' habit-name-field':'')+'"'+(f[0]==='goal'?' data-habit-text-goal'+(reading?' hidden':''):'')+'><label for="habit-'+f[0]+'">'+f[1]+'</label><input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+(f[0]==='name'&&reading?' readonly':'')+'>'+(f[0]==='name'?'<button type="button" class="habit-name-picker-button" id="habit-name-picker" aria-haspopup="dialog"'+(reading?' hidden':'')+'>가치별 습관 고르기</button>':'')+'</div>';}).join('')+'</div>'+
     '<p class="habit-form-hint">목표 기간에는 매일 한 번 체크해요. 목표일을 비워두면 계속 실천할 수 있어요. 기간을 바꿔도 이전 체크 기록은 보관됩니다.</p>'+
     '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button>'+(editingHabit?'<button type="button" class="habit-delete-link" data-delete-habit="'+esc(editingHabit.id)+'">'+svgIcon(I_TRASH)+' 이 습관 삭제</button>':'')+'</div>';
 }
@@ -5819,7 +5821,46 @@ function syncHabitComposerKind(node){
   node.querySelector('[data-habit-text-goal]').hidden=reading.checked;
   if(reading.checked)refreshHabitComposerBooks();
 }
+function closeHabitValueGuide(restore){
+  var node=habitValueGuideDialog;if(!node)return;
+  habitValueGuideDialog=null;node.close();node.remove();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('habit-values');
+  var parent=node._parent;
+  if(restore!==false&&habitComposerDialog===parent&&parent.isConnected&&SESSION===parent._session&&saveSessionEpoch===parent._epoch&&parent._route===location.href){
+    var trigger=node._trigger;
+    if(trigger&&trigger.isConnected)trigger.focus({preventScroll:true});
+    else parent.querySelector('#habit-value-guide-open').focus({preventScroll:true});
+  }
+}
+function openHabitValueGuide(parent,trigger,valueId){
+  function current(){return habitComposerDialog===parent&&parent.isConnected&&SESSION===parent._session&&saveSessionEpoch===parent._epoch&&parent._route===location.href;}
+  if(!current())return;closeHabitValueGuide(false);
+  var values=GrowellHabitSuggestions.categories(),guide=GrowellHabitSuggestions.guide(),node=document.createElement('dialog');
+  habitValueGuideDialog=node;node._parent=parent;node._trigger=trigger;node._page=values.some(function(value){return value.id===valueId;})?valueId:'intro';
+  node.className='habit-value-guide';node.setAttribute('aria-labelledby','habit-value-guide-title');
+  node.innerHTML='<header class="habit-name-head habit-value-guide-head"><div><span class="habit-value-guide-eyebrow">GROWELL HABIT GUIDE</span><h4 id="habit-value-guide-title">'+esc(guide.title)+'</h4></div><button type="button" class="icon-btn" id="habit-value-guide-close" aria-label="가치 습관 가이드 닫기">'+svgIcon(I_CLOSE)+'</button></header><div class="habit-value-guide-body"><nav class="habit-value-guide-nav" aria-label="가치 가이드 목차"><button type="button" data-habit-value-page="intro">시작 안내</button>'+values.map(function(value){return '<button type="button" data-habit-value-page="'+value.id+'" data-value="'+value.id+'">'+value.label+' <small>'+value.hanja+'</small></button>';}).join('')+'</nav><div data-habit-value-guide-content></div></div><footer class="habit-value-guide-footer"><button type="button" class="btn btn-primary" id="habit-value-guide-return">닫고 돌아가기</button></footer>';
+  function paint(){
+    if(!current()){closeHabitValueGuide(false);return;}
+    node.querySelectorAll('[data-habit-value-page]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-habit-value-page')===node._page));});
+    var content=node.querySelector('[data-habit-value-guide-content]'),value=values.find(function(item){return item.id===node._page;});
+    if(!value){
+      content.innerHTML='<section class="habit-value-guide-intro"><span class="habit-value-guide-eyebrow">작은 습관으로 돌보는 나의 일상</span><h5>어떤 사람으로 자라고 싶나요?</h5><p class="habit-value-guide-lead">'+esc(guide.intro)+'</p></section><div class="habit-value-guide-map">'+values.map(function(item){return '<button type="button" data-habit-value-jump="'+item.id+'" data-value="'+item.id+'"><b>'+item.label+' <span>'+item.hanja+'</span></b><small>'+esc(item.title)+'</small></button>';}).join('')+'</div><section class="habit-value-guide-section"><h5>'+esc(guide.whyTitle)+'</h5><p>'+esc(guide.why)+'</p><p>'+esc(guide.connection)+'</p></section><section class="habit-value-guide-section"><h5>가치를 오늘의 습관으로 만드는 법</h5><ol class="habit-value-guide-steps">'+guide.steps.map(function(step){return '<li><b>'+esc(step.title)+'</b><p>'+esc(step.text)+'</p></li>';}).join('')+'</ol></section><p class="habit-value-guide-closing">'+esc(guide.closing)+'</p>';
+      content.querySelectorAll('[data-habit-value-jump]').forEach(function(button){button.onclick=function(){node._page=button.getAttribute('data-habit-value-jump');paint();node.querySelector('[data-habit-value-page="'+node._page+'"]').focus({preventScroll:true});};});
+    }else{
+      content.innerHTML='<article class="habit-value-guide-value" data-value="'+value.id+'"><header class="habit-value-guide-value-head"><div class="habit-value-seal" aria-hidden="true">'+value.label+'<span>'+value.hanja+'</span></div><div><h5>'+value.label+'('+value.hanja+')</h5><p>'+esc(value.title)+'</p></div></header><p class="habit-value-guide-lead">'+esc(value.summary)+'</p><section class="habit-value-guide-section"><h5>이 가치는 무엇인가요?</h5><p>'+esc(value.description)+'</p></section><section class="habit-value-guide-section"><h5>왜 습관으로 이어가나요?</h5><p>'+esc(value.why)+'</p></section><section class="habit-value-guide-section"><h5>이렇게 작게 시작해 보세요</h5><dl class="habit-value-guide-examples">'+value.examples.map(function(example){return '<div><dt>'+esc(example.keyword)+'</dt><dd>'+esc(example.action)+'</dd></div>';}).join('')+'</dl></section><blockquote class="habit-value-guide-question"><span>나에게 묻기</span><p>'+esc(value.reflection)+'</p></blockquote></article>';
+    }
+    node.scrollTop=0;
+  }
+  document.body.appendChild(node);
+  node.querySelector('#habit-value-guide-close').onclick=function(){closeHabitValueGuide();};
+  node.querySelector('#habit-value-guide-return').onclick=function(){closeHabitValueGuide();};
+  node.addEventListener('cancel',function(event){event.preventDefault();closeHabitValueGuide();});
+  node.querySelectorAll('[data-habit-value-page]').forEach(function(button){button.onclick=function(){node._page=button.getAttribute('data-habit-value-page');paint();};});
+  paint();node.showModal();
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('habit-values',{close:function(){closeHabitValueGuide();}});
+}
 function closeHabitNamePicker(restore){
+  closeHabitValueGuide(false);
   var node=habitNameDialog;if(!node)return;
   habitNameDialog=null;node.close();node.remove();
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('habit-name');
@@ -5835,17 +5876,22 @@ function openHabitNamePicker(parent){
   var kind=parent.querySelector('[name="habit-behavior-type"]:checked').value,categories=GrowellHabitSuggestions.categories();
   var node=document.createElement('dialog');habitNameDialog=node;node._parent=parent;
   node.className='habit-name-dialog';node.setAttribute('aria-labelledby','habit-name-title');
-  node._category=categories.some(function(item){return item.id===habitFormOpenFor;})?habitFormOpenFor:categories[0].id;
   node._customValue=parent.querySelector('#habit-name').value;
-  node.innerHTML='<header class="habit-name-head"><div><h4 id="habit-name-title">습관 이름 고르기</h4><p>'+GrowellHabits.behaviorLabel({behaviorType:kind})+' · 나에게 맞는 작은 습관을 골라보세요.</p></div><button type="button" class="icon-btn" id="habit-name-close" aria-label="습관 이름 선택 닫기">'+svgIcon(I_CLOSE)+'</button></header>'+
-    '<div class="habit-name-tabs" role="group" aria-label="습관 영역">'+categories.concat([{id:'custom',label:'직접 입력'}]).map(function(item){return '<button type="button" data-habit-name-category="'+item.id+'" aria-pressed="'+(item.id===node._category)+'">'+item.label+'</button>';}).join('')+'</div><div data-habit-name-content></div>';
-  function choose(value){
+  var matched=categories.find(function(item){return GrowellHabitSuggestions.suggestions(kind,item.id).indexOf(node._customValue)>=0;});
+  node._category=matched?matched.id:categories[0].id;
+  node.innerHTML='<header class="habit-name-head"><div><h4 id="habit-name-title">가치별 습관 고르기</h4><p>'+GrowellHabits.behaviorLabel({behaviorType:kind})+' · 오늘 돌보고 싶은 가치를 골라보세요.</p></div><button type="button" class="icon-btn" id="habit-name-close" aria-label="습관 이름 선택 닫기">'+svgIcon(I_CLOSE)+'</button></header><button type="button" class="habit-value-guide-link" id="habit-name-guide-open" aria-haspopup="dialog">7가지 가치 가이드 보기 <span aria-hidden="true">→</span></button>'+
+    '<div class="habit-name-tabs" role="group" aria-label="습관 가치">'+categories.concat([{id:'custom',label:'직접 입력'}]).map(function(item){return '<button type="button" data-habit-name-category="'+item.id+'" aria-pressed="'+(item.id===node._category)+'"><b>'+item.label+'</b>'+(item.hanja?'<small>'+item.hanja+'</small>':'')+'</button>';}).join('')+'</div><div data-habit-name-content></div>';
+  function choose(value,fromKeyword){
     if(!current()){closeHabitNamePicker(false);return;}
     var name=String(value||'').trim();
     if(!name){node.querySelector('[data-habit-name-error]').textContent='습관 이름을 입력해주세요.';node.querySelector('#habit-name-custom-input').focus();return;}
     if(name.length>40)return;
     parent.querySelector('#habit-name').value=name;parent._manualName=name;
     closeHabitNamePicker();
+    if(fromKeyword&&name==='독서'&&kind==='do'){
+      parent.querySelector('#habit-is-reading').checked=true;syncHabitComposerKind(parent);
+      parent.querySelector('#habit-reading-book').focus({preventScroll:true});
+    }
   }
   function paint(){
     node.querySelectorAll('[data-habit-name-category]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-habit-name-category')===node._category));});
@@ -5857,19 +5903,22 @@ function openHabitNamePicker(parent){
       input.onkeydown=function(event){if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229){event.preventDefault();choose(input.value);}};
       node.querySelector('#habit-name-custom-apply').onclick=function(){choose(input.value);};
     }else{
-      var options=GrowellHabitSuggestions.suggestions(kind,node._category);
-      content.innerHTML='<div class="habit-name-options">'+options.map(function(name,index){return '<button type="button" class="habit-name-option" data-habit-name-option="'+index+'">'+esc(name)+'</button>';}).join('')+'</div>';
-      node.querySelectorAll('[data-habit-name-option]').forEach(function(button){button.onclick=function(){choose(options[Number(button.getAttribute('data-habit-name-option'))]);};});
+      var options=GrowellHabitSuggestions.suggestions(kind,node._category),value=categories.find(function(item){return item.id===node._category;});
+      content.innerHTML='<section class="habit-value-intro" data-value="'+value.id+'"><div class="habit-value-seal" aria-hidden="true">'+value.label+'<span>'+value.hanja+'</span></div><div><h5>'+esc(value.title)+'</h5><p>'+esc(value.summary)+'</p><button type="button" class="habit-value-more" data-habit-value-info="'+value.id+'" aria-haspopup="dialog">의미와 실천 이유 →</button></div></section><div class="habit-name-options">'+options.map(function(name,index){return '<button type="button" class="habit-name-option" data-habit-name-option="'+index+'">'+esc(name)+'</button>';}).join('')+'</div><p class="habit-form-hint">'+(kind==='avoid'?'지키고 싶은 가치를 고르고, 목표에는 줄이거나 멈출 행동을 구체적으로 적어주세요. 독서 습관은 실천할 습관에서 만들 수 있어요.':'키워드를 고른 다음, 목표에 언제 무엇을 얼마나 할지 적어보세요.')+'</p>';
+      node.querySelector('[data-habit-value-info]').onclick=function(){openHabitValueGuide(parent,this,value.id);};
+      node.querySelectorAll('[data-habit-name-option]').forEach(function(button){button.onclick=function(){choose(options[Number(button.getAttribute('data-habit-name-option'))],true);};});
     }
   }
   document.body.appendChild(node);
   node.querySelector('#habit-name-close').onclick=function(){closeHabitNamePicker();};
+  node.querySelector('#habit-name-guide-open').onclick=function(){openHabitValueGuide(parent,this);};
   node.addEventListener('cancel',function(event){event.preventDefault();closeHabitNamePicker();});
   node.querySelectorAll('[data-habit-name-category]').forEach(function(button){button.onclick=function(){if(!current()){closeHabitNamePicker(false);return;}node._category=button.getAttribute('data-habit-name-category');paint();};});
   paint();node.showModal();
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('habit-name',{close:function(){closeHabitNamePicker();}});
 }
 function closeHabitComposer(restore){
+  closeHabitValueGuide(false);
   closeHabitNamePicker(false);
   var node=habitComposerDialog;if(!node)return;
   habitComposerDialog=null;habitFormOpenFor=null;habitEditingId=null;
@@ -5916,6 +5965,7 @@ function openHabitComposer(bookId,habitId,trigger){
   var reading=node.querySelector('#habit-is-reading'),slider=node.querySelector('#habit-reading-pages'),select=node.querySelector('#habit-reading-book');
   reading.onchange=function(){syncHabitComposerKind(node);};
   node.querySelector('#habit-name-picker').onclick=function(){openHabitNamePicker(node);};
+  node.querySelector('#habit-value-guide-open').onclick=function(){openHabitValueGuide(node,this);};
   slider.oninput=function(){node.querySelector('#habit-reading-pages-value').textContent=slider.value+'쪽';};
   select.onchange=function(){node._selectedBook=select.value;refreshHabitComposerBooks();};
   node.querySelectorAll('[name="habit-behavior-type"]').forEach(function(input){input.onchange=function(){syncHabitComposerKind(node);};});

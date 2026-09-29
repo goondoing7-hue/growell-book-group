@@ -4,7 +4,24 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const path=require('node:path');
 const readingHabits=require('../readingHabit.js');
+const habitSuggestions=require('../habitSuggestions.js');
 const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+
+test('seven values retain the requested keywords, reading exclusion and isolated guide data',()=>{
+  const expected={faith:['기도','묵상','필사','통독'],love:['대화','연락','칭찬','편지'],virtue:['인사','양보','봉사','절제'],wisdom:['독서','공부','복습','자격증'],emotion:['일기','경청','산책','위로'],beauty:['청소','음악','그림','예술'],body:['운동','달리기','호흡','식단','수면','걷기','스트레칭']};
+  const categories=habitSuggestions.categories(),guide=habitSuggestions.guide(),baseline=JSON.stringify({categories,guide});
+  assert.deepEqual(categories.map(item=>item.id),Object.keys(expected));assert.deepEqual(categories.map(item=>item.label+item.hanja),['성聖','애愛','덕德','지智','정情','미美','체體']);
+  for(const value of categories){
+    assert.deepEqual(habitSuggestions.suggestions('do',value.id),expected[value.id]);assert.deepEqual(habitSuggestions.suggestions('avoid',value.id),expected[value.id].filter(keyword=>keyword!=='독서'));assert.deepEqual(value.examples.map(example=>example.keyword),expected[value.id]);
+    for(const key of ['title','summary','description','why','reflection'])assert.ok(typeof value[key]==='string'&&value[key].trim().length>5,key+' explains '+value.id);for(const example of value.examples)assert.ok(example.action.length>10);
+  }
+  assert.equal(categories.flatMap(value=>habitSuggestions.suggestions('do',value.id)).length,31);assert.equal(categories.flatMap(value=>habitSuggestions.suggestions('avoid',value.id)).length,30);
+  for(const args of [['unknown','faith'],['do','thought'],['avoid','invalid'],['do','__proto__'],['do',null]])assert.deepEqual(habitSuggestions.suggestions(...args),[]);
+  assert.match(categories[0].description,/거룩/);assert.match(categories[0].description,/은혜/);assert.match(guide.intro,/성·애·덕·지·정·미·체/);assert.match(guide.why,/일곱/);assert.match(guide.why,/모두 해내야 한다는 뜻은 아니/);assert.match(guide.connection,/서로 이어/);assert.equal(guide.steps.length,4);assert.match(guide.steps.map(step=>step.text).join(' '),/목표와 시간, 장소/);assert.match(guide.closing,/체크의 개수로 나의 가치를 평가하지/);assert.doesNotMatch(baseline,/큐인|학교|상담복지센터/);
+  categories[0].title='changed';categories[0].examples[0].keyword='changed';categories[0].examples.push({keyword:'extra',action:'extra'});categories.pop();guide.steps[0].text='changed';guide.steps.push({title:'extra',text:'extra'});guide.intro='changed';const suggestions=habitSuggestions.suggestions('do','faith');suggestions[0]='changed';suggestions.push('extra');
+  assert.equal(JSON.stringify({categories:habitSuggestions.categories(),guide:habitSuggestions.guide()}),baseline);assert.deepEqual(habitSuggestions.suggestions('do','faith'),expected.faith);
+});
+
 function harness(){
   const original={id:'h1',userId:'owner',bookId:'emotion',name:'이전 이름',place:'집',time:'밤',goal:'10분',startDate:'2026-09-01',endDate:'2026-09-30',checkedDates:['2026-09-01'],createdAt:123,compatibilityField:'preserved'};
   let mutation,saves=0;const toasts=[];
@@ -397,7 +414,7 @@ function popupHarness(){
 
 function composerHarness(){
   const h=popupHarness(),c=h.c,dialogs=[],saves=[],toasts=[];
-  Object.assign(c,{habitComposerDialog:null,habitNameDialog:null,habitFormOpenFor:null,habitEditingId:null,saveSessionEpoch:1,memberLoadState:{habits:'ready',readingLogs:'ready',readingMeta:'ready'},
+  Object.assign(c,{habitComposerDialog:null,habitNameDialog:null,habitValueGuideDialog:null,habitFormOpenFor:null,habitEditingId:null,saveSessionEpoch:1,memberLoadState:{habits:'ready',readingLogs:'ready',readingMeta:'ready'},
     GrowellReadingHabits:readingHabits,GrowellHabitSuggestions:require('../habitSuggestions.js'),GrowellArchive:{readingSnapshot:()=>({status:'ready',rows:[archiveRow()]})},readingDataReady:()=>true,
     bookById:id=>({id,title:'모임 책'}),showToast:(...args)=>toasts.push(args),uid:()=> 'new-habit',saveState:(mutate,options)=>saves.push({mutate,options})});
   c.document.body={appendChild:node=>{node.isConnected=true;dialogs.push(node);}};
@@ -423,10 +440,12 @@ function composerHarness(){
         const attrs={};for(const [,key,v1,v2] of raw.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g))attrs[key]=decode(v1??v2??'');
         const item={attrs,tagName:name.toUpperCase(),value:attrs.value||'',checked:Object.hasOwn(attrs,'checked'),hidden:Object.hasOwn(attrs,'hidden'),disabled:Object.hasOwn(attrs,'disabled'),readOnly:Object.hasOwn(attrs,'readonly'),innerHTML:'',textContent:'',
           getAttribute:key=>Object.hasOwn(attrs,key)?attrs[key]:null,setAttribute(key,val){attrs[key]=String(val);},hasAttribute:key=>Object.hasOwn(attrs,key),removeAttribute(key){delete attrs[key];},
-          focus(){c.document.activeElement=this;},select(){this.selected=true;},addEventListener(event,fn){this['on'+event]=fn;},insertAdjacentHTML(where,value){this.innerHTML+=value;},
+          focus(){if(this.isConnected)c.document.activeElement=this;},select(){this.selected=true;},addEventListener(event,fn){this['on'+event]=fn;},insertAdjacentHTML(where,value){this.innerHTML+=value;},
           click(){if(this.disabled)return;if(this.attrs.type==='radio'){nodes.filter(other=>other.attrs.name===this.attrs.name).forEach(other=>{other.checked=false;});this.checked=true;if(this.onchange)this.onchange({target:this});}else if(this.onclick)return this.onclick({target:this,preventDefault(){}});}};
         item.dataset=Object.fromEntries(Object.entries(attrs).filter(([key])=>key.startsWith('data-')).map(([key,value])=>[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase()),value]));
         let content='',contentNodes=[];
+        Object.defineProperty(item,'isConnected',{get:()=>node.isConnected&&nodes.includes(item)});
+        item.querySelector=selector=>contentNodes.find(child=>matches(child,selector))||null;item.querySelectorAll=selector=>contentNodes.filter(child=>matches(child,selector));
         Object.defineProperty(item,'innerHTML',{get:()=>content,set:value=>{
           content=value;const old=new Set(contentNodes);nodes=nodes.filter(item=>!old.has(item));
           contentNodes=parse(value);nodes.push(...contentNodes);
@@ -493,24 +512,41 @@ test('editing an old avoiding habit never preselects its incompatible stored rea
   assert.equal(c.STATE.habits.h2.behaviorType,'avoid');assert.equal(c.STATE.habits.h2.readingGoal,null);assert.equal(c.STATE.habits.h2.name,'화면 쉬기');
 });
 
-test('habit name picker offers all four areas for the chosen kind and saves the selected recommendation',()=>{
+test('habit name picker offers seven values independently of the book area and preserves the draft when applying a keyword',()=>{
   for(const kind of ['do','avoid']){
     const h=composerHarness(),c=h.c;c.openHabitComposer('thought',null,h.trigger);const parent=c.habitComposerDialog;
+    const fields={goal:'미리 쓴 작은 목표',place:'집',time:'오후 8시','start-date':'2026-09-21','end-date':'2026-10-20'};for(const [key,value] of Object.entries(fields))parent.querySelector('#habit-'+key).value=value;
     parent.querySelector('[name="habit-behavior-type"][value="'+kind+'"]').click();parent.querySelector('#habit-name-picker').click();const picker=c.habitNameDialog;
-    assert.equal(picker.open,true);assert.equal(parent.open,true);assert.equal(picker.querySelector('[data-habit-name-category="thought"]').getAttribute('aria-pressed'),'true');
-    assert.deepEqual(picker.querySelectorAll('[data-habit-name-category]').map(button=>button.getAttribute('data-habit-name-category')),['emotion','thought','body','action','custom']);
-    for(const category of ['emotion','thought','body','action']){
+    assert.equal(picker.open,true);assert.equal(parent.open,true);assert.equal(picker.querySelector('[data-habit-name-category="faith"]').getAttribute('aria-pressed'),'true');
+    assert.deepEqual(picker.querySelectorAll('[data-habit-name-category]').map(button=>button.getAttribute('data-habit-name-category')),['faith','love','virtue','wisdom','emotion','beauty','body','custom']);
+    for(const category of ['faith','love','virtue','wisdom','emotion','beauty','body']){
       picker.querySelector('[data-habit-name-category="'+category+'"]').click();
       assert.equal(picker.querySelectorAll('[data-habit-name-option]').length,c.GrowellHabitSuggestions.suggestions(kind,category).length);
     }
     picker.querySelector('[data-habit-name-category="body"]').click();picker.querySelector('[data-habit-name-option="2"]').click();
     const expected=c.GrowellHabitSuggestions.suggestions(kind,'body')[2];
-    assert.equal(c.habitNameDialog,null);assert.equal(picker.isConnected,false);assert.equal(parent.open,true);assert.equal(parent.querySelector('#habit-name').value,expected);assert.equal(parent.querySelector('#habit-name').readOnly,false);assert.equal(h.saves.length,0);
-    parent.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);const state={habits:{}};h.saves[0].mutate(state);assert.equal(state.habits['new-habit'].name,expected);assert.equal(state.habits['new-habit'].behaviorType,kind);assert.equal(state.habits['new-habit'].readingGoal,null);
+    assert.equal(c.habitNameDialog,null);assert.equal(picker.isConnected,false);assert.equal(parent.open,true);assert.equal(parent.querySelector('#habit-name').value,expected);assert.equal(parent.querySelector('#habit-name').readOnly,false);assert.equal(h.saves.length,0);for(const [key,value] of Object.entries(fields))assert.equal(parent.querySelector('#habit-'+key).value,value);
+    parent.querySelector('#habit-name-picker').click();assert.equal(c.habitNameDialog.querySelector('[data-habit-name-category="body"]').getAttribute('aria-pressed'),'true');c.closeHabitNamePicker();
+    parent.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);const state={habits:{}};h.saves[0].mutate(state);assert.equal(state.habits['new-habit'].name,expected);assert.equal(state.habits['new-habit'].behaviorType,kind);assert.equal(state.habits['new-habit'].readingGoal,null);assert.equal(state.habits['new-habit'].bookId,'thought');assert.equal(state.habits['new-habit'].goal,fields.goal);
   }
 });
 
-test('custom habit names preserve their draft across area tabs, reject empty input and wait for Korean composition',()=>{
+test('choosing the wisdom reading keyword activates reading settings while typing that name remains a plain habit',()=>{
+  for(const mode of ['keyword','custom']){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('body',null,h.trigger);const parent=c.habitComposerDialog;
+    parent.querySelector('#habit-goal').value='기존 수기 목표';parent.querySelector('#habit-place').value='책상';parent.querySelector('#habit-name-picker').click();const picker=c.habitNameDialog;
+    if(mode==='keyword'){
+      picker.querySelector('[data-habit-name-category="wisdom"]').click();const index=c.GrowellHabitSuggestions.suggestions('do','wisdom').indexOf('독서');assert.ok(index>=0);picker.querySelector('[data-habit-name-option="'+index+'"]').click();
+    }else{
+      picker.querySelector('[data-habit-name-category="custom"]').click();const input=picker.querySelector('#habit-name-custom-input');input.value='독서';input.oninput();picker.querySelector('#habit-name-custom-apply').click();
+    }
+    assert.equal(c.habitNameDialog,null);assert.equal(parent.querySelector('#habit-name').value,'독서');assert.equal(parent.querySelector('#habit-is-reading').checked,mode==='keyword');assert.equal(parent.querySelector('#habit-name').readOnly,mode==='keyword');assert.equal(parent.querySelector('[data-habit-reading-fields]').hidden,mode!=='keyword');assert.equal(parent.querySelector('[data-habit-text-goal]').hidden,mode==='keyword');assert.equal(parent.querySelector('#habit-goal').value,'기존 수기 목표');assert.equal(parent.querySelector('#habit-place').value,'책상');assert.equal(parent.querySelector('#habit-value-guide-open').hidden,false);assert.equal(h.saves.length,0);
+    if(mode==='keyword'){parent.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,0,'a reading keyword still requires an owned book');const select=parent.querySelector('#habit-reading-book'),slider=parent.querySelector('#habit-reading-pages');select.value='archive-one';select.onchange();slider.value='17';slider.oninput();}
+    parent.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);const state={habits:{}};h.saves[0].mutate(state);const saved=state.habits['new-habit'];assert.equal(saved.name,'독서');assert.equal(saved.bookId,'body');assert.equal(saved.goal,mode==='keyword'?'하루 17쪽 읽기':'기존 수기 목표');assert.deepEqual(saved.readingGoal?{...saved.readingGoal}:null,mode==='keyword'?readingGoal({targetPages:17}):null);
+  }
+});
+
+test('custom habit names preserve their draft across value tabs, reject empty input and wait for Korean composition',()=>{
   const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const parent=c.habitComposerDialog;
   parent.querySelector('#habit-name').value='이전 이름';parent.querySelector('#habit-name-picker').click();const picker=c.habitNameDialog;picker.querySelector('[data-habit-name-category="custom"]').click();
   let input=picker.querySelector('#habit-name-custom-input');assert.equal(input.value,'이전 이름');input.value='  ';input.oninput();picker.querySelector('#habit-name-custom-apply').click();
@@ -519,6 +555,36 @@ test('custom habit names preserve their draft across area tabs, reject empty inp
   for(const event of [{key:'Enter',isComposing:true},{key:'Enter',keyCode:229}]){input.onkeydown({...event,preventDefault(){assert.fail('composition must continue');}});assert.equal(c.habitNameDialog,picker);}
   input.onkeydown({key:'Enter',isComposing:false,preventDefault(){}});assert.equal(c.habitNameDialog,null);assert.equal(parent.querySelector('#habit-name').value,'나만의 좋은 습관');assert.equal(c.document.activeElement,parent.querySelector('#habit-name'));
   parent.querySelector('#btn-habit-submit').click();const state={habits:{}};h.saves[0].mutate(state);assert.equal(state.habits['new-habit'].name,'나만의 좋은 습관');
+});
+
+test('value guide stays available for reading habits and browsing every value never changes the composer draft',()=>{
+  const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const parent=c.habitComposerDialog,reading=parent.querySelector('#habit-is-reading');reading.checked=true;reading.onchange();
+  parent.querySelector('#habit-reading-book').value='archive-one';parent.querySelector('#habit-reading-pages').value='19';parent.querySelector('#habit-place').value='작성 중인 장소';parent.querySelector('#habit-goal').value='보관할 수기 목표';
+  const before=JSON.stringify(c.STATE),trigger=parent.querySelector('#habit-value-guide-open');assert.equal(trigger.hidden,false);trigger.click();const guide=c.habitValueGuideDialog;assert.equal(guide.open,true);assert.equal(parent.open,true);assert.equal(guide.querySelector('[data-habit-value-page="intro"]').getAttribute('aria-pressed'),'true');assert.match(guide.querySelector('[data-habit-value-guide-content]').innerHTML,/어떤 사람으로 자라고 싶나요/);
+  assert.deepEqual(guide.querySelectorAll('[data-habit-value-page]').map(button=>button.getAttribute('data-habit-value-page')),['intro','faith','love','virtue','wisdom','emotion','beauty','body']);
+  for(const value of c.GrowellHabitSuggestions.categories()){
+    guide.querySelector('[data-habit-value-page="intro"]').click();guide.querySelector('[data-habit-value-jump="'+value.id+'"]').click();const content=guide.querySelector('[data-habit-value-guide-content]').innerHTML;assert.ok(content.includes(value.description));assert.ok(content.includes(value.why));assert.ok(content.includes(value.reflection));assert.equal(guide.querySelector('[data-habit-value-page="'+value.id+'"]').getAttribute('aria-pressed'),'true');assert.equal(c.document.activeElement,guide.querySelector('[data-habit-value-page="'+value.id+'"]'));
+  }
+  guide.querySelector('#habit-value-guide-return').click();assert.equal(c.habitValueGuideDialog,null);assert.equal(guide.isConnected,false);assert.equal(c.habitComposerDialog,parent);assert.equal(c.document.activeElement,trigger);assert.equal(parent.querySelector('#habit-is-reading').checked,true);assert.equal(parent.querySelector('#habit-name').value,'독서');assert.equal(parent.querySelector('#habit-reading-book').value,'archive-one');assert.equal(parent.querySelector('#habit-reading-pages').value,'19');assert.equal(parent.querySelector('#habit-place').value,'작성 중인 장소');assert.equal(parent.querySelector('#habit-goal').value,'보관할 수기 목표');assert.equal(JSON.stringify(c.STATE),before);assert.equal(h.saves.length,0);
+});
+
+test('Back unwinds guide, value picker and composer one at a time while retaining their draft and selected value',()=>{
+  const h=composerHarness(),c=h.c;h.browser.scrollY=620;c.openHabitComposer('thought',null,h.trigger);const parent=c.habitComposerDialog;parent.querySelector('#habit-name').value='작성 중인 습관';parent.querySelector('#habit-goal').value='매일 5분';parent.querySelector('#habit-name-picker').click();const picker=c.habitNameDialog;
+  picker.querySelector('[data-habit-name-category="beauty"]').click();const trigger=picker.querySelector('[data-habit-value-info="beauty"]');trigger.click();const guide=c.habitValueGuideDialog;assert.equal(guide.querySelector('[data-habit-value-page="beauty"]').getAttribute('aria-pressed'),'true');assert.equal(parent.open,true);assert.equal(picker.open,true);h.back();
+  assert.equal(c.habitValueGuideDialog,null);assert.equal(guide.isConnected,false);assert.equal(c.habitNameDialog,picker);assert.equal(c.habitComposerDialog,parent);assert.equal(picker.querySelector('[data-habit-name-category="beauty"]').getAttribute('aria-pressed'),'true');assert.equal(c.document.activeElement,trigger);assert.equal(parent.querySelector('#habit-name').value,'작성 중인 습관');assert.equal(parent.querySelector('#habit-goal').value,'매일 5분');assert.equal(h.browser.scrollY,620);assert.equal(h.saves.length,0);
+  picker.querySelector('#habit-name-guide-open').click();assert.equal(c.habitValueGuideDialog.querySelector('[data-habit-value-page="intro"]').getAttribute('aria-pressed'),'true');c.habitValueGuideDialog.querySelector('#habit-value-guide-close').click();assert.equal(c.habitNameDialog,picker);h.back();assert.equal(c.habitNameDialog,null);assert.equal(c.habitComposerDialog,parent);assert.equal(parent.querySelector('#habit-goal').value,'매일 5분');h.back();assert.equal(c.habitComposerDialog,null);assert.equal(c.document.activeElement,h.trigger);assert.match(h.browser.location.href,/#\/book\/emotion\/habit$/);assert.equal(h.saves.length,0);
+});
+
+test('closing a picker or composer closes its nested guide and stale guide controls cannot act after session or route changes',()=>{
+  for(const closing of ['picker','composer']){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const parent=c.habitComposerDialog;parent.querySelector('#habit-name-picker').click();c.habitNameDialog.querySelector('#habit-name-guide-open').click();const guide=c.habitValueGuideDialog;
+    if(closing==='picker')c.closeHabitNamePicker();else c.closeHabitComposer();assert.equal(c.habitValueGuideDialog,null);assert.equal(guide.isConnected,false);assert.equal(c.habitNameDialog,null);assert.equal(c.habitComposerDialog,closing==='picker'?parent:null);assert.equal(h.saves.length,0);
+  }
+  for(const change of ['owner','epoch','route']){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const parent=c.habitComposerDialog;parent.querySelector('#habit-name').value='변경하지 않을 이름';parent.querySelector('#habit-value-guide-open').click();const guide=c.habitValueGuideDialog,focus={};
+    if(change==='owner')c.SESSION={userId:'different'};else if(change==='epoch')c.saveSessionEpoch++;else h.browser.location.href='https://example.test/#/';c.document.activeElement=focus;
+    guide.querySelector('[data-habit-value-jump="faith"]').click();assert.equal(c.habitValueGuideDialog,null);assert.equal(guide.isConnected,false);assert.equal(c.document.activeElement,focus);assert.equal(parent.querySelector('#habit-name').value,'변경하지 않을 이름');assert.equal(h.saves.length,0);parent.querySelector('#habit-value-guide-open').click();assert.equal(c.habitValueGuideDialog,null);
+  }
 });
 
 test('Back from the name picker retains the composer draft and stale account choices cannot apply',()=>{
