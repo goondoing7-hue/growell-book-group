@@ -213,7 +213,7 @@
 .home-dashboard .home-habit-name { display: block; line-height: 1.45; }
 .home-dashboard .home-habit-heading { display: flex; align-items: baseline; gap: 8px; }
 .home-dashboard .home-habit-heading .home-habit-name { flex: 0 0 auto; max-width: 100%; }
-.home-dashboard .home-habit-book { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.home-dashboard .home-habit-book { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); font-size: 10px; font-weight: 400; line-height: 1.5; }
 .home-dashboard .home-habit-meta { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; color: var(--ink-soft); font-size: 13px; font-weight: 500; line-height: 1.6; }
 .home-dashboard .home-habit-meta > span { display: flex; align-items: baseline; gap: 3px; min-width: 0; white-space: nowrap; }
 .home-dashboard .home-habit-meta > span + span { border-left: 1px solid var(--line); padding-left: 5px; margin-left: 5px; }
