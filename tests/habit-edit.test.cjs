@@ -130,6 +130,10 @@ function cardHarness(){
   vm.createContext(c);vm.runInContext(source.slice(source.indexOf('function pad2('),source.indexOf('function habitFormHtml(')),c);
   return c;
 }
+function overviewCheckbox(html,id,date){
+  const input=Array.from(html.matchAll(/<input\b[^>]*>/g),match=>match[0]).find(tag=>tag.includes('data-habit-overview-day="'+id+'|'+date+'"'));
+  assert.ok(input,'the overview uses a native checkbox for '+id);assert.match(input,/type="checkbox"/);assert.match(input,/class="habit-overview-toggle/);assert.doesNotMatch(input,/aria-pressed=/);return input;
+}
 test('habit card shows successes against the whole target period rather than elapsed days',()=>{
   const c=cardHarness(),h={id:'h1',name:'책 읽기',startDate:'2026-09-20',endDate:'2026-09-29',checkedDates:['2026-09-20','2026-09-21'],behaviorType:'do'};
   const html=c.habitCardHtml(h);
@@ -187,7 +191,7 @@ test('today success remains reversible for avoiding habits alongside their own r
 test('overview includes only the current owner across books and immediately reflects unsaved check intentions',()=>{
   const c=cardHarness();c.SESSION={userId:'owner'};c.memberLoadState={habits:'ready'};
   c.STATE={habits:{
-    mine:{id:'mine',userId:'owner',bookId:'emotion',name:'내 습관',startDate:'2026-09-22',checkedDates:[]},
+    mine:{id:'mine',userId:'owner',bookId:'emotion',name:'내 습관',goal:'15분 <집중>',time:'21:00 "밤"',place:'거실 & 소파',startDate:'2026-09-22',checkedDates:[]},
     otherBook:{id:'otherBook',userId:'owner',bookId:'action',name:'다른 책 습관',startDate:'2026-09-22',checkedDates:[]},
     stranger:{id:'stranger',userId:'someone-else',bookId:'emotion',name:'타인 습관',startDate:'2026-09-22',checkedDates:['2026-09-22']}
   }};
@@ -197,13 +201,28 @@ test('overview includes only the current owner across books and immediately refl
   const html=c.habitOverviewBodyHtml();
   assert.match(html,/오늘 성공<\/span><strong>1<small> \/ 2개/);assert.match(html,/오늘 남음<\/span><strong>1<small>개/);
   assert.match(html,/다른 책 습관/);assert.match(html,/data-habit-overview-open="otherBook"/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
-  assert.match(html,/data-habit-overview-day="mine\|2026-09-22" aria-pressed="true"[^>]*다시 누르면 취소/);
-  assert.match(html,/<\/button><button type="button" class="habit-overview-toggle/);
-  for(const button of html.matchAll(/<button[^>]*class="habit-overview-toggle[^>]*>([\s\S]*?)<\/button>/g))assert.doesNotMatch(button[1],/성공|<span>/);
+  const input=overviewCheckbox(html,'mine','2026-09-22');assert.match(input,/\schecked(?:\s|>)/);assert.match(input,/aria-label="[^\"]*다시 누르면 취소/);
+  assert.doesNotMatch(overviewCheckbox(html,'otherBook','2026-09-22'),/\schecked(?:\s|>)/);
+  assert.match(html,/class="habit-overview-item home-habit"/);assert.match(html,/class="habit-overview-open home-habit-heading"/);assert.match(html,/home-habit-name">내 습관/);assert.doesNotMatch(html,/home-habit-book/);
+  assert.match(html,/<b>목표<\/b> <span>15분 &lt;집중&gt;/);assert.match(html,/<b>시간<\/b> <span>21:00 &quot;밤&quot;/);assert.match(html,/<b>장소<\/b> <span>거실 &amp; 소파/);
+  assert.match(html,/<b>목표<\/b> <span>하루 한 번 실천하기/);assert.match(html,/<b>시간<\/b> <span>미설정/);assert.match(html,/<b>장소<\/b> <span>미설정/);
   assert.doesNotMatch(html,/<a class="habit-overview-item"/);
   assert.deepEqual(c.STATE.habits.mine.checkedDates,[]);
   c.habitSaveIntents.mine['2026-09-22'].status='error';assert.match(c.habitOverviewBodyHtml(),/저장하지 못한 체크/);
 });
+test('overview book titles follow reading habits and never reveal foreign, deleted or unavailable archive books',()=>{
+  const c=cardHarness(),snapshot={status:'ready',rows:[archiveRow({book:{title:'<선택한 책> & 기록',deleted:false,readingSessions:[]}})]};
+  Object.assign(c,{SESSION:{userId:'owner'},memberLoadState:{habits:'ready'},habitWithPendingChecks:habit=>habit,habitArchiveSnapshot:()=>snapshot,GrowellReadingHabits:readingHabits,bookById:()=>({title:'모임 책 <제목>'})});
+  const habit={id:'one',userId:'owner',bookId:'emotion',name:'독서',startDate:'2026-09-01',checkedDates:[]};
+  function render(extra={}){c.STATE={habits:{one:{...habit,...extra}}};return c.habitOverviewBodyHtml();}
+  assert.match(render(),/home-habit-book[^>]*>모임 책 &lt;제목&gt;/);assert.doesNotMatch(render({name:'산책'}),/home-habit-book/);
+  const avoid=render({behaviorType:'avoid',readingGoal:readingGoal()});assert.doesNotMatch(avoid,/home-habit-book/);assert.match(avoid,/<b>목표<\/b> <span>하루 한 번 절제하기/);
+  assert.match(render({name:'매일 읽기',readingGoal:readingGoal()}),/home-habit-book[^>]*>&lt;선택한 책&gt; &amp; 기록/);
+  snapshot.rows[0].entry.userId='someone-else';assert.doesNotMatch(render({readingGoal:readingGoal()}),/home-habit-book|선택한 책|모임 책/);
+  snapshot.rows[0].entry.userId='owner';snapshot.rows[0].book.deleted=true;assert.doesNotMatch(render({readingGoal:readingGoal()}),/home-habit-book|선택한 책|모임 책/);
+  snapshot.rows[0].book.deleted=false;for(const status of ['loading','error']){snapshot.status=status;assert.doesNotMatch(render({readingGoal:readingGoal()}),/home-habit-book|선택한 책|모임 책/);}
+});
+
 test('overview loading failures never turn stale habits into a current-state summary',()=>{
   const c=cardHarness();c.SESSION={userId:'owner'};c.memberLoadState={habits:'error'};c.memberDataStatusHtml=()=>'<p>연결을 확인해주세요.</p>';
   c.STATE={habits:{stale:{userId:'owner',name:'오래된 습관'}}};
@@ -230,8 +249,9 @@ test('overview keeps habit order and its save-status slot through rapid undo, re
   function verify(firstChecked,secondChecked,status){
     const html=panel.innerHTML;
     assert.deepEqual(Array.from(html.matchAll(/data-habit-overview-id="([^"]+)"/g),match=>match[1]),['first','second','upcoming','ended']);
-    assert.match(html,new RegExp('data-habit-overview-day="first\\|'+today+'" aria-pressed="'+firstChecked+'"'));
-    assert.match(html,new RegExp('data-habit-overview-day="second\\|'+today+'" aria-pressed="'+secondChecked+'"'));
+    assert.equal(/\schecked(?:\s|>)/.test(overviewCheckbox(html,'first',today)),firstChecked);
+    assert.equal(/\schecked(?:\s|>)/.test(overviewCheckbox(html,'second',today)),secondChecked);
+    assert.match(overviewCheckbox(html,'upcoming',today),/\sdisabled(?:\s|>)/);assert.match(overviewCheckbox(html,'ended',today),/\sdisabled(?:\s|>)/);
     const saveSlot=html.match(/<p class="habit-overview-save"[^>]*>([\s\S]*?)<\/p>/);
     assert.ok(saveSlot,'idle, pending and completed views retain the same save-status slot');
     if(status==='saving')assert.match(saveSlot[1],/체크 저장 중/);

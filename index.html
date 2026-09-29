@@ -5638,16 +5638,21 @@ function habitOverviewBodyHtml(){
   var rows=habits.slice().sort(function(a,b){return order(a)-order(b)||(Number(a.createdAt)||0)-(Number(b.createdAt)||0);}).map(function(habit){
     var b=GrowellHabits.bounds(habit,today),status=today<b.start?'upcoming':b.end&&today>b.end?'ended':GrowellHabits.status(habit,today,today)==='success'?'success':'pending';
     var label={upcoming:'시작 전',ended:'기간 종료',success:'오늘 성공',pending:'오늘 도전 중'}[status],book=bookById(habit.bookId);
-    var source=book?book.title:'연결된 책';
+    var source=book?book.title:'연결된 책',bookTitle='';
     if(habit.readingGoal&&typeof GrowellReadingHabits!=='undefined'){
       var archive=habitArchiveSnapshot(),reading=archive.status==='ready'?GrowellReadingHabits.progress(habit.readingGoal,archive.rows,SESSION.userId,today):null;
       source=reading&&reading.available?reading.bookTitle:'독서 목표';
+      if(GrowellHabits.behaviorType(habit)==='do'&&reading&&reading.available)bookTitle=reading.bookTitle;
+    }else if(GrowellHabits.behaviorType(habit)==='do'&&String(habit.name||'').trim()==='독서'){
+      bookTitle=book?book.title:'';
     }
-    var content='<span class="habit-overview-item-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><span class="habit-overview-item-text"><strong>'+esc(habit.name)+'</strong><small>'+esc(source)+'</small></span>';
+    var content='<span class="home-habit-name">'+esc(habit.name)+'</span>'+(bookTitle?'<small class="home-habit-book" title="'+esc(bookTitle)+'">'+esc(bookTitle)+'</small>':'');
+    var goal=habit.goal||(GrowellHabits.behaviorType(habit)==='avoid'?'하루 한 번 절제하기':'하루 한 번 실천하기'),time=habit.time||'미설정',place=habit.place||'미설정';
+    var meta='<small class="home-habit-meta"><span class="home-habit-meta-goal" title="'+esc('목표 '+goal)+'"><b>목표</b> <span>'+esc(goal)+'</span></span><span class="home-habit-meta-time" title="'+esc('시간 '+time)+'"><b>시간</b> <span>'+esc(time)+'</span></span><span class="home-habit-meta-place" title="'+esc('장소 '+place)+'"><b>장소</b> <span>'+esc(place)+'</span></span></small>';
     var kindAttr=' data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"';
     var todayState=habitTodayState(habit,today);
-    var action='<button type="button" class="habit-overview-toggle'+(todayState.checked?' is-checked':'')+'" data-habit-overview-day="'+esc(habit.id)+'|'+today+'" aria-pressed="'+todayState.checked+'" aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':' 체크')+'"'+(!todayState.canCheck?' disabled':'')+'>'+svgIcon(I_CHECK)+'</button>';
-    return '<div class="habit-overview-item" data-habit-overview-id="'+esc(habit.id)+'"'+kindAttr+'><button type="button" class="habit-overview-open" data-habit-overview-open="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' · '+label+' · '+esc(source)+' 진행 상황 보기">'+content+'</button>'+action+'</div>';
+    var action='<input type="checkbox" class="habit-overview-toggle" data-habit-overview-day="'+esc(habit.id)+'|'+today+'"'+(todayState.checked?' checked':'')+' aria-label="'+esc(habit.name)+' · '+todayState.label+(todayState.checked?' · 다시 누르면 취소':' 체크')+'"'+(!todayState.canCheck?' disabled':'')+'>';
+    return '<div class="habit-overview-item home-habit" data-habit-overview-id="'+esc(habit.id)+'"'+kindAttr+'>'+action+'<button type="button" class="habit-overview-open home-habit-heading" data-habit-overview-open="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' · '+label+' · '+esc(source)+' 진행 상황 보기">'+content+'</button>'+meta+'</div>';
   }).join('');
   var intents=habits.reduce(function(all,habit){return all.concat(Object.values(habitSaveIntents[habit.id]||{}));},[]);
   var pending=intents.some(function(intent){return intent.status==='error';})?'저장하지 못한 체크가 포함돼 있어요. 해당 습관에서 다시 저장해주세요.':intents.length?'체크 저장 중…':'';

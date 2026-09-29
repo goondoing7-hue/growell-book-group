@@ -22,23 +22,11 @@
 .habit-overview-stats strong{display:block;font-size:28px;font-weight:800;line-height:1.35;color:var(--primary);font-variant-numeric:tabular-nums;margin-top:7px;}
 .habit-overview-stats small{font-size:13px;font-weight:650;}
 .habit-overview-period{font-size:12px;line-height:1.65;color:var(--ink-soft);margin:12px 0 16px;}
-.habit-overview-items{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;}
-.habit-overview-item{display:flex;align-items:stretch;gap:0;min-width:0;border:1px solid var(--line);border-radius:12px;color:var(--ink);cursor:pointer;}
-.habit-overview-open{display:flex;align-items:center;gap:10px;min-width:0;flex:1;padding:13px 14px;text-align:left;border:0;border-radius:11px;background:transparent;color:var(--ink);font:inherit;cursor:pointer;}
-.habit-overview-open:hover{background:var(--surface-2);}
-.habit-overview-open:focus-visible,.habit-overview-toggle:focus-visible{outline:3px solid var(--habit-accent);outline-offset:2px;}
-.habit-overview-toggle{display:inline-flex;align-items:center;justify-content:center;align-self:center;flex:none;box-sizing:border-box;margin:8px 12px 8px 0;width:40px;height:40px;padding:0;border:1px solid var(--habit-accent);border-radius:8px;background:var(--surface);color:var(--habit-accent);font:inherit;cursor:pointer;}
-.habit-overview-toggle svg{width:18px;height:18px;flex:none;opacity:.55;}
-.habit-overview-toggle.is-checked{background:var(--habit-accent-fill);color:var(--habit-accent-on-fill);}
-.habit-overview-toggle.is-checked svg{opacity:1;}
-.habit-overview-toggle:disabled{border-color:var(--line);background:var(--surface-2);color:var(--ink-soft);cursor:default;}
-.habit-overview-item-icon{display:flex;align-items:center;color:var(--habit-accent);flex:none;}
-.habit-overview-item-icon .habit-kind-icon{width:19px;height:19px;}
-.habit-overview-item-text{min-width:0;flex:1;}
-.habit-overview-item-text strong{display:block;font-size:14px;line-height:1.5;font-weight:750;overflow-wrap:anywhere;}
-.habit-overview-item-text small{display:block;color:var(--ink-soft);font-size:11px;line-height:1.5;margin-top:3px;overflow-wrap:anywhere;}
-.habit-overview-item-status{flex:none;font-size:11px;font-weight:700;line-height:1.5;white-space:nowrap;color:var(--ink-soft);}
-.habit-overview-item-status.is-success{color:var(--habit-accent);background:var(--habit-accent-soft);padding:4px 7px;border-radius:6px;}
+.habit-overview-items{display:grid;grid-template-columns:1fr;gap:7px;}
+.habit-overview-item{min-width:0;color:var(--ink);}
+.habit-overview-open{min-width:0;padding:0;text-align:left;border:0;border-radius:4px;background:transparent;color:var(--ink);font:inherit;cursor:pointer;}
+.habit-overview-open:focus-visible,.habit-overview-toggle:focus-visible{outline:2px solid var(--habit-accent);outline-offset:3px;}
+@media(max-width:620px){.habit-overview-items{gap:4px;}}
 .habit-overview-note,.habit-overview-save{font-size:12px;line-height:1.7;color:var(--ink-soft);margin:15px 0 0;}
 .habit-overview-save{color:var(--primary);font-weight:650;margin-top:7px;min-height:1.7em;}
 .habit-section .habit-list{gap:18px;}
@@ -213,7 +201,7 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
 @media(max-width:540px){
  .habit-overview{padding:20px 16px;margin-bottom:18px;}.habit-overview h3{font-size:20px;}.habit-overview-message{font-size:14px;margin:10px 0 15px;min-height:3.3em;}
  .habit-overview-stats{gap:6px;}.habit-overview-stats>div{padding:12px 9px;}.habit-overview-stats span{font-size:11px;}.habit-overview-stats strong{font-size:24px;}.habit-overview-stats small{font-size:11px;}
- .habit-overview-items{grid-template-columns:1fr;gap:7px;}.habit-overview-open{padding:11px 10px;gap:8px;}.habit-overview-toggle{margin-right:9px;}.habit-overview-item-text strong{font-size:13px;}.habit-overview-note{font-size:11px;}
+ .habit-overview-note{font-size:11px;}
  .habit-hero{padding:8px 0 22px;}.habit-hero h2{font-size:28px;letter-spacing:-.8px;}.habit-hero p{font-size:15px;}.habit-hero-kicker,.habit-hero-date{font-size:11px;padding:6px 8px;}
  .habit-card{padding:21px 18px 15px;border-radius:20px;}.habit-card-head{align-items:flex-start;gap:5px;}.habit-title-button{font-size:18px;}
  .habit-card-identity{gap:9px;}.habit-card-kind-icon .habit-kind-icon{width:20px;height:20px;}.habit-card-kind-label{font-size:11px;}

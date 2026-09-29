@@ -205,6 +205,18 @@ test('today habit keeps the name and goal with compact escaped time and place wi
   assert.match(html,/<b>시간<\/b> <span>21:00/);assert.match(html,/<b>장소<\/b> <span>거실 &amp; 소파/);
   const unset=c.homeHabitRowsHtml([{...habit,time:'',place:''}]);
   assert.match(unset,/<b>시간<\/b> <span>미설정/);assert.match(unset,/<b>장소<\/b> <span>미설정/);
+  assert.match(c.homeHabitRowsHtml([{...habit,goal:''}]),/<b>목표<\/b> <span>하루 한 번 실천하기/);assert.match(c.homeHabitRowsHtml([{...habit,goal:'',behaviorType:'avoid'}]),/<b>목표<\/b> <span>하루 한 번 절제하기/);
+});
+
+test('home habit book titles appear only for reading and protect unavailable or another members archive book',()=>{
+  const {c}=harness(),snapshot={status:'ready',rows:[{entry:{id:'archive-one',userId:'me'},book:{title:'<내 책> & 읽기',deleted:false,readingSessions:[]}}]};
+  c.GrowellReadingHabits=require('../readingHabit.js');c.habitArchiveSnapshot=()=>snapshot;
+  const habit={id:'reading',name:'독서',bookId:'emotion',checkedDates:[]},goal={bookId:'archive-one',linkedBookId:'',targetPages:10};
+  const render=extra=>c.homeHabitRowsHtml([{...habit,...extra}]);
+  assert.match(render(),/home-habit-book[^>]*>감정의 책/);assert.doesNotMatch(render({name:'산책'}),/home-habit-book|감정의 책/);assert.doesNotMatch(render({behaviorType:'avoid',readingGoal:goal}),/home-habit-book|감정의 책|내 책/);
+  assert.match(render({name:'매일 읽기',readingGoal:goal}),/home-habit-book[^>]*>&lt;내 책&gt; &amp; 읽기/);snapshot.rows[0].entry.userId='other';assert.doesNotMatch(render({readingGoal:goal}),/home-habit-book|내 책|감정의 책/);
+  snapshot.rows[0].entry.userId='me';snapshot.rows[0].book.deleted=true;assert.doesNotMatch(render({readingGoal:goal}),/home-habit-book|내 책|감정의 책/);
+  snapshot.rows[0].book.deleted=false;for(const status of ['loading','error']){snapshot.status=status;assert.doesNotMatch(render({readingGoal:goal}),/home-habit-book|내 책|감정의 책/);}
 });
 test('home shows the complete escaped daily verse and reference in place of the old greeting',()=>{
   const {c}=harness();c.GrowellDailyVerses=[{reference:'긴 말씀',text:'긴 문장은 모바일 표시 목록에서 제외합니다. '.repeat(4)},{reference:'출처 <1:1>',text:'짧은 말씀 <원문>을 그대로 표시합니다.'}];
