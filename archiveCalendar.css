@@ -16,7 +16,7 @@
 .archive-calendar-month h3{min-width:130px;text-align:center;font-size:20px;font-weight:700;letter-spacing:-.03em;margin:0}
 .archive-calendar-month .icon-btn{width:34px;height:34px}
 .archive-calendar-month .icon-btn:disabled{opacity:.3;cursor:default}
-.archive-calendar-statistics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding-bottom:20px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.archive-calendar-statistics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;padding-bottom:20px;margin-bottom:14px;border-bottom:1px solid var(--line)}
 .archive-calendar-statistics>button{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-width:0;padding:0;border:0;background:none;font:inherit;font-size:12px;color:var(--ink-soft);line-height:1.5;text-align:left;cursor:pointer}.archive-calendar-statistics>button:focus-visible{outline:2px solid var(--space-green);outline-offset:5px;border-radius:4px}.archive-calendar-statistics>button:hover strong{color:var(--space-green)}
 .archive-calendar-statistics strong{color:var(--ink);font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
 .archive-calendar-statistics small{font-size:11px;font-weight:500;margin-left:3px;color:var(--ink-soft)}
@@ -56,3 +56,5 @@
  .archive-calendar-weekdays,.archive-calendar-dates,.archive-calendar-bars{column-gap:2px}
  .archive-calendar-book{font-size:10px;padding-left:2px;padding-right:2px}
 }
+
+.archive-calendar-theme-help{font-size:11px;line-height:1.6;color:var(--ink-faint);margin:-6px 0 16px}

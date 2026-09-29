@@ -16,6 +16,16 @@
   var NOTE_CATEGORIES = ['quote','thought','question','insight'];
   var NOTE_BACKGROUNDS = ['#EFE6D8','#E4EEE6','#F3E1E6','#E1EAF3','#E9E2F2','#F4EDE0'];
 
+  function themeBadgesHtml(themes){
+    if(!Array.isArray(themes)) return '';
+    var labels={emotion:'감정',thought:'생각',body:'신체',action:'행동'};
+    var selected=THEME_IDS.filter(function(id){return themes.indexOf(id)>=0;});
+    if(!selected.length) return '';
+    return '<span class="archive-theme-badges">'+selected.map(function(id){
+      return '<span class="archive-theme-badge archive-theme-badge-'+id+'">'+labels[id]+'</span>';
+    }).join('')+'</span>';
+  }
+
   function validOwner(value){
     return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value);
   }
@@ -355,7 +365,7 @@
   }
 
   return {FORMAT:FORMAT,STORAGE_BOOK_ID:STORAGE_BOOK_ID,recordId:recordId,archiveId:archiveId,
-    isArchiveEntry:isArchiveEntry,safeCoverUrl:safeCoverUrl,prepare:prepare,encode:encode,decode:decode,summary:summary,
+    isArchiveEntry:isArchiveEntry,safeCoverUrl:safeCoverUrl,themeBadgesHtml:themeBadgesHtml,prepare:prepare,encode:encode,decode:decode,summary:summary,
     progress:progress,totalReadingSeconds:totalReadingSeconds,addReadingSession:addReadingSession,
     upsertNote:upsertNote,removeNote:removeNote,mergeLinkedRows:mergeLinkedRows};
 });

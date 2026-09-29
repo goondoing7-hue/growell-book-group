@@ -57,11 +57,50 @@ test('book covers and titles are safe and the simple list excludes reading/revie
  assert.doesNotMatch(node.body.innerHTML,/<img src=x|javascript:|onerror=alert\(1\)>|숨겨진/);assert.match(node.body.innerHTML,/&lt;img/);assert.match(node.body.innerHTML,/&quot;책&quot;/);assert.match(node.body.innerHTML,/src="https:\/\/image.yes24.com\/goods\/1\/L"/);h.api.reset();
 });
 
-test('calendar statistics open lists for its displayed month/year and nested Back preserves that calendar position',()=>{
+test('calendar statistics show the displayed month and four cumulative themes with nested Back preserving position',()=>{
  const h=harness();vm.runInContext(fs.readFileSync(path.join(__dirname,'../archiveCalendar.js'),'utf8'),h.c);
- const rows=[row('aug',{startDate:'2025-08-01',endDate:'2025-08-15'}),row('sep',{endDate:'2026-09-10'}),row('current',{status:'reading',endDate:''})];
- h.c.GrowellArchiveCalendar.open(h.options(rows,'total',{now:'2025-09-28'}));const calendarNode=h.nodes[0];calendarNode.querySelector('[data-calendar-shift="-1"]').onclick();calendarNode.scrollTop=320;
+ const rows=[row('aug',{startDate:'2025-08-01',endDate:'2025-08-15',themes:['emotion','thought']}),row('sep',{endDate:'2026-09-10',themes:['emotion']}),row('undated',{startDate:'',endDate:'',themes:['thought','body']}),row('current',{status:'reading',endDate:'',themes:['action']})];
+ h.c.GrowellArchiveCalendar.open(h.options(rows,'total',{now:'2025-09-28'}));const calendarNode=h.nodes[0];
+ function count(kind){const match=calendarNode.body.innerHTML.match(new RegExp('data-calendar-stat="'+kind+'"[^>]*>[^<]*<strong>(\\d+)'));assert.ok(match,kind);return Number(match[1]);}
+ assert.deepEqual(calendarNode.querySelectorAll('[data-calendar-stat]').map(b=>b.dataset.calendarStat),['monthCompleted','emotion','thought','body','action']);
+ for(const removed of ['total','reading','yearCompleted'])assert.equal(calendarNode.querySelector('[data-calendar-stat="'+removed+'"]'),null);
+ const themeCounts={emotion:2,thought:2,body:1,action:0};
+ assert.equal(count('monthCompleted'),0);for(const theme of Object.keys(themeCounts))assert.equal(count(theme),themeCounts[theme]);
+ calendarNode.querySelector('[data-calendar-shift="-1"]').onclick();calendarNode.scrollTop=320;
+ assert.equal(count('monthCompleted'),1);for(const theme of Object.keys(themeCounts))assert.equal(count(theme),themeCounts[theme],'theme counts do not change with the displayed month');
  const button=calendarNode.querySelector('[data-calendar-stat="monthCompleted"]');button.onclick();const node=h.nodes.at(-1);assert.match(node.innerHTML,/2025년 8월 완독한 책/);assert.deepEqual(node.querySelectorAll('[data-stats-book]').map(b=>b.dataset.statsBook),['aug']);
  node.querySelector('[data-stats-book="aug"]').onclick();h.back();assert.equal(node.open,true);assert.equal(calendarNode.open,true);h.back();assert.equal(node.open,false);assert.equal(calendarNode.open,true);assert.equal(calendarNode.scrollTop,320);assert.match(calendarNode.body.innerHTML,/2025년 8월/);assert.equal(h.focused.at(-1).button,button);
- calendarNode.querySelector('[data-calendar-stat="yearCompleted"]').onclick();assert.deepEqual(h.nodes.at(-1).querySelectorAll('[data-stats-book]').map(b=>b.dataset.statsBook),['aug']);h.c.GrowellArchiveCalendar.reset();assert.equal(h.nodes.at(-1).open,false);assert.equal(calendarNode.open,false);
+ calendarNode.querySelector('[data-calendar-stat="emotion"]').onclick();assert.deepEqual(h.nodes.at(-1).querySelectorAll('[data-stats-book]').map(b=>b.dataset.statsBook),['aug','sep']);assert.match(h.nodes.at(-1).innerHTML,/감정 · 누적 완독한 책/);
+ h.back();assert.equal(calendarNode.open,true);assert.equal(calendarNode.scrollTop,320);assert.equal(h.focused.at(-1).button,calendarNode.querySelector('[data-calendar-stat="emotion"]'));
+ calendarNode.querySelector('[data-calendar-stat="body"]').onclick();assert.deepEqual(h.nodes.at(-1).querySelectorAll('[data-stats-book]').map(b=>b.dataset.statsBook),['undated']);h.c.GrowellArchiveCalendar.reset();assert.equal(h.nodes.at(-1).open,false);assert.equal(calendarNode.open,false);
+});
+
+test('theme lists count completed books across dates once per owner and per selected theme',()=>{
+ const multi=row('multi',{themes:['emotion','thought','emotion'],endDate:'2001-02-03'}),undated=row('undated',{themes:['emotion','body'],endDate:''});
+ const rows=[multi,multi,undated,row('action',{themes:['action'],endDate:'not-a-date'}),row('reading',{themes:['emotion','action'],status:'reading'}),row('unread',{themes:['body'],status:'unread'}),row('deleted',{themes:['thought'],deleted:true}),row('foreign',{themes:['emotion','action']},'other'),row('no-array',{themes:'emotion'}),row('no-theme')],before=JSON.stringify(rows);
+ assert.deepEqual(stats.themeSummary(rows,'reader'),{emotion:2,thought:1,body:1,action:1});
+ const expected={emotion:['multi','undated'],thought:['multi'],body:['undated'],action:['action']};
+ for(const theme of Object.keys(expected))for(const date of ['1900-01-01','2026-09-29','2099-12-31'])assert.deepEqual(stats.matchingRows(rows,theme,date,'reader').map(r=>r.entry.id),expected[theme]);
+ assert.deepEqual(Object.keys(stats.summary(rows,'2026-09-29','reader')),kinds,'existing four-key summary contract stays unchanged');
+ assert.equal(JSON.stringify(rows),before);
+});
+
+test('theme popup labels and nested Back retain the original selected theme control',()=>{
+ for(const [theme,label] of [['emotion','감정'],['thought','생각'],['body','신체'],['action','행동']]){
+  const h=harness(),node=h.open([row('selected',{themes:[theme],endDate:''})],theme),button=node.querySelector('[data-stats-book="selected"]');
+  assert.match(node.innerHTML,new RegExp(label+' · 누적 완독한 책'));assert.equal(node.open,true);
+  node.scrollTop=130;button.onclick();h.back();assert.equal(node.open,true);assert.equal(node.scrollTop,130);
+  const target=h.replaceTrigger();h.back();assert.equal(node.removed,true);assert.equal(h.focused.at(-1).button,target);
+ }
+});
+
+test('theme-only changes repaint cover badges while retaining the focused book and list position',()=>{
+ const h=harness(),node=h.open([row('selected',{themes:['emotion']})],'total'),button=node.querySelector('[data-stats-book="selected"]');
+ assert.match(node.body.innerHTML,/archive-theme-badge-emotion/);assert.doesNotMatch(node.body.innerHTML,/archive-theme-badge-thought/);
+ node.scrollTop=145;node.body.scrollTop=35;const writes=node.body.writes;
+ h.api.refresh([row('selected',{themes:['emotion','thought']})]);assert.equal(node.body.writes,writes+1);assert.match(node.body.innerHTML,/archive-theme-badge-thought/);
+ assert.equal(node.querySelector('[data-stats-book="selected"]'),button);assert.equal(node.scrollTop,145);assert.equal(node.body.scrollTop,35);
+ h.api.refresh([row('selected',{themes:['emotion','thought'],review:'unrelated'})]);assert.equal(node.body.writes,writes+1);
+ h.api.reset();const themed=h.open([row('selected',{themes:['emotion','thought']})],'emotion');
+ h.api.refresh([row('selected',{themes:['thought']})]);assert.equal(themed.querySelectorAll('[data-stats-book]').length,0);assert.match(themed.body.innerHTML,/아직 해당하는 책이 없어요/);h.api.reset();
 });
