@@ -154,10 +154,10 @@
 .habit-name-head>button{grid-column:2;grid-row:1/3;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:8px;border:1px solid var(--line);border-radius:50%;background:var(--surface);color:var(--ink-soft);cursor:pointer;}
 .habit-name-head>button svg{width:18px;height:18px;}
 .habit-name-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:5px;margin:0 0 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);}
-.habit-name-tabs button{box-sizing:border-box;display:flex;align-items:baseline;justify-content:center;gap:5px;min-width:0;min-height:46px;padding:9px 3px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-soft);font:inherit;font-size:13px;font-weight:650;line-height:1.4;white-space:nowrap;cursor:pointer;}
+.habit-name-tabs button{box-sizing:border-box;display:flex;align-items:baseline;justify-content:center;gap:5px;min-width:0;min-height:46px;padding:9px 3px;border:1px solid var(--habit-value-line,var(--line));border-radius:8px;background:var(--habit-value-soft,var(--surface));color:var(--habit-value-ink,var(--ink-soft));font:inherit;font-size:13px;font-weight:650;line-height:1.4;white-space:nowrap;cursor:pointer;}
 .habit-name-tabs button>b{font-size:18px;font-weight:750;line-height:1.3;}.habit-name-tabs button>small{font-size:12px;font-weight:500;line-height:1.4;}
 .habit-name-tabs button[data-habit-name-category="custom"]>b{font-size:12px;font-weight:650;letter-spacing:-.02em;}
-.habit-name-tabs button[aria-pressed=true]{border-color:var(--habit-value-line,var(--line));background:var(--habit-value-soft,var(--surface));color:var(--habit-value-ink,var(--brand-green,var(--primary)));font-weight:750;}
+.habit-name-tabs button[aria-pressed=true]{border-color:var(--habit-value-ink,var(--primary));background:var(--habit-value-selected,var(--surface-2));color:var(--habit-value-ink,var(--primary));box-shadow:inset 0 0 0 1px var(--habit-value-ink,var(--primary));font-weight:750;}
 .habit-name-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
 .habit-name-option{box-sizing:border-box;display:flex;align-items:center;justify-content:center;min-width:0;min-height:48px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px;font-weight:650;line-height:1.6;text-align:center;word-break:keep-all;overflow-wrap:anywhere;cursor:pointer;}
 .habit-name-option[aria-pressed=true]{border-color:var(--brand-green,var(--primary));background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--primary));}
@@ -175,16 +175,16 @@
 .habit-name-picker-button svg{flex:none;width:16px;height:16px;}
 .habit-name-dialog :is(button,input):focus-visible,.habit-name-picker-button:focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:3px;}
 .habit-name-dialog button:disabled,.habit-name-picker-button:disabled{opacity:.5;cursor:default;}
-@media(hover:hover){.habit-name-option:hover,.habit-name-picker-button:hover{border-color:var(--brand-green,var(--primary));background:var(--brand-soft,var(--surface-2));}.habit-name-tabs button:not([aria-pressed=true]):hover{color:var(--ink);background:var(--surface);}}
-/* Seven values share theme-aware tints, without recoloring other habit screens. */
-:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button){--habit-value-tone:#647e70;--habit-value-soft:color-mix(in srgb,var(--habit-value-tone) 9%,var(--surface));--habit-value-line:color-mix(in srgb,var(--habit-value-tone) 24%,var(--line));--habit-value-ink:color-mix(in srgb,var(--habit-value-tone) 38%,var(--ink));}
-:is(.habit-name-dialog,.habit-value-guide) :is([data-value="faith"],[data-habit-name-category="faith"]){--habit-value-tone:#6e73a0;}
-:is(.habit-name-dialog,.habit-value-guide) :is([data-value="love"],[data-habit-name-category="love"]){--habit-value-tone:#a86e80;}
-:is(.habit-name-dialog,.habit-value-guide) :is([data-value="virtue"],[data-habit-name-category="virtue"]){--habit-value-tone:#a1814b;}
-:is(.habit-name-dialog,.habit-value-guide) :is([data-value="wisdom"],[data-habit-name-category="wisdom"]){--habit-value-tone:#607c98;}
-:is(.habit-name-dialog,.habit-value-guide) :is([data-value="emotion"],[data-habit-name-category="emotion"]){--habit-value-tone:#b27856;}
-:is(.habit-name-dialog,.habit-value-guide) :is([data-value="beauty"],[data-habit-name-category="beauty"]){--habit-value-tone:#8a6f98;}
-:is(.habit-name-dialog,.habit-value-guide) :is([data-value="body"],[data-habit-name-category="body"]){--habit-value-tone:#5f866c;}
+@media(hover:hover){.habit-name-option:hover,.habit-name-picker-button:hover{border-color:var(--brand-green,var(--primary));background:var(--brand-soft,var(--surface-2));}.habit-name-tabs button:not([aria-pressed=true]):hover{border-color:var(--habit-value-ink,var(--line));color:var(--habit-value-ink,var(--ink));background:var(--habit-value-soft,var(--surface));}}
+/* Seven values share theme-aware tints only within habit components. */
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword){--habit-value-tone:#647e70;--habit-value-soft:color-mix(in srgb,var(--habit-value-tone) 12%,var(--surface));--habit-value-selected:color-mix(in srgb,var(--habit-value-tone) 21%,var(--surface));--habit-value-line:color-mix(in srgb,var(--habit-value-tone) 32%,var(--line));--habit-value-ink:color-mix(in srgb,var(--habit-value-tone) 60%,var(--ink));}
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword)[data-value="faith"],.habit-name-tabs>button[data-habit-name-category="faith"]{--habit-value-tone:#6e73a0;}
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword)[data-value="love"],.habit-name-tabs>button[data-habit-name-category="love"]{--habit-value-tone:#a86e80;}
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword)[data-value="virtue"],.habit-name-tabs>button[data-habit-name-category="virtue"]{--habit-value-tone:#a1814b;}
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword)[data-value="wisdom"],.habit-name-tabs>button[data-habit-name-category="wisdom"]{--habit-value-tone:#607c98;}
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword)[data-value="emotion"],.habit-name-tabs>button[data-habit-name-category="emotion"]{--habit-value-tone:#b27856;}
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword)[data-value="beauty"],.habit-name-tabs>button[data-habit-name-category="beauty"]{--habit-value-tone:#8a6f98;}
+:is(.habit-value-intro,.habit-value-guide-value,.habit-value-guide-map>button,.habit-name-tabs>button,.habit-value-guide-nav>button,.habit-value-badge,.habit-custom-values>button,.habit-values-filter>button,.habit-values-summary-heading,.habit-values-keyword)[data-value="body"],.habit-name-tabs>button[data-habit-name-category="body"]{--habit-value-tone:#5f866c;}
 .habit-value-guide-link{box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;margin:-3px 0 17px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--brand-green,var(--primary));font:inherit;font-size:13px;font-weight:650;line-height:1.5;text-align:left;cursor:pointer;}
 .habit-value-guide-link svg{width:17px;height:17px;flex:none;}
 .habit-value-intro{display:flex;align-items:flex-start;gap:13px;padding:17px;margin:0 0 14px;border:1px solid var(--habit-value-line);border-radius:13px;background:var(--habit-value-soft);}
@@ -202,9 +202,9 @@
 .habit-value-guide-head h4{font-size:22px;line-height:1.4;word-break:keep-all;overflow-wrap:anywhere;}
 .habit-value-guide-body{padding:24px 26px 28px;}
 .habit-value-guide-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:0 0 26px;}
-.habit-value-guide-nav>button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:41px;padding:8px 4px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-soft);font:inherit;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer;}
+.habit-value-guide-nav>button{box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;min-height:41px;padding:8px 4px;border:1px solid var(--habit-value-line,var(--line));border-radius:9px;background:var(--habit-value-soft,var(--surface));color:var(--habit-value-ink,var(--ink-soft));font:inherit;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer;}
 .habit-value-guide-nav>button b{font-size:14px;font-weight:700;}.habit-value-guide-nav>button small{font-size:11px;}
-.habit-value-guide-nav>button[aria-pressed=true]{border-color:var(--habit-value-line);background:var(--habit-value-soft);color:var(--habit-value-ink);}
+.habit-value-guide-nav>button[aria-pressed=true]{border-color:var(--habit-value-ink);background:var(--habit-value-selected);color:var(--habit-value-ink);box-shadow:inset 0 0 0 1px var(--habit-value-ink);}
 .habit-value-guide-intro h5{margin:0 0 15px;color:var(--ink);font-size:25px;font-weight:750;line-height:1.45;letter-spacing:-.035em;word-break:keep-all;overflow-wrap:anywhere;}
 .habit-value-guide-intro p.lead,.habit-value-guide-lead{margin:0;color:var(--ink-soft);font-size:15px;line-height:1.95;word-break:keep-all;overflow-wrap:anywhere;}
 .habit-value-guide-section{margin:25px 0 0;}
@@ -240,6 +240,51 @@
 .habit-value-guide-footer>button{box-sizing:border-box;min-height:44px;padding:10px 17px;border:1px solid var(--line-strong,var(--line));border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px;font-weight:650;line-height:1.5;cursor:pointer;}
 .habit-value-guide button:focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:3px;}
 @media(hover:hover){.habit-value-guide-link:hover,.habit-value-guide-footer>button:hover{border-color:var(--brand-green,var(--primary));background:var(--brand-soft,var(--surface-2));}.habit-value-guide-map>button:hover{border-color:var(--habit-value-ink);}.habit-value-guide-nav>button:not([aria-pressed=true]):hover{border-color:var(--habit-value-line);color:var(--ink);}}
+/* A habit keeps its chosen value in forms, daily rows, and the value summary. */
+.habit-custom-value-field{box-sizing:border-box;grid-column:1/-1;min-width:0;width:100%;padding:13px;margin:6px 0 0;border:1px solid var(--line);border-radius:12px;}
+.habit-name-custom:has(.habit-custom-value-field){grid-template-columns:1fr;}.habit-name-custom:has(.habit-custom-value-field)>button{justify-self:end;}
+.habit-custom-value-field legend{max-width:100%;padding:0 5px;color:var(--ink-soft);font-size:13px;font-weight:650;line-height:1.6;word-break:keep-all;overflow-wrap:anywhere;}
+.habit-custom-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;}
+.habit-custom-values>button{box-sizing:border-box;display:flex;align-items:baseline;justify-content:center;gap:5px;min-width:0;min-height:43px;padding:9px 4px;border:1px solid var(--habit-value-line);border-radius:8px;background:var(--habit-value-soft);color:var(--habit-value-ink);font:inherit;font-size:15px;font-weight:700;line-height:1.4;cursor:pointer;}
+.habit-custom-values>button>small{font-size:11px;font-weight:500;}
+.habit-custom-values>button[aria-pressed=true]{border-color:var(--habit-value-ink);background:var(--habit-value-selected);box-shadow:inset 0 0 0 1px var(--habit-value-ink);}
+.habit-selected-value-row{display:flex;align-items:center;gap:9px;padding:10px 12px;margin:0 0 18px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);}
+.habit-selected-value-row>label{flex:none;margin:0;color:var(--ink-soft);font-size:13px;font-weight:650;line-height:1.5;white-space:nowrap;}
+.habit-selected-value-row>select{box-sizing:border-box;flex:1;min-width:0;width:auto;max-width:100%;min-height:42px;margin:0;padding:8px 10px;border:1px solid var(--line-strong,var(--line));border-radius:8px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px;line-height:1.5;}
+.habit-selected-value-row>[data-habit-selected-value]{flex:none;color:var(--ink-soft);font-size:12px;line-height:1.5;}
+.habit-selected-value-row>[data-habit-selected-value]:empty{display:none;}
+.habit-selected-value-row>select:focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:3px;}
+.habit-value-badge{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:3px;flex:none;max-width:100%;padding:2px 5px;border:1px solid var(--habit-value-line);border-radius:6px;background:var(--habit-value-soft);color:var(--habit-value-ink);font:inherit;font-size:10px;font-weight:650;line-height:1.4;vertical-align:middle;white-space:nowrap;}
+.habit-value-badge>small{font-size:9px;font-weight:500;line-height:inherit;}
+.home-habit-name>.habit-value-badge,.habit-title-button>.habit-value-badge{margin-left:5px;}
+.habit-values-overview{margin:18px 0;}
+.habit-values-overview>header,.habit-values-overview>.habit-values-overview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 9px;}
+.habit-values-overview h4{margin:0;color:var(--ink);font-size:15px;font-weight:750;line-height:1.5;}
+.habit-values-overview [data-habit-overview-guide]{display:inline-flex;align-items:center;min-height:32px;padding:5px 0;border:0;background:none;color:var(--ink-soft);font:inherit;font-size:12px;font-weight:600;line-height:1.5;white-space:nowrap;cursor:pointer;}
+.habit-values-filter{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;}
+.habit-values-filter>button{box-sizing:border-box;display:grid;grid-template-columns:max-content max-content;justify-content:center;align-content:center;align-items:baseline;gap:2px 4px;min-width:0;min-height:66px;padding:9px 4px;border:1px solid var(--habit-value-line);border-radius:10px;background:var(--habit-value-soft);color:var(--habit-value-ink);font:inherit;font-size:13px;line-height:1.4;cursor:pointer;}
+.habit-values-filter>button>b{font-size:17px;font-weight:750;line-height:1.3;}
+.habit-values-filter>button>small{font-size:11px;font-weight:500;line-height:1.4;}
+.habit-values-filter>button>span{grid-column:1/-1;min-width:0;font-size:13px;font-weight:700;line-height:1.4;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;}
+.habit-values-filter>button[aria-pressed=true]{border-color:var(--habit-value-ink);background:var(--habit-value-selected);box-shadow:inset 0 0 0 1px var(--habit-value-ink);}
+.habit-values-dialog{box-sizing:border-box;width:calc(100% - 24px);max-width:560px;max-height:90vh;max-height:90dvh;inset:0;margin:auto;padding:0;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);box-shadow:0 20px 70px rgba(24,43,32,.22);overflow:auto;overscroll-behavior:contain;font:inherit;font-size:14px;line-height:1.7;-webkit-tap-highlight-color:transparent;}
+.habit-values-dialog::backdrop{background:rgba(22,40,30,.48);}
+.habit-values-dialog [hidden]{display:none!important;}
+.habit-values-dialog>.habit-name-head{position:sticky;top:0;z-index:2;align-items:center;gap:12px;margin:0;padding:21px 24px;border-bottom:1px solid var(--line);background:var(--surface);}
+.habit-values-body{padding:22px 24px 26px;}
+.habit-values-summary-heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 14px;margin:21px 0 20px;padding:15px 16px;border:1px solid var(--habit-value-line);border-radius:12px;background:var(--habit-value-soft);}
+.habit-values-summary-heading h5{grid-column:1;margin:0;color:var(--habit-value-ink);font-size:18px;font-weight:750;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere;}
+.habit-values-summary-heading p{grid-column:1;margin:0;color:var(--ink-soft);font-size:12px;line-height:1.65;overflow-wrap:anywhere;}
+.habit-values-summary-heading>[data-habit-values-guide]{grid-column:2;grid-row:1/3;align-self:center;min-height:36px;padding:5px 0;border:0;background:none;color:var(--habit-value-ink);font:inherit;font-size:12px;font-weight:650;line-height:1.5;text-decoration:underline;text-underline-offset:3px;white-space:nowrap;cursor:pointer;}
+.habit-values-group{margin:21px 0 0;}
+.habit-values-group>h5{display:flex;align-items:baseline;gap:7px;margin:0 0 10px;color:var(--ink-soft);font-size:13px;font-weight:650;line-height:1.5;}
+.habit-values-group>h5 :is(span,small){color:var(--ink-faint);font-size:11px;font-weight:500;font-variant-numeric:tabular-nums;}
+.habit-values-keywords{display:flex;flex-wrap:wrap;gap:8px;}
+.habit-values-keyword{box-sizing:border-box;display:inline-flex;align-items:baseline;flex-wrap:wrap;gap:3px 7px;max-width:100%;padding:8px 11px;border:1px solid var(--habit-value-line);border-radius:9px;background:var(--habit-value-soft);color:var(--habit-value-ink);font-size:13px;font-weight:650;line-height:1.55;word-break:keep-all;overflow-wrap:anywhere;}
+.habit-values-keyword>small{color:var(--ink-soft);font-size:10px;font-weight:500;line-height:1.5;}
+.habit-values-empty{margin:20px 0 0;padding:20px 14px;border:1px dashed var(--line);border-radius:12px;color:var(--ink-soft);font-size:13px;line-height:1.8;text-align:center;word-break:keep-all;overflow-wrap:anywhere;}
+:is(.habit-custom-values,.habit-values-filter,.habit-values-dialog,.habit-values-overview) button:focus-visible{outline:2px solid var(--habit-value-ink,var(--brand-green,var(--primary)));outline-offset:3px;}
+@media(hover:hover){.habit-custom-values>button:hover,.habit-values-filter>button:hover{border-color:var(--habit-value-ink);}.habit-values-overview [data-habit-overview-guide]:hover{color:var(--brand-green,var(--primary));}}
 .habit-hist-modal{max-width:620px;max-height:calc(100dvh - 40px);overflow:auto;overscroll-behavior:contain;padding:25px;}
 .habit-hist-modal .composer-head{align-items:flex-start;gap:12px;margin-bottom:12px;}
 .habit-hist-modal .composer-head h4{font-size:22px;line-height:1.45;margin:4px 0;}
@@ -297,6 +342,13 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
  .habit-value-guide-value-head{gap:12px;margin-bottom:18px;}.habit-value-guide-value-head>.habit-value-seal{flex-basis:54px;width:54px;min-height:64px;font-size:25px;}.habit-value-guide-value-head h5{font-size:21px;}.habit-value-guide-value-head p{font-size:13px;}
  .habit-value-guide-examples>div{grid-template-columns:76px minmax(0,1fr);gap:10px;padding:12px 0;}
  .habit-value-guide-question,.habit-value-guide-closing{padding:15px;font-size:13px;}.habit-value-guide-footer{padding:14px 16px;}.habit-value-guide-footer>button{width:100%;}
+ .habit-custom-value-field{padding:11px;margin-top:4px;}.habit-custom-value-field legend{font-size:12px;}.habit-custom-values{gap:6px;}.habit-custom-values>button{gap:4px;min-height:43px;font-size:14px;}
+ .habit-selected-value-row{padding:9px 10px;gap:7px;}.habit-selected-value-row>label{font-size:12px;}.habit-selected-value-row>select{padding:8px;}
+ .habit-values-overview{margin:16px 0;}.habit-values-overview h4{font-size:14px;}.habit-values-overview [data-habit-overview-guide]{font-size:11px;}
+ .habit-values-filter{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;}.habit-values-filter>button{min-height:60px;padding:8px 4px;}.habit-values-filter>button>b{font-size:16px;}.habit-values-filter>button>span{font-size:12px;}
+ .habit-values-dialog{border-radius:18px;}.habit-values-dialog>.habit-name-head{padding:18px 16px;}.habit-values-body{padding:19px 16px 22px;}
+ .habit-values-summary-heading{gap:4px 10px;margin:18px 0;padding:13px;}.habit-values-summary-heading h5{font-size:17px;}.habit-values-summary-heading p{font-size:11px;}.habit-values-summary-heading>[data-habit-values-guide]{font-size:11px;}
+ .habit-values-group{margin-top:19px;}.habit-values-keywords{gap:7px;}.habit-values-keyword{padding:7px 10px;font-size:12px;}
  .habit-hist-overlay{padding:12px;align-items:center;}.habit-hist-modal{padding:19px 16px;border-radius:20px;max-height:calc(100dvh - 24px);}
  .habit-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.habit-stat{padding:13px;}
  .habit-hist-grid{gap:4px;}.habit-hist-cell{min-height:42px;font-size:13px;}

@@ -125,6 +125,8 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
     STATE:{users:{[owner]:{id:owner,name:'독서회원',authUserId:'auth-'+owner}},posts:{},comments:{},privateEntries:{},materialNotes:{},worksheets:{},habits:{},
       readingLogs:{},readingMeta:{},bookLocks:{},announcement:{next:{},reading:{}}},
     SESSION:{userId:owner,name:'독서회원',keyB64:'memory-only'},CURRENT_KEY:null,
+    // These independent habit popups stay closed during reading-route tests.
+    habitValueSummaryDialog:null,habitValueGuideDialog:null,
     location:{hash:'#/book/emotion/mine'},document,
     localStorage:{getItem:key=>memory.has(key)?memory.get(key):null,setItem:(key,value)=>{storageWrites.push({key,value});memory.set(key,value);},removeItem:key=>memory.delete(key)},
     sessionStorage:{setItem(){}},urlFromPhoto:()=>null,render(){},showToast:(...args)=>toasts.push(args),

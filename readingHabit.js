@@ -5,8 +5,10 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
   var PREFIX='growell-reading-habit-v1:';
+  var VALUE_IDS=['faith','love','virtue','wisdom','emotion','beauty','body'];
   var own=Object.prototype.hasOwnProperty;
   function id(value,max){return typeof value==='string' && value.length<=max && /^[A-Za-z0-9_-]+$/.test(value);}
+  function normalizeValueId(value){return typeof value==='string' && VALUE_IDS.indexOf(value)>=0?value:'';}
   function normalizeGoal(value){
     if(!value || typeof value!=='object' || Array.isArray(value) || !id(value.bookId,384) ||
       !Number.isSafeInteger(value.targetPages) || value.targetPages<1 || value.targetPages>100000)return null;
@@ -15,12 +17,19 @@
     if(linked!=='' && !id(linked,160))return null;
     return {bookId:value.bookId,linkedBookId:linked,targetPages:value.targetPages};
   }
-  function encode(goalText,readingGoal){
+  function encode(goalText,readingGoal,valueId){
     if(typeof goalText!=='string')throw new TypeError('습관 목표를 확인해주세요.');
-    if(readingGoal===null || readingGoal===undefined)return goalText;
-    var goal=normalizeGoal(readingGoal);
-    if(!goal)throw new TypeError('독서할 책과 목표 쪽수를 확인해주세요.');
-    return PREFIX+JSON.stringify({goal:goalText,readingGoal:goal});
+    var selectedValue=normalizeValueId(valueId);
+    if(valueId!==undefined && valueId!==null && valueId!=='' && !selectedValue)throw new TypeError('선택한 습관 가치를 확인해주세요.');
+    var goal=null;
+    if(readingGoal!==null && readingGoal!==undefined){
+      goal=normalizeGoal(readingGoal);
+      if(!goal)throw new TypeError('독서할 책과 목표 쪽수를 확인해주세요.');
+    }
+    if(!goal && !selectedValue)return goalText;
+    var value={goal:goalText,readingGoal:goal};
+    if(selectedValue)value.valueId=selectedValue;
+    return PREFIX+JSON.stringify(value);
   }
   function decode(stored){
     var fallback={goal:typeof stored==='string'?stored:'',readingGoal:null};
@@ -28,8 +37,17 @@
     try{
       var value=JSON.parse(stored.slice(PREFIX.length));
       if(!value || typeof value!=='object' || Array.isArray(value) || typeof value.goal!=='string')return fallback;
-      var goal=normalizeGoal(value.readingGoal);
-      return goal?{goal:value.goal,readingGoal:goal}:fallback;
+      var selectedValue=normalizeValueId(value.valueId);
+      if(own.call(value,'valueId') && value.valueId!==null && value.valueId!=='' && !selectedValue)return fallback;
+      var goal=null;
+      if(value.readingGoal!==null && value.readingGoal!==undefined){
+        goal=normalizeGoal(value.readingGoal);
+        if(!goal)return fallback;
+      }
+      if(!goal && !selectedValue)return fallback;
+      var decoded={goal:value.goal,readingGoal:goal};
+      if(selectedValue)decoded.valueId=selectedValue;
+      return decoded;
     }catch(e){return fallback;}
   }
   function validDay(value){
@@ -70,5 +88,5 @@
     result.achieved=result.pages>=result.targetPages;
     return result;
   }
-  return {normalizeGoal:normalizeGoal,encode:encode,decode:decode,progress:progress};
+  return {normalizeGoal:normalizeGoal,normalizeValueId:normalizeValueId,encode:encode,decode:decode,progress:progress};
 });

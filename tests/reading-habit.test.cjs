@@ -31,6 +31,59 @@ test('connection IDs and integer page targets reject malformed or oversized valu
   assert.throws(()=>habits.encode('목표',goal({targetPages:0})),TypeError);assert.throws(()=>habits.encode(null,goal()),TypeError);
 });
 
+test('each selected value round trips for both ordinary and reading habits without changing the visible goal',()=>{
+  const text='  한 번 실천하고\n돌아보기  ',ids=['faith','love','virtue','wisdom','emotion','beauty','body'];
+  for(const valueId of ids){
+    assert.equal(habits.normalizeValueId(valueId),valueId);
+    for(const readingGoal of [null,undefined,goal()]){
+      const stored=habits.encode(text,readingGoal,valueId);
+      const decoded=habits.decode(stored);
+      assert.ok(stored.startsWith(prefix));
+      assert.deepEqual(decoded,{goal:text,readingGoal:readingGoal||null,valueId});
+      // Check/uncheck saves only re-encode the decoded goal; its value must survive.
+      assert.equal(habits.encode(decoded.goal,decoded.readingGoal,decoded.valueId),stored);
+    }
+  }
+  assert.deepEqual(habits.decode(prefix+JSON.stringify({goal:text,valueId:'faith'})),{goal:text,readingGoal:null,valueId:'faith'});
+});
+
+test('absent value selections retain legacy storage and decode shapes exactly',()=>{
+  const text='이전 목표',old=prefix+JSON.stringify({goal:text,readingGoal:goal()});
+  for(const valueId of [undefined,null,'']){
+    assert.equal(habits.normalizeValueId(valueId),'');
+    assert.equal(habits.encode(text,null,valueId),text);
+    assert.equal(habits.encode(text,goal(),valueId),old);
+    assert.deepEqual(habits.decode(habits.encode(text,goal(),valueId)),{goal:text,readingGoal:goal()});
+  }
+  assert.deepEqual(habits.decode(text),{goal:text,readingGoal:null});
+});
+
+test('unknown values cannot be written and malformed envelopes keep their entire original content',()=>{
+  for(const invalid of ['unknown','Faith',' faith','faith ','thought','action',0,false,{},[],['faith']]){
+    assert.equal(habits.normalizeValueId(invalid),'');
+    assert.throws(()=>habits.encode('목표',null,invalid),TypeError);
+    assert.throws(()=>habits.encode('목표',goal(),invalid),TypeError);
+    const raw=prefix+JSON.stringify({goal:'목표',readingGoal:goal(),valueId:invalid});
+    const decoded=habits.decode(raw);
+    assert.deepEqual(decoded,{goal:raw,readingGoal:null});
+    assert.equal(habits.encode(decoded.goal,decoded.readingGoal,decoded.valueId),raw);
+  }
+  for(const envelope of [
+    {goal:'목표',valueId:'faith',readingGoal:{}},
+    {goal:'목표',valueId:'faith',readingGoal:goal({targetPages:0})},
+    {goal:'목표',valueId:'faith',readingGoal:[]},
+    {goal:'목표',valueId:'faith',readingGoal:false},
+    {goal:12,valueId:'faith',readingGoal:null},
+    {goal:'목표',readingGoal:null},
+    {goal:'목표'}
+  ]){
+    const raw=prefix+JSON.stringify(envelope);
+    assert.deepEqual(habits.decode(raw),{goal:raw,readingGoal:null});
+    assert.equal(habits.encode(raw,null),raw);
+  }
+  assert.throws(()=>habits.encode('목표',goal({targetPages:0}),'faith'),TypeError);
+});
+
 test('today sums completed session deltas, counts re-reading, and only reports achievement',()=>{
   const rows=[row([session('morning',10,16),session('evening',16,21),session('reread',10,14),session('yesterday',0,100,at(28))])];
   const before=JSON.stringify(rows),readingGoal=Object.freeze(goal());
@@ -96,6 +149,6 @@ test('legacy missing-start flags survive archive normalization and only known ra
 
 test('browser UMD exposes the same small pure API without requiring other modules',()=>{
   const context=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(__dirname,'../readingHabit.js'),'utf8'),context);
-  assert.deepEqual(Object.keys(context.GrowellReadingHabits).sort(),['decode','encode','normalizeGoal','progress']);
+  assert.deepEqual(Object.keys(context.GrowellReadingHabits).sort(),['decode','encode','normalizeGoal','normalizeValueId','progress']);
   assert.equal(context.GrowellReadingHabits.decode('기존 목표').goal,'기존 목표');
 });

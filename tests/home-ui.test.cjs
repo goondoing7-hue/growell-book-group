@@ -8,11 +8,13 @@ const GrowellHabits=require('../habitDomain.js');
 const GrowellReadingTimer=require('../readingTimerDomain.js');
 const GrowellDailyVerse=require('../dailyVerseDomain.js');
 const GrowellBookDetails=require('../bookDetails.js');
+const GrowellHabitSuggestions=require('../habitSuggestions.js');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),source.indexOf('function welcomeHomeHtml(){'));
 const announcementSource=source.slice(source.indexOf('function canEditAnnouncement(){'),source.indexOf('function announceEditHtml(){'));
 const authorSource=source.slice(source.indexOf('function publicAuthorHtml('),source.indexOf('/* 헤더 프로필 버튼용',source.indexOf('function publicAuthorHtml(')));
 const escSource=source.slice(source.indexOf('function esc(s){'),source.indexOf('function nlToBr('));
+const habitValueBadgeSource=source.slice(source.indexOf('function habitValueInfo('),source.indexOf('function habitValueFiltersHtml('));
 const timerSource=source.slice(source.indexOf('function readingTimerElapsedMs(){'),source.indexOf('function activeReadingStripHtml('));
 const closeNoteSource=source.slice(source.indexOf('function closeReadingNoteDialog(){'),source.indexOf('function openReadingNote('));
 const timerEventsSource=source.slice(source.indexOf('function bindReadingTimerEvents(){'),source.indexOf('function submitWorksheet('));
@@ -42,7 +44,7 @@ function control(attrs){
 function harness(){
   const controls={},queued=[],opened=[],renders=[],createdElements=[],toasts=[],storage=new Map();
   const books=[{id:'emotion',title:'감정의 책',totalPages:200},{id:'thought',title:'생각의 책',totalPages:250},{id:'locked',title:'잠긴 책',locked:true}];
-  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellBookDetails,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
+  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellBookDetails,GrowellHabitSuggestions,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
     BOOKS:books,SESSION:{userId:'me',keyB64:'my-key'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{},worksheets:{},habits:{},users:{me:{id:'me',name:'회원'}},readingMeta:{},readingLogs:{},announcement:{reading:{bookId:'emotion'},next:{}}},
     INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],
@@ -85,7 +87,7 @@ function harness(){
     totalReadSeconds:bookId=>c.myReadingLogs(bookId).reduce((sum,log)=>sum+log.seconds,0),
     svgIcon:()=>'',avatarHtml:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,announcementSaveBusy:false,announcementEditDraft:null,
     loginGateHtml:message=>message,sharePostCardHtml:()=>'<article>shared</article>'};
-  vm.createContext(c);vm.runInContext(escSource+authorSource+timerSource+closeNoteSource+timerEventsSource+announcementSource+homeSource,c);
+  vm.createContext(c);vm.runInContext(escSource+habitValueBadgeSource+authorSource+timerSource+closeNoteSource+timerEventsSource+announcementSource+homeSource,c);
   return {c,controls,queued,opened,renders,createdElements,toasts,storage};
 }
 
@@ -206,6 +208,7 @@ test('today habit keeps the name and goal with compact escaped time and place wi
   const unset=c.homeHabitRowsHtml([{...habit,time:'',place:''}]);
   assert.match(unset,/<b>시간<\/b> <span>미설정/);assert.match(unset,/<b>장소<\/b> <span>미설정/);
   assert.match(c.homeHabitRowsHtml([{...habit,goal:''}]),/<b>목표<\/b> <span>하루 한 번 실천하기/);assert.match(c.homeHabitRowsHtml([{...habit,goal:'',behaviorType:'avoid'}]),/<b>목표<\/b> <span>하루 한 번 절제하기/);
+  assert.match(c.homeHabitRowsHtml([{...habit,valueId:'wisdom'}]),/class="habit-value-badge" data-value="wisdom"/);assert.doesNotMatch(c.homeHabitRowsHtml([{...habit,name:'독서',valueId:''}]),/habit-value-badge/);
 });
 
 test('home habit book titles appear only for reading and protect unavailable or another members archive book',()=>{

@@ -34,6 +34,8 @@ function harness({read, write, signIn, signup, signOutEvent} = {}) {
     localStorage:{setItem:(k,v)=>memory.set(k,v),removeItem:k=>memory.delete(k)},
     sessionStorage:{setItem(){}},
     showToast:(...args)=>toasts.push(args), render(){},
+    // The isolated persistence harness has no value-summary popup to refresh.
+    refreshHabitValueSummary(){},
     esc:s=>String(s), urlFromPhoto:()=>null,
     deriveKey:()=>Promise.resolve('key'),keyToB64:()=>Promise.resolve('b64'),
     randomSaltHex:()=> 'salt', pendingSignupAvatar:null,

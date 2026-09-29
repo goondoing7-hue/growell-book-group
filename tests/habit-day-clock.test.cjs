@@ -37,7 +37,7 @@ test('today card and overview clicks use the actual day while explicit calendar 
  const button=(attrs)=>({attrs,events:{},getAttribute(key){return attrs[key];},addEventListener(type,fn){this.events[type]=fn;}});
  const todayButton=button({'data-habit-day':'h1|2026-09-29','data-habit-today':''}),calendarButton=button({'data-habit-day':'h1|2026-09-29'}),root={querySelectorAll:()=>[todayButton,calendarButton]};
  c.bindHabitDayEvents(root);c.bindHabitDayEvents(root);todayButton.events.click({stopPropagation(){}});calendarButton.events.click({stopPropagation(){}});
- const overviewButton=button({'data-habit-overview-day':'h2|2026-09-29'}),panel={addEventListener(type,fn){this.click=fn;},contains:()=>true};c.bindHabitOverviewEvents({querySelectorAll:()=>[panel]});panel.click({target:{closest:()=>overviewButton},stopPropagation(){}});
+ const overviewButton=button({'data-habit-overview-day':'h2|2026-09-29'}),panel={addEventListener(type,fn){this.click=fn;},contains:()=>true};c.bindHabitOverviewEvents({querySelectorAll:()=>[panel]});panel.click({target:{closest:selector=>selector==='[data-habit-overview-day]'?overviewButton:null},stopPropagation(){}});
  assert.deepEqual(calls,[['h1','2026-09-30'],['h1','2026-09-29'],['h2','2026-09-30']]);
 });
 
@@ -51,11 +51,11 @@ test('a stale checked home checkbox toggles the new day rather than undoing yest
 test('refreshing a successful card clears only its today appearance and date while preserving saved successes',()=>{
  const time=mockDate(date(30)),saved={id:'h1',name:'매일 독서',userId:'reader',startDate:'2026-09-01',endDate:'2026-10-31',checkedDates:['2026-09-28','2026-09-29']};
  const attrs={'data-habit-day':'h1|2026-09-29','data-habit-today':''},classes=new Set(['is-checked']),label={textContent:'성공'},button={getAttribute:key=>attrs[key],setAttribute(key,value){attrs[key]=value;},hasAttribute:key=>key in attrs,querySelector:()=>label,classList:{toggle(name,enabled){enabled?classes.add(name):classes.delete(name);}}};
- const card={getAttribute:()=> 'h1',querySelector:()=>null},c={Date:time.Date,GrowellHabits:habits,SESSION:{userId:'reader'},STATE:{habits:{h1:saved}},ymd:d=>clock.day(d.getTime()),habitWithPendingChecks:value=>value,habitWeekProgress:()=>({}),weekDatesOf:()=>[],mondayOf:value=>value,refreshHomeHabits(){},
+ let valueRefreshes=0;const card={getAttribute:()=> 'h1',querySelector:()=>null},c={Date:time.Date,GrowellHabits:habits,SESSION:{userId:'reader'},STATE:{habits:{h1:saved}},ymd:d=>clock.day(d.getTime()),habitWithPendingChecks:value=>value,habitWeekProgress:()=>({}),weekDatesOf:()=>[],mondayOf:value=>value,refreshHomeHabits(){},refreshHabitValueSummary(){valueRefreshes++;},
   document:{querySelectorAll(selector){return selector==='[data-habit-card], [data-habit-stats-panel]'||selector==='[data-habit-card]'?[card]:selector==='[data-habit-day]'?[button]:[];}}};
  vm.createContext(c);runFunctions(c,'function habitTodayState(','function habitStreakHtml(');runFunctions(c,'function refreshHabitSaveUI(','function queueHabitCheck(');c.refreshHabitSaveUI('h1');
  assert.equal(attrs['data-habit-day'],'h1|2026-09-30');assert.equal(attrs['aria-pressed'],'false');assert.equal(classes.has('is-checked'),false);assert.equal(button.disabled,false);assert.equal(label.textContent,'성공');
- assert.deepEqual(saved.checkedDates,['2026-09-28','2026-09-29']);assert.equal(habits.stats(saved,'2026-09-30').success,2);
+ assert.deepEqual(saved.checkedDates,['2026-09-28','2026-09-29']);assert.equal(habits.stats(saved,'2026-09-30').success,2);assert.equal(valueRefreshes,1);
 });
 
 test('day refresh updates only habit surfaces while keeping an open form, popup, viewed month and scroll',()=>{
