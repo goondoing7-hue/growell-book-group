@@ -97,6 +97,17 @@ test('reading habit creation accepts only a ready exact owned and current book c
   }
 });
 
+test('avoiding habits reject a reading goal even with a valid book, but can remove an existing connection',()=>{
+  const h=harness();connectArchive(h);h.original.readingGoal=readingGoal();
+  const avoid={...payload,behaviorType:'avoid',readingGoal:readingGoal()};
+  h.c.submitHabit('emotion',avoid,null);h.c.editHabit('h1',avoid,null);
+  assert.equal(h.saves(),0);assert.equal(h.toasts.length,2);
+  h.c.editHabit('h1',{...avoid,readingGoal:null},null);
+  assert.equal(h.saves(),1);const latest=structuredClone(h.c.STATE);latest.habits.h1.checkedDates.push('2026-09-22');h.apply(latest);
+  assert.equal(latest.habits.h1.behaviorType,'avoid');assert.equal(latest.habits.h1.readingGoal,null);
+  assert.deepEqual(Array.from(latest.habits.h1.checkedDates),['2026-09-01','2026-09-22']);
+});
+
 test('editing the selected reading book or target preserves latest checks; explicit null disables only the connection',()=>{
   const h=harness();h.original.readingGoal=readingGoal();
   connectArchive(h,{status:'ready',rows:[archiveRow({entry:{id:'archive-two',userId:'owner'},book:{title:'다음 책',linkedBookId:'thought',deleted:false}})]});
@@ -267,7 +278,7 @@ test('each record button opens its own habit and selected popup without bubbling
 
 test('checking and undoing a replaced popup day icon stops propagation and binds only once',()=>{
   let dayClick,checks=0,bindings=0;
-  const button={getAttribute:()=> 'h2|2026-09-22',addEventListener(type,fn){dayClick=fn;bindings++;}};
+  const button={getAttribute:key=>key==='data-habit-day'?'h2|2026-09-22':null,hasAttribute:()=>false,addEventListener(type,fn){dayClick=fn;bindings++;}};
   const c={app:{querySelectorAll:()=>[button]},toggleHabitDate(id,date){assert.equal(id,'h2');assert.equal(date,'2026-09-22');checks++;}};
   vm.createContext(c);
   const begin=source.indexOf('function bindHabitDayEvents(');
@@ -365,28 +376,54 @@ function popupHarness(){
 }
 
 function composerHarness(){
-  const h=popupHarness(),c=h.c,dialogs=[],saves=[];
-  Object.assign(c,{habitComposerDialog:null,habitFormOpenFor:null,habitEditingId:null,saveSessionEpoch:1,memberLoadState:{habits:'ready',readingLogs:'ready',readingMeta:'ready'},
-    GrowellReadingHabits:readingHabits,GrowellArchive:{readingSnapshot:()=>({status:'ready',rows:[archiveRow()]})},readingDataReady:()=>true,
-    bookById:id=>({id,title:'모임 책'}),showToast(){},uid:()=> 'new-habit',saveState:(mutate,options)=>saves.push({mutate,options})});
+  const h=popupHarness(),c=h.c,dialogs=[],saves=[],toasts=[];
+  Object.assign(c,{habitComposerDialog:null,habitNameDialog:null,habitFormOpenFor:null,habitEditingId:null,saveSessionEpoch:1,memberLoadState:{habits:'ready',readingLogs:'ready',readingMeta:'ready'},
+    GrowellReadingHabits:readingHabits,GrowellHabitSuggestions:require('../habitSuggestions.js'),GrowellArchive:{readingSnapshot:()=>({status:'ready',rows:[archiveRow()]})},readingDataReady:()=>true,
+    bookById:id=>({id,title:'모임 책'}),showToast:(...args)=>toasts.push(args),uid:()=> 'new-habit',saveState:(mutate,options)=>saves.push({mutate,options})});
   c.document.body={appendChild:node=>{node.isConnected=true;dialogs.push(node);}};
   c.document.querySelector=()=>null;c.document.getElementById=()=>null;
   c.document.createElement=tag=>{
-    assert.equal(tag,'dialog');const fields={},listeners={};
-    for(const selector of ['#btn-close-habit-form','#habit-is-reading','#habit-reading-pages','#habit-reading-book','[data-habit-reading-status]',
-      '[data-habit-reading-fields]','[data-habit-text-goal]','#habit-reading-pages-value','#habit-kind-hint','#btn-habit-submit',
-      '#habit-name','#habit-place','#habit-time','#habit-goal','#habit-start-date','#habit-end-date']){
-      fields[selector]={value:selector==='#habit-reading-pages'?'10':'',disabled:false,checked:false,innerHTML:'',focus(){c.document.activeElement=this;},insertAdjacentHTML(where,html){this.innerHTML+=html;}};
+    assert.equal(tag,'dialog');const fields={},listeners={};let nodes=[],html='';
+    const decode=value=>String(value).replaceAll('&quot;','"').replaceAll('&#39;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>').replaceAll('&amp;','&');
+    function matches(node,selector){
+      if(selector.endsWith(':checked'))return node.checked&&matches(node,selector.slice(0,-8));
+      if(selector.startsWith('#'))return node.attrs.id===selector.slice(1);
+      if(selector.startsWith('.'))return (node.attrs.class||'').split(/\s+/).includes(selector.slice(1));
+      const attrs=Array.from(selector.matchAll(/\[([^\]=]+)(?:="([^"]*)")?\]/g));
+      if(attrs.length)return attrs.every(([,key,value])=>Object.hasOwn(node.attrs,key)&&(value===undefined||node.attrs[key]===value));
+      return node.tagName===selector.toUpperCase();
     }
-    const radio={value:'do'};fields['[name="habit-behavior-type"]:checked']=radio;
-    return {fields,listeners,isConnected:false,open:false,setAttribute(){},querySelector:selector=>fields[selector]||null,
-      querySelectorAll:()=>[radio],addEventListener:(event,callback)=>{listeners[event]=callback;},
+    const node={fields,listeners,isConnected:false,open:false,setAttribute(){},
+      querySelector:selector=>nodes.find(item=>matches(item,selector))||null,
+      querySelectorAll:selector=>nodes.filter(item=>matches(item,selector)),addEventListener:(event,callback)=>{listeners[event]=callback;},
       showModal(){this.open=true;c.document.activeElement=this;},close(){this.open=false;},remove(){this.isConnected=false;}};
+    function parse(value){
+      const parsed=[];
+      for(const [,name,raw] of value.matchAll(/<([a-z][a-z0-9-]*)\b([^>]*)>/gi)){
+        const attrs={};for(const [,key,v1,v2] of raw.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g))attrs[key]=decode(v1??v2??'');
+        const item={attrs,tagName:name.toUpperCase(),value:attrs.value||'',checked:Object.hasOwn(attrs,'checked'),hidden:Object.hasOwn(attrs,'hidden'),disabled:Object.hasOwn(attrs,'disabled'),readOnly:Object.hasOwn(attrs,'readonly'),innerHTML:'',textContent:'',
+          getAttribute:key=>Object.hasOwn(attrs,key)?attrs[key]:null,setAttribute(key,val){attrs[key]=String(val);},hasAttribute:key=>Object.hasOwn(attrs,key),removeAttribute(key){delete attrs[key];},
+          focus(){c.document.activeElement=this;},select(){this.selected=true;},addEventListener(event,fn){this['on'+event]=fn;},insertAdjacentHTML(where,value){this.innerHTML+=value;},
+          click(){if(this.disabled)return;if(this.attrs.type==='radio'){nodes.filter(other=>other.attrs.name===this.attrs.name).forEach(other=>{other.checked=false;});this.checked=true;if(this.onchange)this.onchange({target:this});}else if(this.onclick)return this.onclick({target:this,preventDefault(){}});}};
+        item.dataset=Object.fromEntries(Object.entries(attrs).filter(([key])=>key.startsWith('data-')).map(([key,value])=>[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase()),value]));
+        let content='',contentNodes=[];
+        Object.defineProperty(item,'innerHTML',{get:()=>content,set:value=>{
+          content=value;const old=new Set(contentNodes);nodes=nodes.filter(item=>!old.has(item));
+          contentNodes=parse(value);nodes.push(...contentNodes);
+        }});
+        parsed.push(item);if(attrs.id)fields['#'+attrs.id]=item;
+      }
+      return parsed;
+    }
+    Object.defineProperty(node,'innerHTML',{get:()=>html,set:value=>{
+      html=value;for(const key of Object.keys(fields))delete fields[key];nodes=parse(value);
+    }});
+    return node;
   };
   vm.runInContext(source.slice(source.indexOf('function habitFormHtml('),source.indexOf('function habitsSectionHtml(')),c);
   vm.runInContext(source.slice(source.indexOf('function validateHabitPeriod('),source.indexOf('function deleteHabit(')),c);
   const trigger={isConnected:true,focus(options){assert.equal(options.preventScroll,true);c.document.activeElement=this;}};
-  return {...h,c,dialogs,saves,trigger};
+  return {...h,c,dialogs,saves,toasts,trigger};
 }
 
 test('native habit composer Back closes only the dialog and restores the same trigger and page position',()=>{
@@ -398,6 +435,77 @@ test('native habit composer Back closes only the dialog and restores the same tr
   assert.equal(c.document.activeElement,h.trigger);assert.equal(h.browser.scrollY,825);assert.match(h.browser.location.href,/#\/book\/emotion\/habit$/);
   assert.equal(h.saves.length,0,'closing does not submit the incomplete habit');
   h.back();assert.match(h.browser.location.href,/#\/book\/emotion\/mine$/);
+});
+
+test('switching away from doing hides and clears reading controls instead of saving a stale reading connection',()=>{
+  const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);
+  const dialog=c.habitComposerDialog,reading=dialog.querySelector('#habit-is-reading'),name=dialog.querySelector('#habit-name');
+  name.value='아침 산책';reading.checked=true;reading.onchange();
+  assert.equal(name.value,'독서');assert.equal(name.readOnly,true);
+  assert.equal(dialog.querySelector('[data-habit-reading-fields]').hidden,false);assert.equal(dialog.querySelector('[data-habit-text-goal]').hidden,true);
+  dialog.querySelector('#habit-reading-book').value='archive-one';
+  dialog.querySelector('[name="habit-behavior-type"][value="avoid"]').click();
+  assert.equal(reading.checked,false);assert.equal(reading.disabled,true);assert.equal(dialog.querySelector('.habit-reading-settings').hidden,true);
+  assert.equal(dialog.querySelector('[data-habit-reading-fields]').hidden,true);assert.equal(dialog.querySelector('[data-habit-text-goal]').hidden,false);
+  assert.notEqual(name.value,'독서');dialog.querySelector('#habit-goal').value='잠들기 전 화면 안 보기';
+  dialog.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);
+  const state={habits:{}};h.saves[0].mutate(state);assert.equal(state.habits['new-habit'].behaviorType,'avoid');assert.equal(state.habits['new-habit'].readingGoal,null);assert.equal(state.habits['new-habit'].goal,'잠들기 전 화면 안 보기');
+  dialog.querySelector('[name="habit-behavior-type"][value="do"]').click();
+  assert.equal(reading.disabled,false);assert.equal(reading.checked,false);assert.equal(dialog.querySelector('.habit-reading-settings').hidden,false);
+});
+
+test('reading composer saves the automatic name, selected book and slider target rather than hidden free-text goal',()=>{
+  const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const dialog=c.habitComposerDialog;
+  const reading=dialog.querySelector('#habit-is-reading');dialog.querySelector('#habit-name').value='다른 이름';reading.checked=true;reading.onchange();
+  const select=dialog.querySelector('#habit-reading-book'),slider=dialog.querySelector('#habit-reading-pages');select.value='archive-one';select.onchange();slider.value='23';slider.oninput();
+  assert.equal(dialog.querySelector('#habit-reading-pages-value').textContent,'23쪽');assert.equal(dialog.querySelector('#habit-name').value,'독서');
+  dialog.querySelector('#habit-goal').value='이전 일반 목표';dialog.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);
+  const state={habits:{}};h.saves[0].mutate(state);const saved=state.habits['new-habit'];assert.equal(saved.name,'독서');assert.equal(saved.behaviorType,'do');assert.equal(saved.goal,'하루 23쪽 읽기');assert.deepEqual({...saved.readingGoal},readingGoal({targetPages:23}));
+  slider.value='0';dialog.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);
+  c.GrowellArchive.readingSnapshot=()=>({status:'ready',rows:[]});slider.value='20';dialog.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);assert.equal(c.document.activeElement,select);
+});
+
+test('editing an old avoiding habit never preselects its incompatible stored reading goal',()=>{
+  const h=composerHarness(),c=h.c;c.STATE.habits.h2.readingGoal=readingGoal();c.openHabitComposer('emotion','h2',h.trigger);
+  const dialog=c.habitComposerDialog,reading=dialog.querySelector('#habit-is-reading');
+  assert.equal(reading.checked,false);assert.equal(reading.disabled,true);assert.equal(dialog.querySelector('.habit-reading-settings').hidden,true);assert.equal(dialog.querySelector('#habit-name').value,'화면 쉬기');
+  dialog.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);h.saves[0].mutate(c.STATE);
+  assert.equal(c.STATE.habits.h2.behaviorType,'avoid');assert.equal(c.STATE.habits.h2.readingGoal,null);assert.equal(c.STATE.habits.h2.name,'화면 쉬기');
+});
+
+test('habit name picker offers all four areas for the chosen kind and saves the selected recommendation',()=>{
+  for(const kind of ['do','avoid']){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('thought',null,h.trigger);const parent=c.habitComposerDialog;
+    parent.querySelector('[name="habit-behavior-type"][value="'+kind+'"]').click();parent.querySelector('#habit-name-picker').click();const picker=c.habitNameDialog;
+    assert.equal(picker.open,true);assert.equal(parent.open,true);assert.equal(picker.querySelector('[data-habit-name-category="thought"]').getAttribute('aria-pressed'),'true');
+    assert.deepEqual(picker.querySelectorAll('[data-habit-name-category]').map(button=>button.getAttribute('data-habit-name-category')),['emotion','thought','body','action','custom']);
+    for(const category of ['emotion','thought','body','action']){
+      picker.querySelector('[data-habit-name-category="'+category+'"]').click();
+      assert.equal(picker.querySelectorAll('[data-habit-name-option]').length,c.GrowellHabitSuggestions.suggestions(kind,category).length);
+    }
+    picker.querySelector('[data-habit-name-category="body"]').click();picker.querySelector('[data-habit-name-option="2"]').click();
+    const expected=c.GrowellHabitSuggestions.suggestions(kind,'body')[2];
+    assert.equal(c.habitNameDialog,null);assert.equal(picker.isConnected,false);assert.equal(parent.open,true);assert.equal(parent.querySelector('#habit-name').value,expected);assert.equal(parent.querySelector('#habit-name').readOnly,false);assert.equal(h.saves.length,0);
+    parent.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);const state={habits:{}};h.saves[0].mutate(state);assert.equal(state.habits['new-habit'].name,expected);assert.equal(state.habits['new-habit'].behaviorType,kind);assert.equal(state.habits['new-habit'].readingGoal,null);
+  }
+});
+
+test('custom habit names preserve their draft across area tabs, reject empty input and wait for Korean composition',()=>{
+  const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const parent=c.habitComposerDialog;
+  parent.querySelector('#habit-name').value='이전 이름';parent.querySelector('#habit-name-picker').click();const picker=c.habitNameDialog;picker.querySelector('[data-habit-name-category="custom"]').click();
+  let input=picker.querySelector('#habit-name-custom-input');assert.equal(input.value,'이전 이름');input.value='  ';input.oninput();picker.querySelector('#habit-name-custom-apply').click();
+  assert.equal(c.habitNameDialog,picker);assert.match(picker.querySelector('[data-habit-name-error]').textContent,/입력해주세요/);assert.equal(parent.querySelector('#habit-name').value,'이전 이름');
+  input.value='  나만의 좋은 습관  ';input.oninput();picker.querySelector('[data-habit-name-category="body"]').click();picker.querySelector('[data-habit-name-category="custom"]').click();input=picker.querySelector('#habit-name-custom-input');assert.equal(input.value,'  나만의 좋은 습관  ');
+  for(const event of [{key:'Enter',isComposing:true},{key:'Enter',keyCode:229}]){input.onkeydown({...event,preventDefault(){assert.fail('composition must continue');}});assert.equal(c.habitNameDialog,picker);}
+  input.onkeydown({key:'Enter',isComposing:false,preventDefault(){}});assert.equal(c.habitNameDialog,null);assert.equal(parent.querySelector('#habit-name').value,'나만의 좋은 습관');assert.equal(c.document.activeElement,parent.querySelector('#habit-name'));
+  parent.querySelector('#btn-habit-submit').click();const state={habits:{}};h.saves[0].mutate(state);assert.equal(state.habits['new-habit'].name,'나만의 좋은 습관');
+});
+
+test('Back from the name picker retains the composer draft and stale account choices cannot apply',()=>{
+  const h=composerHarness(),c=h.c;h.browser.scrollY=430;c.openHabitComposer('emotion',null,h.trigger);const parent=c.habitComposerDialog;
+  parent.querySelector('#habit-name').value='저장 전 이름';parent.querySelector('#habit-name-picker').click();const picker=c.habitNameDialog;h.back();
+  assert.equal(c.habitNameDialog,null);assert.equal(picker.isConnected,false);assert.equal(c.habitComposerDialog,parent);assert.equal(parent.open,true);assert.equal(parent.querySelector('#habit-name').value,'저장 전 이름');assert.equal(c.document.activeElement,parent.querySelector('#habit-name'));assert.equal(h.browser.scrollY,430);assert.equal(h.saves.length,0);
+  parent.querySelector('#habit-name-picker').click();const late=c.habitNameDialog;c.SESSION={userId:'different'};c.saveSessionEpoch++;late.querySelector('[data-habit-name-option="0"]').click();assert.equal(c.habitNameDialog,null);assert.equal(parent.querySelector('#habit-name').value,'저장 전 이름');assert.equal(h.saves.length,0);c.refreshHabitComposerBooks();assert.equal(c.habitComposerDialog,null);
 });
 
 test('old create and edit save completions cannot close or clear a newer habit composer',()=>{
@@ -515,7 +623,7 @@ test('changing popup months preserves dialog scroll and focused navigation while
   c.SESSION={userId:'owner'};c.habitHistoryOpenFor='h1';c.habitHistoryMonth={y:2026,m:8};
   c.habitSaveIntents={h1:{'2026-08-15':{checked:true,status:'saving'}}};
   vm.runInContext(source.slice(source.indexOf('function habitWithPendingChecks('),source.indexOf('function habitSaveStatusHtml(')),c);
-  const button={getAttribute:()=> 'h1|2026-08-15',addEventListener(type,fn){this.click=fn;}};
+  const button={getAttribute:key=>key==='data-habit-day'?'h1|2026-08-15':null,hasAttribute:()=>false,addEventListener(type,fn){this.click=fn;}};
   const calendar={innerHTML:'old dates',querySelectorAll:()=>[button]},label={},summary={};
   const modal={scrollTop:425,querySelector:selector=>({'[data-habit-history-calendar]':calendar,'.habit-hist-month-label':label,'[data-habit-popup-summary]':summary}[selector])};
   c.app={querySelector:()=>modal};c.render=()=>assert.fail('month navigation must not replace the dialog');

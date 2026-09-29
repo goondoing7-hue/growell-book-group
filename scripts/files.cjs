@@ -9,7 +9,7 @@ const DEPLOY_FILES = Object.freeze([
   'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css',
   'dailyVerseDomain.js', 'popupHistory.js',
   'index.html', 'privacy.html', 'guide.html', 'covers/guide-og.png', 'covers/guide-og.svg', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
-  'habitDomain.js', 'readingHabit.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
+  'habitDomain.js', 'habitDayClock.js', 'habitSuggestions.js', 'readingHabit.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
   'covers/og-image-v2.jpg', 'covers/icon-16.png', 'covers/icon-32.png',
@@ -34,7 +34,7 @@ const TEST_FILES = Object.freeze([
   'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs', 'tests/private-categories.test.cjs',
   'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs', 'tests/home-domain.test.cjs', 'tests/home-ui.test.cjs', 'tests/worksheet-access.test.cjs',
   'tests/editor-colors.test.cjs', 'tests/editor-sanitize.test.cjs', 'tests/reading-timer.test.cjs', 'tests/reading-save.test.cjs', 'tests/reading-integration.test.cjs',
-  'tests/profile.test.cjs', 'tests/habit-domain.test.cjs', 'tests/habit-edit.test.cjs', 'tests/community-load.test.cjs', 'tests/community-features.test.cjs', 'tests/oauth-domain.test.cjs', 'tests/oauth-flow.test.cjs'
+  'tests/profile.test.cjs', 'tests/habit-domain.test.cjs', 'tests/habit-edit.test.cjs', 'tests/habit-day-clock.test.cjs', 'tests/community-load.test.cjs', 'tests/community-features.test.cjs', 'tests/oauth-domain.test.cjs', 'tests/oauth-flow.test.cjs'
 ]);
 
 const PUBLISH_FILES = Object.freeze([
