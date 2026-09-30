@@ -7219,8 +7219,9 @@ function bookPageHtml(book, tab, postId){
     return '<button type="button" class="book-tab'+(tab===t[0]?' is-active':'')+'" aria-current="'+(tab===t[0]?'page':'false')+'" data-book-tab="'+t[0]+'" data-book-id="'+book.id+'"'+(restricted?' title="관리자가 잠근 활동지예요." aria-label="활동지 · 잠김"':'')+'>'+t[1]+(restricted?'<span class="book-tab-lock" aria-hidden="true">'+svgIcon(I_LOCK)+'</span>':'')+'</button>';
   }).join('') + '</nav>';
   var body = tab==='mine' ? mineTabHtml(book, postId) : tab==='worksheet' ? worksheetTabHtml(book) : tab==='materials' ? materialsTabHtml(book, postId) : tab==='habit' ? habitTabHtml(book) : shareTabHtml(book, postId);
-  return '<div class="wrap book-page">' +
-    '<div class="book-banner" style="--accent-soft:var(--'+book.accent+'-soft); background:var(--'+book.accent+'-soft)">' +
+  // Keep the book introduction and opening controls for future book areas.
+  // The current main spaces start directly with their own content.
+  var bookIntroduction = '<div class="book-banner" style="--accent-soft:var(--'+book.accent+'-soft); background:var(--'+book.accent+'-soft)">' +
       '<div class="book-banner-inner">' +
         '<div class="book-banner-cover">'+GrowellBookDetails.coverHtml(book)+'</div>' +
         '<div class="book-banner-text">' +
@@ -7230,7 +7231,9 @@ function bookPageHtml(book, tab, postId){
         '</div>' +
       '</div>' +
     '</div>' +
-    (adminPreview ? adminLockPanelHtml(book) : '') +
+    (adminPreview ? adminLockPanelHtml(book) : '');
+  return '<div class="wrap book-page">' +
+    (book.id==='emotion' ? '' : bookIntroduction) +
     (locked ? lockedBookGateHtml(book) :
       (tabBar + '<div id="book-tab-body">'+body+'</div>')) +
   '</div>';

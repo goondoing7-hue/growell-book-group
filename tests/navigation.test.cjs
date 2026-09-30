@@ -53,19 +53,23 @@ test('worksheet access remains indicated in the new menu without disabling the r
   c.canAccessWorksheet=()=>true;assert.doesNotMatch(navigation(c,{view:'home'}),/data-lock-icon|활동지 · 잠김/);
 });
 
-test('emotion pages keep their cover, title and matching content with no duplicate tabs, while other books retain their original tabs',()=>{
+test('main spaces start with matching content while other book areas retain their introductions and tabs',()=>{
   const c=harness();
   for(const tab of ['mine','share','worksheet','materials','habit']){
     const html=c.bookPageHtml(book(),tab,'record-id');
-    assert.doesNotMatch(html,/class="book-tabs"|data-book-tab=/);
-    assert.match(html,/data-book-cover/);assert.match(html,/emotion의 책/);assert.match(html,/data-reading-hint/);
+    assert.doesNotMatch(html,/class="book-tabs"|data-book-tab=|book-banner|data-book-cover|emotion의 책|data-reading-hint|data-admin-lock/);
+    assert.ok(html.startsWith('<div class="wrap book-page"><div id="book-tab-body">'));
     assert.ok(html.includes('data-space="'+tab+'"'));assert.match(html,/id="book-tab-body"/);
   }
   for(const id of ['thought','body','action']){
     const html=c.bookPageHtml(book(id),'materials','record-id');
     assert.match(html,/class="book-tabs"/);assert.equal((html.match(/data-book-tab=/g)||[]).length,5);
+    assert.match(html,/book-banner|data-book-cover/);assert.match(html,/data-reading-hint/);
     assert.ok(html.includes('data-book-id="'+id+'"'));assert.ok(html.includes('data-space="materials" data-book="'+id+'" data-post="record-id"'));
   }
+  c.isAdmin=()=>true;
+  for(const tab of ['mine','share','worksheet','materials','habit'])assert.doesNotMatch(c.bookPageHtml(book(),tab),/book-banner|data-admin-lock/);
+  assert.match(c.bookPageHtml(book('thought'),'mine'),/data-admin-lock/);
   c.isBookLocked=()=>true;const locked=c.bookPageHtml(book(),'mine');assert.match(locked,/data-book-lock/);assert.doesNotMatch(locked,/data-space=|id="book-tab-body"/);
 });
 
