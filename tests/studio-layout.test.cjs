@@ -297,11 +297,17 @@ test('book category entry defaults to My Space while explicit sharing links and 
     c.location.hash='#/book/'+id+'/share/post/public-note';assert.equal(c.currentRoute().tab,'share');assert.equal(c.currentRoute().postId,'public-note');
   }
   Object.assign(c,{isBookLocked:()=>false,isAdmin:()=>false,canAccessWorksheet:()=>true,readingDataReady:()=>false,
+    headerAvatarHtml:()=>'',headerThemeHtml:()=>'',
     GrowellBookDetails:{coverHtml:()=>'<div data-cover></div>'},mineTabHtml:()=>'<section data-private-space></section>',shareTabHtml:()=>'<section data-sharing-space></section>',
     worksheetTabHtml:()=>'',materialsTabHtml:()=>'',habitTabHtml:()=>'',lockedBookGateHtml:()=>'<section data-locked></section>'});
-  vm.runInContext(section('function bookPageHtml(', '/* ---------------- master render'),c);
+  vm.runInContext(section('function headerHtml(', 'function footerHtml(')+section('function bookPageHtml(', '/* ---------------- master render'),c);
   const entry=c.bookPageHtml({...book,area:'감정',title:'모임 책'});
-  assert.ok(entry.indexOf('data-book-tab="mine"')<entry.indexOf('data-book-tab="share"'));
+  const nav=c.headerHtml({view:'book',bookId:'emotion',tab:'mine'}).match(/<nav class="primary-nav[^>]*>[\s\S]*?<\/nav>/)[0];
+  assert.ok(nav.indexOf('href="#/book/emotion/mine"')<nav.indexOf('href="#/book/emotion/share"'));
+  assert.match(nav,/<a\b[^>]*aria-current="page"[^>]*href="#\/book\/emotion\/mine"/);
+  assert.doesNotMatch(entry,/data-book-tab=/);
+  const legacy=c.bookPageHtml({...book,id:'thought'});
+  assert.ok(legacy.indexOf('data-book-tab="mine"')<legacy.indexOf('data-book-tab="share"'));
   assert.match(entry,/data-private-space/);assert.doesNotMatch(entry,/data-sharing-space/);
   assert.match(c.bookPageHtml(book,'share'),/data-sharing-space/);
   c.isBookLocked=()=>true;const locked=c.bookPageHtml(book);assert.match(locked,/data-locked/);assert.doesNotMatch(locked,/data-private-space|data-sharing-space/);

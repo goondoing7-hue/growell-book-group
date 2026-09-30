@@ -1084,9 +1084,11 @@
 <link rel="stylesheet" href="habits.css">
 <link rel="stylesheet" href="habitGuide.css">
 <link rel="stylesheet" href="habitOverview.css">
+<link rel="stylesheet" href="habitCarousel.css">
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
 <link rel="stylesheet" href="brand.css">
+<link rel="stylesheet" href="navigation.css">
 <script src="popupHistory.js"></script>
 <script src="profile.js"></script>
 <script src="passwordHint.js"></script>
@@ -1103,6 +1105,7 @@
 <script src="habitDayClock.js"></script>
 <script src="habitSuggestions.js"></script>
 <script src="habitGuide.js"></script>
+<script src="habitCarousel.js"></script>
 <script src="readingHabit.js"></script>
 <script src="readingTimerDomain.js"></script>
 <script src="timerAlerts.js"></script>
@@ -2788,38 +2791,51 @@ function doLogout(){
    실제로는 profiles 행을 지우지 않고(작성한 나눔 글/댓글의 작성자 표시가 깨지지 않게)
    나의 공간·활동지·독서기록 같은 개인 데이터만 지우고 로그인 계정(Supabase Auth)을
    없앤 뒤 이름을 "탈퇴한 회원"으로 바꾼다 — delete-account Edge Function이 서버에서 처리. */
-function doDeleteAccount(targetUserId){
-  if(!SESSION) return;
-  var isSelf = !targetUserId || targetUserId===SESSION.userId;
+function doDeleteAccount(targetUserId, password, btn){
+  if(!SESSION || btn&&btn.disabled) return;
+  var session=SESSION,owner=session.userId,epoch=saveSessionEpoch,me=STATE.users[owner];
+  var isSelf = !targetUserId || targetUserId===owner;
   if(isSelf && SESSION.authKind==='oauth'){showToast('간편가입 계정의 탈퇴는 관리자에게 요청해주세요. Google·카카오 비밀번호를 입력하지 마세요.');return;}
+  function guard(){if(SESSION!==session||saveSessionEpoch!==epoch)throw new Error('delete-session-changed');}
+  var pw='';
+  if(isSelf){
+    pw=password===undefined?window.prompt('계정을 삭제하려면 비밀번호를 입력해주세요.'):password;
+    if(pw===null)return;
+    if(typeof pw!=='string'||!pw){showToast('비밀번호를 입력해주세요.',true);return;}
+    if(!me||!me.loginId||!me.authUserId){showToast('로그인 정보를 확인할 수 없어요. 다시 로그인해주세요.',true);return;}
+  }
   var msg = isSelf
     ? '정말 계정을 삭제할까요? 나의 공간 일기, 활동지, 독서 기록이 모두 사라지고 되돌릴 수 없어요. (작성하신 나눔 글은 남아요)'
     : '이 회원의 계정을 삭제할까요? 나의 공간, 활동지, 독서 기록이 모두 사라지고 되돌릴 수 없어요.';
   if(!confirm(msg)) return;
+  if(btn){btn.disabled=true;btn.textContent='확인 중…';}
   var verify = Promise.resolve();
   /* 본인 계정 삭제는 실수/도용으로 인한 삭제를 막기 위해 비밀번호 재입력을 한 번 더 요구한다 —
      입력한 비밀번호로 signInWithPassword를 다시 호출해보는 방식으로 검증(로그인과 동일한 서버 검증
      로직 재사용, 별도 API 불필요). 틀리면 삭제 진행 자체가 되지 않는다. */
   if(isSelf){
-    var pw = window.prompt('계정을 삭제하려면 비밀번호를 입력해주세요.');
-    if(pw===null) return;
-    if(!pw){ showToast('비밀번호를 입력해주세요.', true); return; }
-    var me = STATE.users[SESSION.userId];
-    verify = sb.auth.signInWithPassword({email:loginEmailFor(me.loginId), password:pw}).then(function(authRes){
-      if(authRes.error) throw new Error('growell-wrong-password');
+    verify = verify.then(function(){
+      guard();return sb.auth.signInWithPassword({email:loginEmailFor(me.loginId), password:pw});
+    }).then(function(authRes){
+      guard();pw='';password='';
+      if(!authRes||authRes.error)throw new Error('growell-wrong-password');
+      if(!authRes.data||!authRes.data.user||authRes.data.user.id!==me.authUserId)throw new Error('delete-auth-mismatch');
     });
   }
-  verify.then(function(){
+  return verify.then(function(){
+    guard();
     return sb.auth.getSession();
   }).then(function(sessRes){
-    var token = sessRes && sessRes.data && sessRes.data.session && sessRes.data.session.access_token;
+    guard();
+    var authSession=sessRes&&sessRes.data&&sessRes.data.session,token=authSession&&authSession.access_token;
+    if(!token||sessRes.error||me&&me.authUserId&&(!authSession.user||authSession.user.id!==me.authUserId))throw new Error('delete-auth-mismatch');
     return callEdgeFunction('delete-account', isSelf ? {} : {targetUserId:targetUserId}, token);
   }).then(function(res){
+    guard();
     if(!res || res.__status!==200 || !res.ok){ showToast('계정 삭제에 실패했어요. 다시 시도해주세요.', true); return; }
     if(isSelf){
-      var uid = SESSION.userId;
       doLogout();
-      delete STATE.users[uid];
+      delete STATE.users[owner];
       showToast('계정이 삭제됐어요. 그동안 함께해주셔서 감사해요.');
       location.hash = '#/';
       render();
@@ -2830,8 +2846,24 @@ function doDeleteAccount(targetUserId){
       render();
     }
   }).catch(function(err){
+    if(err&&err.message==='delete-session-changed')return;
     if(err && err.message==='growell-wrong-password'){ showToast('비밀번호가 올바르지 않아요.', true); return; }
     showToast('계정 삭제에 실패했어요. 다시 시도해주세요.', true);
+  }).finally(function(){
+    pw='';password='';
+    if(btn&&btn.isConnected!==false){btn.disabled=false;btn.textContent='비밀번호 확인 후 삭제';}
+  });
+}
+function bindAccountDeletion(){
+  var form=document.getElementById('profile-delete-form'),details=document.getElementById('profile-delete-settings');
+  if(!form||!details)return;
+  var input=document.getElementById('profile-delete-password'),button=document.getElementById('btn-delete-account'),session=SESSION,epoch=saveSessionEpoch;
+  details.addEventListener('toggle',function(){if(!details.open)input.value='';else input.focus({preventScroll:true});});
+  form.addEventListener('submit',function(event){
+    event.preventDefault();
+    if(button.disabled||SESSION!==session||saveSessionEpoch!==epoch)return;
+    if(!input.value){showToast('비밀번호를 입력해주세요.',true);input.focus();return;}
+    var password=input.value;input.value='';doDeleteAccount(null,password,button);
   });
 }
 /* 프로필 수정 — 가입 후에도 본인이 언제든 별명·프로필 사진을 바꿀 수 있게 한다.
@@ -4049,33 +4081,29 @@ function headerThemeHtml(){
     '<button class="icon-btn header-theme-toggle" id="btn-theme" type="button" aria-label="'+themeSwitchLabel(current)+'" title="'+themeSwitchLabel(current)+'"><span aria-hidden="true">'+themeModeIcon(current)+'</span></button></div>';
 }
 function headerHtml(route){
-  var navItems = [{id:'home',label:'홈'}].concat(BOOKS.map(function(b){ return {id:'book:'+b.id, label:b.area, book:b}; }));
+  var navItems = [{id:'home',label:'홈'},{id:'mine',label:'나의 공간'},{id:'share',label:'나눔'},{id:'worksheet',label:'활동지'},{id:'materials',label:'자료실'},{id:'habit',label:'습관'}];
   var navHtml = navItems.map(function(n){
-    if(n.id==='home'){
-      var active = route.view==='home';
-      return '<a class="nav-pill'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' href="#/">홈</a>';
-    }
-    var b = n.book;
-    var active = route.view==='book' && route.bookId===b.id;
-    var locked = isBookLocked(b);
-    return '<a class="nav-pill'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' href="#/book/'+b.id+'/mine">'+b.area+(locked?svgIcon(I_LOCK,'0 0 24 24'):'')+'</a>';
+    var active=n.id==='home'?route.view==='home':route.view==='book'&&route.bookId==='emotion'&&(route.tab||'mine')===n.id;
+    var restricted=n.id==='worksheet'&&!canAccessWorksheet('emotion');
+    return '<a class="nav-pill'+(active?' is-active':'')+'"'+(active?' aria-current="page"':'')+' href="'+(n.id==='home'?'#/':'#/book/emotion/'+n.id)+'"'+(restricted?' title="관리자가 잠근 활동지예요." aria-label="활동지 · 잠김"':'')+'>'+n.label+(restricted?svgIcon(I_LOCK,'0 0 24 24'):'')+'</a>';
   }).join('');
   var admin = isAdmin();
   var right;
   if(SESSION){
     var av = headerAvatarHtml();
-    right = headerThemeHtml() + '<div class="user-menu">' +
+    right = headerThemeHtml() + '<a class="icon-btn header-archive-link'+(route.view==='archive'?' is-active':'')+'" href="#/archive" aria-label="아카이브" title="아카이브"'+(route.view==='archive'?' aria-current="page"':'')+'>'+svgIcon('<rect x="3" y="3" width="18" height="5" rx="1"/><path d="M5 8v12h14V8M10 12h4"/>')+'</a><div class="user-menu">' +
       '<button class="profile-btn" id="btn-profile-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="profile-dropdown" aria-label="내 프로필과 계정 메뉴" title="내 프로필">'+av+'</button>' +
       '<div class="profile-dropdown" id="profile-dropdown" hidden>' +
         '<div class="profile-dropdown-head">'+av+'<div class="profile-dropdown-name"><span>'+esc(SESSION.name)+'</span>'+(admin?'<span class="admin-badge">운영자</span>':'')+'</div></div>' +
         '<div class="profile-dropdown-sep"></div>' +
+        '<a class="profile-dropdown-item" href="#/archive" id="btn-profile-archive">아카이브</a>' +
         '<a class="profile-dropdown-item" href="#/profile/edit" id="btn-goto-profile-edit">프로필 수정</a>' +
         (admin
           ? '<a class="profile-dropdown-item" href="#/admin/users">가입자 목록</a>'
           : '<button class="profile-dropdown-item" id="btn-grant-admin" type="button">운영자 코드 입력</button>') +
-        '<button class="profile-dropdown-item is-danger" id="btn-delete-account" type="button">계정 삭제</button>' +
+        '<div class="profile-dropdown-sep"></div><button class="profile-dropdown-item" id="btn-logout" type="button">로그아웃</button>' +
       '</div>' +
-    '</div><button class="header-logout" id="btn-logout" type="button">로그아웃</button>';
+    '</div>';
   } else {
     right = headerThemeHtml() + '<button class="btn btn-primary btn-sm" id="btn-login-open" type="button">로그인</button>';
   }
@@ -4083,9 +4111,7 @@ function headerHtml(route){
   '<header class="site-header"><div class="header-top"><div class="header-inner">' +
     '<a class="brand" href="#/" aria-label="GROWELL 홈"><svg class="brand-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5.5C8.5 3.2 5 3.2 2.5 4.5v14c3-1.1 6.5-1 9.5 1.5 3-2.5 6.5-2.6 9.5-1.5v-14C19 3.2 15.5 3.2 12 5.5Z"/><path d="M12 5.5V20"/></svg><span>GROWELL</span></a>' +
     '<div class="header-actions">'+right+'</div>' +
-  '</div></div><div class="header-inner header-nav-row"><nav class="primary-nav" aria-label="주요 메뉴">'+navHtml+'</nav>' +
-    '<a class="nav-pill archive-nav'+(route.view==='archive'?' is-active':'')+'" href="#/archive"'+(route.view==='archive'?' aria-current="page"':'')+'>아카이브</a>' +
-  '</div></header>';
+  '</div></div><div class="header-inner header-nav-row"><nav class="primary-nav main-space-nav" aria-label="주요 메뉴">'+navHtml+'</nav></div></header>';
 }
 
 function footerHtml(){
@@ -4757,6 +4783,9 @@ function profileEditHtml(){
       GrowellPasswordHint.formHtml('pe') +
       '<button class="btn btn-block" style="margin-top:10px" id="btn-pe-hint-save" type="button">힌트 저장</button>') +
       (SESSION.authKind==='oauth'?'<section class="card" style="padding:18px;margin-top:16px"><h3>개인 기록 복구 파일</h3><p class="sub">기록의 열쇠를 안전한 곳에 보관해주세요. 다른 사람에게 보내지 마세요.</p><button class="btn btn-block" id="btn-private-recovery-export" type="button">복구 파일 저장</button><p class="hint" id="private-recovery-status" role="status"></p></section>':recoveryPanelHtml()) +
+      '<details class="profile-delete-settings" id="profile-delete-settings"><summary>계정 삭제</summary>'+
+        (SESSION.authKind==='oauth'?'<p class="profile-delete-note">간편가입 계정의 탈퇴는 관리자에게 요청해주세요.</p>':'<form id="profile-delete-form"><p class="profile-delete-note" id="profile-delete-note">삭제하면 나의 공간, 활동지, 독서 기록을 되돌릴 수 없어요. 공유한 나눔 글은 남아요.</p><label class="field-label" for="profile-delete-password">비밀번호 확인</label><input type="password" id="profile-delete-password" autocomplete="current-password" aria-describedby="profile-delete-note" required><button class="btn btn-danger btn-block" id="btn-delete-account" type="submit">비밀번호 확인 후 삭제</button></form>')+
+      '</details>'+
     '</div>' +
   '</div></div>';
 }
@@ -5827,7 +5856,8 @@ function habitCardSaveStatusHtml(habitId){return Object.keys(habitSaveIntents[ha
 function habitCardHtml(habit){
   var todayStr=ymd(new Date()),stats=GrowellHabits.stats(habit,todayStr);
   var todayState=habitTodayState(habit,todayStr);
-  return '<article class="card habit-card" data-habit-card="'+esc(habit.id)+'" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><div class="habit-card-head">'+
+  var searchText=[habit.name,habit.goal,habit.place,habit.time,GrowellHabits.behaviorLabel(habit)].filter(Boolean).join(' ');
+  return '<article class="card habit-card" data-habit-card="'+esc(habit.id)+'" data-habit-name="'+esc(habit.name)+'" data-habit-search="'+esc(searchText)+'" aria-roledescription="슬라이드" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><div class="habit-card-head">'+
     '<div class="habit-card-identity"><span class="habit-card-kind-icon is-'+GrowellHabits.behaviorType(habit)+'" title="'+GrowellHabits.behaviorLabel(habit)+'">'+habitKindIconHtml(habit)+'</span><div><h4 class="habit-name"><button type="button" class="habit-title-button" data-habit-history="'+esc(habit.id)+'" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+esc(habit.name)+habitValueBadgeHtml(habit)+'</button></h4><span class="habit-card-kind-label">'+GrowellHabits.behaviorLabel(habit)+'</span></div></div>'+
     '<div class="habit-card-actions"><button type="button" class="habit-icon-btn habit-detail-arrow" data-habit-history="'+esc(habit.id)+'" title="진행 상황" aria-label="'+esc(habit.name)+' 진행 상황 보기">'+svgIcon(I_BACK)+'</button><button type="button" class="habit-icon-btn" data-edit-habit="'+esc(habit.id)+'" title="습관 수정" aria-label="'+esc(habit.name)+' 수정">'+svgIcon(I_EDIT)+'</button></div></div>'+
     habitFactsHtml(habit)+habitReadingProgressHtml(habit)+'<div class="habit-card-goal" data-habit-card-goal="'+esc(habit.id)+'">'+habitCardProgressHtml(stats)+'</div>'+
@@ -5864,9 +5894,8 @@ function habitFormHtml(book,editingHabit){
     ['end-date','목표일','date',h.endDate,'',0]];
   return '<div class="habit-form" id="habit-form" data-book="'+esc(book.id)+'">'+
     '<div class="composer-head"><h4 id="habit-form-title">'+(editingHabit?'나에게 맞게 습관 수정':'새 습관 만들기')+'</h4><button type="button" class="icon-btn" id="btn-close-habit-form" aria-label="습관 설정 닫기">'+svgIcon(I_CLOSE)+'</button></div>'+
-    '<button type="button" class="habit-value-guide-link" id="habit-value-guide-open" aria-haspopup="dialog">가치 가이드 보기 <span aria-hidden="true">→</span></button>'+
     '<fieldset class="habit-kind-picker"><legend>습관 종류</legend><div class="habit-kind-options">'+['do','avoid'].map(function(value){return '<label class="habit-kind-option" data-habit-kind="'+value+'"><input type="radio" name="habit-behavior-type" value="'+value+'"'+(kind===value?' checked':'')+'><span>'+habitKindIconHtml({behaviorType:value})+GrowellHabits.behaviorLabel({behaviorType:value})+'</span></label>';}).join('')+'</div><p class="habit-kind-hint" id="habit-kind-hint">'+GrowellHabits.behaviorHint(h)+'</p></fieldset>'+
-    '<section class="habit-reading-settings"'+(kind==='avoid'?' hidden':'')+'><label class="habit-reading-toggle"><input type="checkbox" id="habit-is-reading"'+(reading?' checked':'')+(kind==='avoid'?' disabled':'')+'><span>독서 습관</span></label><div data-habit-reading-fields'+(reading?'':' hidden')+'><span class="habit-book-label">읽을 책</span><input type="hidden" id="habit-reading-book"><button type="button" id="habit-reading-book-open" class="habit-book-trigger" aria-haspopup="dialog">읽을 책 선택하기 <span aria-hidden="true">⌄</span></button><p data-habit-reading-status role="status"></p><div class="habit-reading-target-head"><label for="habit-reading-pages">하루 목표 페이지</label><output id="habit-reading-pages-value" for="habit-reading-pages">'+target+'쪽</output></div><input type="range" id="habit-reading-pages" min="1" max="'+Math.max(100,target)+'" step="1" value="'+target+'"><p class="habit-form-hint">오늘 저장한 읽은 분량으로 확인해요. 성공은 직접 체크해주세요.</p></div></section>'+
+    '<section class="habit-reading-settings"'+(kind==='avoid'?' hidden':'')+'><label class="habit-reading-toggle"><input type="checkbox" id="habit-is-reading" aria-controls="habit-reading-fields"'+(reading?' checked':'')+(kind==='avoid'?' disabled':'')+'><span>독서 습관</span></label><div id="habit-reading-fields" data-habit-reading-fields'+(reading?'':' hidden')+'><input type="hidden" id="habit-reading-book"><button type="button" id="habit-reading-book-open" class="habit-book-trigger" aria-haspopup="dialog">읽을 책 선택하기 <span aria-hidden="true">⌄</span></button><p data-habit-reading-status role="status"></p><div class="habit-reading-target"><div class="habit-reading-target-head"><label for="habit-reading-pages">하루 목표</label><output id="habit-reading-pages-value" for="habit-reading-pages">'+target+'쪽</output></div><input type="range" id="habit-reading-pages" min="1" max="'+Math.max(100,target)+'" step="1" value="'+target+'"></div><p class="habit-form-hint">성공은 직접 체크해주세요.</p></div></section>'+
     '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row'+(f[0]==='name'?' habit-name-field':'')+'"'+(f[0]==='goal'?' data-habit-text-goal'+(reading?' hidden':''):'')+'><label for="habit-'+f[0]+'">'+f[1]+'</label>'+(f[0]==='name'?valueSelect:'')+'<input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+'>'+(f[0]==='name'?'<button type="button" class="habit-name-picker-button" id="habit-name-picker" aria-haspopup="dialog"'+(reading?' hidden':'')+'>가치별 습관 고르기</button>':'')+'</div>';}).join('')+'</div>'+
     '<p class="habit-form-hint">목표 기간에는 매일 한 번 체크해요. 목표일을 비워두면 계속 실천할 수 있어요. 기간을 바꿔도 이전 체크 기록은 보관됩니다.</p>'+
     '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button>'+(editingHabit?'<button type="button" class="habit-delete-link" data-delete-habit="'+esc(editingHabit.id)+'">'+svgIcon(I_TRASH)+' 이 습관 삭제</button>':'')+'</div>';
@@ -5917,7 +5946,7 @@ function closeHabitValueGuide(restore){
   if(restore!==false&&SESSION===node._session&&saveSessionEpoch===node._epoch&&node._route===location.href&&(!parent||habitComposerDialog===parent&&parent.isConnected)){
     var trigger=node._trigger;
     if(trigger&&trigger.isConnected)trigger.focus({preventScroll:true});
-    else if(parent)parent.querySelector('#habit-value-guide-open').focus({preventScroll:true});
+    else if(parent){var fallback=habitNameDialog&&habitNameDialog._parent===parent&&habitNameDialog.isConnected?habitNameDialog.querySelector('#habit-name-guide-open'):parent.querySelector('#habit-name');if(fallback)fallback.focus({preventScroll:true});}
     else if(habitValueSummaryDialog){var guideTrigger=habitValueSummaryDialog.querySelector('[data-habit-values-guide]');if(guideTrigger)guideTrigger.focus({preventScroll:true});}
   }
 }
@@ -6037,7 +6066,7 @@ function refreshHabitComposerBooks(){
     }
     select.value=selected;node._bookSignature=sig;node._selectedBook=selected;
   }
-  trigger.disabled=!choices.length;status.textContent=choices.length?'아카이브에 등록한 책 중에서 선택해주세요.':'등록한 책이 없어요. 아카이브에서 책을 먼저 등록해주세요.';
+  trigger.disabled=!choices.length;status.textContent=choices.length?'':'등록한 책이 없어요. 아카이브에서 책을 먼저 등록해주세요.';
   var chosen=choices.find(function(row){return row.entry.id===select.value;}),slider=node.querySelector('#habit-reading-pages');
   trigger.innerHTML=(chosen?habitReadingBookCover(chosen.book)+'<span class="habit-book-trigger-title">'+esc(chosen.book.title)+'</span>':'<span>'+(select.value?'책장에 없는 책 · 다시 선택해주세요':'읽을 책 선택하기')+'</span>')+'<span class="habit-book-chevron" aria-hidden="true">⌄</span>';
   trigger.setAttribute('aria-label',chosen?'읽을 책 변경: '+chosen.book.title:'읽을 책 선택하기');bindHabitBookImages(node);
@@ -6102,7 +6131,6 @@ function openHabitComposer(bookId,habitId,trigger){
   var reading=node.querySelector('#habit-is-reading'),slider=node.querySelector('#habit-reading-pages'),select=node.querySelector('#habit-reading-book');
   reading.onchange=function(){syncHabitComposerKind(node);};
   node.querySelector('#habit-name-picker').onclick=function(){openHabitNamePicker(node);};
-  node.querySelector('#habit-value-guide-open').onclick=function(){openHabitValueGuide(node,this);};
   node._valueName=node.querySelector('#habit-name').value;
   node.querySelector('#habit-name').oninput=function(event){node._manualName=this.value;if(!event.isComposing)inferHabitComposerValue(node);};
   node.querySelector('#habit-name').oncompositionend=function(){inferHabitComposerValue(node);};
@@ -6135,7 +6163,12 @@ function habitsSectionHtml(book){
   var habits=myHabits(book.id),editingHabit=habitEditingId?habits.find(function(h){return h.id===habitEditingId;}):null;
   var form='<button type="button" class="habit-add-btn" id="btn-open-habit-form" data-book="'+esc(book.id)+'" aria-haspopup="dialog">+ 새 습관 만들기</button>';
   var today=new Date();
-  var list=habits.length?'<div class="habit-list">'+habits.map(habitCardHtml).join('')+'</div>':'<div class="empty">아직 만든 습관이 없어요. 장소·시간·목표를 정해서 하나 시작해보세요.</div>';
+  var list=habits.length?'<section class="habit-browser" data-habit-browser data-habit-scope="'+esc(book.id)+'" aria-label="생성한 습관">'+
+    '<label class="habit-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input type="search" data-habit-search-input aria-label="습관 검색" placeholder="습관 이름 · 목표 검색" autocomplete="off"></label>'+
+    '<div class="habit-carousel-toolbar"><p data-habit-result role="status">내 습관 '+habits.length+'개</p><div class="habit-carousel-navigation" data-habit-navigation><button type="button" data-habit-prev aria-label="이전 습관"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button><span data-habit-position>1 / '+habits.length+'</span><button type="button" data-habit-next aria-label="다음 습관"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 5 7 7-7 7"/></svg></button></div></div>'+
+    '<div class="habit-list habit-carousel" data-habit-carousel tabindex="0" role="region" aria-roledescription="캐러셀" aria-label="생성한 습관 카드">'+habits.map(habitCardHtml).join('')+'</div>'+
+    '<p class="habit-carousel-empty" data-habit-empty hidden>찾는 습관이 없어요. 다른 단어로 검색해보세요.</p>'+
+    '<p class="habit-carousel-hint">옆으로 넘겨 다른 습관을 살펴보세요.</p></section>':'<div class="empty">아직 만든 습관이 없어요. 장소·시간·목표를 정해서 하나 시작해보세요.</div>';
   var historyHabit=habitHistoryOpenFor?myHabitOverviewItems().find(function(h){return h.id===habitHistoryOpenFor;}):null;
   if(habitHistoryOpenFor&&!historyHabit) habitHistoryOpenFor=null;
   var hero='<header class="habit-hero"><div class="habit-hero-top"><span class="habit-hero-kicker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21v-9M12 16C5 16 3 12 3 7c6 0 9 3 9 9ZM12 12c0-6 3-9 9-9 0 6-3 9-9 9ZM6 21h12"/></svg>매일의 작은 변화</span><time class="habit-hero-date" datetime="'+ymd(today)+'">'+(today.getMonth()+1)+'월 '+today.getDate()+'일 '+['일요일','월요일','화요일','수요일','목요일','금요일','토요일'][today.getDay()]+'</time></div><h2>나를 키우는 습관</h2><p>완벽한 하루보다, 다시 이어가는 하루.</p></header>';
@@ -7181,7 +7214,7 @@ function bookPageHtml(book, tab, postId){
   var locked = isBookLocked(book);
   var adminPreview = isAdmin();
   var tabs = [['mine','나의 공간'],['share','나눔 공간'],['worksheet','활동지'],['materials','자료실'],['habit','습관']];
-  var tabBar = '<nav class="book-tabs" aria-label="'+esc(book.area)+' 책의 다섯 공간">' + tabs.map(function(t){
+  var tabBar = book.id==='emotion' ? '' : '<nav class="book-tabs" aria-label="'+esc(book.area)+' 책의 다섯 공간">' + tabs.map(function(t){
     var restricted=t[0]==='worksheet'&&!canAccessWorksheet(book.id);
     return '<button type="button" class="book-tab'+(tab===t[0]?' is-active':'')+'" aria-current="'+(tab===t[0]?'page':'false')+'" data-book-tab="'+t[0]+'" data-book-id="'+book.id+'"'+(restricted?' title="관리자가 잠근 활동지예요." aria-label="활동지 · 잠김"':'')+'>'+t[1]+(restricted?'<span class="book-tab-lock" aria-hidden="true">'+svgIcon(I_LOCK)+'</span>':'')+'</button>';
   }).join('') + '</nav>';
@@ -7205,6 +7238,7 @@ function bookPageHtml(book, tab, postId){
 
 /* ---------------- master render ---------------- */
 function render(){
+  if(typeof GrowellHabitCarousel!=='undefined'&&GrowellHabitCarousel.beforeRender(SESSION?SESSION.userId:'',location.href,render))return;
   captureComposerDraft();
   captureSpaceComposerDialogPosition();
   var previousReadingDialog=document.getElementById('reading-home-dialog');
@@ -7283,6 +7317,7 @@ function bindEvents(route){
   }
   var app = document.getElementById('app');
 
+  if(typeof GrowellHabitCarousel!=='undefined')GrowellHabitCarousel.bindAll(app,SESSION?SESSION.userId:'',location.href);
   bindPrivateCategoryEvents(app);
   GrowellMemberAccess.bind();
   GrowellBookDetails.bind();
@@ -7325,8 +7360,7 @@ function bindEvents(route){
   if(restartLogin)restartLogin.addEventListener('click',restartMemberLogin);
   var logoutBtn = document.getElementById('btn-logout');
   if(logoutBtn) logoutBtn.addEventListener('click', doLogout);
-  var deleteAccountBtn = document.getElementById('btn-delete-account');
-  if(deleteAccountBtn) deleteAccountBtn.addEventListener('click', function(){ doDeleteAccount(null); });
+  bindAccountDeletion();
   app.querySelectorAll('.admin-user-delete-btn').forEach(function(b){
     b.addEventListener('click', function(){ doDeleteAccount(b.getAttribute('data-user-id')); });
   });
