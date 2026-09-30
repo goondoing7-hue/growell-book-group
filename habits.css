@@ -354,3 +354,23 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
  .habit-hist-grid{gap:4px;}.habit-hist-cell{min-height:42px;font-size:13px;}
  .habit-hist-grid.is-stable-weeks .habit-hist-cell.is-empty{min-height:42px;}
 }
+
+/* Value controls share the existing quiet green palette. */
+.habit-overview-heading .habit-values-overview{margin:0;flex:none;}
+.habit-values-entry{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:999px;min-height:38px;padding:8px 13px;background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--ink));font:inherit;font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer;}
+.habit-values-entry:hover{border-color:var(--line-strong);background:var(--surface-2);}
+.habit-name-field{position:relative;}
+.habit-form-row.habit-name-field{grid-template-columns:1fr auto auto;}
+.habit-name-field>.habit-value-compact{grid-column:2;grid-row:1;width:auto;min-width:52px;max-width:75px;min-height:34px;margin:0;padding:5px 4px 5px 10px;border:0;border-radius:8px;background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--ink));font:inherit;font-size:13px;line-height:1.4;cursor:pointer;}
+.habit-name-field>.habit-name-picker-button{grid-column:3;}
+.habit-name-field>input{grid-column:1/-1;}
+.habit-values-dialog .habit-values-filter{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow:auto;scrollbar-width:none;}
+.habit-values-dialog .habit-values-filter>button{display:flex;flex:1;flex-direction:column;gap:3px;min-width:30px;min-height:58px;padding:8px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--ink-soft);box-shadow:none;}
+.habit-values-dialog .habit-values-filter>button>b{font-size:14px;font-weight:600;}.habit-values-dialog .habit-values-filter>button>small{display:none;}.habit-values-dialog .habit-values-filter>button>span{font-size:10px;font-weight:400;}
+.habit-values-dialog .habit-values-filter>button[aria-pressed=true]{border-bottom-color:var(--brand-green);color:var(--brand-green);background:transparent;box-shadow:none;}
+.habit-values-dialog .habit-values-summary-heading{border:0;border-radius:0;background:transparent;padding:8px 0;}
+.habit-values-dialog .habit-values-summary-heading h5{color:var(--ink);font-size:22px;font-weight:600;}
+.habit-values-dialog .habit-values-summary-heading>[data-habit-values-guide]{color:var(--brand-green);text-decoration:none;}
+.habit-values-dialog .habit-values-keyword{border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:550;}
+.habit-values-dialog .habit-values-keyword[data-status=success]{border-color:transparent;background:var(--brand-soft,var(--surface-2));color:var(--brand-green);}
+@media(max-width:480px){.habit-values-entry{font-size:11px;padding:7px 10px;min-height:35px;}.habit-overview-heading{gap:12px;}.habit-overview-heading h3{font-size:21px;}.habit-name-field>.habit-name-picker-button{font-size:11px;padding:5px 6px;}.habit-values-dialog .habit-values-body{padding:20px;}}
