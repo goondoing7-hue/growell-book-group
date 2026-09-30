@@ -283,15 +283,74 @@
       return kind!=='avoid'||keyword!=='독서';
     });
   }
+  // Names stay on this device. These rules suggest a value; they do not infer a
+  // person's intent. Explicit choices are retained by the caller.
+  var inferenceRules={
+    faith:[
+      [20,/감사기도|새벽기도|성경읽|성경필사|말씀묵상|하나님과|주님과/],
+      [8,/하나님|예수|주님|성경|말씀|예배|찬양|신앙|영성|경건|중보|큐티/],
+      [16,/\b(?:pray(?:er|ing|s)?|bible|scripture|devotional|worship|praise|faith|spiritual)\b/,true],
+      [20,/\b(?:read(?:ing)? (?:the )?bible|bible study|thanksgiving prayer)\b/,true]
+    ],
+    love:[
+      [20,/부모님안부|가족안부|친구안부|안부묻|안부전|감사전|사랑표현|고마움전|감사편지/],
+      [8,/가족|부모님|엄마|아빠|친구|배우자|부부|연인|안부|편지|전화|사랑|고마움|감사인사/],
+      [16,/\b(?:family|parents?|friends?|spouse|relationship|love|call(?:ing)?|contact|conversation|compliment|letter)\b/,true]
+    ],
+    virtue:[
+      [20,/소비줄이|지출줄이|충동구매|과소비|낭비줄이|욕줄이|말조심|약속지키|시간약속|쓰레기줍|일회용품줄이|분리수거/],
+      [8,/배려|용서|인내|정직|친절|예의|존중|기부|나눔|절약|저축|검소|책임|약속|금연|금주|줄이기|덜쓰기/],
+      [16,/\b(?:volunteer(?:ing)?|donat(?:e|ion|ing)|kindness|courtesy|patience|forgiv(?:e|eness|ing)|honesty|restraint|budget(?:ing)?|sav(?:e|ing)|recycl(?:e|ing))\b/,true]
+    ],
+    wisdom:[
+      [20,/책읽|책한권|독후감|독서노트|영어단어|외국어|자기계발|자기개발|문제풀|문제해결|머신러닝|딥러닝|강의듣|기사읽|뉴스읽/],
+      [8,/학습|예습|학업|시험|영어|중국어|일본어|단어|어휘|문법|수학|과학|역사|코딩|프로그래밍|강의|강좌|배우기|암기|문제집|지식/],
+      [16,/\b(?:read(?:ing)?|books?|stud(?:y|ying)|learn(?:ing)?|review|vocabulary|english|language|coding|programming|course|lecture|certification|homework|self[- ]development)\b/,true],
+      [20,/\b(?:machine learning|deep learning|learn(?:ing)? (?:english|vocabulary)|review(?:ing)? notes)\b/,true]
+    ],
+    emotion:[
+      [20,/감사일기|감정일기|마음일기|감정기록|기분기록|마음돌보|마음챙김|이야기들어|마음나누|감정표현/],
+      [8,/감정|기분|공감|마음|명상|심호흡|스트레스|감사기록/],
+      [16,/\b(?:journal(?:ing)?|diary|emotion(?:s|al)?|feeling(?:s)?|empathy|listen(?:ing)?|comfort|mindfulness|meditat(?:e|ion|ing)|gratitude)\b/,true],
+      [20,/\b(?:gratitude journal|gratitude diary|record(?:ing)? feelings|active listening)\b/,true]
+    ],
+    beauty:[
+      [20,/방정리|집정리|책상정리|옷장정리|공간정리|주변정리|설거지|침구정돈|침대정리|음악감상|미술감상|전시관람|꽃가꾸|사진찍/],
+      [8,/정돈|미술|그림|그리기|노래|악기|피아노|기타연습|연주|작곡|공예|도예|전시|사진|꾸미기|꽃꽂이|정원/],
+      [16,/\b(?:clean(?:ing)?|tidy(?:ing)?|declutter(?:ing)?|music|art|arts|paint(?:ing)?|draw(?:ing)?|sing(?:ing)?|piano|guitar|craft(?:s)?|museum|photography|garden(?:ing)?)\b/,true],
+      [20,/\b(?:listen(?:ing)? to music|learn(?:ing)? (?:the )?(?:piano|guitar)|organi[sz](?:e|ing) (?:my |the )?(?:room|desk))\b/,true]
+    ],
+    body:[
+      [20,/물마시|물먹|물한잔|수분섭취|수분보충|일찍자|일찍일어|제때자|잠자기|잠들기|잠자리에|아침먹|아침식사|끼니챙기|건강식|계단오르|숨쉬기|몸풀기|러닝머신/],
+      [8,/체조|요가|필라테스|헬스|근력|스쿼트|팔굽혀|수영|자전거|등산|러닝|조깅|취침|기상|휴식|수분|양치|비타민|영양|식사|식습관|야식/],
+      [16,/\b(?:exercis(?:e|ing)|workout|fitness|run(?:ning)?|jog(?:ging)?|walk(?:ing)?|stretch(?:ing)?|yoga|swim(?:ming)?|cycl(?:e|ing)|breath(?:e|ing)?|sleep(?:ing)?|bedtime|water|hydrat(?:e|ion|ing)|diet|nutrition|meal(?:s)?|rest)\b/,true]
+    ]
+  };
   function inferValueId(name){
     if(typeof name!=='string')return '';
-    var text=name.normalize('NFC').trim().replace(/\s+/g,' ');
+    var text=name.normalize('NFKC').toLowerCase().trim().replace(/\s+/g,' ');
     if(!text)return '';
-    var matches=values.filter(function(value){
-      if(value.id==='wisdom' && /책\s*읽기/.test(text))return true;
-      return value.examples.some(function(example){return text.indexOf(example.keyword)>=0;});
+    // The actual picker vocabulary always wins, including 산책 → 정.
+    for(var i=0;i<values.length;i++){
+      if(values[i].examples.some(function(example){return text===example.keyword;}))return values[i].id;
+    }
+    var compact=text.replace(/\s+/g,'');
+    var bestId='virtue',bestScore=0;
+    values.forEach(function(value){
+      var score=0;
+      value.examples.forEach(function(example){
+        if(text.indexOf(example.keyword)>=0)score+=12;
+      });
+      inferenceRules[value.id].forEach(function(rule){
+        // Compact Korean phrases tolerate spacing. English uses word boundaries
+        // on the original text, so "art" does not accidentally match "start".
+        if(rule[1].test(rule[2]?text:compact))score+=rule[0];
+      });
+      // Equal scores use the stable 성·애·덕·지·정·미·체 order. An unknown
+      // non-empty name means keeping a small promise, under 덕.
+      if(score>bestScore){bestId=value.id;bestScore=score;}
     });
-    return matches.length===1?matches[0].id:'';
+    return bestId;
   }
   function guide(){return copy(guidebook);}
   return {categories:categories,suggestions:suggestions,guide:guide,inferValueId:inferValueId};

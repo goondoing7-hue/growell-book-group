@@ -360,9 +360,8 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
 .habit-values-entry{display:inline-flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:999px;min-height:38px;padding:8px 13px;background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--ink));font:inherit;font-size:12px;font-weight:650;white-space:nowrap;cursor:pointer;}
 .habit-values-entry:hover{border-color:var(--line-strong);background:var(--surface-2);}
 .habit-name-field{position:relative;}
-.habit-form-row.habit-name-field{grid-template-columns:1fr auto auto;}
-.habit-name-field>.habit-value-compact{grid-column:2;grid-row:1;width:auto;min-width:52px;max-width:75px;min-height:34px;margin:0;padding:5px 4px 5px 10px;border:0;border-radius:8px;background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--ink));font:inherit;font-size:13px;line-height:1.4;cursor:pointer;}
-.habit-name-field>.habit-name-picker-button{grid-column:3;}
+.habit-form-row.habit-name-field{grid-template-columns:1fr auto;}
+.habit-name-field>.habit-name-picker-button{grid-column:2;}
 .habit-name-field>input{grid-column:1/-1;}
 .habit-values-dialog .habit-values-filter{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow:auto;scrollbar-width:none;}
 .habit-values-dialog .habit-values-filter>button{display:flex;flex:1;flex-direction:column;gap:3px;min-width:30px;min-height:58px;padding:8px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--ink-soft);box-shadow:none;}
@@ -374,3 +373,39 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
 .habit-values-dialog .habit-values-keyword{border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:550;}
 .habit-values-dialog .habit-values-keyword[data-status=success]{border-color:transparent;background:var(--brand-soft,var(--surface-2));color:var(--brand-green);}
 @media(max-width:480px){.habit-values-entry{font-size:11px;padding:7px 10px;min-height:35px;}.habit-overview-heading{gap:12px;}.habit-overview-heading h3{font-size:21px;}.habit-name-field>.habit-name-picker-button{font-size:11px;padding:5px 6px;}.habit-values-dialog .habit-values-body{padding:20px;}}
+
+/* An in-app bookshelf keeps the same font and covers on every device. */
+.habit-name-field>input[type=hidden],.habit-reading-settings input[type=hidden]{display:none;}
+.habit-book-label{display:block;margin:0 0 8px;color:var(--ink-soft);font-size:14px;font-weight:600;}
+.habit-book-trigger{display:flex;align-items:center;gap:12px;width:100%;min-height:50px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:inherit;font-size:15px;text-align:left;cursor:pointer;}
+.habit-book-trigger:disabled{opacity:.55;cursor:default;}
+.habit-book-trigger:focus-visible,.habit-book-option:focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:3px;}
+.habit-book-trigger-title{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
+.habit-book-chevron{margin-left:auto;color:var(--ink-soft);flex:none;}
+.habit-book-cover{position:relative;display:flex;align-items:center;justify-content:center;flex:none;width:50px;aspect-ratio:2/3;overflow:hidden;border-radius:4px;background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--primary));box-shadow:0 3px 10px #20372b12;}
+.habit-book-cover>svg{width:25px;height:25px;}
+.habit-book-cover>img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;}
+.habit-book-cover>img[hidden]{display:none;}
+.habit-book-trigger .habit-book-cover{width:30px;}
+.habit-book-trigger .habit-book-cover>svg{width:18px;height:18px;}
+.habit-book-dialog{box-sizing:border-box;width:min(540px,calc(100% - 28px));max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);margin:auto;padding:0;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);font:inherit;overflow:hidden;box-shadow:0 24px 90px #1e382633;}
+.habit-book-dialog[open]{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;animation:habit-book-enter .2s ease-out;}
+.habit-book-dialog::backdrop{background:rgba(26,43,35,.36);backdrop-filter:blur(5px);}
+.habit-book-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:24px 24px 18px;}
+.habit-book-head h4{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.4;}
+.habit-book-head p{margin:6px 0 0;color:var(--ink-soft);font-size:13px;line-height:1.6;}
+.habit-book-head .icon-btn{flex:none;}
+.habit-book-search{padding:0 24px 14px;}
+.habit-book-search input{box-sizing:border-box;width:100%;min-height:46px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:16px;}
+.habit-book-list{min-height:0;max-height:55vh;max-height:55dvh;padding:0 24px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent;-webkit-overflow-scrolling:touch;}
+.habit-book-option{display:flex;align-items:center;gap:15px;box-sizing:border-box;width:100%;min-height:102px;margin:0;padding:13px 2px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:var(--ink);font:inherit;text-align:left;cursor:pointer;}
+.habit-book-option:last-child{border-bottom:0;}
+.habit-book-option:hover,.habit-book-option[aria-pressed=true]{background:var(--brand-soft,var(--surface-2));}
+.habit-book-copy{display:grid;gap:6px;min-width:0;flex:1;}
+.habit-book-copy strong{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;font-size:15px;font-weight:600;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere;}
+.habit-book-copy small{color:var(--ink-soft);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.habit-book-selected{flex:none;width:20px;color:var(--brand-green,var(--primary));font-size:18px;text-align:center;}
+.habit-book-result{margin:0;padding:12px 24px 18px;border-top:1px solid var(--line);color:var(--ink-soft);font-size:12px;line-height:1.6;}
+@keyframes habit-book-enter{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+@media(max-width:480px){.habit-book-head{padding:20px 18px 16px;}.habit-book-head h4{font-size:19px;}.habit-book-search{padding:0 18px 12px;}.habit-book-list{padding:0 18px;}.habit-book-result{padding:12px 18px 16px;}.habit-book-option{gap:12px;}.habit-book-copy strong{font-size:14px;}}
+@media(prefers-reduced-motion:reduce){.habit-book-dialog[open]{animation:none;}}
