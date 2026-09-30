@@ -364,7 +364,7 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
 .habit-name-field>.habit-name-picker-button{grid-column:2;}
 .habit-name-field>input{grid-column:1/-1;}
 .habit-values-dialog .habit-values-filter{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow:auto;scrollbar-width:none;}
-.habit-values-dialog .habit-values-filter>button{display:flex;flex:1;flex-direction:column;gap:3px;min-width:30px;min-height:58px;padding:8px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--ink-soft);box-shadow:none;}
+.habit-values-dialog .habit-values-filter>button{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:3px;min-width:30px;min-height:58px;padding:8px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--ink-soft);box-shadow:none;}
 .habit-values-dialog .habit-values-filter>button>b{font-size:14px;font-weight:600;}.habit-values-dialog .habit-values-filter>button>small{display:none;}.habit-values-dialog .habit-values-filter>button>span{font-size:10px;font-weight:400;}
 .habit-values-dialog .habit-values-filter>button[aria-pressed=true]{border-bottom-color:var(--brand-green);color:var(--brand-green);background:transparent;box-shadow:none;}
 .habit-values-dialog .habit-values-summary-heading{border:0;border-radius:0;background:transparent;padding:8px 0;}
