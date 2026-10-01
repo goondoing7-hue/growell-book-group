@@ -495,6 +495,7 @@ function composerHarness(){
           focus(){if(this.isConnected)c.document.activeElement=this;},select(){this.selected=true;},addEventListener(event,fn){this['on'+event]=fn;},insertAdjacentHTML(where,value){this.innerHTML+=value;},
           click(){if(this.disabled)return;const event={target:this,preventDefault(){}};if(this.attrs.type==='radio'){nodes.filter(other=>other.attrs.name===this.attrs.name).forEach(other=>{other.checked=false;});this.checked=true;if(this.onchange)this.onchange(event);}else if(this.onclick)this.onclick(event);if(listeners.click)listeners.click(event);}};
         item.dataset=Object.fromEntries(Object.entries(attrs).filter(([key])=>key.startsWith('data-')).map(([key,value])=>[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase()),value]));
+        Object.defineProperty(item,'placeholder',{get:()=>attrs.placeholder||'',set:value=>{attrs.placeholder=String(value);}});
         let content='',contentNodes=[];
         Object.defineProperty(item,'isConnected',{get:()=>node.isConnected&&nodes.includes(item)});
         item.querySelector=selector=>contentNodes.find(child=>matches(child,selector))||null;item.querySelectorAll=selector=>contentNodes.filter(child=>matches(child,selector));
@@ -532,16 +533,36 @@ function openComposerGuide(h){
   return {guide:h.c.habitValueGuideDialog,picker,trigger};
 }
 
-test('native habit composer Back closes only the dialog and restores the same trigger and page position',()=>{
-  const h=composerHarness(),c=h.c;h.browser.scrollY=825;c.document.activeElement=h.trigger;
-  c.openHabitComposer('emotion',null,h.trigger);const dialog=c.habitComposerDialog;
-  assert.equal(dialog.open,true);assert.match(dialog.innerHTML,/id="habit-form-title">새 습관 만들기/);
-  assert.equal(dialog.querySelector('#habit-value-guide-open'),null);assert.equal(dialog.querySelector('[data-habit-reading-fields]').hidden,true);assert.equal(dialog.querySelector('#habit-is-reading').getAttribute('aria-controls'),'habit-reading-fields');assert.equal(dialog.querySelector('#habit-reading-fields'),dialog.querySelector('[data-habit-reading-fields]'));assert.equal(dialog.querySelector('[data-habit-reading-status]').textContent,'');
-  dialog.fields['#habit-name'].value='작성 중';h.back();
-  assert.equal(c.habitComposerDialog,null);assert.equal(dialog.open,false);assert.equal(dialog.isConnected,false);
-  assert.equal(c.document.activeElement,h.trigger);assert.equal(h.browser.scrollY,825);assert.match(h.browser.location.href,/#\/book\/emotion\/habit$/);
-  assert.equal(h.saves.length,0,'closing does not submit the incomplete habit');
-  h.back();assert.match(h.browser.location.href,/#\/book\/emotion\/mine$/);
+test('native composer Back and its back button close only the dialog and restore the trigger and page position',()=>{
+  for(const closing of ['browser','button']){
+    const h=composerHarness(),c=h.c;h.browser.scrollY=825;c.document.activeElement=h.trigger;
+    c.openHabitComposer('emotion',null,h.trigger);const dialog=c.habitComposerDialog,before=JSON.stringify(c.STATE);
+    assert.equal(dialog.open,true);assert.match(dialog.querySelector('#habit-form-title').innerHTML,/새 습관 만들기/);
+    assert.equal(dialog.querySelector('#habit-value-guide-open'),null);assert.equal(dialog.querySelector('[data-habit-reading-fields]').hidden,true);assert.equal(dialog.querySelector('#habit-is-reading').getAttribute('aria-controls'),'habit-reading-fields');assert.equal(dialog.querySelector('#habit-reading-fields'),dialog.querySelector('[data-habit-reading-fields]'));assert.equal(dialog.querySelector('[data-habit-reading-status]').textContent,'');
+    dialog.fields['#habit-name'].value='작성 중';if(closing==='browser')h.back();else dialog.querySelector('#habit-compose-back').click();
+    assert.equal(c.habitComposerDialog,null);assert.equal(dialog.open,false);assert.equal(dialog.isConnected,false);
+    assert.equal(c.document.activeElement,h.trigger);assert.equal(h.browser.scrollY,825);assert.match(h.browser.location.href,/#\/book\/emotion\/habit$/);
+    assert.equal(h.saves.length,0,'closing does not submit the incomplete habit');assert.equal(JSON.stringify(c.STATE),before);
+    h.back();assert.match(h.browser.location.href,/#\/book\/emotion\/mine$/);
+  }
+});
+
+test('changing the habit kind updates examples without replacing inputs or overwriting the typed draft',()=>{
+  const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const dialog=c.habitComposerDialog,before=JSON.stringify(c.STATE);
+  const draft={name:'나만의 약속',place:'내 방',time:'저녁 8시',goal:'주중 15분','start-date':'2026-09-21','end-date':'2026-10-20'};
+  const fields=Object.fromEntries(Object.keys(draft).map(key=>[key,dialog.querySelector('#habit-'+key)]));
+  for(const [key,value] of Object.entries(draft))fields[key].value=value;
+  const doingPlaceholders=Object.fromEntries(['name','place','time','goal'].map(key=>[key,fields[key].placeholder]));
+  for(const kind of ['avoid','do','avoid','do']){
+    const radio=dialog.querySelector('[name="habit-behavior-type"][value="'+kind+'"]');radio.focus();radio.click();
+    assert.equal(c.habitComposerDialog,dialog);assert.equal(c.document.activeElement,radio);
+    for(const [key,value] of Object.entries(draft)){assert.equal(dialog.querySelector('#habit-'+key),fields[key]);assert.equal(fields[key].value,value);}
+    if(kind==='avoid'){
+      assert.match(fields.name.placeholder,/게임/);assert.match(fields.goal.placeholder,/게임/);
+      assert.notEqual(fields.name.placeholder,doingPlaceholders.name);assert.notEqual(fields.goal.placeholder,doingPlaceholders.goal);
+    }else for(const key of ['name','place','time','goal'])assert.equal(fields[key].placeholder,doingPlaceholders[key]);
+    assert.equal(h.saves.length,0);assert.equal(JSON.stringify(c.STATE),before);
+  }
 });
 
 test('switching away from doing hides and clears reading controls instead of saving a stale reading connection',()=>{

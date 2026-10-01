@@ -467,3 +467,51 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
  .habit-picker-custom{margin-top:27px;padding-top:20px;}
 }
 @media(prefers-reduced-motion:reduce){.habit-picker-tabs>button[aria-pressed=true]>span{animation:none;}}
+
+/* The composer shares the approved picker frame; kind changes keep the same form. */
+.habit-compose-dialog{max-width:780px;border-radius:26px;overflow:hidden;}
+.habit-compose-dialog .habit-form{display:flex;flex-direction:column;max-height:calc(90vh - 2px);max-height:calc(90dvh - 2px);padding:0;}
+.habit-compose-dialog .habit-compose-head{flex:none;min-height:78px;padding:0 30px;margin:0;border-bottom:1px solid var(--line);}
+.habit-compose-heading{display:flex;align-items:center;gap:10px;min-width:0;}
+.habit-compose-dialog #habit-form-title{font-size:16px;font-weight:600;letter-spacing:-.4px;}
+.habit-compose-dialog .habit-compose-head button{display:grid;place-items:center;width:34px;min-width:34px;min-height:44px;padding:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:21px;cursor:pointer;}
+.habit-compose-dialog .habit-compose-head .habit-compose-close{color:var(--ink-soft);}
+.habit-compose-close>svg{width:20px;height:20px;}
+.habit-compose-body{min-height:0;padding:30px 38px 36px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent;}
+.habit-compose-title{margin:0;font-size:25px;font-weight:600;line-height:1.4;letter-spacing:-.8px;}
+.habit-compose-lead{margin:14px 0 32px;color:var(--ink-soft);font-size:13px;line-height:1.7;}
+.habit-compose-dialog .habit-kind-picker{margin:0 0 24px;}
+.habit-compose-dialog .habit-kind-picker legend{font-size:12px;font-weight:400;margin-bottom:9px;}
+.habit-compose-dialog .habit-kind-options{gap:10px;}
+.habit-compose-dialog .habit-kind-option{display:flex;align-items:center;justify-content:center;gap:8px;min-height:50px;padding:10px 8px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);}
+.habit-compose-dialog .habit-kind-option input{position:static;appearance:auto;opacity:1;flex:none;width:14px;height:14px;min-height:0;margin:0;padding:0;border:0;box-shadow:none;accent-color:var(--brand-green,var(--primary));}
+.habit-compose-dialog .habit-kind-option span,.habit-compose-dialog .habit-kind-option input:checked+span{display:inline;padding:0;border:0;border-radius:0;box-shadow:none;background:transparent;color:inherit;font-size:13px;font-weight:400;line-height:1.5;}
+.habit-compose-dialog .habit-kind-option:has(input:checked){border-color:var(--brand-green,var(--primary));background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--primary));}
+.habit-compose-dialog .habit-kind-option:has(input:checked)>span{font-weight:600;}
+.habit-compose-dialog .habit-kind-option[data-habit-kind=avoid] input{accent-color:var(--habit-avoid-ink,#af4038);}
+.habit-compose-dialog .habit-kind-option[data-habit-kind=avoid]:has(input:checked){border-color:var(--habit-avoid-ink,#af4038);background:var(--habit-avoid-soft,#fdeceb);color:var(--habit-avoid-ink,#af4038);}
+.habit-compose-dialog .habit-kind-option:has(input:focus-visible){outline:2px solid currentColor;outline-offset:3px;}
+.habit-compose-dialog .habit-kind-option input:focus-visible+span{outline:0;}
+.habit-compose-dialog .habit-kind-hint{display:none;}
+.habit-compose-dialog .habit-form-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 16px;}
+.habit-compose-dialog .habit-name-field,.habit-compose-dialog [data-habit-text-goal]{grid-column:1/-1;}
+.habit-compose-dialog .habit-name-field{display:flex;flex-direction:column;align-items:stretch;gap:0;}
+.habit-compose-dialog .habit-form-row label{font-size:12px;font-weight:400;margin:0 0 9px;color:var(--ink-soft);}
+.habit-compose-dialog .habit-form-row input{min-width:0;min-height:52px;padding:12px 13px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px;line-height:1.5;}
+.habit-compose-dialog .habit-name-field>.habit-name-picker-button{align-self:flex-start;min-height:36px;margin-top:6px;padding:4px 0;border:0;border-radius:0;background:none;color:var(--brand-green,var(--primary));font-size:12px;font-weight:400;text-decoration:underline;text-underline-offset:4px;}
+.habit-compose-dialog .habit-form-hint{font-size:12px;margin:20px 0;}
+.habit-compose-dialog #btn-habit-submit{width:100%;min-height:48px;border-radius:10px;font-size:14px;font-weight:600;}
+.habit-compose-dialog .habit-compose-head button:focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:2px;}
+@media(max-width:540px){
+ .habit-compose-dialog{width:calc(100% - 24px);border-radius:22px;}
+ .habit-compose-dialog .habit-compose-head{min-height:68px;padding:0 16px;}
+ .habit-compose-dialog #habit-form-title{font-size:15px;}
+ .habit-compose-heading{gap:5px;}
+ .habit-compose-body{padding:25px 22px 30px;}
+ .habit-compose-title{font-size:23px;}
+ .habit-compose-lead{font-size:12px;margin:12px 0 26px;}
+ .habit-compose-dialog .habit-kind-option{gap:6px;padding:10px 5px;}
+ .habit-compose-dialog .habit-kind-option span{font-size:12px;}
+ .habit-compose-dialog .habit-form-grid{gap:19px 12px;}
+ .habit-compose-dialog .habit-form-row input{padding:11px 10px;}
+}
