@@ -5995,8 +5995,10 @@ function openHabitNamePicker(parent){
   node._customValueId=parent.querySelector('#habit-value-select').value;
   var matched=categories.find(function(item){return GrowellHabitSuggestions.suggestions(kind,item.id).indexOf(node._customValue)>=0;});
   node._category=node._customValueId||(matched?matched.id:categories[0].id);
-  node.innerHTML='<header class="habit-name-head"><div><h4 id="habit-name-title">가치별 습관 고르기</h4><p>'+GrowellHabits.behaviorLabel({behaviorType:kind})+' · 오늘 돌보고 싶은 가치를 골라보세요.</p></div><button type="button" class="icon-btn" id="habit-name-close" aria-label="습관 이름 선택 닫기">'+svgIcon(I_CLOSE)+'</button></header><button type="button" class="habit-value-guide-link" id="habit-name-guide-open" aria-haspopup="dialog">7가지 가치 가이드 보기 <span aria-hidden="true">→</span></button>'+
-    '<div class="habit-name-tabs" role="group" aria-label="습관 가치">'+categories.concat([{id:'custom',label:'직접 입력'}]).map(function(item){return '<button type="button" data-habit-name-category="'+item.id+'" aria-pressed="'+(item.id===node._category)+'"><b>'+item.label+'</b>'+(item.hanja?'<small>'+item.hanja+'</small>':'')+'</button>';}).join('')+'</div><div data-habit-name-content></div>';
+  node.innerHTML='<header class="habit-picker-head"><button type="button" class="habit-picker-back" id="habit-name-back" aria-label="새 습관 만들기로 돌아가기"><span aria-hidden="true">←</span><span id="habit-name-title">가치별 습관 고르기</span></button><button type="button" class="habit-picker-close" id="habit-name-close" aria-label="습관 이름 선택 닫기">'+svgIcon(I_CLOSE)+'</button></header>'+
+    '<div class="habit-picker-body"><h2 class="habit-picker-title">오늘 돌보고 싶은 가치</h2><p class="habit-picker-lead">'+GrowellHabits.behaviorLabel({behaviorType:kind})+' · 키워드를 고르거나 직접 입력해보세요.</p><button type="button" class="habit-picker-guide" id="habit-name-guide-open" aria-haspopup="dialog">7가지 가치 가이드 보기 <span aria-hidden="true">↗</span></button>'+
+    '<div class="habit-picker-tabs" role="group" aria-label="습관 가치">'+categories.map(function(item){return '<button type="button" data-habit-name-category="'+item.id+'" aria-pressed="'+(item.id===node._category)+'" aria-label="'+esc(item.label+' '+item.meaning)+'"><span>'+item.label+'</span></button>';}).join('')+'</div><div data-habit-name-content></div>'+
+    '<section class="habit-picker-custom"><label for="habit-name-custom-input">직접 입력</label><div class="habit-picker-custom-row"><input id="habit-name-custom-input" type="text" maxlength="40" autocomplete="off" placeholder="나만의 습관 키워드" value="'+esc(node._customValue)+'"><button type="button" id="habit-name-custom-apply">선택</button></div><p data-habit-name-error role="status"></p></section></div>';
   function choose(value,fromKeyword){
     if(!current()){closeHabitNamePicker(false);return;}
     var name=String(value||'').trim();
@@ -6014,20 +6016,16 @@ function openHabitNamePicker(parent){
   function paint(){
     node.querySelectorAll('[data-habit-name-category]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-habit-name-category')===node._category));});
     var content=node.querySelector('[data-habit-name-content]');
-    if(node._category==='custom'){
-      content.innerHTML='<section class="habit-name-custom"><label for="habit-name-custom-input">나만의 습관 이름</label><input id="habit-name-custom-input" type="text" maxlength="40" autocomplete="off" placeholder="예: 하루 한 번 안부 전하기" value="'+esc(node._customValue)+'"><p class="habit-form-hint">입력한 습관에 맞는 가치가 자동으로 연결돼요.</p><p data-habit-name-error role="status"></p><button type="button" class="btn btn-primary" id="habit-name-custom-apply">이 이름 사용하기</button></section>';
-      var input=node.querySelector('#habit-name-custom-input');
-      input.oninput=function(){node._customValue=input.value;};
-      input.onkeydown=function(event){if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229){event.preventDefault();choose(input.value);}};
-      node.querySelector('#habit-name-custom-apply').onclick=function(){choose(input.value);};
-    }else{
-      var options=GrowellHabitSuggestions.suggestions(kind,node._category),value=categories.find(function(item){return item.id===node._category;});
-      content.innerHTML='<section class="habit-value-intro" data-value="'+value.id+'"><div class="habit-value-seal" aria-hidden="true">'+value.label+'<span>'+value.hanja+'</span></div><div><h5>'+esc(value.title)+'</h5><p>'+esc(value.summary)+'</p><button type="button" class="habit-value-more" data-habit-value-info="'+value.id+'" aria-haspopup="dialog">가치 가이드 보기 →</button></div></section><div class="habit-name-options">'+options.map(function(name,index){return '<button type="button" class="habit-name-option" data-habit-name-option="'+index+'">'+esc(name)+'</button>';}).join('')+'</div><p class="habit-form-hint">'+(kind==='avoid'?'지키고 싶은 가치를 고르고, 목표에는 줄이거나 멈출 행동을 구체적으로 적어주세요. 독서 습관은 실천할 습관에서 만들 수 있어요.':'키워드를 고른 다음, 목표에 언제 무엇을 얼마나 할지 적어보세요.')+'</p>';
-      node.querySelector('[data-habit-value-info]').onclick=function(){openHabitValueGuide(parent,this,value.id);};
-      node.querySelectorAll('[data-habit-name-option]').forEach(function(button){button.onclick=function(){choose(options[Number(button.getAttribute('data-habit-name-option'))],true);};});
-    }
+    var options=GrowellHabitSuggestions.suggestions(kind,node._category),value=categories.find(function(item){return item.id===node._category;});
+    content.innerHTML='<h3 class="habit-picker-value-title">'+value.label+' <small>'+value.hanja+'</small> · '+esc(value.meaning)+'</h3><div class="habit-picker-keywords">'+options.map(function(name,index){return '<button type="button" data-habit-name-option="'+index+'" aria-pressed="'+(node._customValue===name)+'">'+esc(name)+'</button>';}).join('')+'</div>'+(kind==='avoid'&&value.id==='wisdom'?'<p class="habit-picker-restriction">독서는 실천할 습관에서 선택할 수 있어요.</p>':'');
+    node.querySelectorAll('[data-habit-name-option]').forEach(function(button){button.onclick=function(){choose(options[Number(button.getAttribute('data-habit-name-option'))],true);};});
   }
   document.body.appendChild(node);
+  var input=node.querySelector('#habit-name-custom-input');
+  input.oninput=function(){node._customValue=input.value;node.querySelector('[data-habit-name-error]').textContent='';};
+  input.onkeydown=function(event){if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229){event.preventDefault();choose(input.value);}};
+  node.querySelector('#habit-name-custom-apply').onclick=function(){choose(input.value);};
+  node.querySelector('#habit-name-back').onclick=function(){closeHabitNamePicker();};
   node.querySelector('#habit-name-close').onclick=function(){closeHabitNamePicker();};
   node.querySelector('#habit-name-guide-open').onclick=function(){openHabitValueGuide(parent,this);};
   node.addEventListener('cancel',function(event){event.preventDefault();closeHabitNamePicker();});
