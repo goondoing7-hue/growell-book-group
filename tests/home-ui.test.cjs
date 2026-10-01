@@ -208,7 +208,7 @@ test('today habit keeps the name and goal with compact escaped time and place wi
   const unset=c.homeHabitRowsHtml([{...habit,time:'',place:''}]);
   assert.match(unset,/<b>시간<\/b> <span>미설정/);assert.match(unset,/<b>장소<\/b> <span>미설정/);
   assert.match(c.homeHabitRowsHtml([{...habit,goal:''}]),/<b>목표<\/b> <span>하루 한 번 실천하기/);assert.match(c.homeHabitRowsHtml([{...habit,goal:'',behaviorType:'avoid'}]),/<b>목표<\/b> <span>하루 한 번 절제하기/);
-  assert.match(c.homeHabitRowsHtml([{...habit,valueId:'wisdom'}]),/class="habit-value-badge" data-value="wisdom"/);assert.doesNotMatch(c.homeHabitRowsHtml([{...habit,name:'독서',valueId:''}]),/habit-value-badge/);
+  assert.doesNotMatch(c.homeHabitRowsHtml([{...habit,valueId:'wisdom'}]),/habit-value-badge/);assert.doesNotMatch(c.homeHabitRowsHtml([{...habit,name:'독서',valueId:''}]),/habit-value-badge/);
 });
 
 test('home habit book titles appear only for reading and protect unavailable or another members archive book',()=>{

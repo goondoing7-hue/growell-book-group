@@ -4390,7 +4390,7 @@ function homeHabitRowsHtml(habits){
     }
     return '<li data-home-habit-card="'+esc(habit.id)+'" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'"><label class="home-habit">' +
       '<input type="checkbox" data-home-habit="'+esc(habit.id)+'"'+(checked?' checked':'')+'>' +
-      '<span class="home-habit-heading"><span class="home-habit-name">'+esc(habit.name)+habitValueBadgeHtml(habit)+'</span>'+(bookTitle?'<small class="home-habit-book" title="'+esc(bookTitle)+'">'+esc(bookTitle)+'</small>':'')+'</span><small class="home-habit-meta">'+
+      '<span class="home-habit-heading"><span class="home-habit-name">'+esc(habit.name)+'</span>'+(bookTitle?'<small class="home-habit-book" title="'+esc(bookTitle)+'">'+esc(bookTitle)+'</small>':'')+'</span><small class="home-habit-meta">'+
       '<span class="home-habit-meta-goal" title="'+esc('목표 '+goal)+'"><b>목표</b> <span>'+esc(goal)+'</span></span>'+
       '<span class="home-habit-meta-time" title="'+esc('시간 '+time)+'"><b>시간</b> <span>'+esc(time)+'</span></span>'+
       '<span class="home-habit-meta-place" title="'+esc('장소 '+place)+'"><b>장소</b> <span>'+esc(place)+'</span></span></small></label>' +
@@ -5848,7 +5848,7 @@ function habitStreakHtml(habit,stats){
   return '<svg class="habit-streak-flame" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#ed7634" d="M13 1c1 5-3 6-3 10-2-1-3-3-3-5-2 3-4 6-4 9a9 9 0 0 0 18 0c0-4-3-7-4-10-1 2-2 3-3 4 1-3 0-6-1-8Z"/><path fill="#ffd46a" d="M12 12c0 3-4 4-4 7a4 4 0 0 0 8 0c0-3-2-4-4-7Z"/></svg><span><strong>'+stats.streak+'일</strong> 연속 '+(GrowellHabits.behaviorType(habit)==='avoid'?'절제':'실천')+'</span>';
 }
 function habitCardProgressHtml(stats){
-  if(stats.total===null) return '<div class="habit-goal-head"><span>지금까지 <strong>'+stats.success+'일 성공</strong></span><span class="habit-goal-open">나의 속도로 계속</span></div>';
+  if(stats.total===null) return '<div class="habit-goal-head"><span>지금까지 <strong>'+stats.success+'일 성공</strong></span></div>';
   return '<div class="habit-goal-head"><span>성공 <strong>'+stats.success+'일</strong> / '+stats.total+'일</span><strong class="habit-goal-percent">'+stats.goalPercent+'%</strong></div>'+
     '<div class="habit-goal-track" role="progressbar" aria-label="목표 기간 성공률" aria-valuenow="'+stats.goalPercent+'" aria-valuemin="0" aria-valuemax="100" aria-valuetext="목표 '+stats.total+'일 중 '+stats.success+'일 성공"><span style="width:'+stats.goalPercent+'%"></span></div>';
 }
@@ -6217,9 +6217,8 @@ function habitStatsPanelHtml(habit){
     ? '<div class="habit-hist-stat-card is-goal"><div class="habit-hist-stat-head"><span class="habit-hist-stat-title">목표 달성률</span><strong class="habit-hist-stat-rate">'+stats.goalPercent+'%</strong></div>'+
       '<div class="habit-hist-stat-bar-track" role="progressbar" aria-label="목표 달성률" aria-valuenow="'+stats.goalPercent+'" aria-valuemin="0" aria-valuemax="100"><div class="habit-hist-stat-bar-fill" style="width:'+stats.goalPercent+'%"></div></div>'+
       '<p class="habit-hist-stat-detail">목표 '+stats.total+'일 중 <strong>'+stats.success+'일 실천</strong> · 실천할 수 있는 날 '+stats.remaining+'일 남음<br>기간 경과 '+stats.elapsedDays+'/'+stats.total+'일 ('+stats.periodPercent+'%)</p></div>'
-    : '<div class="habit-hist-stat-card"><span class="habit-hist-stat-title">나의 속도로 계속 실천 중</span><p class="habit-hist-stat-detail">습관 수정에서 목표일을 정하면 전체 목표에 대한 달성률도 볼 수 있어요.</p></div>';
-  return '<p class="habit-motivation">'+GrowellHabits.motivation(stats)+'</p>'+
-    '<div class="habit-stat-grid"><div class="habit-stat"><small>성공한 날</small><strong>'+stats.success+'<span>일</span></strong></div>'+
+    : '<div class="habit-hist-stat-card"><p class="habit-hist-stat-detail">습관 수정에서 목표일을 정하면 전체 목표에 대한 달성률도 볼 수 있어요.</p></div>';
+  return '<div class="habit-stat-grid"><div class="habit-stat"><small>성공한 날</small><strong>'+stats.success+'<span>일</span></strong></div>'+
     '<div class="habit-stat"><small>성공률</small><strong>'+rate+'</strong></div>'+
     '<div class="habit-stat"><small>현재 연속</small><strong>'+stats.streak+'<span>일</span></strong></div>'+
     '<div class="habit-stat"><small>최장 연속</small><strong>'+stats.bestStreak+'<span>일</span></strong></div></div>'+goal+
@@ -6243,11 +6242,11 @@ function habitMonthPopupHtml(habit){
     '<p class="habit-month-summary" data-habit-month-summary="'+esc(habit.id)+'" data-habit-popup-summary="1">'+habitMonthSummaryHtml(habit,view.y,view.m)+'</p>';
 }
 function habitHistoryModalHtml(habit){
-  var view=habitHistoryView,title=view==='week'?'이번 주':view==='month'?'월별 달력':'나의 작은 성취';
+  var view=habitHistoryView,title=view==='week'?'이번 주':view==='month'?'월별 달력':'';
   var body=view==='week'?habitWeekPopupHtml(habit):view==='month'?habitMonthPopupHtml(habit):
     habitFactsHtml(habit)+habitReadingProgressHtml(habit)+'<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+habitMonthPopupHtml(habit);
   return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
-    '<div class="composer-head"><div><p class="habit-dialog-kicker">'+title+'</p>'+habitKindBadgeHtml(habit)+'<h4 id="habit-dialog-title">'+esc(habit.name)+'</h4></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 기록 닫기">'+svgIcon(I_CLOSE)+'</button></div><div data-habit-history-body>'+body+'</div>'+
+    '<div class="composer-head"><div class="habit-dialog-heading">'+(title?'<p class="habit-dialog-kicker">'+title+'</p>':'')+'<div class="habit-dialog-title-row"><h4 id="habit-dialog-title">'+esc(habit.name)+'</h4>'+habitKindBadgeHtml(habit)+'</div></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 기록 닫기">'+svgIcon(I_CLOSE)+'</button></div><div data-habit-history-body>'+body+'</div>'+
     '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+
     '</div></div>';
 }

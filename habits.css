@@ -130,6 +130,9 @@
 .habit-reading-settings :is(input,select):focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:3px;}
 .habit-reading-settings :is(input,select):disabled{opacity:.55;cursor:default;}
 .habit-reading-progress{padding:14px 15px;margin:18px 0 0;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);font-size:13px;line-height:1.6;}
+.habit-card>.habit-facts:has(+.habit-reading-progress){margin-bottom:0;}
+.habit-card>.habit-reading-progress{margin:16px 0;}
+.habit-card>.habit-reading-progress+.habit-card-goal{margin-top:0;}
 .habit-reading-progress-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--ink-soft);}
 .habit-reading-progress-head>span{font-size:13px;font-weight:600;}
 .habit-reading-progress-head>strong{flex:none;color:var(--ink);font-size:14px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap;}
@@ -286,6 +289,11 @@
 .habit-hist-modal{max-width:620px;max-height:calc(100dvh - 40px);overflow:auto;overscroll-behavior:contain;padding:25px;}
 .habit-hist-modal .composer-head{align-items:flex-start;gap:12px;margin-bottom:12px;}
 .habit-hist-modal .composer-head h4{font-size:22px;line-height:1.45;margin:4px 0;}
+.habit-hist-modal .habit-reading-progress{margin-bottom:18px;}
+.habit-dialog-heading{flex:1;min-width:0;}
+.habit-dialog-title-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;}
+.habit-dialog-title-row h4{min-width:0;overflow-wrap:anywhere;}
+.habit-dialog-title-row .habit-kind-badge{flex:none;margin:0;}
 .habit-dialog-kicker{font-size:12px;color:var(--habit-accent);font-weight:750;margin:0;}
 .habit-dialog-period{font-size:13px;line-height:1.6;color:var(--ink-soft);margin:0 0 16px;}
 .habit-motivation{background:var(--habit-accent-soft);padding:15px 17px;border-radius:12px;font-size:15px;line-height:1.7;font-weight:700;color:var(--habit-accent);margin:0 0 18px;}
