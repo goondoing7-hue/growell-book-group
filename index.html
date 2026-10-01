@@ -3346,6 +3346,7 @@ function submitHabit(bookId, payload, btn){
       behaviorType:GrowellHabits.behaviorType(payload), startDate:period.startDate, endDate:period.endDate, checkedDates:[], createdAt:Date.now()};
   }, {button:btn, originalLabel:'만들기', savingLabel:'만드는 중…', onSuccess:function(){
     finishHabitComposerSave(composer);
+    if(typeof runHabitReminderSync==='function')runHabitReminderSync();
   }});
 }
 function editHabit(habitId, payload, btn){
@@ -3373,6 +3374,7 @@ function editHabit(habitId, payload, btn){
       checkedDates:latest.checkedDates||[], createdAt:existing.createdAt, updatedAt:Date.now()});
   }, {button:btn, originalLabel:'수정하기', savingLabel:'수정 중…', onSuccess:function(){
     finishHabitComposerSave(composer);
+    if(typeof runHabitReminderSync==='function')runHabitReminderSync();
   }});
 }
 function deleteHabit(habitId, btn){
@@ -3384,6 +3386,7 @@ function deleteHabit(habitId, btn){
     if(habitEditingId===habitId){closeHabitComposer();habitFormOpenFor=null;habitEditingId=null;}
     if(habitHistoryOpenFor===habitId){habitHistoryOpenFor=null;habitHistoryMonth=null;}
     render();
+    if(typeof runHabitReminderSync==='function')runHabitReminderSync();
   }});
 }
 /* 체크는 즉시 표시하고 입력한 순서대로 저장한다. 날짜별 마지막 의도를 보존하므로 실패 후
@@ -3410,7 +3413,7 @@ function refreshHabitSaveUI(habitId){
   refreshHabitValueSummary();
   document.querySelectorAll('[data-habit-overview]').forEach(function(panel){
     var active=document.activeElement,focusKey=active&&panel.contains(active)?active.getAttribute('data-habit-overview-day'):null;
-    panel.innerHTML=habitOverviewBodyHtml();
+    panel.innerHTML=habitOverviewBodyHtml()+habitSyncSettingsButtonHtml();
     if(focusKey) panel.querySelectorAll('[data-habit-overview-day]').forEach(function(button){if(button.getAttribute('data-habit-overview-day').split('|')[0]===focusKey.split('|')[0])button.focus({preventScroll:true});});
   });
   if(!document.querySelectorAll('[data-habit-card], [data-habit-stats-panel]').length){if(typeof refreshHomeHabits==='function') refreshHomeHabits();return;}
@@ -5754,12 +5757,14 @@ function habitOverviewBodyHtml(){
   var pending=intents.some(function(intent){return intent.status==='error';})?'저장하지 못한 체크가 포함돼 있어요. 해당 습관에서 다시 저장해주세요.':intents.length?'체크 저장 중…':'';
   return heading+stats+listHeading+'<div class="habit-overview-items">'+rows+'</div><p class="habit-overview-save" role="status">'+pending+'</p>';
 }
-function habitOverviewHtml(){return '<section class="card habit-overview" data-habit-overview aria-label="전체 습관 현황">'+habitOverviewBodyHtml()+'</section>';}
+function habitSyncSettingsButtonHtml(){return SESSION&&memberLoadState.habits==='ready'?'<button type="button" class="habit-sync-overview" data-habit-sync-settings aria-haspopup="dialog">알림 자동 연동</button>':'';}
+function habitOverviewHtml(){return '<section class="card habit-overview" data-habit-overview aria-label="전체 습관 현황">'+habitOverviewBodyHtml()+habitSyncSettingsButtonHtml()+'</section>';}
 function bindHabitOverviewEvents(root){
   root.querySelectorAll('[data-habit-overview]').forEach(function(panel){
     if(panel._habitOverviewBound) return;
     panel._habitOverviewBound=true;
     panel.addEventListener('click',function(event){
+      var syncButton=event.target.closest('[data-habit-sync-settings]');if(syncButton&&panel.contains(syncButton)){event.stopPropagation();openHabitReminder(null,syncButton);return;}
       var valueButton=event.target.closest('[data-habit-value-overview]'),guideButton=event.target.closest('[data-habit-overview-guide]');
       if(valueButton&&panel.contains(valueButton)){event.stopPropagation();openHabitValueSummary(valueButton.getAttribute('data-habit-value-overview'),valueButton);return;}
       if(guideButton&&panel.contains(guideButton)){event.stopPropagation();openHabitValueGuide(null,guideButton);return;}
@@ -5857,13 +5862,37 @@ function habitCardProgressHtml(stats){
     '<div class="habit-goal-track" role="progressbar" aria-label="목표 기간 성공률" aria-valuenow="'+stats.goalPercent+'" aria-valuemin="0" aria-valuemax="100" aria-valuetext="목표 '+stats.total+'일 중 '+stats.success+'일 성공"><span style="width:'+stats.goalPercent+'%"></span></div>';
 }
 function habitCardSaveStatusHtml(habitId){return Object.keys(habitSaveIntents[habitId]||{}).length?habitSaveStatusHtml(habitId):'';}
-function habitReminderActionHtml(habit){return '<button type="button" class="habit-reminder-open" data-habit-reminder="'+esc(habit.id)+'" aria-haspopup="dialog">알림에 추가</button>';}
+function habitReminderActionHtml(habit){return '<button type="button" class="habit-reminder-open" data-habit-reminder="'+esc(habit.id)+'" aria-haspopup="dialog">알림 자동 연동</button>';}
+function habitSyncAccessToken(session,epoch){
+  function guard(){if(!session||SESSION!==session||saveSessionEpoch!==epoch)throw new Error('session_changed');}
+  return Promise.resolve().then(function(){guard();return sb.auth.getSession();}).then(function(result){
+    guard();var auth=result&&result.data&&result.data.session,member=STATE.users[session.userId];
+    if(result.error||!auth||!auth.user||!auth.access_token||!member||member.authUserId!==auth.user.id)throw new Error('auth_required');
+    return auth.access_token;
+  });
+}
+function runHabitReminderSync(){
+  if(!SESSION||typeof GrowellHabitReminder==='undefined'||typeof GrowellHabitReminder.createClient!=='function')return;
+  var session=SESSION,epoch=saveSessionEpoch;
+  var client=GrowellHabitReminder.createClient({isCurrent:function(){return SESSION===session&&saveSessionEpoch===epoch;},getAccessToken:function(){return habitSyncAccessToken(session,epoch);},fetch:window.fetch.bind(window)});
+  client.request('config').then(function(config){if(config.configured)return client.request('run',{});}).catch(function(){}).finally(function(){client.dispose();});
+}
+function handleHabitSyncReturn(){
+  if(!SESSION||memberLoadState.habits!=='ready')return;
+  var url=new URL(location.href),result=url.searchParams.get('habit-sync');
+  if(['connected','error','failed','cancelled'].indexOf(result)<0)return;
+  url.searchParams.delete('habit-sync');history.replaceState(history.state,'',url.href);
+  var trigger=document.querySelector('[data-habit-sync-settings]');
+  if(trigger)openHabitReminder(null,trigger);
+  if(result!=='connected')showToast(result==='cancelled'?'연결을 취소했어요.':'계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
+}
 function openHabitReminder(habitId,trigger){
   if(typeof GrowellHabitReminder==='undefined')return;
   var session=SESSION,epoch=saveSessionEpoch,route=location.href,fromDetail=!!(trigger&&trigger.closest&&trigger.closest('.habit-hist-modal'));
   function current(){return !!session&&SESSION===session&&saveSessionEpoch===epoch&&location.href===route&&memberLoadState.habits==='ready';}
   function getHabit(){
     if(!current())return null;
+    if(habitId===null)return {name:'전체 습관'};
     var habit=STATE.habits[habitId];
     if(!habit||habit.userId!==session.userId)return null;
     var book=bookById(habit.bookId);if(!book)return null;
@@ -5882,9 +5911,9 @@ function openHabitReminder(habitId,trigger){
     return snapshot;
   }
   if(!getHabit())return;
-  GrowellHabitReminder.open({getHabit:getHabit,restoreFocus:function(){
+  GrowellHabitReminder.open({getHabit:getHabit,habitId:habitId,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},restoreFocus:function(){
     if(!getHabit())return;
-    var target=trigger&&trigger.isConnected?trigger:Array.from(document.querySelectorAll('[data-habit-reminder]')).find(function(button){return button.getAttribute('data-habit-reminder')===habitId&&!!(button.closest&&button.closest('.habit-hist-modal'))===fromDetail;});
+    var target=trigger&&trigger.isConnected?trigger:habitId===null?document.querySelector('[data-habit-sync-settings]'):Array.from(document.querySelectorAll('[data-habit-reminder]')).find(function(button){return button.getAttribute('data-habit-reminder')===habitId&&!!(button.closest&&button.closest('.habit-hist-modal'))===fromDetail;});
     if(target)target.focus({preventScroll:true});
   }});
 }
@@ -7322,6 +7351,7 @@ function render(){
   refreshHabitValueSummary();
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
   bindEvents(route);
+  handleHabitSyncReturn();
   showSpaceComposerDialog();
   restoreDraftIfAny(route);
   enhanceLinkPreviews();

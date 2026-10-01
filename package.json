@@ -3,11 +3,16 @@
   "version": "33.0.0",
   "private": true,
   "description": "GROWELL 독서모임 앱",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "check": "node scripts/check.cjs",
     "test": "node scripts/test.cjs",
     "build": "node scripts/build.cjs",
     "publish": "node scripts/publish.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8"
   }
 }

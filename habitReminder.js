@@ -1,126 +1,124 @@
 (function(root,factory){
   var api=factory(root);
-  if(typeof module==='object'&&module.exports)module.exports=api;
-  else root.GrowellHabitReminder=api;
+  if(typeof module==='object'&&module.exports)module.exports=api;else root.GrowellHabitReminder=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
   var active=null;
-  function clean(value,limit){return typeof value==='string'?value.replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim().slice(0,limit):'';}
-  function buildShareData(habit){
-    if(!habit)return null;
-    var name=clean(habit.name,200);if(!name)return null;
-    var lines=[name,habit.behaviorType==='avoid'?'절제할 습관':'실천할 습관'];
-    [['goal','목표'],['time','시간'],['place','장소'],['bookTitle','읽을 책']].forEach(function(field){
-      var value=clean(habit[field[0]],500);if(value)lines.push(field[1]+': '+value);
-    });
-    var start=clean(habit.startDate,10),end=clean(habit.endDate,10),date=/^\d{4}-\d{2}-\d{2}$/;
-    if(date.test(start))lines.push('시작일: '+start);
-    if(date.test(end))lines.push('목표일: '+end);
-    var data={title:name,text:lines.join('\n')};
-    // Only the public habit screen may be attached; never forward query tokens or private IDs.
-    try{
-      var url=new URL(habit.url);
-      if((url.protocol==='https:'||url.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].indexOf(url.hostname)>=0)&&!url.username&&!url.password&&!url.search&&url.pathname==='/'&&/^#\/book\/(emotion|thought|body|action)\/habit$/.test(url.hash))data.url=url.href;
-    }catch(error){}
-    return data;
+  var actions={config:'GET',status:'GET',connect:'POST',settings:'POST',import:'POST',disconnect:'POST',run:'POST'};
+  function failure(code){var error=new Error(code);error.code=code;return error;}
+  function validTime(value){return typeof value==='string'&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);}
+  function authorizationUrl(value,origin){
+    try{var url=new URL(value);return url.protocol==='https:'&&url.hostname==='login.microsoftonline.com'&&!url.port&&!url.username&&!url.password&&!url.hash&&url.pathname==='/common/oauth2/v2.0/authorize'&&url.searchParams.getAll('redirect_uri').length===1&&url.searchParams.get('redirect_uri')===origin+'/api/habit-sync'?url.href:'';}catch(error){return '';}
   }
-  function copyText(data){return data.text+(data.url?'\n\n'+data.url:'');}
-
-  // Both sharing and copying read a fresh, owner-checked snapshot at the user's click.
-  function createActions(options){
-    var disposed=false,busy=false;
-    function snapshot(){
-      if(disposed)return null;
-      var data=null;
-      try{data=buildShareData(options.getHabit());}catch(error){}
-      if(!data){disposed=true;if(options.onInvalid)options.onInvalid();}
-      return data;
+  function createClient(options){
+    var disposed=false,pending=new Set(),writing=false;
+    function current(){return !disposed&&options.isCurrent();}
+    function guard(){if(!current())throw failure('session_changed');}
+    function request(action,payload){
+      if(!Object.prototype.hasOwnProperty.call(actions,action))return Promise.reject(failure('invalid_action'));
+      var method=actions[action],body;
+      if(action==='connect'||action==='settings'){
+        if(!payload||!validTime(payload.defaultTime)||action==='settings'&&typeof payload.enabled!=='boolean')return Promise.reject(failure('invalid_time'));
+        body={defaultTime:payload.defaultTime};if(action==='settings')body.enabled=payload.enabled;
+      }else if(action==='import'){
+        body={};if(payload&&payload.habitId!=null){if(typeof payload.habitId!=='string'||!/^[A-Za-z0-9_-]{1,384}$/.test(payload.habitId))return Promise.reject(failure('invalid_habit'));body.habitId=payload.habitId;}
+      }else if(method==='POST')body={};
+      if(method==='POST'&&writing)return Promise.reject(failure('busy'));
+      if(method==='POST')writing=true;
+      var controller=new AbortController();pending.add(controller);
+      var timer=setTimeout(function(){controller.abort();},25000);
+      return Promise.resolve().then(function(){guard();return action==='config'?'':options.getAccessToken();}).then(function(token){
+        guard();if(action!=='config'&&(!token||typeof token!=='string'))throw failure('auth_required');
+        var headers={Accept:'application/json'};if(token)headers.Authorization='Bearer '+token;if(method==='POST')headers['Content-Type']='application/json';
+        return options.fetch('/api/habit-sync?action='+action,{method:method,headers:headers,body:body?JSON.stringify(body):undefined,credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal});
+      }).then(function(response){
+        guard();return response.json().then(function(data){
+          guard();if(!data||typeof data!=='object'||Array.isArray(data))throw failure('unavailable');
+          if(!response.ok){var code=typeof data.error==='string'&&/^[a-z_-]{1,60}$/.test(data.error)?data.error:response.status===401?'auth_required':'unavailable';throw failure(code);}
+          return data;
+        });
+      }).catch(function(error){if(!current())throw failure('session_changed');if(error&&error.code)throw error;throw failure(error&&error.name==='AbortError'?'timeout':'unavailable');})
+        .finally(function(){clearTimeout(timer);pending.delete(controller);if(method==='POST')writing=false;});
     }
-    function emit(state,target,data){if(!disposed&&options.onResult)options.onResult(state,target,data);}
-    function setBusy(value){busy=value;if(!disposed&&options.onBusy)options.onBusy(value);}
-    function finish(promise,target,data,success){
-      return Promise.resolve(promise).then(function(){if(snapshot())emit(success,target,data);},function(error){
-        if(!snapshot())return;
-        emit(error&&error.name==='AbortError'?'cancelled':success==='copied'?'copy-manually':'unavailable',target,data);
-      }).finally(function(){setBusy(false);});
-    }
-    function share(target){
-      if(busy||['samsung','apple'].indexOf(target)<0)return Promise.resolve();
-      var data=snapshot();if(!data)return Promise.resolve();
-      if(options.onPreview)options.onPreview(data);
-      var nav=options.navigator||{};
-      try{
-        if(options.secure===false||typeof nav.share!=='function'||typeof nav.canShare==='function'&&!nav.canShare(data)){emit('unavailable',target,data);return Promise.resolve();}
-        setBusy(true);
-        // No awaited work precedes the native call: preserve the click's transient activation.
-        return finish(nav.share(data),target,data,'handed-off');
-      }catch(error){setBusy(false);if(snapshot())emit(error&&error.name==='AbortError'?'cancelled':'unavailable',target,data);return Promise.resolve();}
-    }
-    function copy(){
-      if(busy)return Promise.resolve();
-      var data=snapshot();if(!data)return Promise.resolve();
-      if(options.onPreview)options.onPreview(data);
-      var clipboard=(options.navigator||{}).clipboard;
-      if(!clipboard||typeof clipboard.writeText!=='function'){emit('copy-manually','',data);return Promise.resolve();}
-      try{setBusy(true);return finish(clipboard.writeText(copyText(data)),'',data,'copied');}
-      catch(error){setBusy(false);if(snapshot())emit('copy-manually','',data);return Promise.resolve();}
-    }
-    return {share:share,copy:copy,snapshot:snapshot,dispose:function(){disposed=true;}};
+    return {request:request,dispose:function(){disposed=true;pending.forEach(function(controller){controller.abort();});pending.clear();}};
   }
-
+  function message(error){
+    var code=error&&typeof error.code==='string'?error.code.replace(/-/g,'_'):'';
+    if(code==='auth_required'||code==='authentication_required'||code==='unauthorized'||code==='invalid_session')return '로그인을 다시 확인한 뒤 연결해주세요.';
+    if(code==='setup_required'||code==='not_configured')return '자동 연동을 위한 서비스 연결 설정이 아직 완료되지 않았어요.';
+    if(code==='invalid_time')return '기본 알림 시간을 선택해주세요.';
+    if(code==='reconnect_required'||code==='connection_expired')return 'Microsoft 연결을 다시 확인해주세요.';
+    if(code==='connection_required')return 'Microsoft 계정을 먼저 연결해주세요.';
+    if(code==='task_create_uncertain'||code==='list_create_uncertain')return '등록 결과를 확인하는 중이에요. 중복 등록을 막기 위해 다시 확인한 뒤 전달해요.';
+    if(code==='remote_missing')return '알림 앱에서 연결된 항목이 변경되었어요. GROWELL 목록을 확인해주세요.';
+    if(code==='list_not_private')return '개인 습관은 공유되지 않은 나만의 목록에 연결해야 해요. Microsoft To Do의 GROWELL 목록 공유 설정을 확인해주세요.';
+    if(code==='busy'||code==='sync_busy')return '앞선 요청을 처리하고 있어요. 잠시 후 다시 시도해주세요.';
+    if(code==='timeout')return '응답을 기다리는 중이에요. 연결 상태를 다시 확인해주세요.';
+    return '연결 상태를 확인하지 못했어요. 잠시 후 다시 시도해주세요.';
+  }
   function close(restore){
-    var view=active;if(!view)return;
-    active=null;view.actions.dispose();view.node.close();view.node.remove();
+    var view=active;if(!view)return;active=null;view.client.dispose();view.node.close();view.node.remove();
     if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('habit-reminder');
-    if(restore!==false&&typeof view.restoreFocus==='function')view.restoreFocus();
+    if(restore!==false&&view.options.restoreFocus)view.options.restoreFocus();
   }
-  function refresh(){
-    var view=active;if(!view)return;
-    var data=view.actions.snapshot();if(data&&active===view)view.preview(data);
-  }
+  function refresh(){if(active&&!active.options.getHabit())close(false);}
   function open(options){
-    options=options||{};if(!root.document||typeof options.getHabit!=='function')return;
+    if(!root.document||!options||typeof options.getHabit!=='function'||typeof options.getAccessToken!=='function'||!options.getHabit())return;
     close(false);
-    var first;try{first=buildShareData(options.getHabit());}catch(error){}
-    if(!first)return;
-    var node=root.document.createElement('dialog');
-    node.className='habit-reminder-dialog';node.setAttribute('aria-labelledby','habit-reminder-title');
-    node.innerHTML='<header class="habit-reminder-head"><div><p>나의 습관, 잊지 않도록</p><h2 id="habit-reminder-title">알림에 추가</h2></div><button type="button" data-reminder-close aria-label="알림에 추가 닫기">×</button></header>'+
-      '<div class="habit-reminder-body"><p class="habit-reminder-intro">사용할 앱을 골라주세요. 공유 화면에서 해당 앱을 선택한 뒤 날짜·시간·반복을 설정해 저장하면 돼요.</p>'+
-      '<section class="habit-reminder-preview" aria-label="추가할 습관"><h3 data-reminder-name></h3><p data-reminder-details></p></section>'+
-      '<div class="habit-reminder-apps"><button type="button" data-reminder-target="samsung"><span class="habit-reminder-symbol" aria-hidden="true">✓</span><span><strong>삼성 리마인더에 추가</strong><small>공유 화면에서 ‘리마인더’ 선택</small></span><span aria-hidden="true">↗</span></button>'+
-      '<button type="button" data-reminder-target="apple"><span class="habit-reminder-symbol" aria-hidden="true">☷</span><span><strong>애플 미리 알림에 추가</strong><small>공유 화면에서 ‘미리 알림’ 선택</small></span><span aria-hidden="true">↗</span></button></div>'+
-      '<p class="habit-reminder-status" data-reminder-status role="status" aria-live="polite"></p>'+
-      '<div class="habit-reminder-copy"><button type="button" data-reminder-copy>내용 복사</button><span>앱이 보이지 않으면 복사해서 붙여넣으세요.</span></div>'+
-      '<div data-reminder-manual hidden><label for="habit-reminder-text">직접 복사할 내용</label><textarea id="habit-reminder-text" readonly rows="6"></textarea><p>내용을 선택해 복사한 뒤 알림 앱에서 새 항목에 붙여넣어주세요.</p></div>'+
-      '<p class="habit-reminder-note">습관 체크와 알림 앱의 완료 표시는 각각 관리돼요.</p></div>';
+    var node=root.document.createElement('dialog');node.className='habit-reminder-dialog';node.setAttribute('aria-labelledby','habit-reminder-title');
+    node.innerHTML='<header class="habit-reminder-head"><div><p>나의 습관을 일상의 알림으로</p><h2 id="habit-reminder-title">알림 자동 연동</h2></div><button type="button" data-reminder-close aria-label="알림 자동 연동 닫기">×</button></header>'+
+      '<div class="habit-reminder-body"><p class="habit-reminder-intro">계정을 한 번 연결하면 새로 만드는 습관이 알림 앱으로 이어져요.</p>'+
+      '<div class="habit-sync-state" data-sync-state role="status" aria-live="polite">연결 상태를 확인하고 있어요…</div>'+
+      '<section data-sync-setup hidden><h3>서비스 연결 준비 중</h3><p>운영자의 Microsoft 연결 앱 등록이 완료되면 자동 연동을 시작할 수 있어요. 아직 알림 앱에 등록되지는 않았어요.</p></section>'+
+      '<div data-sync-settings hidden><label class="habit-sync-time">기본 알림 시간 <input type="time" data-sync-time value="21:00" required></label><p class="habit-sync-hint">습관에 정확한 시각이 있으면 그 시간을 사용해요. “잠들기 전”처럼 시각이 정해지지 않은 습관에는 기본 시간을 적용해요. 한국 시간 기준이에요.</p>'+
+      '<div data-sync-unconnected><p class="habit-sync-consent">연결하면 앞으로 만드는 습관의 이름·목표·장소·시간을 Microsoft 계정에 자동 등록해요.</p><button type="button" class="habit-sync-primary" data-sync-connect>연결하고 자동 연동 시작</button></div>'+
+      '<div data-sync-connected hidden><label class="habit-sync-toggle"><input type="checkbox" data-sync-enabled><span>새 습관 자동 연동</span></label><button type="button" class="habit-sync-primary" data-sync-save>설정 저장</button><div class="habit-sync-tools"><button type="button" data-sync-import></button><button type="button" data-sync-run>연동 상태 새로고침</button></div><p class="habit-sync-hint">연결한 습관의 이름·목표·시간 변경과 삭제도 반영돼요. 이미 만든 습관은 위 버튼으로 연결할 수 있어요.</p><button type="button" class="habit-sync-disconnect" data-sync-disconnect>연결 해제</button><div data-sync-disconnect-confirm hidden><p>자동 연동을 멈추고 연결 정보를 삭제해요. 알림 앱에 이미 등록된 항목은 남아 있어요.</p><button type="button" data-sync-disconnect-yes>연결 해제하기</button><button type="button" data-sync-disconnect-no>유지하기</button></div></div></div>'+
+      '<button type="button" class="habit-sync-retry" data-sync-retry hidden>연결 상태 다시 확인</button>'+
+      '<section class="habit-sync-device"><h3>휴대폰에서도 한 번 연결해주세요</h3><div class="habit-sync-tabs" role="group" aria-label="기기별 연결 안내"><button type="button" data-sync-device="samsung" aria-pressed="true">삼성 리마인더</button><button type="button" data-sync-device="apple" aria-pressed="false">아이폰 미리 알림</button></div><div data-sync-instructions></div></section>'+
+      '<p class="habit-reminder-note">완료 체크는 각 앱에서 따로 관리돼요. 알림 표시와 반복은 기기 앱의 동작 방식에 따라 달라질 수 있어요.</p></div>';
     root.document.body.appendChild(node);
-    var status=node.querySelector('[data-reminder-status]'),manual=node.querySelector('[data-reminder-manual]'),field=node.querySelector('#habit-reminder-text');
-    function preview(data){
-      node.querySelector('[data-reminder-name]').textContent=data.title;
-      node.querySelector('[data-reminder-details]').textContent=data.text.split('\n').slice(1).join('\n');
-      field.value=copyText(data);
+    var view={node:node,options:options,busy:false,status:null};
+    function current(){return active===view&&!!options.getHabit();}
+    view.client=createClient({isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});active=view;
+    var state=node.querySelector('[data-sync-state]'),settings=node.querySelector('[data-sync-settings]'),setup=node.querySelector('[data-sync-setup]'),time=node.querySelector('[data-sync-time]'),enabled=node.querySelector('[data-sync-enabled]'),retry=node.querySelector('[data-sync-retry]');
+    function busy(value){view.busy=value;node.querySelectorAll('[data-sync-connect],[data-sync-save],[data-sync-import],[data-sync-run],[data-sync-disconnect],[data-sync-disconnect-yes],[data-sync-retry],input').forEach(function(el){el.disabled=value;});}
+    function draw(status){
+      view.status=status;setup.hidden=status.configured!==false;settings.hidden=status.configured===false;retry.hidden=true;
+      if(status.configured===false){state.textContent='자동 연동 준비 중';return;}
+      node.querySelector('[data-sync-unconnected]').hidden=!!status.connected;node.querySelector('[data-sync-connected]').hidden=!status.connected;
+      time.value=validTime(status.defaultTime)?status.defaultTime:'21:00';enabled.checked=!!status.enabled;
+      if(!status.connected)state.textContent='Microsoft 계정을 연결해주세요.';
+      else if(status.errorCode)state.textContent=/^reconnect[-_]required$/.test(status.errorCode)?'연결을 다시 확인해야 해요. 연결 해제 후 Microsoft 계정을 다시 연결해주세요.':'일부 알림을 전달하지 못했어요. 대기 중인 항목은 다시 시도해요.';
+      else state.textContent=status.enabled?'자동 연동 켜짐 · '+(Number(status.pendingCount)>0?'전달 대기 '+Number(status.pendingCount)+'개':'GROWELL 목록에 연결됨'):'자동 연동이 일시 중지되어 있어요.';
+      node.querySelector('[data-sync-import]').textContent=options.habitId?'이 습관 연결하기':'기존 습관도 연결하기';
     }
-    var view={node:node,preview:preview,restoreFocus:options.restoreFocus};
-    view.actions=createActions({getHabit:options.getHabit,navigator:root.navigator,secure:root.isSecureContext,onPreview:preview,onInvalid:function(){if(active===view)close(false);},
-      onBusy:function(busy){node.querySelectorAll('[data-reminder-target],[data-reminder-copy]').forEach(function(button){button.disabled=busy;});},
-      onResult:function(state,target){
-        var app=target==='samsung'?'삼성 리마인더':'애플 미리 알림';
-        if(state==='handed-off')status.textContent='알림 앱에서 날짜·시간·반복을 확인하고 저장해주세요.';
-        else if(state==='copied')status.textContent='복사했어요. 알림 앱에서 새 항목을 만들어 붙여넣고 시간과 반복을 설정해주세요.';
-        else if(state==='unavailable'){status.textContent='이 환경에서는 공유 화면을 열 수 없어요. 내용을 복사해 '+app+'에 붙여넣어주세요.';manual.hidden=false;}
-        else if(state==='copy-manually'){status.textContent='아래 내용을 길게 누르거나 선택해서 직접 복사해주세요.';manual.hidden=false;field.focus();field.select();}
-        else if(state==='cancelled')status.textContent='';
-      }});
-    active=view;preview(first);
-    node.querySelector('[data-reminder-close]').onclick=function(){close();};
-    node.addEventListener('cancel',function(event){event.preventDefault();close();});
-    node.addEventListener('click',function(event){if(event.target===node){var rect=node.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)close();}});
-    node.querySelectorAll('[data-reminder-target]').forEach(function(button){button.onclick=function(){view.actions.share(button.getAttribute('data-reminder-target'));};});
-    node.querySelector('[data-reminder-copy]').onclick=function(){view.actions.copy();};
+    function failed(error){if(!current())return;state.textContent=message(error);retry.hidden=false;}
+    function load(){
+      if(!current()||view.busy)return;busy(true);retry.hidden=true;
+      view.client.request('config').then(function(config){if(config.configured===false)return config;return view.client.request('status');}).then(function(status){if(current())draw(status);}).catch(failed).finally(function(){if(current())busy(false);});
+    }
+    function change(action,payload,success){
+      if(!current()||view.busy)return;busy(true);retry.hidden=true;
+      view.client.request(action,payload).then(function(result){if(!current())return;if(success)return success(result);return view.client.request('status').then(function(status){if(current())draw(status);});}).catch(failed).finally(function(){if(current())busy(false);});
+    }
+    node.querySelector('[data-reminder-close]').onclick=function(){close();};node.addEventListener('cancel',function(event){event.preventDefault();close();});
+    node.addEventListener('click',function(event){if(event.target!==node)return;var r=node.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();});
+    node.querySelector('[data-sync-connect]').onclick=function(){change('connect',{defaultTime:time.value},function(result){var url=authorizationUrl(result.url,root.location.origin);if(!url)throw failure('unavailable');root.location.assign(url);});};
+    node.querySelector('[data-sync-save]').onclick=function(){change('settings',{enabled:enabled.checked,defaultTime:time.value});};
+    node.querySelector('[data-sync-import]').onclick=function(){change('import',options.habitId?{habitId:options.habitId}:{},function(){return view.client.request('run').then(function(){return view.client.request('status');}).then(function(status){if(current())draw(status);});});};
+    node.querySelector('[data-sync-run]').onclick=function(){change('run',{});};
+    node.querySelector('[data-sync-disconnect]').onclick=function(){node.querySelector('[data-sync-disconnect-confirm]').hidden=false;};
+    node.querySelector('[data-sync-disconnect-no]').onclick=function(){node.querySelector('[data-sync-disconnect-confirm]').hidden=true;};
+    node.querySelector('[data-sync-disconnect-yes]').onclick=function(){change('disconnect',{},function(){node.querySelector('[data-sync-disconnect-confirm]').hidden=true;return view.client.request('status').then(function(status){if(current())draw(status);});});};
+    retry.onclick=load;
+    function device(kind){
+      node.querySelectorAll('[data-sync-device]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-sync-device')===kind));});
+      node.querySelector('[data-sync-instructions]').innerHTML=kind==='apple'?'<ol><li>아이폰 설정 → 앱 → 미리 알림 → 미리 알림 계정으로 이동해요.</li><li>Outlook.com 또는 Exchange에서 같은 Microsoft 계정을 추가하고 미리 알림을 켜주세요.</li><li>미리 알림 앱에서 Microsoft 계정의 GROWELL 목록을 확인해요.</li></ol><p>iCloud가 아닌 Microsoft 계정의 목록에 등록돼요.</p>':'<ol><li>리마인더 설정에서 Microsoft To Do와 동기화를 켜주세요.</li><li>GROWELL에 연결한 것과 같은 Microsoft 계정으로 로그인해요.</li><li>To Do 탭 → 더보기 → 동기화할 목록에서 GROWELL을 선택해요.</li></ol><p>삼성 리마인더는 To Do 목록 하나와 연결할 수 있어요.</p>';
+    }
+    node.querySelectorAll('[data-sync-device]').forEach(function(button){button.onclick=function(){device(button.getAttribute('data-sync-device'));};});device('samsung');
     node.showModal();node.querySelector('[data-reminder-close]').focus({preventScroll:true});
-    if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('habit-reminder',{close:function(){close();}});
+    if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('habit-reminder',{close:function(){close();}});load();
   }
   if(root.addEventListener){root.addEventListener('hashchange',refresh);root.addEventListener('pagehide',function(){close(false);});}
-  return {open:open,close:close,refresh:refresh,buildShareData:buildShareData,copyText:copyText,createActions:createActions};
+  return {open:open,close:close,refresh:refresh,createClient:createClient,validTime:validTime,authorizationUrl:authorizationUrl,message:message};
 });
