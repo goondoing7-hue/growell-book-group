@@ -196,6 +196,71 @@ function overviewCheckbox(html,id,date){
   const input=Array.from(html.matchAll(/<input\b[^>]*>/g),match=>match[0]).find(tag=>tag.includes('data-habit-overview-day="'+id+'|'+date+'"'));
   assert.ok(input,'the overview uses a native checkbox for '+id);assert.match(input,/type="checkbox"/);assert.match(input,/class="habit-overview-toggle/);assert.doesNotMatch(input,/aria-pressed=/);return input;
 }
+function reminderHarness(){
+  const c=cardHarness(),opened=[],focused=[];
+  Object.assign(c,{SESSION:{userId:'owner',keyB64:'private-key'},saveSessionEpoch:1,location:{origin:'https://example.test',href:'https://example.test/#/book/emotion/habit'},memberLoadState:{habits:'ready'},
+    STATE:{habits:{h1:{id:'h1',userId:'owner',bookId:'emotion',name:'독서',behaviorType:'do',goal:'하루 10쪽',time:'저녁 8시',place:'내 방',startDate:'2026-09-01',endDate:'2026-09-30',checkedDates:['2026-09-22'],secret:'internal data'},foreign:{id:'foreign',userId:'someone-else',bookId:'emotion',name:'다른 사람의 습관'}}},
+    bookById:id=>['emotion','thought','body','action'].includes(id)?{id}:null,GrowellHabitReminder:{open:options=>opened.push(options)}});
+  const trigger={isConnected:true,focus:options=>focused.push({target:'trigger',options:{...options}})};
+  const replacement={getAttribute:()=> 'h1',focus:options=>focused.push({target:'replacement',options:{...options}})};
+  c.document={querySelectorAll:()=>[replacement]};return {c,opened,focused,trigger,replacement};
+}
+
+test('reminder adapter exports only the selected owned habit fields and reads the current saved version',()=>{
+  const h=reminderHarness(),c=h.c,before=JSON.stringify(c.STATE);c.openHabitReminder('h1',h.trigger);assert.equal(h.opened.length,1);
+  const first=h.opened[0].getHabit();assert.deepEqual({...first},{name:'독서',behaviorType:'do',goal:'하루 10쪽',time:'저녁 8시',place:'내 방',startDate:'2026-09-01',endDate:'2026-09-30',url:'https://example.test/#/book/emotion/habit'});
+  assert.doesNotMatch(JSON.stringify(first),/private-key|internal data|checkedDates|userId|someone-else/);assert.equal(JSON.stringify(c.STATE),before);
+  c.STATE.habits.h1.goal='하루 20쪽';const current=h.opened[0].getHabit();assert.equal(current.goal,'하루 20쪽');assert.notEqual(current,first);
+  current.name='export copy';assert.equal(c.STATE.habits.h1.name,'독서');h.opened[0].restoreFocus();assert.deepEqual(h.focused,[{target:'trigger',options:{preventScroll:true}}]);
+  h.trigger.isConnected=false;h.opened[0].restoreFocus();assert.equal(h.focused.at(-1).target,'replacement');
+  const detail=reminderHarness();detail.trigger.closest=()=>({});detail.c.openHabitReminder('h1',detail.trigger);detail.trigger.isConnected=false;
+  const detailButton={getAttribute:()=> 'h1',closest:()=>({}),focus:()=>detail.focused.push({target:'detail'})};detail.c.document.querySelectorAll=()=>[detail.replacement,detailButton];detail.opened[0].restoreFocus();assert.deepEqual(detail.focused,[{target:'detail'}]);
+});
+
+test('reminder adapter refuses signed-out, foreign, missing, unavailable or unknown-book habits',()=>{
+  for(const change of ['signed-out','foreign','missing','loading','error','unknown-book']){
+    const h=reminderHarness(),c=h.c;let id='h1';
+    if(change==='signed-out')c.SESSION=null;else if(change==='foreign')id='foreign';else if(change==='missing')id='missing';else if(change==='unknown-book')c.STATE.habits.h1.bookId='unregistered';else c.memberLoadState.habits=change;
+    c.openHabitReminder(id,h.trigger);assert.equal(h.opened.length,0,change);assert.equal(h.focused.length,0);
+  }
+});
+
+test('reminder reading titles come only from a current owned book or the exact legacy reading habit',()=>{
+  for(const condition of ['owned','foreign','deleted','missing','loading','error','unavailable-module','avoid','ordinary','legacy-reading','legacy-other-name']){
+    const h=reminderHarness(),c=h.c,habit=c.STATE.habits.h1;habit.readingGoal=readingGoal();
+    c.bookById=id=>id==='emotion'?{id,title:'모임 책'}:null;
+    const archive={status:'ready',rows:[archiveRow({book:{title:'내 책',deleted:false,readingSessions:[]}})]};
+    c.GrowellArchive={readingSnapshot:()=>archive};c.readingDataReady=()=>archive.status==='ready';c.memberLoadState.readingLogs='ready';c.memberLoadState.readingMeta='ready';
+    if(condition==='foreign')archive.rows[0].entry.userId='other';else if(condition==='deleted')archive.rows[0].book.deleted=true;else if(condition==='missing')archive.rows=[];else if(condition==='loading'||condition==='error'){archive.status=condition;c.memberLoadState.readingLogs=condition;}else if(condition==='unavailable-module')delete c.GrowellArchive;else if(condition==='avoid')habit.behaviorType='avoid';else if(condition==='ordinary'){habit.name='걷기';habit.readingGoal=null;}else if(condition==='legacy-reading')habit.readingGoal=null;else if(condition==='legacy-other-name'){habit.name='책 읽기';habit.readingGoal=null;}
+    c.openHabitReminder('h1',h.trigger);assert.equal(h.opened.length,1,condition);const snapshot=h.opened[0].getHabit();assert.equal(snapshot.name,habit.name);assert.equal(snapshot.goal,habit.goal);
+    if(condition==='owned'){
+      assert.equal(snapshot.bookTitle,'내 책');archive.rows[0].book.title='수정된 책 이름';assert.equal(h.opened[0].getHabit().bookTitle,'수정된 책 이름');archive.rows[0].book.deleted=true;assert.equal(h.opened[0].getHabit().bookTitle,undefined);
+    }else if(condition==='legacy-reading')assert.equal(snapshot.bookTitle,'모임 책');else assert.equal(Object.hasOwn(snapshot,'bookTitle'),false,condition);
+    assert.equal(snapshot.readingGoal,undefined);assert.equal(snapshot.rows,undefined);assert.equal(snapshot.bookId,undefined);assert.equal(snapshot.userId,undefined);
+  }
+});
+
+test('reminder callbacks stop exposing a habit and never restore focus after session, route, status or ownership changes',()=>{
+  for(const change of ['signed-out','owner','same-owner-session','epoch','route','loading','error','deleted','foreign','unknown-book']){
+    const h=reminderHarness(),c=h.c;c.openHabitReminder('h1',h.trigger);const popup=h.opened[0];
+    if(change==='signed-out')c.SESSION=null;else if(change==='owner')c.SESSION={userId:'other'};else if(change==='same-owner-session')c.SESSION={userId:'owner'};else if(change==='epoch')c.saveSessionEpoch++;else if(change==='route')c.location.href='https://example.test/#/';else if(change==='deleted')delete c.STATE.habits.h1;else if(change==='foreign')c.STATE.habits.h1.userId='other';else if(change==='unknown-book')c.STATE.habits.h1.bookId='missing';else c.memberLoadState.habits=change;
+    assert.equal(popup.getHabit(),null,change);popup.restoreFocus();assert.equal(h.focused.length,0,change);
+  }
+});
+
+test('reminder buttons open only the chosen habit without bubbling into card details',()=>{
+  const opened=[],buttons=['h1','h2'].map(id=>({getAttribute:key=>key==='data-habit-reminder'?id:null,addEventListener(type,fn){assert.equal(type,'click');this.click=fn;}}));
+  const c={app:{querySelectorAll:selector=>{assert.equal(selector,'[data-habit-reminder]');return buttons;}},openHabitReminder:(id,trigger)=>opened.push({id,trigger})};vm.createContext(c);
+  const start=source.indexOf("  app.querySelectorAll('[data-habit-reminder]').forEach");vm.runInContext(source.slice(start,source.indexOf("  app.querySelectorAll('[data-edit-habit]')",start)),c);
+  buttons.forEach((button,index)=>{let stopped=false;button.click({stopPropagation(){stopped=true;}});assert.equal(stopped,true);assert.equal(opened[index].id,'h'+(index+1));assert.equal(opened[index].trigger,button);});
+});
+
+test('member session cleanup closes the reminder before clearing the owner and private habit data',()=>{
+  const h=reminderHarness(),c=h.c,closed=[];c.GrowellHabitReminder.close=restore=>closed.push({restore,owner:c.SESSION&&c.SESSION.userId});
+  const start=source.indexOf('function clearMemberSession(');vm.runInContext(source.slice(start,source.indexOf('function memberDataStatusHtml(',start)),c);
+  c.openHabitReminder('h1',h.trigger);const popup=h.opened[0];c.clearMemberSession();
+  assert.deepEqual(closed,[{restore:false,owner:'owner'}]);assert.equal(c.SESSION,null);assert.deepEqual(Object.keys(c.STATE.habits),[]);assert.equal(popup.getHabit(),null);popup.restoreFocus();assert.equal(h.focused.length,0);
+});
 test('habit card shows successes against the whole target period rather than elapsed days',()=>{
   const c=cardHarness(),h={id:'h1',name:'책 읽기',startDate:'2026-09-20',endDate:'2026-09-29',checkedDates:['2026-09-20','2026-09-21'],behaviorType:'do'};
   const html=c.habitCardHtml(h);
@@ -526,6 +591,15 @@ function composerHarness(){
   const trigger={isConnected:true,focus(options){assert.equal(options.preventScroll,true);c.document.activeElement=this;}};
   return {...h,c,dialogs,saves,toasts,trigger};
 }
+
+test('route cleanup refreshes reminders and closing habit details first closes their reminder child',()=>{
+  const h=popupHarness(),c=h.c,closed=[];let refreshed=0;
+  c.GrowellHabitReminder={refresh:()=>refreshed++,close:restore=>closed.push({restore,habit:c.habitHistoryOpenFor})};
+  Object.assign(c,{habitValueSummaryDialog:null,habitValueGuideDialog:null,shareComposerOpenFor:null,mineComposerOpenFor:null,materialsComposerOpenFor:null,habitFormOpenFor:null,readingHistoryOpenFor:null});
+  const start=source.indexOf('function closeStaleComposersForRoute(');vm.runInContext(source.slice(start,source.indexOf('/* 나의 공간 독서 타이머',start)),c);
+  c.openHabitProgress('h1');assert.equal(c.habitHistoryOpenFor,'h1');c.closeHabitProgress();assert.deepEqual(closed,[{restore:false,habit:'h1'}]);assert.equal(c.habitHistoryOpenFor,null);
+  c.closeStaleComposersForRoute({view:'archive'});assert.equal(refreshed,1);
+});
 
 function openComposerGuide(h){
   h.c.habitComposerDialog.querySelector('#habit-name-picker').click();

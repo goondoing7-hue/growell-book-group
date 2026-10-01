@@ -1085,6 +1085,7 @@
 <link rel="stylesheet" href="habitGuide.css">
 <link rel="stylesheet" href="habitOverview.css">
 <link rel="stylesheet" href="habitCarousel.css">
+<link rel="stylesheet" href="habitReminder.css">
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
 <link rel="stylesheet" href="brand.css">
@@ -1106,6 +1107,7 @@
 <script src="habitSuggestions.js"></script>
 <script src="habitGuide.js"></script>
 <script src="habitCarousel.js"></script>
+<script src="habitReminder.js"></script>
 <script src="readingHabit.js"></script>
 <script src="readingTimerDomain.js"></script>
 <script src="timerAlerts.js"></script>
@@ -2095,6 +2097,7 @@ function showSpaceComposerDialog(){
 }
 /* 글쓰기 팝업은 같은 책의 같은 공간에서만 유지한다. */
 function closeStaleComposersForRoute(r){
+  if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
   if(habitValueSummaryDialog&&habitValueSummaryDialog._route!==location.href)closeHabitValueSummary(false);
   if(habitValueGuideDialog&&habitValueGuideDialog._route!==location.href)closeHabitValueGuide(false);
   if(shareComposerOpenFor!=null){
@@ -2262,6 +2265,7 @@ function clearMemberSession(){
   if(typeof closeReadingHistoryDialog==='function')closeReadingHistoryDialog();
   if(typeof closeHabitComposer==='function')closeHabitComposer(false);
   if(typeof closeHabitValueSummary==='function')closeHabitValueSummary(false);
+  if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.close(false);
   if(typeof clearArchiveSharedNotes==='function')clearArchiveSharedNotes();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
@@ -5853,6 +5857,37 @@ function habitCardProgressHtml(stats){
     '<div class="habit-goal-track" role="progressbar" aria-label="목표 기간 성공률" aria-valuenow="'+stats.goalPercent+'" aria-valuemin="0" aria-valuemax="100" aria-valuetext="목표 '+stats.total+'일 중 '+stats.success+'일 성공"><span style="width:'+stats.goalPercent+'%"></span></div>';
 }
 function habitCardSaveStatusHtml(habitId){return Object.keys(habitSaveIntents[habitId]||{}).length?habitSaveStatusHtml(habitId):'';}
+function habitReminderActionHtml(habit){return '<button type="button" class="habit-reminder-open" data-habit-reminder="'+esc(habit.id)+'" aria-haspopup="dialog">알림에 추가</button>';}
+function openHabitReminder(habitId,trigger){
+  if(typeof GrowellHabitReminder==='undefined')return;
+  var session=SESSION,epoch=saveSessionEpoch,route=location.href,fromDetail=!!(trigger&&trigger.closest&&trigger.closest('.habit-hist-modal'));
+  function current(){return !!session&&SESSION===session&&saveSessionEpoch===epoch&&location.href===route&&memberLoadState.habits==='ready';}
+  function getHabit(){
+    if(!current())return null;
+    var habit=STATE.habits[habitId];
+    if(!habit||habit.userId!==session.userId)return null;
+    var book=bookById(habit.bookId);if(!book)return null;
+    var snapshot={name:String(habit.name||''),behaviorType:GrowellHabits.behaviorType(habit),goal:String(habit.goal||''),time:String(habit.time||''),place:String(habit.place||''),startDate:String(habit.startDate||''),endDate:String(habit.endDate||''),url:location.origin+'/#/book/'+encodeURIComponent(book.id)+'/habit'};
+    if(snapshot.behaviorType==='do'){
+      if(habit.readingGoal){
+        if(typeof GrowellReadingHabits!=='undefined'&&typeof GrowellArchive!=='undefined'){
+          var readingBooks=habitArchiveSnapshot();
+          if(readingBooks.status==='ready'){
+            var progress=GrowellReadingHabits.progress(habit.readingGoal,readingBooks.rows,session.userId,ymd(new Date()));
+            if(progress.available&&progress.bookTitle)snapshot.bookTitle=String(progress.bookTitle);
+          }
+        }
+      }else if(snapshot.name.trim()==='독서'&&book.title)snapshot.bookTitle=String(book.title);
+    }
+    return snapshot;
+  }
+  if(!getHabit())return;
+  GrowellHabitReminder.open({getHabit:getHabit,restoreFocus:function(){
+    if(!getHabit())return;
+    var target=trigger&&trigger.isConnected?trigger:Array.from(document.querySelectorAll('[data-habit-reminder]')).find(function(button){return button.getAttribute('data-habit-reminder')===habitId&&!!(button.closest&&button.closest('.habit-hist-modal'))===fromDetail;});
+    if(target)target.focus({preventScroll:true});
+  }});
+}
 function habitCardHtml(habit){
   var todayStr=ymd(new Date()),stats=GrowellHabits.stats(habit,todayStr);
   var todayState=habitTodayState(habit,todayStr);
@@ -5865,7 +5900,7 @@ function habitCardHtml(habit){
     '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitCardSaveStatusHtml(habit.id)+'</p>'+
     '<div class="habit-record-actions" role="group" aria-label="'+esc(habit.name)+' 기록 보기">'+
     '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="week" aria-haspopup="dialog">'+svgIcon(I_CAL)+'이번 주</button>'+
-    '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="month" aria-haspopup="dialog">'+svgIcon(I_CAL)+'월별 달력</button></div></article>';
+    '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="month" aria-haspopup="dialog">'+svgIcon(I_CAL)+'월별 달력</button></div>'+habitReminderActionHtml(habit)+'</article>';
 }
 function habitArchiveSnapshot(){
   if(!SESSION)return {status:'loading',rows:[]};
@@ -6251,7 +6286,7 @@ function habitHistoryModalHtml(habit){
     habitFactsHtml(habit)+habitReadingProgressHtml(habit)+'<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+habitMonthPopupHtml(habit);
   return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
     '<div class="composer-head"><div class="habit-dialog-heading">'+(title?'<p class="habit-dialog-kicker">'+title+'</p>':'')+'<div class="habit-dialog-title-row"><h4 id="habit-dialog-title">'+esc(habit.name)+'</h4>'+habitKindBadgeHtml(habit)+'</div></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 기록 닫기">'+svgIcon(I_CLOSE)+'</button></div><div data-habit-history-body>'+body+'</div>'+
-    '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+
+    '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+habitReminderActionHtml(habit)+
     '</div></div>';
 }
 function shiftHabitHistoryMonth(delta){
@@ -6324,6 +6359,7 @@ function focusHabitDialog(){
   if(modal) modal.focus({preventScroll:true});
 }
 function closeHabitProgress(){
+  if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.close(false);
   var id=habitHistoryOpenFor,target=habitProgressReturnTarget,position=habitProgressReturnPosition;
   habitHistoryOpenFor=null;habitHistoryMonth=null;habitHistoryView='progress';habitProgressReturnTarget=null;habitProgressReturnPosition=null;
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('habit-progress');
@@ -7284,6 +7320,7 @@ function render(){
   if(readingTimerIntervalId){ clearInterval(readingTimerIntervalId); readingTimerIntervalId = null; }
   app.innerHTML = html;
   refreshHabitValueSummary();
+  if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
   bindEvents(route);
   showSpaceComposerDialog();
   restoreDraftIfAny(route);
@@ -7800,6 +7837,9 @@ function bindEvents(route){
   if(openHabitBtn) openHabitBtn.addEventListener('click', function(){
     openHabitComposer(openHabitBtn.getAttribute('data-book'),null,openHabitBtn);
   });
+  app.querySelectorAll('[data-habit-reminder]').forEach(function(button){button.addEventListener('click',function(event){
+    event.stopPropagation();openHabitReminder(button.getAttribute('data-habit-reminder'),button);
+  });});
   app.querySelectorAll('[data-edit-habit]').forEach(function(b){
     b.addEventListener('click', function(){
       var hid = b.getAttribute('data-edit-habit');
