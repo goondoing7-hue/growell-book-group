@@ -54,7 +54,7 @@ function clean(value, length = 500) {
   return typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, length) : '';
 }
 function validTime(value) { return typeof value === 'string' && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value); }
-function parseTime(value, fallback) {
+function parseTime(value) {
   const text = clean(value).replace(/^매일\s*/, '');
   if (validTime(text)) return text;
   const match = /^(오전|오후)\s*(\d{1,2})시(?:\s*(\d{1,2})분)?$/.exec(text);
@@ -62,8 +62,7 @@ function parseTime(value, fallback) {
     const hour = (+match[2] % 12) + (match[1] === '오후' ? 12 : 0);
     return String(hour).padStart(2, '0') + ':' + String(+(match[3] || 0)).padStart(2, '0');
   }
-  if (!validTime(fallback)) throw new SyncError('invalid-time', 400);
-  return fallback;
+  return null;
 }
 function validDay(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -72,12 +71,12 @@ function validDay(value) {
 }
 function koreanNow(now = Date.now()) { return new Date(now + 9 * 3600000).toISOString().slice(0, 19); }
 function nextDay(day) { return new Date(Date.parse(day + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10); }
-function taskPayload(habit, marker, fallback, origin, now = Date.now()) {
+function taskPayload(habit, marker, origin, now = Date.now()) {
   if (!habit || !clean(habit.name, 200) || !UUID.test(marker)) throw new SyncError('invalid-habit', 400);
   if ((habit.start_date && !validDay(habit.start_date)) || (habit.end_date && !validDay(habit.end_date))) throw new SyncError('invalid-habit', 400);
-  const current = koreanNow(now), time = parseTime(habit.time, fallback);
+  const current = koreanNow(now), time = parseTime(habit.time);
   let day = validDay(habit.start_date) && habit.start_date > current.slice(0, 10) ? habit.start_date : current.slice(0, 10);
-  if (day + 'T' + time + ':00' <= current) day = nextDay(day);
+  if (time && day + 'T' + time + ':00' <= current) day = nextDay(day);
   const end = validDay(habit.end_date) ? habit.end_date : '';
   if (end && end < day) return null; // Expired habits never produce a new recurring reminder.
   const decoded = reading.decode(habit.goal);
@@ -86,7 +85,7 @@ function taskPayload(habit, marker, fallback, origin, now = Date.now()) {
   const lines = [habit.behavior_type === 'avoid' ? '절제할 습관' : '실천할 습관'];
   if (goal) lines.push('목표: ' + goal);
   if (clean(habit.place)) lines.push('장소: ' + clean(habit.place));
-  lines.push('알림: 매일 ' + time + ' (한국 시간)');
+  lines.push(time ? '알림: 매일 ' + time + ' (한국 시간)' : '알림: 시간 미설정 · GROWELL에서 이 습관의 시간을 선택해주세요.');
   const route = ['emotion', 'thought', 'body', 'action'].includes(habit.book_id) ? habit.book_id : 'emotion';
   const url = origin + '/#/book/' + route + '/habit';
   const markerText = 'GROWELL-SYNC:' + marker;
@@ -96,11 +95,12 @@ function taskPayload(habit, marker, fallback, origin, now = Date.now()) {
     range: {type: end ? 'endDate' : 'noEnd', startDate: day, recurrenceTimeZone: 'Korea Standard Time'}
   };
   if (end) recurrence.range.endDate = end;
-  const dateTime = {dateTime: day + 'T' + time + ':00', timeZone: 'Korea Standard Time'};
+  const dateTime = time ? {dateTime: day + 'T' + time + ':00', timeZone: 'Korea Standard Time'} : null;
   return {
     title: clean(habit.name, 200), body: {contentType: 'text', content: lines.join('\n')},
-    isReminderOn: true, reminderDateTime: dateTime, dueDateTime: dateTime,
-    startDateTime: {dateTime: day + 'T00:00:00', timeZone: 'Korea Standard Time'}, recurrence,
+    // Explicit nulls also clear a reminder previously scheduled by a fallback.
+    isReminderOn: !!time, reminderDateTime: dateTime, dueDateTime: dateTime,
+    startDateTime: time ? {dateTime: day + 'T00:00:00', timeZone: 'Korea Standard Time'} : null, recurrence: time ? recurrence : null,
     linkedResources: [{applicationName: 'GROWELL', displayName: 'GROWELL 습관', externalId: marker, webUrl: url}]
   };
 }

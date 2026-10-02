@@ -16,7 +16,7 @@ function harness(extra={}){
 }
 async function rejectsCode(promise,code){await assert.rejects(promise,error=>error.code===code);}
 
- test('default reminder times require exact 24-hour HH:mm strings',()=>{
+ test('reminder times require exact 24-hour HH:mm strings',()=>{
   for(const value of ['00:00','09:05','21:00','23:59'])assert.equal(reminder.validTime(value),true,value);
   for(const value of ['',null,undefined,0,900,'9:00','24:00','12:60','09:00:00',' 09:00','09:00 ','9시','2026-10-02T09:00','09:00\n'])assert.equal(reminder.validTime(value),false,String(value));
 });
@@ -42,8 +42,8 @@ test('status reads send the fresh access token only in Authorization',async()=>{
 test('write requests whitelist their body and cannot send arbitrary member or habit content',async()=>{
   const privateFields={owner:'PRIVATE_OWNER',auth_user_id:'PRIVATE_AUTH',token:'PRIVATE_TOKEN',goal:'PRIVATE_GOAL',notes:'PRIVATE_NOTES',url:'https://example.invalid/PRIVATE_URL'};
   const box=harness();const cases=[
-    ['connect',{...privateFields,defaultTime:'08:30',enabled:false},{defaultTime:'08:30'}],
-    ['settings',{...privateFields,defaultTime:'21:15',enabled:false},{defaultTime:'21:15',enabled:false}],
+    ['connect',{...privateFields,defaultTime:'08:30',enabled:false},{}],
+    ['settings',{...privateFields,defaultTime:'21:15',enabled:false},{enabled:false}],
     ['import',{...privateFields,habitId:'habit_synthetic-123'},{habitId:'habit_synthetic-123'}],
     ['import',privateFields,{}],['disconnect',privateFields,{}],['run',privateFields,{}]
   ];
@@ -62,13 +62,20 @@ test('unknown and inherited action names reject before token access or network c
   assert.equal(box.tokenReads,0);assert.deepEqual(box.calls,[]);
 });
 
-test('connect and settings reject ambiguous times or nonboolean enable flags before network',async()=>{
+test('settings reject nonboolean enable flags before network',async()=>{
   const box=harness();
-  for(const payload of [undefined,null,{}, {defaultTime:'9:00'},{defaultTime:'24:00'},{defaultTime:'09:00\n'},{defaultTime:900}]){
-    await rejectsCode(box.client.request('connect',payload),'invalid_time');await rejectsCode(box.client.request('settings',payload),'invalid_time');
-  }
-  for(const enabled of [undefined,null,'true',1,0,{}])await rejectsCode(box.client.request('settings',{defaultTime:'09:00',enabled}),'invalid_time');
+  for(const payload of [undefined,null,{}])await rejectsCode(box.client.request('settings',payload),'invalid_settings');
+  for(const enabled of [undefined,null,'true',1,0,{}])await rejectsCode(box.client.request('settings',{enabled}),'invalid_settings');
   assert.equal(box.tokenReads,0);assert.deepEqual(box.calls,[]);
+});
+
+test('connection and settings do not require or transmit a shared reminder time',async()=>{
+  const box=harness();
+  for(const payload of [undefined,null,{}, {defaultTime:'9:00'}, {defaultTime:'20:00'}]){
+    await box.client.request('connect',payload);assert.deepEqual(JSON.parse(box.calls.at(-1).options.body),{});
+  }
+  await box.client.request('settings',{enabled:true});
+  assert.deepEqual(JSON.parse(box.calls.at(-1).options.body),{enabled:true});
 });
 
 test('import accepts only bounded opaque habit identifiers, and no id means explicit bulk import',async()=>{

@@ -102,7 +102,7 @@ function createGraph(request, accessToken, budget = {}) {
 function safeConnection(connection, pendingCount) {
   return {
     configured: true, connected: !!(connection && connection.token_cipher), enabled: !!(connection && connection.enabled && connection.token_cipher),
-    defaultTime: connection?.default_time || '21:00', timeZone: 'Asia/Seoul', listName: 'GROWELL', pendingCount: pendingCount || 0,
+    timeZone: 'Asia/Seoul', listName: 'GROWELL', pendingCount: pendingCount || 0,
     lastSyncedAt: connection?.last_synced_at || null,
     errorCode: connection?.error_code || null
   };
@@ -134,13 +134,12 @@ function createService(options = {}) {
     const [connection, count] = await Promise.all([store.connection(profile.id), store.pending(profile.id)]);
     return safeConnection(connection, count);
   }
-  async function connect(profile, body) {
-    if (!D.validTime(body.defaultTime)) throw new D.SyncError('invalid-time', 400);
+  async function connect(profile) {
     const state = crypto.randomBytes(32).toString('base64url'), verifier = crypto.randomBytes(48).toString('base64url'), nonce = crypto.randomBytes(32).toString('base64url');
     const stateHash = D.hash(state);
     await store.oauth('put', {
       state_hash: stateHash, owner_id: profile.id, auth_user_id: profile.auth_user_id,
-      verifier_cipher: D.seal({verifier, nonce, defaultTime: body.defaultTime}, config.key, 'habit-sync-oauth:' + profile.id + ':' + stateHash),
+      verifier_cipher: D.seal({verifier, nonce}, config.key, 'habit-sync-oauth:' + profile.id + ':' + stateHash),
       expires_at: new Date(now() + 10 * 60000).toISOString()
     });
     const url = new URL(D.LOGIN_ORIGIN + '/common/oauth2/v2.0/authorize');
@@ -180,7 +179,7 @@ function createService(options = {}) {
     const accountId = await verifyIdentity(tokens.id_token, payload.nonce), generation = crypto.randomUUID();
     await approved(pending.auth_user_id, pending.owner_id);
     await store.configure(pending.owner_id, pending.auth_user_id, 'connect', {
-      generation, account_id: accountId, default_time: payload.defaultTime,
+      generation, account_id: accountId,
       token_cipher: D.seal({refreshToken: tokens.refresh_token}, config.key, tokenContext(pending.owner_id, generation))
     });
     return callbackRedirect('connected');
@@ -250,7 +249,7 @@ function createService(options = {}) {
       if (task && !D.hasMarker(task, item.marker)) throw new D.SyncError('remote-task-changed', 409);
       if (!task || task.status === 'completed') task = await recoverTask(graph, base, item.marker) || task;
     } else if (item.uncertain) task = await recoverTask(graph, base, item.marker);
-    const payload = item.desired ? D.taskPayload(item.desired, item.marker, connection.default_time, config.origin, now()) : null;
+    const payload = item.desired ? D.taskPayload(item.desired, item.marker, config.origin, now()) : null;
     // Recheck immediately before a task mutation as well; no habit text may be
     // sent to an existing shared list even when it was private earlier today.
     await requirePrivateList(graph, listId);
@@ -320,8 +319,9 @@ function createService(options = {}) {
   }
   async function mutate(profile, action, body) {
     if (action === 'settings') {
-      if (typeof body.enabled !== 'boolean' || !D.validTime(body.defaultTime)) throw new D.SyncError('invalid-settings', 400);
-      await store.configure(profile.id, profile.auth_user_id, 'settings', {enabled: body.enabled, default_time: body.defaultTime});
+      if (typeof body.enabled !== 'boolean') throw new D.SyncError('invalid-settings', 400);
+      // The legacy DB column remains for compatibility, never for scheduling.
+      await store.configure(profile.id, profile.auth_user_id, 'settings', {enabled: body.enabled});
       return status(profile);
     }
     if (action === 'disconnect') { await store.configure(profile.id, profile.auth_user_id, 'disconnect'); return status(profile); }

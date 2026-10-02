@@ -48,7 +48,7 @@ function fixture(options = {}) {
     async configure(owner, auth, operation, body) {
       operations.push(['configure', owner, auth, operation, body]);
       if (operation === 'disconnect') { state.connected = false; state.active = false; }
-      if (operation === 'settings') Object.assign(connection, {enabled: body.enabled, default_time: body.default_time});
+      if (operation === 'settings') Object.assign(connection, {enabled: body.enabled}, body.default_time ? {default_time: body.default_time} : {});
       if (operation === 'import') return {queued: 1};
       return {};
     }
@@ -105,29 +105,52 @@ test('AES-GCM binds encrypted tokens to one owner and connection generation', ()
   for (const context of ['owner-b:one', 'owner-a:two']) assert.throws(() => D.unseal(cipher, config.key, context), /connection-key-invalid/);
   assert.throws(() => D.unseal(cipher.slice(0, -3) + 'abc', config.key, 'owner-a:one'), /connection-key-invalid/);
 });
-test('schedule parses explicit Korean time and uses agreed default for informal descriptions', () => {
+test('schedule parses explicit Korean and 24-hour times without a shared fallback', () => {
   assert.equal(D.parseTime('매일 오후 4시', '21:00'), '16:00');
   assert.equal(D.parseTime('오전 12시 5분', '21:00'), '00:05');
   assert.equal(D.parseTime('오후 12시', '21:00'), '12:00');
-  for (const text of ['잠들기 전', '아침 식사 후', '오후 13시', '4시', '24:00', '오후 4시 60분']) assert.equal(D.parseTime(text, '21:00'), '21:00');
-  assert.throws(() => D.parseTime('잠들기 전', 'invalid'), /invalid-time/);
+  for (const text of ['', null, undefined, '잠들기 전', '아침 식사 후', '오후 13시', '4시', '24:00', '오후 4시 60분']) assert.equal(D.parseTime(text, '21:00'), null);
+  for (const text of ['00:00', '13:00', '23:50']) assert.equal(D.parseTime(text), text);
+  assert.equal(D.parseTime('잠들기 전', 'invalid'), null);
 });
 test('Graph payload whitelists habit information and decodes reading metadata without private IDs', () => {
   const encoded = reading.encode('하루 10쪽 읽기', {bookId: 'private_archive_sensitive', linkedBookId: '', targetPages: 10}, 'wisdom');
-  const payload = D.taskPayload({...habit, goal: encoded, checked_dates: ['2026-10-01'], secret: 'not-exported'}, MARK, '21:00', config.origin, NOW);
+  const payload = D.taskPayload({...habit, goal: encoded, checked_dates: ['2026-10-01'], secret: 'not-exported'}, MARK, config.origin, NOW);
   const text = JSON.stringify(payload);
   assert.equal(payload.title, '독서'); assert.equal(payload.reminderDateTime.dateTime, '2026-10-02T16:00:00');
   assert.equal(payload.recurrence.range.recurrenceTimeZone, 'Korea Standard Time');
   for (const excluded of ['private_archive_sensitive', 'member_fixture', 'habit_fixture', 'not-exported', 'checked_dates', 'valueId']) assert.ok(!text.includes(excluded));
   assert.ok(text.includes('하루 10쪽 읽기')); assert.equal(payload.status, undefined); assert.equal(D.hasMarker(payload, MARK), true);
-  const broken = D.taskPayload({...habit, goal: 'growell-reading-habit-v1:{"badPrivateId":"hidden"}'}, MARK, '21:00', config.origin, NOW);
+  const broken = D.taskPayload({...habit, goal: 'growell-reading-habit-v1:{"badPrivateId":"hidden"}'}, MARK, config.origin, NOW);
   assert.ok(!JSON.stringify(broken).includes('badPrivateId'));
 });
 test('passed time rolls to tomorrow and expired habits do not produce reminders', () => {
-  const payload = D.taskPayload({...habit, time: '10:00'}, MARK, '21:00', config.origin, NOW);
+  const payload = D.taskPayload({...habit, time: '10:00'}, MARK, config.origin, NOW);
   assert.equal(payload.reminderDateTime.dateTime, '2026-10-03T10:00:00');
-  assert.equal(D.taskPayload({...habit, end_date: '2026-10-01'}, MARK, '21:00', config.origin, NOW), null);
+  assert.equal(D.taskPayload({...habit, end_date: '2026-10-01'}, MARK, config.origin, NOW), null);
   assert.equal(D.validDay('2026-02-31'), false);
+});
+test('midnight and final-day boundaries use each habit time in Korea', () => {
+  const beforeMidnight = Date.parse('2026-10-02T14:59:00Z');
+  const midnight = Date.parse('2026-10-02T15:00:00Z');
+  const zero = {...habit, time: '00:00'};
+  assert.equal(D.taskPayload(zero, MARK, config.origin, beforeMidnight).reminderDateTime.dateTime, '2026-10-03T00:00:00');
+  assert.equal(D.taskPayload(zero, MARK, config.origin, midnight).reminderDateTime.dateTime, '2026-10-04T00:00:00');
+  assert.equal(D.taskPayload({...habit, time: '12:00', end_date: '2026-10-02'}, MARK, config.origin, NOW), null);
+  assert.equal(D.taskPayload({...habit, time: '12:10', end_date: '2026-10-02'}, MARK, config.origin, NOW).reminderDateTime.dateTime, '2026-10-02T12:10:00');
+  assert.equal(D.taskPayload({...habit, time: '', end_date: '2026-10-01'}, MARK, config.origin, NOW), null);
+});
+test('missing or informal time preserves task content but clears all scheduling fields', () => {
+  for (const time of ['', undefined, '아침 식사 후', '잠들기 전']) {
+    const payload = D.taskPayload({...habit, time, end_date: '2026-10-02'}, MARK, config.origin, NOW);
+    assert.equal(payload.isReminderOn, false);
+    for (const field of ['reminderDateTime', 'dueDateTime', 'startDateTime', 'recurrence']) assert.equal(payload[field], null);
+    assert.equal(payload.title, habit.name);
+    assert.match(payload.body.content, /목표: 하루 10쪽 읽기/);
+    assert.match(payload.body.content, /장소: 집/);
+    assert.match(payload.body.content, /알림: 시간 미설정/);
+    assert.equal(D.hasMarker(payload, MARK), true);
+  }
 });
 test('config endpoint exposes only readiness; unconfigured mutations never touch auth or provider', async () => {
   let called = false;
@@ -159,7 +182,7 @@ test('actual Supabase token and approved profile determine ownership, never body
 test('status never returns encrypted credentials, account IDs or worker leases', async () => {
   const f = fixture(); f.state.connection.account_id = 'private-account';
   const result = await f.service.status(profile);
-  assert.deepEqual(Object.keys(result).sort(), ['configured','connected','defaultTime','enabled','errorCode','lastSyncedAt','listName','pendingCount','timeZone'].sort());
+  assert.deepEqual(Object.keys(result).sort(), ['configured','connected','enabled','errorCode','lastSyncedAt','listName','pendingCount','timeZone'].sort());
   assert.ok(!JSON.stringify(result).includes('private-account'));
 });
 test('worker endpoint requires timing-safe configured cron credential', async () => {
@@ -180,6 +203,7 @@ test('connection produces fixed OAuth URL with PKCE, nonce and secure one-use co
   const secret = D.unseal(saved.verifier_cipher, config.key, 'habit-sync-oauth:' + profile.id + ':' + saved.state_hash);
   assert.equal(crypto.createHash('sha256').update(secret.verifier).digest('base64url'), url.searchParams.get('code_challenge'));
   assert.equal(secret.nonce, url.searchParams.get('nonce')); assert.ok(!JSON.stringify(saved).includes(secret.verifier));
+  assert.equal(secret.defaultTime, undefined);
 });
 test('OAuth callback rejects missing browser cookie, expired or replayed states before token exchange', async () => {
   const f = fixture(), state = crypto.randomBytes(32).toString('base64url'); let consumed = 0;
@@ -246,13 +270,13 @@ test('successful OAuth callback consumes state once and stores only an owner/gen
     if (operation === 'put') { pending = clone(payload); return {saved: true}; }
     const result = pending; pending = null; return result;
   };
-  const start = await f.service.connect(profile, {defaultTime: '08:30'});
+  const start = await f.service.connect(profile, {});
   const state = new URL(start.url).searchParams.get('state');
   secret = D.unseal(pending.verifier_cipher, config.key, 'habit-sync-oauth:' + profile.id + ':' + pending.state_hash);
   const params = new URLSearchParams({state, code: 'callback-code', redirect: 'https://evil.example'});
   assert.equal(await f.service.callback(params, S.COOKIE + '=' + state), config.origin + '/?habit-sync=connected#/book/emotion/habit');
   const saved = f.operations.find(row => row[0] === 'configure' && row[3] === 'connect')[4];
-  assert.equal(saved.default_time, '08:30'); assert.match(saved.account_id, /^[a-f0-9]{64}$/);
+  assert.equal(saved.default_time, undefined); assert.match(saved.account_id, /^[a-f0-9]{64}$/);
   assert.equal(D.unseal(saved.token_cipher, config.key, 'habit-sync-token:' + profile.id + ':' + saved.generation).refreshToken, 'callback-refresh-fixture');
   assert.ok(!JSON.stringify(saved).includes('callback-access-token'));
   await assert.rejects(f.service.callback(params, S.COOKIE + '=' + state), /oauth-state-invalid/);
@@ -264,6 +288,36 @@ test('worker creates exactly one marked task and saves rotated encrypted token b
   assert.ok(f.operations.findIndex(item => item[0] === 'token') < f.operations.findIndex(item => item[0] === 'sending'));
   assert.equal(D.unseal(f.state.connection.token_cipher, config.key, 'habit-sync-token:' + profile.id + ':' + GEN).refreshToken, 'rotated-fixture-refresh');
   await f.service.run(profile.id); assert.equal(f.state.remote.length, 1);
+});
+test('different habits keep distinct times despite an identical legacy account default', async () => {
+  const first = fixture({item: {desired: {...habit, time: '13:00'}}});
+  const second = fixture({item: {desired: {...habit, time: '19:40'}}});
+  await first.service.run(profile.id); await second.service.run(profile.id);
+  assert.equal(first.state.remote[0].reminderDateTime.dateTime, '2026-10-02T13:00:00');
+  assert.equal(second.state.remote[0].reminderDateTime.dateTime, '2026-10-02T19:40:00');
+  assert.equal(first.state.connection.default_time, second.state.connection.default_time);
+});
+test('a new unscheduled habit creates a visible task without a fallback alarm', async () => {
+  const f = fixture({item: {desired: {...habit, time: '잠들기 전'}}});
+  assert.deepEqual(await f.service.run(profile.id), {processed: 1});
+  assert.equal(f.state.remote.length, 1); assert.equal(f.state.remote[0].isReminderOn, false);
+  assert.equal(f.state.remote[0].reminderDateTime, null); assert.equal(f.state.remote[0].recurrence, null);
+  assert.doesNotMatch(f.state.remote[0].body.content, /21:00/);
+});
+test('clearing an exact time patches out its reminder and later restores it without deleting the task', async () => {
+  const marked = {...D.taskPayload(habit, MARK, config.origin, NOW), id: 'owned-task', '@odata.etag': 'etag-fixture'};
+  const f = fixture({item: {task_id: marked.id, desired: {...habit, time: ''}}, remote: [marked]});
+  assert.deepEqual(await f.service.run(profile.id), {processed: 1});
+  const cleared = f.state.remote[0];
+  assert.equal(cleared.id, 'owned-task'); assert.equal(cleared.isReminderOn, false);
+  for (const field of ['reminderDateTime', 'dueDateTime', 'startDateTime', 'recurrence']) assert.equal(cleared[field], null);
+  assert.equal(f.requests.filter(item => item.opts.method === 'DELETE').length, 0);
+  f.state.item.desired.time = '13:20'; f.state.item.pending = true; f.state.item.revision++;
+  assert.deepEqual(await f.service.run(profile.id), {processed: 1});
+  assert.equal(f.state.remote[0].id, 'owned-task'); assert.equal(f.state.remote[0].isReminderOn, true);
+  assert.equal(f.state.remote[0].reminderDateTime.dateTime, '2026-10-02T13:20:00');
+  assert.equal(f.requests.filter(item => item.opts.method === 'PATCH').length, 2);
+  assert.equal(f.requests.filter(item => ['POST', 'DELETE'].includes(item.opts.method) && item.kind === 'graph').length, 0);
 });
 test('accepted-but-lost create recovers marker without repeating POST', async () => {
   let loseResponse = true;
@@ -283,7 +337,7 @@ test('uncertain create with an empty successful list does not blindly create or 
   assert.equal(f.requests.filter(item => item.kind === 'graph' && ['POST', 'DELETE'].includes(item.opts.method)).length, 0);
 });
 test('multiple matching active tasks stop recovery without editing or deleting either', async () => {
-  const body = D.taskPayload(habit, MARK, '21:00', config.origin, NOW);
+  const body = D.taskPayload(habit, MARK, config.origin, NOW);
   const f = fixture({item: {uncertain: true}, remote: [{...body, id: 'copy-one'}, {...body, id: 'copy-two'}]});
   await f.service.run(profile.id); assert.equal(f.state.item.last_error, 'task-ambiguous');
   assert.equal(f.requests.filter(item => item.kind === 'graph' && ['POST', 'PATCH', 'DELETE'].includes(item.opts.method)).length, 0);
@@ -296,7 +350,7 @@ test('failed task listing cannot become an empty authoritative result or issue a
   assert.equal(f.requests.filter(item => item.opts.method === 'DELETE').length, 0);
 });
 test('remote deletion is limited to a known marker and preserves unrelated tasks', async () => {
-  const marked = {...D.taskPayload(habit, MARK, '21:00', config.origin, NOW), id: 'owned-task', '@odata.etag': 'etag-fixture'};
+  const marked = {...D.taskPayload(habit, MARK, config.origin, NOW), id: 'owned-task', '@odata.etag': 'etag-fixture'};
   const f = fixture({item: {task_id: marked.id, desired: null}, remote: [marked, {id: 'unrelated', title: 'Private task'}]});
   assert.deepEqual(await f.service.run(profile.id), {processed: 1}); assert.deepEqual(f.state.remote.map(task => task.id), ['unrelated']);
   const deletion = f.requests.find(item => item.opts.method === 'DELETE'); assert.equal(deletion.opts.headers['If-Match'], 'etag-fixture');
@@ -304,7 +358,7 @@ test('remote deletion is limited to a known marker and preserves unrelated tasks
   await other.service.run(profile.id); assert.equal(other.state.item.last_error, 'remote-task-changed'); assert.equal(other.state.remote.length, 1);
 });
 test('updates retain external completion and never transfer GROWELL checks', async () => {
-  const marked = {...D.taskPayload(habit, MARK, '21:00', config.origin, NOW), id: 'owned-task', status: 'completed'};
+  const marked = {...D.taskPayload(habit, MARK, config.origin, NOW), id: 'owned-task', status: 'completed'};
   const f = fixture({item: {task_id: marked.id, desired: {...habit, checked_dates: ['2026-10-02'], name: '읽기'}}, remote: [marked]});
   await f.service.run(profile.id); assert.equal(f.state.remote[0].status, 'completed');
   const patch = JSON.parse(f.requests.find(item => item.opts.method === 'PATCH').opts.body); assert.equal(patch.status, undefined); assert.equal(patch.checked_dates, undefined);
@@ -325,8 +379,17 @@ test('a stale lease/generation or revoked membership cannot create remote tasks'
 test('disconnect and settings use only authenticated owner and never call remote deletion', async () => {
   const f = fixture();
   await f.service.mutate(profile, 'settings', {enabled: false, defaultTime: '08:30', ownerId: 'other'});
-  assert.equal(f.state.connection.enabled, false); assert.equal(f.state.connection.default_time, '08:30');
+  assert.equal(f.state.connection.enabled, false); assert.equal(f.state.connection.default_time, '21:00');
   await f.service.mutate(profile, 'disconnect', {}); assert.equal(f.state.connected, false); assert.equal(f.requests.length, 0);
+});
+test('settings accepts only enablement and ignores old clients shared-time fields', async () => {
+  const f = fixture();
+  await f.service.mutate(profile, 'settings', {enabled: false});
+  await f.service.mutate(profile, 'settings', {enabled: true, defaultTime: 'invalid'});
+  assert.equal(f.state.connection.default_time, '21:00'); assert.equal(f.state.connection.enabled, true);
+  const requests = f.operations.filter(item => item[0] === 'configure');
+  assert.deepEqual(requests.map(item => item[4]), [{enabled: false}, {enabled: true}]);
+  await assert.rejects(f.service.mutate(profile, 'settings', {defaultTime: '20:00'}), /invalid-settings/);
 });
 test('uncertain list creation reuses one discovered list and does not duplicate on empty listing', async () => {
   const f = fixture({connection: {list_id: null, list_uncertain: true}, lists: [{id: 'recovered-list', displayName: 'GROWELL', isOwner: true, isShared: false}]});
@@ -345,7 +408,7 @@ test('an existing GROWELL list must be owned and private before any habit data i
 });
 test('a cached list that has become shared blocks creation, updates and deletion', async () => {
   for (const desired of [habit, null]) {
-    const marked = {...D.taskPayload(habit, MARK, '21:00', config.origin, NOW), id: 'owned-task'};
+    const marked = {...D.taskPayload(habit, MARK, config.origin, NOW), id: 'owned-task'};
     const f = fixture({item: {task_id: marked.id, desired}, remote: [marked], request: async url => {
       if (url.endsWith('/lists/fixture-list')) return {id: 'fixture-list', isOwner: true, isShared: true};
     }});

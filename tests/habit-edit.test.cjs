@@ -524,7 +524,7 @@ function popupHarness(){
 
 function composerHarness(){
   const h=popupHarness(),c=h.c,dialogs=[],saves=[],toasts=[];
-  Object.assign(c,{habitComposerDialog:null,habitNameDialog:null,habitBookDialog:null,habitValueGuideDialog:null,habitValueSummaryDialog:null,habitFormOpenFor:null,habitEditingId:null,saveSessionEpoch:1,memberLoadState:{habits:'ready',readingLogs:'ready',readingMeta:'ready'},
+  Object.assign(c,{habitComposerDialog:null,habitNameDialog:null,habitBookDialog:null,habitTimeDialog:null,habitValueGuideDialog:null,habitValueSummaryDialog:null,habitFormOpenFor:null,habitEditingId:null,saveSessionEpoch:1,memberLoadState:{habits:'ready',readingLogs:'ready',readingMeta:'ready'},
     GrowellReadingHabits:readingHabits,GrowellArchiveDomain:require('../archiveDomain.js'),GrowellHabitSuggestions:require('../habitSuggestions.js'),GrowellArchive:{readingSnapshot:()=>({status:'ready',rows:[archiveRow()]})},readingDataReady:()=>true,
     bookById:id=>({id,title:'모임 책'}),showToast:(...args)=>toasts.push(args),uid:()=> 'new-habit',saveState:(mutate,options)=>saves.push({mutate,options})});
   c.document.body={appendChild:node=>{node.isConnected=true;dialogs.push(node);}};
@@ -557,7 +557,7 @@ function composerHarness(){
         const attrs={};for(const [,key,v1,v2] of raw.matchAll(/([a-zA-Z_:][-a-zA-Z0-9_:]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'))?/g))attrs[key]=decode(v1??v2??'');
         const item={attrs,tagName:name.toUpperCase(),value:attrs.value||'',checked:Object.hasOwn(attrs,'checked'),hidden:Object.hasOwn(attrs,'hidden'),disabled:Object.hasOwn(attrs,'disabled'),readOnly:Object.hasOwn(attrs,'readonly'),innerHTML:'',textContent:'',
           getAttribute:key=>Object.hasOwn(attrs,key)?attrs[key]:null,setAttribute(key,val){attrs[key]=String(val);},hasAttribute:key=>Object.hasOwn(attrs,key),removeAttribute(key){delete attrs[key];},
-          focus(){if(this.isConnected)c.document.activeElement=this;},select(){this.selected=true;},addEventListener(event,fn){this['on'+event]=fn;},insertAdjacentHTML(where,value){this.innerHTML+=value;},
+          focus(){if(this.isConnected)c.document.activeElement=this;},scrollIntoView(options){this.lastScroll=options;},select(){this.selected=true;},addEventListener(event,fn){this['on'+event]=fn;},insertAdjacentHTML(where,value){this.innerHTML+=value;},
           click(){if(this.disabled)return;const event={target:this,preventDefault(){}};if(this.attrs.type==='radio'){nodes.filter(other=>other.attrs.name===this.attrs.name).forEach(other=>{other.checked=false;});this.checked=true;if(this.onchange)this.onchange(event);}else if(this.onclick)this.onclick(event);if(listeners.click)listeners.click(event);}};
         item.dataset=Object.fromEntries(Object.entries(attrs).filter(([key])=>key.startsWith('data-')).map(([key,value])=>[key.slice(5).replace(/-([a-z])/g,(_,letter)=>letter.toUpperCase()),value]));
         Object.defineProperty(item,'placeholder',{get:()=>attrs.placeholder||'',set:value=>{attrs.placeholder=String(value);}});
@@ -606,6 +606,64 @@ function openComposerGuide(h){
   const picker=h.c.habitNameDialog,trigger=picker.querySelector('#habit-name-guide-open');trigger.click();
   return {guide:h.c.habitValueGuideDialog,picker,trigger};
 }
+
+test('create and edit share a scrollable 24-hour picker and persist the chosen ten-minute time',()=>{
+  for(const editing of [false,true]){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',editing?'h1':null,h.trigger);
+    const parent=c.habitComposerDialog;parent.querySelector('#habit-name').value='산책';parent.querySelector('#habit-place').value='동네 공원';
+    assert.equal(parent.querySelector('#habit-time').getAttribute('type'),'hidden');
+    parent.querySelector('#habit-time-open').click();const picker=c.habitTimeDialog,options=picker.querySelectorAll('[data-habit-time-option]');
+    assert.equal(options.length,144);assert.equal(options[0].getAttribute('data-habit-time-option'),'00:00');assert.equal(options.at(-1).getAttribute('data-habit-time-option'),'23:50');
+    assert.equal(picker.querySelector('[role="listbox"]').getAttribute('aria-orientation'),'vertical');
+    options.forEach((option,index)=>{const [hour,minute]=option.getAttribute('data-habit-time-option').split(':').map(Number);assert.equal(hour*60+minute,index*10);assert.doesNotMatch(option.innerHTML,/오전|오후|AM|PM/);});
+    picker.querySelector('[data-habit-time-option="13:00"]').click();
+    assert.equal(c.habitTimeDialog,null);assert.equal(parent.querySelector('#habit-time').value,'13:00');assert.match(parent.querySelector('#habit-time-open').innerHTML,/13:00/);assert.equal(c.document.activeElement,parent.querySelector('#habit-time-open'));assert.equal(parent.querySelector('#habit-place').value,'동네 공원');
+    parent.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);h.saves[0].mutate(c.STATE);assert.equal(c.STATE.habits[editing?'h1':'new-habit'].time,'13:00');
+  }
+});
+
+test('time picker cancellation and unrelated edits preserve legacy text and off-grid times exactly',()=>{
+  for(const previous of ['잠들기 전','오후 7시 50분','19:45',''])for(const closing of ['close','cancel','back']){
+    const h=composerHarness(),c=h.c;c.STATE.habits.h1.time=previous;c.openHabitComposer('emotion','h1',h.trigger);const parent=c.habitComposerDialog;
+    parent.querySelector('#habit-time-open').click();const picker=c.habitTimeDialog;
+    if(closing==='close')picker.querySelector('#habit-time-close').click();else if(closing==='cancel')picker.listeners.cancel({preventDefault(){}});else h.back();
+    assert.equal(c.habitTimeDialog,null);assert.equal(parent.querySelector('#habit-time').value,previous);assert.equal(parent.open,true);
+    parent.querySelector('#habit-place').value='새 장소';parent.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);h.saves[0].mutate(c.STATE);assert.equal(c.STATE.habits.h1.time,previous);
+  }
+});
+
+test('exact older Korean times display in 24-hour format without rewriting their stored value',()=>{
+  const cases={'오전 12시':'00:00','오후 12시':'12:00','매일 오후 7시 50분':'19:50','오후 7시 45분':'19:45','매일 09:20':'09:20','오후 13시':'오후 13시','잠들기 전':'잠들기 전'};
+  for(const [raw,display] of Object.entries(cases)){
+    const h=composerHarness(),c=h.c;c.STATE.habits.h1.time=raw;c.openHabitComposer('emotion','h1',h.trigger);const parent=c.habitComposerDialog;
+    assert.equal(c.habitTimeDisplay(raw),display);assert.equal(parent.querySelector('#habit-time-open').getAttribute('aria-label'),'습관 시간 선택: '+display);
+    parent.querySelector('#habit-time-open').click();const picker=c.habitTimeDialog,chosen=picker.querySelector('[data-habit-time-option="'+display+'"]');
+    if(chosen){assert.equal(chosen.getAttribute('aria-selected'),'true');assert.equal(c.document.activeElement,chosen);}
+    picker.querySelector('#habit-time-close').click();assert.equal(parent.querySelector('#habit-time').value,raw);
+  }
+});
+
+test('time picker reopens on the selected time and arrow navigation never silently changes the draft',()=>{
+  const h=composerHarness(),c=h.c;c.STATE.habits.h1.time='13:00';c.openHabitComposer('emotion','h1',h.trigger);const parent=c.habitComposerDialog;
+  parent.querySelector('#habit-time-open').click();const picker=c.habitTimeDialog,selected=picker.querySelector('[data-habit-time-option="13:00"]');
+  assert.equal(selected.getAttribute('aria-selected'),'true');assert.equal(c.document.activeElement,selected);assert.equal(selected.lastScroll.block,'center');
+  let prevented=0;const key=key=>c.document.activeElement.onkeydown({key,preventDefault(){prevented++;}});
+  key('ArrowDown');assert.equal(c.document.activeElement.getAttribute('data-habit-time-option'),'13:10');key('PageDown');assert.equal(c.document.activeElement.getAttribute('data-habit-time-option'),'14:10');
+  key('End');assert.equal(c.document.activeElement.getAttribute('data-habit-time-option'),'23:50');key('ArrowDown');assert.equal(c.document.activeElement.getAttribute('data-habit-time-option'),'23:50');
+  key('Home');key('ArrowUp');assert.equal(c.document.activeElement.getAttribute('data-habit-time-option'),'00:00');assert.equal(prevented,6);assert.equal(parent.querySelector('#habit-time').value,'13:00');
+  c.document.activeElement.click();assert.equal(parent.querySelector('#habit-time').value,'00:00');
+  parent.querySelector('#habit-time-open').click();c.habitTimeDialog.querySelector('#habit-time-clear').click();assert.equal(parent.querySelector('#habit-time').value,'');assert.match(parent.querySelector('#habit-time-open').innerHTML,/시간 선택하기/);
+});
+
+test('time picker stale selections cannot alter another session, route or newly opened composer',()=>{
+  for(const change of ['session','epoch','route','composer','picker']){
+    const h=composerHarness(),c=h.c;c.STATE.habits.h1.time='13:00';c.openHabitComposer('emotion','h1',h.trigger);const parent=c.habitComposerDialog;
+    parent.querySelector('#habit-time-open').click();const picker=c.habitTimeDialog,stale=picker.querySelector('[data-habit-time-option="21:00"]');
+    if(change==='session')c.SESSION={userId:'other'};else if(change==='epoch')c.saveSessionEpoch++;else if(change==='route')h.navigate('#/archive');else if(change==='composer')c.openHabitComposer('emotion',null,h.trigger);else parent.querySelector('#habit-time-open').click();
+    const replacement=change==='picker'?c.habitTimeDialog:null;stale.click();assert.equal(parent.querySelector('#habit-time').value,'13:00');assert.equal(h.saves.length,0);
+    if(replacement)assert.equal(c.habitTimeDialog,replacement);else assert.equal(c.habitTimeDialog,null);
+  }
+});
 
 test('native composer Back and its back button close only the dialog and restore the trigger and page position',()=>{
   for(const closing of ['browser','button']){

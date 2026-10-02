@@ -71,7 +71,8 @@ Vercel 함수 실행 시간은 최소 60초로 설정한다. 작업자는 한 �
 
 - 습관 생성·수정·삭제를 **GROWELL에서 Microsoft로 한 방향** 전달한다. 어느 앱의 완료 체크도 다른 앱에 반영하지 않는다.
 - 습관 이름·목표·장소·알림 시간·기간만 전달한다. 암호화된 독서 기록이나 메모, 회원 ID, 습관 ID, 비밀번호, 체크 날짜는 보내지 않는다. 복구를 위해 개인정보를 포함하지 않은 무작위 연결 표시를 작업 본문과 linkedResource에 넣는다.
-- 명확한 `HH:mm`, `오전/오후 N시 [M분]`만 해석한다. `잠들기 전` 등 문장은 회원이 연결 때 선택한 기본 시각을 사용한다. 한국 시간(`Asia/Seoul` / Graph `Korea Standard Time`) 기준이다.
+- 알림 시각은 각 습관의 `time`만 사용한다. 새 습관·수정 화면에서 `00:00`부터 `23:50`까지 10분 간격의 세로 목록으로 고른다. 기존의 명확한 `HH:mm`, `오전/오후 N시 [M분]`은 그대로 해석하며 저장된 시간을 임의로 반올림하지 않는다. 한국 시간(`Asia/Seoul` / Graph `Korea Standard Time`) 기준이다.
+- 시간이 없거나 `잠들기 전` 등 정확하지 않은 문장은 기본 시각으로 대체하지 않는다. 항목은 목록에 남기되 알림·반복·마감·시작 일시를 해제하고 본문에 시간 미설정을 표시한다. 그 습관에서 시간을 선택하면 같은 항목에 알림을 설정한다. DB의 `default_time`은 이전 버전과의 호환을 위해 남지만 알림 계산이나 새 API 요청에는 사용하지 않는다.
 - 본인 소유이고 공유되지 않은 `GROWELL` 목록만 사용한다. 기존에 저장해 둔 목록 ID도 매 실행 및 작업 변경 전에 소유·공유 상태를 확인한다. 공유된 목록이나 소유 여부가 확인되지 않는 목록은 `list-not-private`로 중단하여 습관 내용이 다른 구성원에게 전달되지 않게 한다. 동명의 목록이 여러 개면 자동으로 고르지 않고 `list-ambiguous`로 중단한다.
 - 외부 작업 삭제 전에는 저장한 작업 ID와 무작위 연결 표시를 모두 확인한다. 목록 조회 실패·빈 결과만으로 작업을 삭제하지 않는다. 이동/수정되어 표시가 사라진 작업도 임의로 지우지 않는다.
 - 계정 연결을 해제하면 로컬 비밀값과 대기열만 제거하며 이미 등록된 Microsoft 알림은 남긴다. 새 Microsoft 계정으로 재연결할 때 이전 계정의 작업 ID를 재사용하지 않는다.
@@ -104,10 +105,10 @@ Graph POST 전에 대기열에 전송 중 표시를 영구 저장한다. 응답�
 | 요청 | 본문/응답 |
 | --- | --- |
 | `GET ?action=config` | 공개 `{configured}` |
-| `GET ?action=status` | `{configured,connected,enabled,defaultTime,timeZone,listName,pendingCount,lastSyncedAt,errorCode}` |
-| `POST ?action=connect` | `{defaultTime:"21:00"}` → `{url}`; PKCE 상태 쿠키 설정 |
+| `GET ?action=status` | `{configured,connected,enabled,timeZone,listName,pendingCount,lastSyncedAt,errorCode}` |
+| `POST ?action=connect` | `{}` → `{url}`; PKCE 상태 쿠키 설정 |
 | `GET /api/habit-sync?state=…&code=…` | Microsoft 콜백. 일회용 상태와 브라우저 쿠키 검증 후 고정 앱 주소로 이동 |
-| `POST ?action=settings` | `{enabled:true,defaultTime:"21:00"}` → 상태 |
+| `POST ?action=settings` | `{enabled:true}` → 상태 |
 | `POST ?action=import` | `{habitId?:"…"}` → `{queued}`; 생략 시 본인의 현재 습관만 명시적 가져오기 |
 | `POST ?action=disconnect` | `{}` → 상태 |
 | `POST ?action=run` | `{}` → `{processed}`; 본인 대기열만 |
