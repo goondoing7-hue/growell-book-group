@@ -502,22 +502,17 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
 .habit-time-trigger>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .habit-time-trigger>span:last-child{flex:none;color:var(--ink-soft);}
 .habit-time-hint{display:block;margin-top:7px;color:var(--ink-soft);font-size:11px;line-height:1.6;word-break:keep-all;}
-.habit-time-dialog{box-sizing:border-box;width:min(360px,calc(100% - 32px));max-height:calc(90vh - 24px);max-height:calc(90dvh - 24px);margin:auto;padding:0;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);font:inherit;overflow:hidden;box-shadow:0 24px 90px #1e382633;}
-.habit-time-dialog[open]{display:flex;flex-direction:column;}
-.habit-time-dialog::backdrop{background:rgba(26,43,35,.36);}
-.habit-time-head{display:flex;align-items:center;justify-content:space-between;flex:none;gap:16px;padding:22px 24px 18px;border-bottom:1px solid var(--line);}
-.habit-time-head h4{margin:0;font-size:19px;font-weight:600;line-height:1.4;}
-.habit-time-head p{margin:6px 0 0;color:var(--ink-soft);font-size:12px;line-height:1.5;}
-.habit-time-head .icon-btn{flex:none;}
-.habit-time-previous{flex:none;margin:0;padding:12px 24px;color:var(--ink-soft);font-size:12px;line-height:1.5;overflow-wrap:anywhere;}
-.habit-time-list{min-height:0;max-height:336px;padding:8px 16px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent;-webkit-overflow-scrolling:touch;}
-.habit-time-list>[role=option]{position:relative;display:block;box-sizing:border-box;width:100%;min-height:48px;margin:0;padding:12px 36px;border:0;border-radius:9px;background:transparent;color:var(--ink);font:inherit;font-size:17px;font-variant-numeric:tabular-nums;font-weight:400;line-height:24px;text-align:center;cursor:pointer;}
-.habit-time-list>[role=option]>span{position:absolute;right:20px;color:var(--brand-green,var(--primary));font-size:15px;}
+.habit-time-trigger[aria-expanded=true]{border-color:var(--brand-green,var(--primary));}
+.habit-time-trigger[aria-expanded=true]>span:last-child{transform:rotate(180deg);}
+.habit-time-dropdown{box-sizing:border-box;width:100%;margin-top:6px;padding:4px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);overflow:hidden;box-shadow:0 5px 16px #1e38260d;}
+.habit-time-list{position:relative;max-height:200px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent;-webkit-overflow-scrolling:touch;}
+.habit-time-list>[role=option]{position:relative;display:block;box-sizing:border-box;width:100%;min-height:40px;margin:0;padding:8px 28px;border:0;border-radius:6px;background:transparent;color:var(--ink);font:inherit;font-size:15px;font-variant-numeric:tabular-nums;font-weight:400;line-height:24px;text-align:center;cursor:pointer;}
+.habit-time-list>[role=option]>span{position:absolute;right:12px;color:var(--brand-green,var(--primary));font-size:13px;}
 .habit-time-list>[role=option]:hover,.habit-time-list>[aria-selected=true]{background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--primary));}
 .habit-time-list>[aria-selected=true]{font-weight:650;}
 .habit-time-list>[role=option]:focus-visible,.habit-time-trigger:focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:-2px;}
-.habit-time-footer{flex:none;padding:12px 24px;border-top:1px solid var(--line);text-align:center;}
-.habit-time-footer>button{min-height:40px;padding:8px 16px;border:0;background:transparent;color:var(--ink-soft);font:inherit;font-size:12px;cursor:pointer;}
+.habit-time-footer{margin-top:4px;border-top:1px solid var(--line);text-align:center;}
+.habit-time-footer>button{width:100%;min-height:36px;padding:6px 4px;border:0;background:transparent;color:var(--ink-soft);font:inherit;font-size:11px;cursor:pointer;}
 .habit-compose-dialog .habit-name-field>.habit-name-picker-button{align-self:flex-start;min-height:36px;margin-top:6px;padding:4px 0;border:0;border-radius:0;background:none;color:var(--brand-green,var(--primary));font-size:12px;font-weight:400;text-decoration:underline;text-underline-offset:4px;}
 .habit-compose-dialog .habit-form-hint{font-size:12px;margin:20px 0;}
 .habit-compose-dialog #btn-habit-submit{width:100%;min-height:48px;border-radius:10px;font-size:14px;font-weight:600;}

@@ -107,6 +107,37 @@ test('opening a habit or overview gives the connector fresh guarded SDK credenti
   }
 });
 
+test('OAuth return opens a current habit or account status after cleaning the URL and restores focus without an overview control',()=>{
+  for(const habitId of ['h1',null]){
+    const h=harness(),order=[],focused=[];
+    const habitButton={isConnected:true,getAttribute:name=>name==='data-habit-reminder'?'h1':null,focus:()=>focused.push('habit')};
+    const createButton={focus:()=>focused.push('create')};
+    if(!habitId)delete h.c.STATE.habits.h1;
+    h.c.location.href='https://growell-book.vercel.app/?keep=yes&habit-sync=connected#/book/emotion/habit';
+    h.c.history={state:{},replaceState:(state,title,url)=>{order.push('clean-url');h.c.location.href=url;}};
+    h.c.document={querySelector:selector=>selector==='[data-habit-reminder]'&&habitId?habitButton:null,getElementById:id=>id==='btn-open-habit-form'?createButton:null};
+    h.c.GrowellHabitReminder={open:options=>{order.push('open');h.opened.push(options);assert.equal(new URL(h.c.location.href).searchParams.has('habit-sync'),false);}};
+    h.c.handleHabitSyncReturn();
+    assert.deepEqual(order,['clean-url','open']);assert.equal(h.opened.length,1);assert.equal(h.opened[0].habitId,habitId);
+    assert.equal(h.opened[0].getHabit().name,habitId?'독서':'전체 습관');
+    assert.equal(new URL(h.c.location.href).searchParams.get('keep'),'yes');assert.equal(new URL(h.c.location.href).hash,'#/book/emotion/habit');
+    h.opened[0].restoreFocus();assert.deepEqual(focused,[habitId?'habit':'create']);
+    assert.equal(h.toasts.length,0);h.c.handleHabitSyncReturn();assert.equal(h.opened.length,1,'refreshing the same route does not reopen the result');
+  }
+});
+
+test('OAuth errors and cancellation still show connection feedback without an overview button',()=>{
+  for(const result of ['error','failed','cancelled']){
+    const h=harness();
+    h.c.location.href='https://growell-book.vercel.app/?habit-sync='+result+'#/book/emotion/habit';
+    h.c.history={state:null,replaceState:(state,title,url)=>{h.c.location.href=url;}};
+    h.c.GrowellHabitReminder={open:options=>h.opened.push(options)};
+    h.c.handleHabitSyncReturn();
+    assert.equal(h.opened.length,1);assert.equal(h.opened[0].habitId,null);
+    assert.deepEqual(h.toasts,[[result==='cancelled'?'연결을 취소했어요.':'계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled']]);
+  }
+});
+
 test('habit connector cannot open another owner and loses access on route, load or ownership changes',()=>{
   for(const change of ['owner','route','loading','removed','logout']){
     const h=harness();h.c.GrowellHabitReminder={open:options=>h.opened.push(options)};
@@ -146,17 +177,18 @@ test('habit success checkbox persistence and retries do not trigger reminder syn
   h.c.retryHabitChecks('h1');assert.equal(h.jobs.length,3);h.jobs[2].mutation(h.c.STATE);h.jobs[2].options.onSuccess();assert.equal(syncs,0);assert.deepEqual(Array.from(h.c.STATE.habits.h1.checkedDates),[]);
 });
 
-test('overview refresh retains a usable automatic-sync button without rebinding or duplicate events',()=>{
-  const h=harness(),listeners={},opened=[];let stops=0;
-  const panel={innerHTML:'',contains:()=>true,querySelectorAll:()=>[],addEventListener:(type,listener)=>{assert.equal(listeners[type],undefined,'listener registered once');listeners[type]=listener;}};
+test('overview omits automatic-sync controls initially and after refresh while individual habits retain them',()=>{
+  const h=harness();
+  const panel={innerHTML:'',contains:()=>true,querySelectorAll:()=>[]};
   h.c.document={activeElement:null,querySelectorAll:selector=>selector==='[data-habit-overview]'?[panel]:[],querySelector:()=>null};
   h.c.refreshHabitValueSummary=()=>{};h.c.refreshHomeHabits=()=>{};h.c.habitOverviewBodyHtml=()=>'<div>synthetic summary</div>';
-  install(h.c,'function habitSyncSettingsButtonHtml(','/* 월요일 시작 기준');
+  install(h.c,'function habitOverviewHtml(','/* 월요일 시작 기준');
+  install(h.c,'function habitReminderActionHtml(','function habitSyncAccessToken(');
   install(h.c,'function refreshHabitSaveUI(','function queueHabitCheck(');
-  h.c.openHabitReminder=(id,button)=>opened.push({id,button});
-  const root={querySelectorAll:()=>[panel]};h.c.bindHabitOverviewEvents(root);h.c.bindHabitOverviewEvents(root);
-  h.c.refreshHabitSaveUI('h1');assert.match(panel.innerHTML,/data-habit-sync-settings/);assert.match(panel.innerHTML,/알림 자동 연동/);
-  const button={};listeners.click({target:{closest:selector=>selector==='[data-habit-sync-settings]'?button:null},stopPropagation:()=>{stops++;}});
-  assert.equal(stops,1);assert.equal(opened.length,1);assert.equal(opened[0].id,null);assert.equal(opened[0].button,button);
-  h.c.memberLoadState.habits='loading';assert.equal(h.c.habitSyncSettingsButtonHtml(),'');h.c.memberLoadState.habits='ready';h.c.SESSION=null;assert.equal(h.c.habitSyncSettingsButtonHtml(),'');
+  const initial=h.c.habitOverviewHtml();
+  assert.match(initial,/synthetic summary/);assert.doesNotMatch(initial,/data-habit-sync-settings|알림 자동 연동/);
+  h.c.refreshHabitSaveUI('h1');
+  assert.match(panel.innerHTML,/synthetic summary/);assert.doesNotMatch(panel.innerHTML,/data-habit-sync-settings|알림 자동 연동/);
+  const action=h.c.habitReminderActionHtml(h.habit);
+  assert.match(action,/data-habit-reminder="h1"/);assert.match(action,/알림 자동 연동/);
 });

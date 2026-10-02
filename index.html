@@ -1855,7 +1855,7 @@ var habitFormOpenFor = null; // bookId whose 습관 만들기 추가/수정 폼�
 var habitComposerDialog = null;
 var habitNameDialog = null;
 var habitBookDialog = null;
-var habitTimeDialog = null;
+var habitTimeDropdown = null;
 var habitValueGuideDialog = null;
 var habitValueSummaryDialog = null;
 var habitEditingId = null; // 수정 중인 habit id, 새로 만드는 중이면 null
@@ -3414,7 +3414,7 @@ function refreshHabitSaveUI(habitId){
   refreshHabitValueSummary();
   document.querySelectorAll('[data-habit-overview]').forEach(function(panel){
     var active=document.activeElement,focusKey=active&&panel.contains(active)?active.getAttribute('data-habit-overview-day'):null;
-    panel.innerHTML=habitOverviewBodyHtml()+habitSyncSettingsButtonHtml();
+    panel.innerHTML=habitOverviewBodyHtml();
     if(focusKey) panel.querySelectorAll('[data-habit-overview-day]').forEach(function(button){if(button.getAttribute('data-habit-overview-day').split('|')[0]===focusKey.split('|')[0])button.focus({preventScroll:true});});
   });
   if(!document.querySelectorAll('[data-habit-card], [data-habit-stats-panel]').length){if(typeof refreshHomeHabits==='function') refreshHomeHabits();return;}
@@ -5758,14 +5758,12 @@ function habitOverviewBodyHtml(){
   var pending=intents.some(function(intent){return intent.status==='error';})?'저장하지 못한 체크가 포함돼 있어요. 해당 습관에서 다시 저장해주세요.':intents.length?'체크 저장 중…':'';
   return heading+stats+listHeading+'<div class="habit-overview-items">'+rows+'</div><p class="habit-overview-save" role="status">'+pending+'</p>';
 }
-function habitSyncSettingsButtonHtml(){return SESSION&&memberLoadState.habits==='ready'?'<button type="button" class="habit-sync-overview" data-habit-sync-settings aria-haspopup="dialog">알림 자동 연동</button>':'';}
-function habitOverviewHtml(){return '<section class="card habit-overview" data-habit-overview aria-label="전체 습관 현황">'+habitOverviewBodyHtml()+habitSyncSettingsButtonHtml()+'</section>';}
+function habitOverviewHtml(){return '<section class="card habit-overview" data-habit-overview aria-label="전체 습관 현황">'+habitOverviewBodyHtml()+'</section>';}
 function bindHabitOverviewEvents(root){
   root.querySelectorAll('[data-habit-overview]').forEach(function(panel){
     if(panel._habitOverviewBound) return;
     panel._habitOverviewBound=true;
     panel.addEventListener('click',function(event){
-      var syncButton=event.target.closest('[data-habit-sync-settings]');if(syncButton&&panel.contains(syncButton)){event.stopPropagation();openHabitReminder(null,syncButton);return;}
       var valueButton=event.target.closest('[data-habit-value-overview]'),guideButton=event.target.closest('[data-habit-overview-guide]');
       if(valueButton&&panel.contains(valueButton)){event.stopPropagation();openHabitValueSummary(valueButton.getAttribute('data-habit-value-overview'),valueButton);return;}
       if(guideButton&&panel.contains(guideButton)){event.stopPropagation();openHabitValueGuide(null,guideButton);return;}
@@ -5883,8 +5881,8 @@ function handleHabitSyncReturn(){
   var url=new URL(location.href),result=url.searchParams.get('habit-sync');
   if(['connected','error','failed','cancelled'].indexOf(result)<0)return;
   url.searchParams.delete('habit-sync');history.replaceState(history.state,'',url.href);
-  var trigger=document.querySelector('[data-habit-sync-settings]');
-  if(trigger)openHabitReminder(null,trigger);
+  var trigger=document.querySelector('[data-habit-reminder]');
+  openHabitReminder(trigger?trigger.getAttribute('data-habit-reminder'):null,trigger);
   if(result!=='connected')showToast(result==='cancelled'?'연결을 취소했어요.':'계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
 }
 function openHabitReminder(habitId,trigger){
@@ -5914,7 +5912,7 @@ function openHabitReminder(habitId,trigger){
   if(!getHabit())return;
   GrowellHabitReminder.open({getHabit:getHabit,habitId:habitId,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},restoreFocus:function(){
     if(!getHabit())return;
-    var target=trigger&&trigger.isConnected?trigger:habitId===null?document.querySelector('[data-habit-sync-settings]'):Array.from(document.querySelectorAll('[data-habit-reminder]')).find(function(button){return button.getAttribute('data-habit-reminder')===habitId&&!!(button.closest&&button.closest('.habit-hist-modal'))===fromDetail;});
+    var target=trigger&&trigger.isConnected?trigger:habitId===null?document.getElementById('btn-open-habit-form'):Array.from(document.querySelectorAll('[data-habit-reminder]')).find(function(button){return button.getAttribute('data-habit-reminder')===habitId&&!!(button.closest&&button.closest('.habit-hist-modal'))===fromDetail;});
     if(target)target.focus({preventScroll:true});
   }});
 }
@@ -5962,7 +5960,7 @@ function habitFormHtml(book,editingHabit){
     '<div class="habit-compose-body"><h2 class="habit-compose-title">나의 작은 약속</h2><p class="habit-compose-lead">언제, 어디서, 얼마나 할지 정해보세요.</p>'+
     '<fieldset class="habit-kind-picker"><legend>습관 종류</legend><div class="habit-kind-options">'+['do','avoid'].map(function(value){return '<label class="habit-kind-option" data-habit-kind="'+value+'"><input type="radio" name="habit-behavior-type" value="'+value+'"'+(kind===value?' checked':'')+'><span>'+GrowellHabits.behaviorLabel({behaviorType:value})+'</span></label>';}).join('')+'</div><p class="habit-kind-hint" id="habit-kind-hint">'+GrowellHabits.behaviorHint(h)+'</p></fieldset>'+
     '<section class="habit-reading-settings"'+(kind==='avoid'?' hidden':'')+'><label class="habit-reading-toggle"><input type="checkbox" id="habit-is-reading" aria-controls="habit-reading-fields"'+(reading?' checked':'')+(kind==='avoid'?' disabled':'')+'><span>독서 습관</span></label><div id="habit-reading-fields" data-habit-reading-fields'+(reading?'':' hidden')+'><input type="hidden" id="habit-reading-book"><button type="button" id="habit-reading-book-open" class="habit-book-trigger" aria-haspopup="dialog">읽을 책 선택하기 <span aria-hidden="true">⌄</span></button><p data-habit-reading-status role="status"></p><div class="habit-reading-target"><div class="habit-reading-target-head"><label for="habit-reading-pages">하루 목표</label><output id="habit-reading-pages-value" for="habit-reading-pages">'+target+'쪽</output></div><input type="range" id="habit-reading-pages" min="1" max="'+Math.max(100,target)+'" step="1" value="'+target+'"></div><p class="habit-form-hint">성공은 직접 체크해주세요.</p></div></section>'+
-    '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row'+(f[0]==='name'?' habit-name-field':'')+'"'+(f[0]==='goal'?' data-habit-text-goal'+(reading?' hidden':''):'')+'><label for="habit-'+f[0]+(f[0]==='time'?'-open':'')+'">'+f[1]+'</label>'+(f[0]==='name'?valueSelect:'')+'<input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+'>'+(f[0]==='time'?'<button type="button" class="habit-time-trigger" id="habit-time-open" aria-haspopup="dialog" aria-describedby="habit-time-hint" aria-label="습관 시간 선택: '+esc(habitTimeDisplay(f[3])||'미설정')+'"><span>'+esc(habitTimeDisplay(f[3])||'시간 선택하기')+'</span><span aria-hidden="true">⌄</span></button><small class="habit-time-hint" id="habit-time-hint">10분 단위 · 자동 연동 시 이 시간에 알림을 받아요.</small>':'')+(f[0]==='name'?'<button type="button" class="habit-name-picker-button" id="habit-name-picker" aria-haspopup="dialog"'+(reading?' hidden':'')+'>가치별 습관 고르기</button>':'')+'</div>';}).join('')+'</div>'+
+    '<div class="habit-form-grid">'+fields.map(function(f){return '<div class="habit-form-row'+(f[0]==='name'?' habit-name-field':'')+'"'+(f[0]==='goal'?' data-habit-text-goal'+(reading?' hidden':''):'')+'><label for="habit-'+f[0]+(f[0]==='time'?'-open':'')+'">'+f[1]+'</label>'+(f[0]==='name'?valueSelect:'')+'<input type="'+f[2]+'" id="habit-'+f[0]+'" value="'+esc(f[3]||'')+'"'+(f[4]?' placeholder="'+f[4]+'"':'')+(f[5]?' maxlength="'+f[5]+'"':'')+(f[0]==='end-date'?' min="'+esc(start)+'"':'')+'>'+(f[0]==='time'?'<button type="button" class="habit-time-trigger" id="habit-time-open" aria-haspopup="listbox" aria-expanded="false" aria-controls="habit-time-options" aria-describedby="habit-time-hint" aria-label="습관 시간 선택: '+esc(habitTimeDisplay(f[3])||'미설정')+'"><span>'+esc(habitTimeDisplay(f[3]))+'</span><span aria-hidden="true">⌄</span></button><div class="habit-time-dropdown" id="habit-time-dropdown" hidden><div id="habit-time-options" role="listbox" aria-label="습관 시간"></div></div><small class="habit-time-hint" id="habit-time-hint">10분 단위 · 자동 연동 시 이 시간에 알림을 받아요.</small>':'')+(f[0]==='name'?'<button type="button" class="habit-name-picker-button" id="habit-name-picker" aria-haspopup="dialog"'+(reading?' hidden':'')+'>가치별 습관 고르기</button>':'')+'</div>';}).join('')+'</div>'+
     '<p class="habit-form-hint">목표 기간에는 매일 한 번 체크해요. 목표일을 비워두면 계속 실천할 수 있어요. 기간을 바꿔도 이전 체크 기록은 보관됩니다.</p>'+
     '<button type="button" class="btn btn-primary" id="btn-habit-submit">'+(editingHabit?'수정하기':'만들기')+'</button>'+(editingHabit?'<button type="button" class="habit-delete-link" data-delete-habit="'+esc(editingHabit.id)+'">'+svgIcon(I_TRASH)+' 이 습관 삭제</button>':'')+'</div></div>';
 }
@@ -5977,43 +5975,47 @@ function habitTimeChoices(){
   return Array.from({length:144},function(_,index){var minutes=index*10;return String(Math.floor(minutes/60)).padStart(2,'0')+':'+String(minutes%60).padStart(2,'0');});
 }
 function closeHabitTimePicker(restore){
-  var node=habitTimeDialog;if(!node)return;habitTimeDialog=null;node.close();node.remove();
-  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('habit-time');
-  var parent=node._parent;
-  if(restore!==false&&habitComposerDialog===parent&&parent.isConnected&&SESSION===parent._session&&saveSessionEpoch===parent._epoch&&location.href===parent._route)parent.querySelector('#habit-time-open').focus({preventScroll:true});
+  var node=habitTimeDropdown;if(!node)return;habitTimeDropdown=null;node.hidden=true;node._opening=null;
+  if(node._cleanup){node._cleanup();node._cleanup=null;}
+  var parent=node._parent,trigger=parent.querySelector('#habit-time-open');trigger.setAttribute('aria-expanded','false');
+  if(restore!==false&&habitComposerDialog===parent&&parent.isConnected&&SESSION===parent._session&&saveSessionEpoch===parent._epoch&&location.href===parent._route)trigger.focus({preventScroll:true});
 }
 function openHabitTimePicker(parent){
   function current(){return habitComposerDialog===parent&&parent.isConnected&&SESSION===parent._session&&saveSessionEpoch===parent._epoch&&location.href===parent._route;}
-  if(!current())return;closeHabitTimePicker(false);
-  var node=document.createElement('dialog');habitTimeDialog=node;node._parent=parent;node.className='habit-time-dialog';node.setAttribute('aria-labelledby','habit-time-title');
+  if(!current())return;
+  var node=parent.querySelector('#habit-time-dropdown'),trigger=parent.querySelector('#habit-time-open');
+  if(habitTimeDropdown===node){closeHabitTimePicker();return;}closeHabitTimePicker(false);
+  habitTimeDropdown=node;node._parent=parent;var opening={};node._opening=opening;
   var input=parent.querySelector('#habit-time'),selected=habitTimeDisplay(input.value),choices=habitTimeChoices(),selectedIndex=choices.indexOf(selected),now=new Date();
   var previousExact=/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(selected),activeIndex=selectedIndex>=0?selectedIndex:previousExact?Math.floor((Number(selected.slice(0,2))*60+Number(selected.slice(3)))/10):Math.floor((now.getHours()*60+now.getMinutes())/10);
-  node.innerHTML='<header class="habit-time-head"><div><h4 id="habit-time-title">시간 선택</h4><p>24시간 · 10분 단위</p></div><button type="button" class="icon-btn" id="habit-time-close" aria-label="시간 선택 닫기">'+svgIcon(I_CLOSE)+'</button></header>'+(selected&&selectedIndex<0?'<p class="habit-time-previous">현재 설정: '+esc(selected)+'</p>':'')+'<div class="habit-time-list" role="listbox" aria-label="습관 시간" aria-orientation="vertical">'+choices.map(function(time,index){return '<button type="button" role="option" aria-selected="'+(selected===time)+'" tabindex="'+(index===activeIndex?'0':'-1')+'" data-habit-time-option="'+time+'">'+time+'<span aria-hidden="true">'+(selected===time?'✓':'')+'</span></button>';}).join('')+'</div><footer class="habit-time-footer"><button type="button" id="habit-time-clear">시간 설정 안 함</button></footer>';
-  document.body.appendChild(node);
-  var options=Array.from(node.querySelectorAll('[data-habit-time-option]'));
+  node.innerHTML='<div class="habit-time-list" id="habit-time-options" role="listbox" aria-label="습관 시간" aria-orientation="vertical">'+choices.map(function(time,index){return '<button type="button" role="option" aria-selected="'+(selected===time)+'" tabindex="'+(index===activeIndex?'0':'-1')+'" data-habit-time-option="'+time+'">'+time+'<span aria-hidden="true">'+(selected===time?'✓':'')+'</span></button>';}).join('')+'</div><div class="habit-time-footer"><button type="button" id="habit-time-clear">시간 설정 안 함</button></div>';
+  var options=Array.from(node.querySelectorAll('[data-habit-time-option]')),list=node.querySelector('.habit-time-list');
+  function active(){return current()&&habitTimeDropdown===node&&node._opening===opening;}
   function selectTime(value){
-    if(!current()||habitTimeDialog!==node){if(habitTimeDialog===node)closeHabitTimePicker(false);return;}
+    if(!active()){if(habitTimeDropdown===node&&node._opening===opening)closeHabitTimePicker(false);return;}
     if(value!==''&&choices.indexOf(value)<0)return;
-    input.value=value;parent.querySelector('#habit-time-open').setAttribute('aria-label','습관 시간 선택: '+(value||'미설정'));parent.querySelector('#habit-time-open').innerHTML='<span>'+esc(value||'시간 선택하기')+'</span><span aria-hidden="true">⌄</span>';
+    input.value=value;trigger.setAttribute('aria-label','습관 시간 선택: '+(value||'미설정'));trigger.innerHTML='<span>'+esc(value)+'</span><span aria-hidden="true">⌄</span>';
     closeHabitTimePicker();
   }
   function focusTime(index){
     activeIndex=Math.max(0,Math.min(options.length-1,index));
     options.forEach(function(option,i){option.tabIndex=i===activeIndex?0:-1;});
-    options[activeIndex].focus({preventScroll:true});options[activeIndex].scrollIntoView({block:'center',behavior:'instant'});
+    var option=options[activeIndex];option.focus({preventScroll:true});
+    list.scrollTop=option.offsetTop-(list.clientHeight-option.offsetHeight)/2;
   }
   options.forEach(function(option,index){
     option.onclick=function(){selectTime(option.getAttribute('data-habit-time-option'));};
     option.onkeydown=function(event){
       var next=event.key==='ArrowDown'?index+1:event.key==='ArrowUp'?index-1:event.key==='PageDown'?index+6:event.key==='PageUp'?index-6:event.key==='Home'?0:event.key==='End'?options.length-1:null;
-      if(next===null)return;event.preventDefault();if(!current()||habitTimeDialog!==node){if(habitTimeDialog===node)closeHabitTimePicker(false);return;}focusTime(next);
+      if(next===null)return;event.preventDefault();if(!active()){if(habitTimeDropdown===node&&node._opening===opening)closeHabitTimePicker(false);return;}focusTime(next);
     };
   });
+  function outside(event){if(!node.contains(event.target)&&!trigger.contains(event.target))closeHabitTimePicker(false);}
+  function escape(event){if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeHabitTimePicker();}}
   node.querySelector('#habit-time-clear').onclick=function(){selectTime('');};
-  node.querySelector('#habit-time-close').onclick=function(){closeHabitTimePicker();};
-  node.addEventListener('cancel',function(event){event.preventDefault();closeHabitTimePicker();});
-  node.showModal();focusTime(activeIndex);
-  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('habit-time',{close:function(){closeHabitTimePicker();}});
+  document.addEventListener('pointerdown',outside,true);document.addEventListener('focusin',outside,true);parent.addEventListener('keydown',escape,true);
+  node._cleanup=function(){document.removeEventListener('pointerdown',outside,true);document.removeEventListener('focusin',outside,true);parent.removeEventListener('keydown',escape,true);};
+  trigger.setAttribute('aria-expanded','true');node.hidden=false;focusTime(activeIndex);node.scrollIntoView({block:'nearest',behavior:'instant'});
 }
 function syncHabitComposerValue(node){
   var input=node.querySelector('#habit-value-select');
