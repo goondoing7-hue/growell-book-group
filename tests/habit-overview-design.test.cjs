@@ -28,7 +28,8 @@ test('today statistics use active owned habits instead of the weekly success rat
   };
   const html=c.habitOverviewBodyHtml();
   assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);
-  assert.match(html,/남은 습관<\/span><strong>1<small>개/);
+  assert.match(html,/aria-label="남은 습관 1개 목록 보기"/);
+  assert.match(html,/aria-label="전체 습관 4개 목록 보기"/);
   assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
   assert.match(html,/오늘의 작은 약속/);assert.match(html,/4개의 습관/);assert.doesNotMatch(html,/주간 성공률|foreign/);
   assert.match(checkbox(html,'complete'),/ checked /);assert.doesNotMatch(checkbox(html,'pending'),/ checked /);
@@ -50,6 +51,7 @@ test('optimistic checks update today metrics without modifying stored history an
 test('checkbox, habit heading and value pill retain separate actions and stale day markup checks the current day',()=>{
   const c=harness(),calls=[];let listener;
   c.toggleHabitDate=(...args)=>calls.push(['check',...args]);c.openHabitProgress=(...args)=>calls.push(['progress',...args]);c.openHabitValueSummary=(...args)=>calls.push(['values',...args]);c.openHabitValueGuide=()=>calls.push(['guide']);
+  c.openHabitSummary=(...args)=>calls.push(['summary',...args]);
   const panel={contains:()=>true,addEventListener:(type,handler)=>{assert.equal(type,'click');listener=handler;}};
   c.bindHabitOverviewEvents({querySelectorAll:()=>[panel]});
   function click(attrs,disabled=false){const button={disabled,getAttribute:key=>attrs[key]??null};const event={target:{closest:selector=>Object.hasOwn(attrs,selector.slice(1,-1))?button:null},stopPropagation(){this.stopped=true;}};listener(event);assert.equal(event.stopped,true);return button;}
@@ -57,5 +59,6 @@ test('checkbox, habit heading and value pill retain separate actions and stale d
   click({'data-habit-overview-day':'future|2026-09-22'},true);assert.equal(calls.length,0);
   click({'data-habit-overview-open':'one'});assert.deepEqual(calls.pop(),['progress','one','overview']);
   const trigger=click({'data-habit-value-overview':'all'});assert.deepEqual(calls.pop(),['values','all',trigger]);
+  for(const mode of ['all','remaining']){const counter=click({'data-habit-summary':mode});assert.deepEqual(calls.pop(),['summary',mode,counter]);}
   assert.equal(c.SESSION.userId,'owner');assert.equal(calls.length,0);
 });

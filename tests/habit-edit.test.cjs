@@ -186,7 +186,7 @@ test('editing the selected reading book or target preserves latest checks; expli
 
 function cardHarness(){
   class Today extends Date{constructor(...args){super(...(args.length?args:[2026,8,22,12]));}}
-  const c={Date:Today,GrowellHabits:require('../habitDomain.js'),GrowellReadingHabits:readingHabits,GrowellHabitSuggestions:habitSuggestions,habitValueSummaryDialog:null,habitSaveIntents:{},habitHistoryView:'progress',habitHistoryMonth:null,
+  const c={Date:Today,GrowellHabits:require('../habitDomain.js'),GrowellReadingHabits:readingHabits,GrowellHabitSuggestions:habitSuggestions,habitSummaryDialog:null,habitValueSummaryDialog:null,habitSaveIntents:{},habitHistoryView:'progress',habitHistoryMonth:null,
     I_CAL:'',I_BACK:'',I_EDIT:'',I_CHECK:'',I_TRASH:'',I_CLOSE:'',svgIcon:()=>'<svg></svg>',
     esc:s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')};
   vm.createContext(c);vm.runInContext(source.slice(source.indexOf('function pad2('),source.indexOf('function habitFormHtml(')),c);
@@ -332,7 +332,7 @@ test('overview includes only the current owner across books and immediately refl
   c.habitSaveIntents={mine:{'2026-09-22':{checked:true,status:'saving'}}};
   vm.runInContext(source.slice(source.indexOf('function habitWithPendingChecks('),source.indexOf('function habitSaveStatusHtml(')),c);
   const html=c.habitOverviewBodyHtml();
-  assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.match(html,/남은 습관<\/span><strong>1<small>개/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
+  assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.match(html,/data-habit-summary="remaining"[^>]*aria-label="남은 습관 1개 목록 보기"/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
   assert.match(html,/다른 책 습관/);assert.match(html,/data-habit-overview-open="otherBook"/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
   const input=overviewCheckbox(html,'mine','2026-09-22');assert.match(input,/\schecked(?:\s|>)/);assert.match(input,/aria-label="[^\"]*다시 누르면 취소/);
   assert.doesNotMatch(overviewCheckbox(html,'otherBook','2026-09-22'),/\schecked(?:\s|>)/);
@@ -914,6 +914,68 @@ function valueSummaryHarness(){
   return h;
 }
 
+function habitSummaryHarness(){
+  const h=composerHarness(),base={userId:'owner',bookId:'emotion',startDate:'2026-09-01',checkedDates:[],createdAt:1};
+  const habit=(id,extra={})=>({id,name:id,...base,...extra});
+  h.c.STATE.habits={
+    pending:habit('pending',{bookId:'thought',name:'오늘 <산책>',goal:'10분 <천천히>',place:'공원 & 집',time:'13:00',weekdays:[2,4]}),
+    done:habit('done',{name:'완료한 기도',checkedDates:['2026-09-22']}),
+    rest:habit('rest',{name:'쉬는 독서',weekdays:[1,3,5]}),
+    future:habit('future',{name:'다음 주 운동',startDate:'2026-09-28'}),
+    ended:habit('ended',{name:'끝난 일기',endDate:'2026-09-21'}),
+    foreign:habit('foreign',{name:'다른 회원 비밀',userId:'foreign'})
+  };
+  return h;
+}
+
+test('all habit summary covers owned books while remaining matches today count and excludes off days and completed periods',()=>{
+  const h=habitSummaryHarness(),c=h.c,today='2026-09-22',before=JSON.stringify(c.STATE);
+  assert.deepEqual(Array.from(c.habitSummaryItems('all',today),habit=>habit.id).sort(),['done','ended','future','pending','rest']);
+  assert.deepEqual(Array.from(c.habitSummaryItems('remaining',today),habit=>habit.id),['pending']);
+  const summary=c.GrowellHabits.overview(c.myHabitOverviewItems(),today,'2026-09-21');
+  assert.equal(c.habitSummaryItems('all',today).length,summary.total);assert.equal(c.habitSummaryItems('remaining',today).length,summary.todayPending);
+  const all=c.habitSummaryBodyHtml('all',today),remaining=c.habitSummaryBodyHtml('remaining',today);
+  assert.equal(Array.from(all.matchAll(/<li\b/g)).length,5);assert.equal(Array.from(remaining.matchAll(/<li\b/g)).length,1);
+  for(const html of [all,remaining]){
+    assert.match(html,/오늘 &lt;산책&gt;/);assert.match(html,/10분 &lt;천천히&gt;/);assert.match(html,/공원 &amp; 집/);assert.match(html,/화·목/);assert.match(html,/13:00/);
+    assert.doesNotMatch(html,/다른 회원 비밀|<산책>|<천천히>|<input\b|data-habit-day=|data-habit-overview-day=/);
+  }
+  assert.match(all,/완료한 기도/);assert.match(all,/쉬는 독서/);assert.match(all,/다음 주 운동/);assert.match(all,/끝난 일기/);
+  assert.doesNotMatch(remaining,/완료한 기도|쉬는 독서|다음 주 운동|끝난 일기/);
+  assert.equal(JSON.stringify(c.STATE),before);assert.equal(h.saves.length,0);
+});
+
+test('habit list popup follows optimistic checks and day changes without changing saved check history',()=>{
+  const h=habitSummaryHarness(),c=h.c,before=JSON.stringify(c.STATE);c.openHabitSummary('remaining',h.trigger);const popup=c.habitSummaryDialog;
+  assert.equal(popup.open,true);assert.match(popup.querySelector('[data-habit-summary-content]').innerHTML,/오늘 &lt;산책&gt;/);
+  c.habitSaveIntents.pending={'2026-09-22':{checked:true,status:'saving'}};c.refreshHabitSaveUI('pending');
+  assert.equal(c.habitSummaryDialog,popup);assert.doesNotMatch(popup.querySelector('[data-habit-summary-content]').innerHTML,/오늘 &lt;산책&gt;/);assert.equal(c.habitSummaryItems('remaining','2026-09-22').length,0);
+  c.habitSaveIntents.pending['2026-09-22']={checked:false,status:'error'};c.refreshHabitSaveUI('pending');assert.match(popup.querySelector('[data-habit-summary-content]').innerHTML,/오늘 &lt;산책&gt;/);
+  c.Date=class extends Date{constructor(...args){super(...(args.length?args:[2026,8,23,0,1]));}};c.refreshHabitSummary();
+  const html=popup.querySelector('[data-habit-summary-content]').innerHTML;assert.doesNotMatch(html,/오늘 &lt;산책&gt;/);assert.match(html,/쉬는 독서/);assert.match(html,/완료한 기도/);
+  assert.equal(JSON.stringify(c.STATE),before);assert.equal(h.saves.length,0);
+});
+
+test('habit list popup closes through Back or close button and returns focus without moving the page',()=>{
+  for(const closeVia of ['back','button']){
+    const h=habitSummaryHarness(),c=h.c;h.browser.scrollY=470;c.openHabitSummary('all',h.trigger);const popup=c.habitSummaryDialog;
+    assert.equal(popup.open,true);assert.ok(popup.querySelector('[data-habit-summary-count]'));assert.equal(popup.querySelectorAll('input').length,0);
+    if(closeVia==='back')h.back();else popup.querySelector('[data-habit-summary-close]').click();
+    assert.equal(c.habitSummaryDialog,null);assert.equal(popup.isConnected,false);assert.equal(c.document.activeElement,h.trigger);assert.equal(h.browser.scrollY,470);assert.match(h.browser.location.href,/#\/book\/emotion\/habit$/);assert.equal(h.saves.length,0);
+  }
+});
+
+test('habit list popup removes private contents after account, epoch, route or loading changes',()=>{
+  for(const change of ['owner','epoch','route','loading','error']){
+    const h=habitSummaryHarness(),c=h.c;c.openHabitSummary('all',h.trigger);const popup=c.habitSummaryDialog,focus={};
+    if(change==='owner')c.SESSION={userId:'foreign'};else if(change==='epoch')c.saveSessionEpoch++;else if(change==='route')h.browser.location.href='https://example.test/#/';else c.memberLoadState.habits=change;
+    c.document.activeElement=focus;c.refreshHabitSummary();assert.equal(c.habitSummaryDialog,null);assert.equal(popup.isConnected,false);assert.equal(c.document.activeElement,focus);assert.equal(h.saves.length,0);
+  }
+  const h=habitSummaryHarness(),c=h.c;
+  for(const status of ['loading','error']){c.memberLoadState.habits=status;c.openHabitSummary('all',h.trigger);assert.equal(c.habitSummaryDialog,null);assert.equal(c.habitSummaryItems('all','2026-09-22').length,0);}
+  c.memberLoadState.habits='ready';c.SESSION=null;c.openHabitSummary('all',h.trigger);assert.equal(c.habitSummaryDialog,null);assert.equal(c.habitSummaryItems('all','2026-09-22').length,0);
+});
+
 test('value overview badges and summaries use explicit values and group only this owner habits by todays state',()=>{
   const h=valueSummaryHarness(),c=h.c,overview=c.habitOverviewBodyHtml();
   assert.deepEqual(Array.from(overview.matchAll(/data-habit-value-overview="([^"]+)"/g),match=>match[1]),['all']);assert.equal(c.habitValueBadgeHtml({name:'기도',valueId:''}),'');assert.equal(c.habitValueBadgeHtml({valueId:'invalid'}),'');assert.match(c.habitCardHtml(c.STATE.habits.done),/class="habit-value-badge" data-value="faith"/);
@@ -1222,7 +1284,7 @@ test('overview excludes resting habits from todays completion totals but keeps t
   const c=cardHarness();Object.assign(c,{SESSION:{userId:'owner'},memberLoadState:{habits:'ready'},habitWithPendingChecks:habit=>habit,bookById:()=>({title:'테스트 책'})});
   const habit=(id,extra={})=>({id,userId:'owner',bookId:'emotion',name:id,startDate:'2026-09-01',checkedDates:[],...extra});
   c.STATE={habits:{done:habit('done',{weekdays:[2,4],checkedDates:['2026-09-22']}),pending:habit('pending'),rest:habit('rest',{weekdays:[1,3,5]})}};
-  const html=c.habitOverviewBodyHtml();assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.match(html,/남은 습관<\/span><strong>1<small>개/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
+  const html=c.habitOverviewBodyHtml();assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.match(html,/data-habit-summary="remaining"[^>]*aria-label="남은 습관 1개 목록 보기"/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
   assert.match(overviewCheckbox(html,'rest','2026-09-22'),/\sdisabled(?:\s|>)/);assert.match(overviewCheckbox(html,'rest','2026-09-22'),/쉬는 날/);assert.match(html,/월·수·금/);
   assert.equal(c.habitTodayState(c.STATE.habits.rest,'2026-09-22').canCheck,false);assert.match(c.habitTodayState(c.STATE.habits.rest,'2026-09-22').label,/쉬는 날/);
   assert.match(c.habitFactsHtml(c.STATE.habits.rest),/월·수·금/);assert.match(c.habitFactsHtml(c.STATE.habits.pending),/매일/);
