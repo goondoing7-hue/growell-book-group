@@ -1,12 +1,8 @@
-.habit-reminder-open{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--brand-green,var(--ink));font:inherit;font-size:12px;font-weight:500;cursor:pointer;}
-.habit-reminder-open{margin-top:12px;}
-.habit-reminder-open:hover{background:var(--brand-soft,var(--surface-2));}
 .habit-reminder-dialog{box-sizing:border-box;width:calc(100% - 28px);max-width:560px;max-height:90vh;max-height:90dvh;inset:0;margin:auto;padding:0;border:1px solid var(--line);border-radius:24px;background:var(--surface);color:var(--ink);box-shadow:0 24px 80px #20372b33;overflow:hidden;font:inherit;}
 .habit-reminder-dialog[open]{display:flex;flex-direction:column;}
 .habit-reminder-dialog::backdrop{background:rgba(26,43,35,.4);backdrop-filter:blur(5px);}
 .habit-reminder-dialog [hidden]{display:none!important;}
 .habit-reminder-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex:none;padding:25px 28px 22px;border-bottom:1px solid var(--line);}
-.habit-reminder-head p{margin:0 0 6px;color:var(--ink-soft);font-size:11px;line-height:1.5;}
 .habit-reminder-head h2{margin:0;font-size:23px;font-weight:600;line-height:1.4;letter-spacing:-.7px;}
 .habit-reminder-head button{display:grid;place-items:center;flex:none;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink-soft);font:inherit;font-size:27px;font-weight:300;cursor:pointer;}
 .habit-reminder-head button:hover{background:var(--surface-2);}
@@ -16,20 +12,35 @@
 .habit-sync-state{padding:15px 17px;border-radius:12px;background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--ink));font-size:13px;line-height:1.7;}
 .habit-reminder-dialog h3{margin:22px 0 10px;font-size:15px;font-weight:600;line-height:1.5;}
 .habit-reminder-dialog [data-sync-setup] p{font-size:13px;line-height:1.8;color:var(--ink-soft);}
-.habit-sync-time{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-top:22px;font-size:14px;}
-.habit-sync-time input{width:135px;min-height:44px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);font:inherit;font-size:16px;}
+.habit-sync-group{margin-top:24px;}
+.habit-sync-group h3{display:flex;align-items:baseline;gap:7px;margin:0 0 7px;font-size:12px;font-weight:600;color:var(--ink-soft);}
+.habit-sync-group h3 span{font-variant-numeric:tabular-nums;font-weight:400;}
+.habit-sync-group ul{list-style:none;margin:0;padding:0;}
+.habit-sync-group li{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:61px;padding:13px 0;border-bottom:1px solid var(--line);}
+.habit-sync-group li:last-child{border-bottom:0;}
+.habit-sync-row-copy{display:flex;align-items:baseline;flex-wrap:wrap;gap:5px 11px;min-width:0;}
+.habit-sync-row-copy strong{font-size:14px;font-weight:550;line-height:1.6;overflow-wrap:anywhere;}
+.habit-sync-row-copy>span{color:var(--ink-soft);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.habit-sync-row-state{flex:none;color:var(--ink-soft);font-size:11px;white-space:nowrap;}
+.habit-sync-row-state.is-linked{color:var(--brand-green,var(--ink));}
+.habit-sync-link,.habit-sync-save{flex:none;min-height:36px;padding:7px 13px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--brand-green);font:inherit;font-size:12px;cursor:pointer;}
+.habit-sync-link:hover,.habit-sync-save:hover{background:var(--brand-soft,var(--surface-2));}
+.habit-sync-empty{margin:25px 0;font-size:13px;line-height:1.8;color:var(--ink-soft);}
+.habit-sync-setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:16px 0 6px;}
+.habit-sync-settings-detail{margin-top:14px;border-top:1px solid var(--line);}
+.habit-sync-settings-detail summary,.habit-sync-device summary{padding:18px 0 4px;color:var(--ink-soft);font-size:12px;cursor:pointer;}
 .habit-sync-hint{margin:10px 0 0;font-size:11px;line-height:1.8;color:var(--ink-soft);}
 .habit-sync-consent{margin:20px 0 14px;font-size:12px;line-height:1.8;color:var(--ink-soft);}
 .habit-sync-primary{display:block;width:100%;min-height:46px;padding:11px 14px;border:1px solid var(--brand-green);border-radius:11px;background:var(--brand-green);color:#fff;font:inherit;font-size:14px;font-weight:550;cursor:pointer;}
-.habit-sync-toggle{display:flex;align-items:center;gap:10px;margin:20px 0 16px;font-size:14px;}
+.habit-sync-toggle{display:flex;align-items:center;gap:10px;margin:0;font-size:13px;}
 .habit-sync-toggle input{width:19px;height:19px;margin:0;accent-color:var(--brand-green);}
-.habit-sync-tools{display:flex;flex-wrap:wrap;gap:8px 15px;margin-top:14px;}
+.habit-sync-tools{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px 15px;margin-top:8px;}
 .habit-sync-tools button,.habit-sync-retry{min-height:38px;padding:5px 0;border:0;background:transparent;color:var(--brand-green);font:inherit;font-size:12px;text-decoration:underline;text-underline-offset:4px;cursor:pointer;}
 .habit-sync-disconnect{margin-top:15px;min-height:38px;padding:5px 0;border:0;background:none;color:var(--ink-soft);font:inherit;font-size:11px;cursor:pointer;}
 .habit-reminder-dialog [data-sync-disconnect-confirm]{margin-top:8px;padding:13px;border:1px solid var(--line);border-radius:10px;}
 .habit-reminder-dialog [data-sync-disconnect-confirm] p{margin:0 0 12px;font-size:12px;line-height:1.7;}
 .habit-reminder-dialog [data-sync-disconnect-confirm] button{padding:8px 12px;margin-right:8px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);font:inherit;font-size:12px;cursor:pointer;}
-.habit-sync-device{margin-top:23px;padding-top:1px;border-top:1px solid var(--line);}
+.habit-sync-device{margin-top:14px;border-top:1px solid var(--line);}
 .habit-sync-tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:14px 0;padding:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:10px;}
 .habit-sync-tabs button{padding:10px 4px;border:0;border-radius:7px;background:transparent;color:var(--ink-soft);font:inherit;font-size:12px;cursor:pointer;}
 .habit-sync-tabs button[aria-pressed=true]{background:var(--surface);color:var(--brand-green);font-weight:600;box-shadow:0 1px 4px #20372b0d;}
@@ -38,5 +49,5 @@
 .habit-sync-device p{margin:12px 0 0;font-size:11px;line-height:1.7;color:var(--ink-soft);}
 .habit-reminder-note{margin:22px 0 0;padding-top:16px;border-top:1px solid var(--line);color:var(--ink-soft);font-size:11px;line-height:1.7;}
 .habit-reminder-dialog button:disabled,.habit-reminder-dialog input:disabled{opacity:.5;cursor:wait;}
-.habit-reminder-dialog :is(button,input):focus-visible,.habit-reminder-open:focus-visible{outline:2px solid var(--brand-green);outline-offset:3px;}
+.habit-reminder-dialog :is(button,input,summary):focus-visible{outline:2px solid var(--brand-green);outline-offset:3px;}
 @media(max-width:540px){.habit-reminder-head{padding:21px 21px 18px;}.habit-reminder-head h2{font-size:21px;}.habit-reminder-body{padding:20px 21px 23px;}.habit-reminder-intro{font-size:12px;}}

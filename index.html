@@ -5726,7 +5726,7 @@ function openHabitValueSummary(valueId,trigger){
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('habit-value-summary',{close:function(){closeHabitValueSummary();}});
 }
 function habitOverviewBodyHtml(){
-  var heading='<div class="habit-overview-heading"><h3>전체 습관 한눈에</h3>'+(SESSION&&memberLoadState.habits==='ready'?habitValuesOverviewHtml([]):'')+'</div>';
+  var heading='<div class="habit-overview-heading"><h3>전체 습관 한눈에</h3>'+(SESSION&&memberLoadState.habits==='ready'?'<div class="habit-overview-actions">'+habitValuesOverviewHtml([])+'<button type="button" class="habit-sync-icon" data-habit-sync-settings aria-label="알림 자동 연동" title="알림 자동 연동" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg></button></div>':'')+'</div>';
   if(!SESSION) return heading+'<p class="habit-overview-note">로그인하면 나의 습관 현황을 볼 수 있어요.</p>';
   if(memberLoadState.habits!=='ready') return heading+(memberDataStatusHtml('habits')||'<p class="habit-overview-note" role="status">습관 현황을 불러오는 중이에요…</p>');
   var habits=myHabitOverviewItems(),today=ymd(new Date()),weekStart=ymd(mondayOf(new Date())),summary=GrowellHabits.overview(habits,today,weekStart);
@@ -5764,6 +5764,7 @@ function bindHabitOverviewEvents(root){
     if(panel._habitOverviewBound) return;
     panel._habitOverviewBound=true;
     panel.addEventListener('click',function(event){
+      var syncButton=event.target.closest('[data-habit-sync-settings]');if(syncButton&&panel.contains(syncButton)){event.stopPropagation();openHabitReminder(null,syncButton);return;}
       var valueButton=event.target.closest('[data-habit-value-overview]'),guideButton=event.target.closest('[data-habit-overview-guide]');
       if(valueButton&&panel.contains(valueButton)){event.stopPropagation();openHabitValueSummary(valueButton.getAttribute('data-habit-value-overview'),valueButton);return;}
       if(guideButton&&panel.contains(guideButton)){event.stopPropagation();openHabitValueGuide(null,guideButton);return;}
@@ -5861,7 +5862,6 @@ function habitCardProgressHtml(stats){
     '<div class="habit-goal-track" role="progressbar" aria-label="목표 기간 성공률" aria-valuenow="'+stats.goalPercent+'" aria-valuemin="0" aria-valuemax="100" aria-valuetext="목표 '+stats.total+'일 중 '+stats.success+'일 성공"><span style="width:'+stats.goalPercent+'%"></span></div>';
 }
 function habitCardSaveStatusHtml(habitId){return Object.keys(habitSaveIntents[habitId]||{}).length?habitSaveStatusHtml(habitId):'';}
-function habitReminderActionHtml(habit){return '<button type="button" class="habit-reminder-open" data-habit-reminder="'+esc(habit.id)+'" aria-haspopup="dialog">알림 자동 연동</button>';}
 function habitSyncAccessToken(session,epoch){
   function guard(){if(!session||SESSION!==session||saveSessionEpoch!==epoch)throw new Error('session_changed');}
   return Promise.resolve().then(function(){guard();return sb.auth.getSession();}).then(function(result){
@@ -5881,13 +5881,13 @@ function handleHabitSyncReturn(){
   var url=new URL(location.href),result=url.searchParams.get('habit-sync');
   if(['connected','error','failed','cancelled'].indexOf(result)<0)return;
   url.searchParams.delete('habit-sync');history.replaceState(history.state,'',url.href);
-  var trigger=document.querySelector('[data-habit-reminder]');
-  openHabitReminder(trigger?trigger.getAttribute('data-habit-reminder'):null,trigger);
+  var trigger=document.querySelector('[data-habit-sync-settings]');
+  openHabitReminder(null,trigger);
   if(result!=='connected')showToast(result==='cancelled'?'연결을 취소했어요.':'계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
 }
 function openHabitReminder(habitId,trigger){
   if(typeof GrowellHabitReminder==='undefined')return;
-  var session=SESSION,epoch=saveSessionEpoch,route=location.href,fromDetail=!!(trigger&&trigger.closest&&trigger.closest('.habit-hist-modal'));
+  var session=SESSION,epoch=saveSessionEpoch,route=location.href;
   function current(){return !!session&&SESSION===session&&saveSessionEpoch===epoch&&location.href===route&&memberLoadState.habits==='ready';}
   function getHabit(){
     if(!current())return null;
@@ -5912,7 +5912,7 @@ function openHabitReminder(habitId,trigger){
   if(!getHabit())return;
   GrowellHabitReminder.open({getHabit:getHabit,habitId:habitId,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},restoreFocus:function(){
     if(!getHabit())return;
-    var target=trigger&&trigger.isConnected?trigger:habitId===null?document.getElementById('btn-open-habit-form'):Array.from(document.querySelectorAll('[data-habit-reminder]')).find(function(button){return button.getAttribute('data-habit-reminder')===habitId&&!!(button.closest&&button.closest('.habit-hist-modal'))===fromDetail;});
+    var target=trigger&&trigger.isConnected?trigger:document.querySelector('[data-habit-sync-settings]')||document.getElementById('btn-open-habit-form');
     if(target)target.focus({preventScroll:true});
   }});
 }
@@ -5928,7 +5928,7 @@ function habitCardHtml(habit){
     '<p class="habit-save-hint" data-habit-save-status role="status" aria-live="polite">'+habitCardSaveStatusHtml(habit.id)+'</p>'+
     '<div class="habit-record-actions" role="group" aria-label="'+esc(habit.name)+' 기록 보기">'+
     '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="week" aria-haspopup="dialog">'+svgIcon(I_CAL)+'이번 주</button>'+
-    '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="month" aria-haspopup="dialog">'+svgIcon(I_CAL)+'월별 달력</button></div>'+habitReminderActionHtml(habit)+'</article>';
+    '<button type="button" data-habit-record="'+esc(habit.id)+'" data-habit-record-view="month" aria-haspopup="dialog">'+svgIcon(I_CAL)+'월별 달력</button></div></article>';
 }
 function habitArchiveSnapshot(){
   if(!SESSION)return {status:'loading',rows:[]};
@@ -6368,7 +6368,7 @@ function habitHistoryModalHtml(habit){
     habitFactsHtml(habit)+habitReadingProgressHtml(habit)+'<div data-habit-stats-panel="'+esc(habit.id)+'">'+habitStatsPanelHtml(habit)+'</div>'+habitMonthPopupHtml(habit);
   return '<div class="habit-hist-overlay" data-habit-history-close="1"><div class="habit-hist-modal" data-habit-kind="'+GrowellHabits.behaviorType(habit)+'" data-habit-history-stop="1" role="dialog" aria-modal="true" aria-labelledby="habit-dialog-title" tabindex="-1">'+
     '<div class="composer-head"><div class="habit-dialog-heading">'+(title?'<p class="habit-dialog-kicker">'+title+'</p>':'')+'<div class="habit-dialog-title-row"><h4 id="habit-dialog-title">'+esc(habit.name)+'</h4>'+habitKindBadgeHtml(habit)+'</div></div><button type="button" class="icon-btn" data-habit-history-close="1" aria-label="습관 기록 닫기">'+svgIcon(I_CLOSE)+'</button></div><div data-habit-history-body>'+body+'</div>'+
-    '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+habitReminderActionHtml(habit)+
+    '<p class="habit-save-hint" data-habit-popup-status="'+esc(habit.id)+'" role="status">'+habitSaveStatusHtml(habit.id)+'</p>'+
     '</div></div>';
 }
 function shiftHabitHistoryMonth(delta){
@@ -7920,9 +7920,6 @@ function bindEvents(route){
   if(openHabitBtn) openHabitBtn.addEventListener('click', function(){
     openHabitComposer(openHabitBtn.getAttribute('data-book'),null,openHabitBtn);
   });
-  app.querySelectorAll('[data-habit-reminder]').forEach(function(button){button.addEventListener('click',function(event){
-    event.stopPropagation();openHabitReminder(button.getAttribute('data-habit-reminder'),button);
-  });});
   app.querySelectorAll('[data-edit-habit]').forEach(function(b){
     b.addEventListener('click', function(){
       var hid = b.getAttribute('data-edit-habit');

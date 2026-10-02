@@ -27,6 +27,8 @@ function fixture(options = {}) {
     async profile() { return state.member; },
     async connection() { return state.connected ? connection : null; },
     async pending() { return item.pending ? 1 : 0; },
+    async habits() { return []; },
+    async tracked() { return []; },
     async claim(owner) {
       operations.push(['claim', owner]);
       if (!state.active || !connection.enabled || !state.connected) return [];
@@ -64,9 +66,23 @@ function fixture(options = {}) {
     if (kind !== 'graph') throw new Error('Unexpected request');
     if (url.includes('/tasks?')) return {value: clone(remote)};
     if (url.includes('/tasks/')) {
-      const id = decodeURIComponent(new URL(url).pathname.split('/').pop());
+      const parts = new URL(url).pathname.split('/');
+      const id = decodeURIComponent(parts[parts.indexOf('tasks') + 1]);
       const found = remote.find(task => task.id === id);
       if (!found) throw new D.SyncError('remote-missing', 404);
+      if (parts.includes('extensions') && opts.method === 'POST') {
+        const extension = JSON.parse(opts.body);
+        if ((found.extensions || []).some(item => item.extensionName === extension.extensionName)) throw new D.SyncError('remote-unavailable');
+        found.extensions = [...(found.extensions || []), {...extension, id: 'microsoft.graph.openTypeExtension.' + extension.extensionName}];
+        found['@odata.etag'] = 'etag-after-extension';
+        return clone(found.extensions.at(-1));
+      }
+      if (parts.includes('linkedResources') && opts.method === 'DELETE') {
+        const linkId = decodeURIComponent(parts.at(-1));
+        found.linkedResources = (found.linkedResources || []).filter(link => link.id !== linkId);
+        found['@odata.etag'] = 'etag-after-link-removal';
+        return null;
+      }
       if (opts.method === 'DELETE') { remote.splice(remote.indexOf(found), 1); return null; }
       if (opts.method === 'PATCH') { Object.assign(found, JSON.parse(opts.body)); return clone(found); }
       return clone(found);
@@ -123,6 +139,25 @@ test('Graph payload whitelists habit information and decodes reading metadata wi
   assert.ok(text.includes('하루 10쪽 읽기')); assert.equal(payload.status, undefined); assert.equal(D.hasMarker(payload, MARK), true);
   const broken = D.taskPayload({...habit, goal: 'growell-reading-habit-v1:{"badPrivateId":"hidden"}'}, MARK, config.origin, NOW);
   assert.ok(!JSON.stringify(broken).includes('badPrivateId'));
+});
+test('reminder note contains only the habit kind, goal, place and reminder with a hidden ownership marker', () => {
+  const payload = D.taskPayload(habit, MARK, config.origin, NOW);
+  assert.equal(payload.body.content, '실천할 습관\n목표: 하루 10쪽 읽기\n장소: 집\n알림: 매일 16:00 (한국 시간)');
+  assert.doesNotMatch(payload.body.content, /GROWELL|https?:|성공 체크|33333333/);
+  assert.equal(payload.linkedResources, undefined);
+  assert.equal(payload.extensions.length, 1); assert.equal(D.hasHiddenMarker(payload, MARK), true);
+  const minimal = D.taskPayload({...habit, behavior_type: 'avoid', goal: '', place: '', time: ''}, MARK, config.origin, NOW);
+  assert.equal(minimal.body.content, '절제할 습관\n알림: 시간 미설정');
+});
+test('hidden extension validates its own namespace and marker before falling back to legacy metadata', () => {
+  const legacy = {body: {content: 'GROWELL-SYNC:' + MARK}};
+  assert.equal(D.hasMarker(legacy, MARK), true);
+  assert.equal(D.hasMarker({body: {content: 'GROWELL-SYNC:' + MARK + 'a'}}, MARK), false);
+  for (const id of [D.MARKER_EXTENSION, 'microsoft.graph.openTypeExtension.' + D.MARKER_EXTENSION, 'Microsoft.OutlookServices.OpenTypeExtension.' + D.MARKER_EXTENSION]) {
+    assert.equal(D.hasMarker({extensions: [{id, syncMarker: MARK}]}, MARK), true);
+  }
+  assert.equal(D.hasMarker({extensions: [{extensionName: 'other.application', syncMarker: MARK}]}, MARK), false);
+  assert.equal(D.hasMarker({...legacy, extensions: [D.markerExtensionPayload(AUTH)]}, MARK), false);
 });
 test('passed time rolls to tomorrow and expired habits do not produce reminders', () => {
   const payload = D.taskPayload({...habit, time: '10:00'}, MARK, config.origin, NOW);
@@ -182,7 +217,7 @@ test('actual Supabase token and approved profile determine ownership, never body
 test('status never returns encrypted credentials, account IDs or worker leases', async () => {
   const f = fixture(); f.state.connection.account_id = 'private-account';
   const result = await f.service.status(profile);
-  assert.deepEqual(Object.keys(result).sort(), ['configured','connected','enabled','errorCode','lastSyncedAt','listName','pendingCount','timeZone'].sort());
+  assert.deepEqual(Object.keys(result).sort(), ['configured','connected','enabled','errorCode','habits','lastSyncedAt','listName','pendingCount','timeZone'].sort());
   assert.ok(!JSON.stringify(result).includes('private-account'));
 });
 test('worker endpoint requires timing-safe configured cron credential', async () => {
@@ -318,6 +353,54 @@ test('clearing an exact time patches out its reminder and later restores it with
   assert.equal(f.state.remote[0].reminderDateTime.dateTime, '2026-10-02T13:20:00');
   assert.equal(f.requests.filter(item => item.opts.method === 'PATCH').length, 2);
   assert.equal(f.requests.filter(item => ['POST', 'DELETE'].includes(item.opts.method) && item.kind === 'graph').length, 0);
+});
+test('legacy task migration verifies hidden metadata before removing body metadata and only its own link', async () => {
+  const marked = {id: 'legacy-task', title: habit.name, body: {contentType: 'text', content: '실천할 습관\nGROWELL-SYNC:' + MARK},
+    linkedResources: [{id: 'growell-link', applicationName: 'GROWELL', externalId: MARK}, {id: 'other-link', applicationName: 'Another', externalId: 'unrelated'}], '@odata.etag': 'legacy-etag', status: 'completed'};
+  const f = fixture({item: {task_id: marked.id}, remote: [marked]});
+  assert.deepEqual(await f.service.run(profile.id), {processed: 1});
+  assert.equal(f.state.remote.length, 1); assert.equal(f.state.remote[0].id, 'legacy-task');
+  assert.equal(f.state.remote[0].status, 'completed'); assert.equal(D.hasHiddenMarker(f.state.remote[0], MARK), true);
+  assert.deepEqual(f.state.remote[0].linkedResources.map(link => link.id), ['other-link']);
+  assert.doesNotMatch(f.state.remote[0].body.content, /GROWELL-SYNC|성공 체크|https?:/);
+  const writes = f.requests.filter(row => row.kind === 'graph' && ['POST', 'PATCH', 'DELETE'].includes(row.opts.method));
+  assert.deepEqual(writes.map(row => row.opts.method), ['POST', 'DELETE', 'PATCH']);
+  assert.ok(writes[0].url.endsWith('/extensions')); assert.ok(writes[1].url.endsWith('/linkedResources/growell-link'));
+  assert.equal(writes[2].opts.headers['If-Match'], 'etag-after-link-removal');
+  assert.equal(JSON.parse(writes[2].opts.body).extensions, undefined);
+  const extensionWrite = f.requests.indexOf(writes[0]), bodyWrite = f.requests.indexOf(writes[2]);
+  assert.ok(f.requests.slice(extensionWrite + 1, bodyWrite).some(row => row.opts.method === 'GET' && row.url.includes('/tasks/legacy-task?')));
+});
+test('failed or unconfirmed hidden marker creation preserves legacy body and all links', async () => {
+  for (const outcome of ['failure', 'unconfirmed']) {
+    const body = {content: 'legacy notes\nGROWELL-SYNC:' + MARK};
+    const marked = {id: 'legacy-task', body: clone(body), linkedResources: [{id: 'growell-link', applicationName: 'GROWELL', externalId: MARK}]};
+    const f = fixture({item: {task_id: marked.id}, remote: [marked], request: async (url, opts) => {
+      if (url.endsWith('/extensions') && opts.method === 'POST') {
+        if (outcome === 'failure') throw new D.SyncError('remote-unavailable');
+        return D.markerExtensionPayload(MARK);
+      }
+    }});
+    assert.deepEqual(await f.service.run(profile.id), {processed: 0});
+    assert.deepEqual(f.state.remote[0].body, body); assert.equal(f.state.remote[0].linkedResources.length, 1);
+    assert.equal(f.requests.filter(row => ['PATCH', 'DELETE'].includes(row.opts.method)).length, 0);
+    assert.equal(f.state.item.pending, true);
+  }
+});
+test('a lost extension-create response is recovered by its fixed name before cleaning the legacy task', async () => {
+  let first = true;
+  const marked = {id: 'legacy-task', body: {content: 'GROWELL-SYNC:' + MARK}};
+  const f = fixture({item: {task_id: marked.id}, remote: [marked], request: async (url, opts, kind, state) => {
+    if (first && url.endsWith('/extensions') && opts.method === 'POST') {
+      first = false; state.remote[0].extensions = [JSON.parse(opts.body)];
+      throw new D.SyncError('service-unavailable', 503, 30, true);
+    }
+  }});
+  assert.deepEqual(await f.service.run(profile.id), {processed: 0});
+  assert.match(f.state.remote[0].body.content, /GROWELL-SYNC/);
+  assert.deepEqual(await f.service.run(profile.id), {processed: 1});
+  assert.equal(f.requests.filter(row => row.url.endsWith('/extensions') && row.opts.method === 'POST').length, 1);
+  assert.equal(f.state.remote.length, 1); assert.doesNotMatch(f.state.remote[0].body.content, /GROWELL-SYNC/);
 });
 test('accepted-but-lost create recovers marker without repeating POST', async () => {
   let loseResponse = true;

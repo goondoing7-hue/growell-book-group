@@ -49,6 +49,17 @@ function createStore(config, request) {
   const headers = {apikey: config.serviceKey, Authorization: 'Bearer ' + config.serviceKey, 'Content-Type': 'application/json'};
   const db = (path, method = 'GET', body) => request(config.database + '/rest/v1/' + path, {method, headers, ...(body === undefined ? {} : {body: JSON.stringify(body)})}, 'database');
   const rpc = (name, body) => db('rpc/growell_habit_sync_' + name, 'POST', body);
+  async function rows(path) {
+    const result = [];
+    for (let offset = 0; offset <= 10000; offset += 1000) {
+      const page = await db(path + '&limit=1000&offset=' + offset);
+      if (!Array.isArray(page)) throw new D.SyncError('service-unavailable');
+      result.push(...page);
+      if (result.length > 10000) throw new D.SyncError('response-too-large');
+      if (page.length < 1000) return result;
+    }
+    throw new D.SyncError('response-too-large');
+  }
   return {
     async profile(authId) {
       const rows = await db('profiles?select=id,auth_user_id,is_deleted,approval_status&auth_user_id=eq.' + encodeURIComponent(authId) + '&limit=2');
@@ -62,6 +73,8 @@ function createStore(config, request) {
       const rows = await db('growell_habit_sync_queue?select=habit_id&owner_id=eq.' + encodeURIComponent(owner) + '&pending=eq.true&limit=10001');
       return Array.isArray(rows) ? Math.min(rows.length, 10000) : 0;
     },
+    habits: owner => rows('habits?select=id,user_id,name,time,start_date,end_date&user_id=eq.' + encodeURIComponent(owner) + '&order=id.asc'),
+    tracked: (owner, generation) => rows('growell_habit_sync_queue?select=owner_id,habit_id,generation,task_id,pending,last_error&owner_id=eq.' + encodeURIComponent(owner) + '&generation=eq.' + encodeURIComponent(generation) + '&order=habit_id.asc'),
     oauth: (operation, payload) => rpc('oauth', {p_operation: operation, p_payload: payload}),
     configure: (owner, authId, operation, payload = {}) => rpc('configure', {p_owner: owner, p_auth: authId, p_operation: operation, p_payload: payload}),
     claim: (owner = null, limit = 1) => rpc('claim', {p_owner: owner, p_limit: limit}),
@@ -132,7 +145,15 @@ function createService(options = {}) {
   }
   async function status(profile) {
     const [connection, count] = await Promise.all([store.connection(profile.id), store.pending(profile.id)]);
-    return safeConnection(connection, count);
+    const [habits, tracked] = await Promise.all([store.habits(profile.id), connection?.token_cipher ? store.tracked(profile.id, connection.generation) : []]);
+    if (!Array.isArray(habits) || !Array.isArray(tracked)) throw new D.SyncError('service-unavailable');
+    const today = D.koreanNow(now()).slice(0, 10), queue = new Map(tracked.filter(row => row.owner_id === profile.id && row.generation === connection?.generation).map(row => [row.habit_id, row]));
+    return {...safeConnection(connection, count), habits: habits.filter(habit => habit.user_id === profile.id).map(habit => {
+      const item = queue.get(habit.id), errorCode = item?.last_error ? safeError({code: item.last_error}) : null;
+      const validPeriod = (!habit.start_date || D.validDay(habit.start_date)) && (!habit.end_date || D.validDay(habit.end_date) && habit.end_date >= today && (!habit.start_date || habit.end_date >= habit.start_date));
+      return {habitId: habit.id, name: D.clean(habit.name, 200), time: D.parseTime(habit.time) || '', canConnect: !!validPeriod,
+        state: !item ? 'unlinked' : errorCode ? 'attention' : item.pending || !item.task_id ? 'pending' : 'synced', ...(errorCode ? {errorCode} : {})};
+    })};
   }
   async function connect(profile) {
     const state = crypto.randomBytes(32).toString('base64url'), verifier = crypto.randomBytes(48).toString('base64url'), nonce = crypto.randomBytes(32).toString('base64url');
@@ -229,8 +250,9 @@ function createService(options = {}) {
     await apply(connection, 'list', {list_id: list.id});
     return requirePrivateList(graph, list.id);
   }
+  const taskExpand = '$expand=linkedResources,extensions($filter=id eq \'' + D.MARKER_EXTENSION + '\')';
   async function recoverTask(graph, base, marker) {
-    const tasks = await graph.all(base + '?$top=100&$expand=linkedResources');
+    const tasks = await graph.all(base + '?$top=100&' + taskExpand);
     const matches = tasks.filter(task => typeof task.id === 'string' && D.hasMarker(task, marker));
     const active = matches.filter(task => task.status !== 'completed');
     if (active.length > 1) throw new D.SyncError('task-ambiguous', 409);
@@ -239,12 +261,40 @@ function createService(options = {}) {
     if (matches.length > 1) throw new D.SyncError('task-ambiguous', 409);
     return null;
   }
+  async function prepareTaskMetadata(connection, item, graph, listId, base, task, deadline) {
+    const path = base + '/' + encodeURIComponent(task.id);
+    const guard = async () => {
+      await apply(connection, 'guard', {habit_id: item.habit_id, revision: item.revision});
+      await requirePrivateList(graph, listId);
+      if (now() + 12000 > deadline) throw new D.SyncError('sync-deferred', 409);
+    };
+    if (!D.hasHiddenMarker(task, item.marker)) {
+      if (!D.hasMarker(task, item.marker)) throw new D.SyncError('remote-task-changed', 409);
+      // Keep the legacy marker until the replacement is confirmed by a read.
+      // A lost POST response is retried by reading this fixed-name extension.
+      await guard();
+      await graph.call(path + '/extensions', 'POST', D.markerExtensionPayload(item.marker));
+      task = await graph.call(path + '?' + taskExpand);
+      if (!D.hasHiddenMarker(task, item.marker)) throw new D.SyncError('remote-task-changed', 409);
+    }
+    const ownedLinks = (task.linkedResources || []).filter(link => link && link.applicationName === 'GROWELL' && link.externalId === item.marker && typeof link.id === 'string' && link.id.length > 0 && link.id.length <= 2048);
+    for (const link of ownedLinks) {
+      await guard();
+      try { await graph.call(path + '/linkedResources/' + encodeURIComponent(link.id), 'DELETE'); }
+      catch (error) { if (error.code !== 'remote-missing') throw error; }
+    }
+    if (ownedLinks.length) {
+      task = await graph.call(path + '?' + taskExpand);
+      if (!D.hasHiddenMarker(task, item.marker)) throw new D.SyncError('remote-task-changed', 409);
+    }
+    return task;
+  }
   async function processItem(connection, item, graph, listId, deadline) {
     const base = '/v1.0/me/todo/lists/' + encodeURIComponent(listId) + '/tasks';
     await apply(connection, 'guard', {habit_id: item.habit_id, revision: item.revision});
     let task = null;
     if (item.task_id) {
-      try { task = await graph.call(base + '/' + encodeURIComponent(item.task_id) + '?$expand=linkedResources'); }
+      try { task = await graph.call(base + '/' + encodeURIComponent(item.task_id) + '?' + taskExpand); }
       catch (error) { if (error.code !== 'remote-missing') throw error; }
       if (task && !D.hasMarker(task, item.marker)) throw new D.SyncError('remote-task-changed', 409);
       if (!task || task.status === 'completed') task = await recoverTask(graph, base, item.marker) || task;
@@ -264,10 +314,12 @@ function createService(options = {}) {
       return;
     }
     if (task) {
+      task = await prepareTaskMetadata(connection, item, graph, listId, base, task, deadline);
       await apply(connection, 'guard', {habit_id: item.habit_id, revision: item.revision});
+      await requirePrivateList(graph, listId);
       // Never reset completion selected in the reminder app. No check dates or
       // completion status are sent from GROWELL in either direction.
-      const {linkedResources, ...update} = payload;
+      const {extensions, ...update} = payload;
       await graph.call(base + '/' + encodeURIComponent(task.id), 'PATCH', update, task['@odata.etag'] ? {'If-Match': task['@odata.etag']} : {});
       await apply(connection, 'success', {habit_id: item.habit_id, revision: item.revision, task_id: task.id});
       return;

@@ -209,3 +209,46 @@ test('user-facing errors never render raw exceptions, OAuth tokens or unknown se
     const text=reminder.message({code,message:'PRIVATE_SECRET'});assert.equal(typeof text,'string');assert.ok(text.length>0);assert.doesNotMatch(text,/PRIVATE|Bearer|<script>/);
   }
 });
+
+test('habit dashboard separates confirmed delivery, pending work and individual imports',()=>{
+  const status={connected:true,enabled:true,habits:[
+    {habitId:'h1',name:'기도',time:'07:00',state:'synced',canConnect:false},
+    {habitId:'h2',name:'독서',time:'19:40',state:'unlinked',canConnect:true},
+    {habitId:'h3',name:'걷기',time:'',state:'pending',canConnect:false},
+    {habitId:'h4',name:'연락',time:'20:00',state:'attention',canConnect:false},
+    {habitId:'h5',name:'끝난 습관',time:'09:00',state:'unlinked',canConnect:false}
+  ]};
+  const html=reminder.habitsHtml(status);
+  assert.match(html,/아직 연동되지 않음 <span>2<\/span>/);
+  assert.match(html,/연동 확인 중 <span>2<\/span>/);
+  assert.match(html,/연동됨 <span>1<\/span>/);
+  assert.match(html,/data-sync-import="h2"/);
+  for(const id of ['h1','h3','h4','h5'])assert.doesNotMatch(html,new RegExp('data-sync-import="'+id+'"'));
+  assert.match(html,/기간 확인/);assert.match(html,/시간 미설정/);assert.match(html,/전달 대기/);assert.match(html,/확인 필요/);
+  assert.doesNotMatch(html,/기존 습관도 연결하기|data-sync-import=""/);
+});
+
+test('habit dashboard does not offer effective import while disconnected or paused',()=>{
+  const habits=[{habitId:'h1',name:'독서',time:'13:00',state:'unlinked',canConnect:true}];
+  for(const state of [{connected:false,enabled:false},{connected:true,enabled:false}]){
+    assert.match(reminder.habitsHtml({...state,habits}),/data-sync-import="h1" disabled data-sync-unavailable/);
+  }
+  assert.doesNotMatch(reminder.habitsHtml({connected:true,enabled:true,habits}),/data-sync-unavailable/);
+});
+
+test('habit dashboard safely renders names and rejects invalid, duplicate or unknown status data',()=>{
+  const status={connected:true,enabled:true,habits:[
+    {habitId:'h1',name:'<img src=x onerror="alert(1)">',time:'<script>',state:'unknown',canConnect:true,goal:'PRIVATE_GOAL',remoteTaskId:'PRIVATE_REMOTE'},
+    {habitId:'h1',name:'duplicate',time:'20:00',state:'synced',canConnect:true},
+    {habitId:'../../other',name:'invalid id',state:'synced'},null,
+    {habitId:'h2',name:'이름 & "문자"',time:'23:50',state:'unlinked',canConnect:true}
+  ]};
+  const rows=reminder.habitRows(status),html=reminder.habitsHtml(status);
+  assert.equal(rows.length,2);assert.equal(rows[0].state,'attention');assert.equal(rows[0].time,'');
+  assert.doesNotMatch(JSON.stringify(rows),/PRIVATE_|duplicate|invalid id/);
+  assert.doesNotMatch(html,/<img|<script|연동됨 <span>|PRIVATE_|duplicate|invalid id/);
+  assert.match(html,/&lt;img/);assert.match(html,/이름 &amp; &quot;문자&quot;/);
+  assert.equal(reminder.habitRows({}),null);
+  assert.match(reminder.habitsHtml({}),/목록을 확인하지 못했어요/);
+  assert.match(reminder.habitsHtml({habits:[]}),/아직 만든 습관이 없어요/);
+});

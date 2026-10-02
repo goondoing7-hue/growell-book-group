@@ -174,7 +174,9 @@ v33에서 저장·변환한 개인 기록은 v2 암호화 형식입니다. v32 �
 
 ## 습관 알림 자동 연동
 
-개별 습관 카드와 기록 팝업의 `알림 자동 연동`에서 Microsoft 계정을 연결합니다. `전체 습관 한눈에`에서는 연동 버튼을 표시하지 않습니다. 연결 이후 새 습관의 생성·수정·삭제를 서버 대기열에 저장하고 Microsoft To Do의 `GROWELL` 목록으로 전달합니다. 기존 습관은 `이 습관 연결하기` 또는 `기존 습관도 연결하기`를 눌렀을 때만 가져옵니다. 공유창은 사용하지 않습니다.
+`전체 습관 한눈에`의 `가치 습관` 옆 알림 아이콘에서 Microsoft 계정과 습관별 연동 상태를 확인합니다. 개별 습관 카드와 기록 팝업에는 연동 버튼을 표시하지 않습니다. 연결 이후 새 습관의 생성·수정·삭제를 서버 대기열에 저장하고 Microsoft To Do의 `GROWELL` 목록으로 전달합니다. 아직 연결하지 않은 기존 습관은 해당 행의 `연결`을 눌렀을 때만 가져옵니다. 전달 대기·오류 상태를 완료로 표시하지 않습니다.
+
+리마인더 본문에는 습관 종류·목표·장소·알림만 표시하며 연결 식별자는 숨겨진 Graph open extension에 보관합니다. 기존 본문·linkedResource 식별자를 가진 항목은 숨겨진 식별자의 저장을 확인한 다음 정리합니다. 장소 이름은 본문에 전달됩니다. Graph To Do에는 위치 알림 속성이 없어 삼성·아이폰의 별도 장소 알림을 설정하지 않습니다.
 
 삼성 리마인더에서는 같은 Microsoft 계정으로 To Do 동기화를 켜고 GROWELL 목록을 선택합니다. 아이폰은 설정의 미리 알림 계정에서 Outlook.com 또는 Exchange 계정을 추가합니다. 아이폰에서 표시되는 대상은 Microsoft 계정 목록이며 iCloud 목록이 아닙니다. [삼성 연동 공식 안내](https://support.microsoft.com/en-us/todo/sync-microsoft-to-do-with-the-samsung-reminder-app), [애플 미리 알림 연동 공식 안내](https://support.microsoft.com/en-us/todo/using-apple-watch-with-microsoft-to-do)
 

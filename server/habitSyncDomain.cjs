@@ -5,6 +5,7 @@ const reading = require('../readingHabit.js');
 const GRAPH_ORIGIN = 'https://graph.microsoft.com';
 const LOGIN_ORIGIN = 'https://login.microsoftonline.com';
 const SCOPES = 'openid offline_access https://graph.microsoft.com/Tasks.ReadWrite';
+const MARKER_EXTENSION = 'com.growell.habitSync';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 class SyncError extends Error {
@@ -85,11 +86,7 @@ function taskPayload(habit, marker, origin, now = Date.now()) {
   const lines = [habit.behavior_type === 'avoid' ? '절제할 습관' : '실천할 습관'];
   if (goal) lines.push('목표: ' + goal);
   if (clean(habit.place)) lines.push('장소: ' + clean(habit.place));
-  lines.push(time ? '알림: 매일 ' + time + ' (한국 시간)' : '알림: 시간 미설정 · GROWELL에서 이 습관의 시간을 선택해주세요.');
-  const route = ['emotion', 'thought', 'body', 'action'].includes(habit.book_id) ? habit.book_id : 'emotion';
-  const url = origin + '/#/book/' + route + '/habit';
-  const markerText = 'GROWELL-SYNC:' + marker;
-  lines.push('', '습관의 성공 체크는 GROWELL에서 직접 기록합니다.', url, markerText);
+  lines.push(time ? '알림: 매일 ' + time + ' (한국 시간)' : '알림: 시간 미설정');
   const recurrence = {
     pattern: {type: 'daily', interval: 1},
     range: {type: end ? 'endDate' : 'noEnd', startDate: day, recurrenceTimeZone: 'Korea Standard Time'}
@@ -101,11 +98,24 @@ function taskPayload(habit, marker, origin, now = Date.now()) {
     // Explicit nulls also clear a reminder previously scheduled by a fallback.
     isReminderOn: !!time, reminderDateTime: dateTime, dueDateTime: dateTime,
     startDateTime: time ? {dateTime: day + 'T00:00:00', timeZone: 'Korea Standard Time'} : null, recurrence: time ? recurrence : null,
-    linkedResources: [{applicationName: 'GROWELL', displayName: 'GROWELL 습관', externalId: marker, webUrl: url}]
+    extensions: [markerExtensionPayload(marker)]
   };
+}
+function markerExtensionPayload(marker) {
+  if (!UUID.test(marker)) throw new SyncError('invalid-habit', 400);
+  return {'@odata.type': 'microsoft.graph.openTypeExtension', extensionName: MARKER_EXTENSION, syncMarker: marker, schemaVersion: 1};
+}
+function markerExtension(task) {
+  const names = [MARKER_EXTENSION, 'microsoft.graph.openTypeExtension.' + MARKER_EXTENSION, 'Microsoft.OutlookServices.OpenTypeExtension.' + MARKER_EXTENSION];
+  return Array.isArray(task?.extensions) ? task.extensions.find(extension => extension && (extension.extensionName === MARKER_EXTENSION || names.includes(extension.id))) || null : null;
+}
+function hasHiddenMarker(task, marker) {
+  return UUID.test(marker) && markerExtension(task)?.syncMarker === marker;
 }
 function hasMarker(task, marker) {
   if (!task || !UUID.test(marker)) return false;
+  // Once present, the hidden ownership marker takes precedence over legacy text.
+  if (markerExtension(task)) return hasHiddenMarker(task, marker);
   if (Array.isArray(task.linkedResources) && task.linkedResources.some(link => link && link.applicationName === 'GROWELL' && link.externalId === marker)) return true;
   const content = task.body && task.body.content;
   return typeof content === 'string' && content.includes('GROWELL-SYNC:' + marker) && !/[a-f0-9-]/i.test(content.split('GROWELL-SYNC:' + marker)[1]?.[0] || '');
@@ -115,4 +125,4 @@ function retryDelay(header, attempts = 0, now = Date.now()) {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = Math.ceil((Date.parse(header) - now) / 1000);
   return Math.max(30, Math.min(86400, Number.isFinite(seconds) && seconds > 0 ? seconds : 30 * 2 ** Math.min(attempts, 10)));
 }
-module.exports = {GRAPH_ORIGIN, LOGIN_ORIGIN, SCOPES, UUID, SyncError, getConfig, seal, unseal, hash, equal, clean, validTime, parseTime, validDay, koreanNow, taskPayload, hasMarker, retryDelay};
+module.exports = {GRAPH_ORIGIN, LOGIN_ORIGIN, SCOPES, MARKER_EXTENSION, UUID, SyncError, getConfig, seal, unseal, hash, equal, clean, validTime, parseTime, validDay, koreanNow, taskPayload, markerExtensionPayload, markerExtension, hasHiddenMarker, hasMarker, retryDelay};

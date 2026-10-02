@@ -203,7 +203,7 @@ function reminderHarness(){
     bookById:id=>['emotion','thought','body','action'].includes(id)?{id}:null,GrowellHabitReminder:{open:options=>opened.push(options)}});
   const trigger={isConnected:true,focus:options=>focused.push({target:'trigger',options:{...options}})};
   const replacement={getAttribute:()=> 'h1',focus:options=>focused.push({target:'replacement',options:{...options}})};
-  c.document={querySelectorAll:()=>[replacement]};return {c,opened,focused,trigger,replacement};
+  c.document={querySelector:selector=>selector==='[data-habit-sync-settings]'?replacement:null,getElementById:()=>null};return {c,opened,focused,trigger,replacement};
 }
 
 test('reminder adapter exports only the selected owned habit fields and reads the current saved version',()=>{
@@ -214,7 +214,7 @@ test('reminder adapter exports only the selected owned habit fields and reads th
   current.name='export copy';assert.equal(c.STATE.habits.h1.name,'독서');h.opened[0].restoreFocus();assert.deepEqual(h.focused,[{target:'trigger',options:{preventScroll:true}}]);
   h.trigger.isConnected=false;h.opened[0].restoreFocus();assert.equal(h.focused.at(-1).target,'replacement');
   const detail=reminderHarness();detail.trigger.closest=()=>({});detail.c.openHabitReminder('h1',detail.trigger);detail.trigger.isConnected=false;
-  const detailButton={getAttribute:()=> 'h1',closest:()=>({}),focus:()=>detail.focused.push({target:'detail'})};detail.c.document.querySelectorAll=()=>[detail.replacement,detailButton];detail.opened[0].restoreFocus();assert.deepEqual(detail.focused,[{target:'detail'}]);
+  detail.opened[0].restoreFocus();assert.deepEqual(detail.focused,[{target:'replacement',options:{preventScroll:true}}]);
 });
 
 test('reminder adapter refuses signed-out, foreign, missing, unavailable or unknown-book habits',()=>{
@@ -248,11 +248,17 @@ test('reminder callbacks stop exposing a habit and never restore focus after ses
   }
 });
 
-test('reminder buttons open only the chosen habit without bubbling into card details',()=>{
-  const opened=[],buttons=['h1','h2'].map(id=>({getAttribute:key=>key==='data-habit-reminder'?id:null,addEventListener(type,fn){assert.equal(type,'click');this.click=fn;}}));
-  const c={app:{querySelectorAll:selector=>{assert.equal(selector,'[data-habit-reminder]');return buttons;}},openHabitReminder:(id,trigger)=>opened.push({id,trigger})};vm.createContext(c);
-  const start=source.indexOf("  app.querySelectorAll('[data-habit-reminder]').forEach");vm.runInContext(source.slice(start,source.indexOf("  app.querySelectorAll('[data-edit-habit]')",start)),c);
-  buttons.forEach((button,index)=>{let stopped=false;button.click({stopPropagation(){stopped=true;}});assert.equal(stopped,true);assert.equal(opened[index].id,'h'+(index+1));assert.equal(opened[index].trigger,button);});
+test('overview reminder icon opens account settings once without bubbling and replaces per-habit controls',()=>{
+  const {c}=popupHarness(),opened=[],bindings=[],icon={};
+  const panel={contains:element=>element===icon,addEventListener(type,handler){assert.equal(type,'click');bindings.push(handler);}};
+  c.openHabitReminder=(id,trigger)=>opened.push({id,trigger});
+  const root={querySelectorAll:()=>[panel]};c.bindHabitOverviewEvents(root);c.bindHabitOverviewEvents(root);
+  assert.equal(bindings.length,1);
+  let stopped=false;bindings[0]({target:{closest:selector=>selector==='[data-habit-sync-settings]'?icon:null},stopPropagation(){stopped=true;}});
+  assert.equal(stopped,true);assert.deepEqual(opened,[{id:null,trigger:icon}]);
+  const habit=c.STATE.habits.h1;
+  assert.doesNotMatch(c.habitCardHtml(habit),/data-habit-reminder|알림 자동 연동/);
+  assert.doesNotMatch(c.habitHistoryModalHtml(habit),/data-habit-reminder|알림 자동 연동/);
 });
 
 test('member session cleanup closes the reminder before clearing the owner and private habit data',()=>{

@@ -29,7 +29,7 @@ const TEST_FILES = Object.freeze([
   'tests/password-hint.test.cjs', 'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
   'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs', 'tests/reading-habit.test.cjs', 'tests/habit-guide.test.cjs', 'tests/habit-value-inference.test.cjs', 'tests/habit-overview-design.test.cjs',
   'tests/timer-alerts.test.cjs', 'tests/habit-carousel.test.cjs', 'tests/navigation.test.cjs', 'tests/profile-navigation.test.cjs',
-  'tests/daily-verse.test.cjs', 'tests/popup-history.test.cjs', 'tests/habit-reminder.test.cjs', 'tests/habit-sync-server.test.cjs', 'tests/habit-sync-sql.test.cjs', 'tests/habit-sync-integration.test.cjs',
+  'tests/daily-verse.test.cjs', 'tests/popup-history.test.cjs', 'tests/habit-reminder.test.cjs', 'tests/habit-sync-server.test.cjs', 'tests/habit-sync-status.test.cjs', 'tests/habit-sync-sql.test.cjs', 'tests/habit-sync-integration.test.cjs',
   'tests/deployment.test.cjs', 'tests/drafts.test.cjs', 'tests/studio-layout.test.cjs',
   'tests/private-crypto.test.cjs', 'tests/private-session.test.cjs', 'tests/private-categories.test.cjs',
   'tests/save-login.test.cjs', 'tests/recovery-flow.test.cjs', 'tests/home-domain.test.cjs', 'tests/home-ui.test.cjs', 'tests/worksheet-access.test.cjs',
