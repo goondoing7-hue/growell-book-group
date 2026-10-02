@@ -502,6 +502,18 @@ button.habit-hist-cell{cursor:pointer;}.habit-hist-cell small{font-size:10px;lin
 .habit-time-trigger>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .habit-time-trigger>span:last-child{flex:none;color:var(--ink-soft);}
 .habit-time-hint{display:block;margin-top:7px;color:var(--ink-soft);font-size:11px;line-height:1.6;word-break:keep-all;}
+.habit-schedule-label{display:block;margin-top:3px;color:var(--ink-soft);font-size:12px;font-weight:400;line-height:1.5;}
+.habit-schedule-picker{min-width:0;margin:22px 0 0;padding:0;border:0;}
+.habit-schedule-picker legend{padding:0;margin-bottom:9px;color:var(--ink-soft);font-size:12px;font-weight:400;}
+.habit-schedule-modes{display:flex;gap:8px;}
+.habit-schedule-modes>button,.habit-weekday-options>button{min-height:42px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-soft);font:inherit;font-size:13px;cursor:pointer;}
+.habit-schedule-modes>button{padding:9px 20px;}
+.habit-schedule-modes>[aria-pressed=true],.habit-weekday-options>[aria-pressed=true]{border-color:var(--brand-green,var(--primary));background:var(--brand-soft,var(--surface-2));color:var(--brand-green,var(--primary));font-weight:600;}
+.habit-weekday-options{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:7px;margin-top:12px;}
+.habit-weekday-options[hidden]{display:none;}
+.habit-weekday-options>button{min-width:0;padding:8px 0;}
+.habit-schedule-picker button:focus-visible{outline:2px solid var(--brand-green,var(--primary));outline-offset:3px;}
+.habit-schedule-hint{display:block;margin-top:9px;color:var(--ink-soft);font-size:11px;line-height:1.6;word-break:keep-all;}
 .habit-time-trigger[aria-expanded=true]{border-color:var(--brand-green,var(--primary));}
 .habit-time-trigger[aria-expanded=true]>span:last-child{transform:rotate(180deg);}
 .habit-time-dropdown{box-sizing:border-box;width:100%;margin-top:6px;padding:4px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);overflow:hidden;box-shadow:0 5px 16px #1e38260d;}

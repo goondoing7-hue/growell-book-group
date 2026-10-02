@@ -6,7 +6,7 @@
   "functions": {
     "api/habit-sync.js": {
       "maxDuration": 60,
-      "includeFiles": "{server/habitSyncDomain.cjs,server/habitSyncService.cjs,readingHabit.js}"
+      "includeFiles": "{server/habitSyncDomain.cjs,server/habitSyncService.cjs,readingHabit.js,habitDomain.js}"
     }
   }
 }

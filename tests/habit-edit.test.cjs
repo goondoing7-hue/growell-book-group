@@ -77,7 +77,7 @@ test('a legacy edit without kind does not reset a newer queued kind change',()=>
   assert.equal(latest.habits.h1.behaviorType,'avoid');
 });
 test('habit server round trip retains kind and reads older rows as doing',()=>{
-  const c={};vm.createContext(c);
+  const c={GrowellHabits:require('../habitDomain.js')};vm.createContext(c);
   vm.runInContext(source.slice(source.indexOf('function mapHabitRow('),source.indexOf('\nvar STATE =')),c);
   vm.runInContext(source.slice(source.indexOf('var GENERIC_COLLECTIONS ='),source.indexOf('function diffDict(')),c);
   const old={id:'h1',book_id:'emotion',user_id:'owner',checked_dates:['2026-09-22']};
@@ -93,7 +93,7 @@ function connectArchive(h,snapshot={status:'ready',rows:[archiveRow()]}){
 }
 
 test('habit database mapper and serializer round trip reading goals without changing checks or legacy goal text',()=>{
-  const c={GrowellReadingHabits:readingHabits};vm.createContext(c);
+  const c={GrowellHabits:require('../habitDomain.js'),GrowellReadingHabits:readingHabits};vm.createContext(c);
   vm.runInContext(source.slice(source.indexOf('function mapHabitRow('),source.indexOf('\nvar STATE =')),c);
   vm.runInContext(source.slice(source.indexOf('var GENERIC_COLLECTIONS ='),source.indexOf('function diffDict(')),c);
   const raw={id:'h1',book_id:'emotion',user_id:'owner',name:'읽기',goal:'  기존 목표\n매일 읽기  ',behavior_type:'avoid',checked_dates:['2026-09-01','2026-09-22'],created_at:123,updated_at:456};
@@ -109,7 +109,7 @@ test('habit database mapper and serializer round trip reading goals without chan
 });
 
 test('habit values round trip through the existing goal field without inferring a value from a legacy name',()=>{
-  const c={GrowellReadingHabits:readingHabits};vm.createContext(c);vm.runInContext(source.slice(source.indexOf('function mapHabitRow('),source.indexOf('\nvar STATE =')),c);vm.runInContext(source.slice(source.indexOf('var GENERIC_COLLECTIONS ='),source.indexOf('function diffDict(')),c);
+  const c={GrowellHabits:require('../habitDomain.js'),GrowellReadingHabits:readingHabits};vm.createContext(c);vm.runInContext(source.slice(source.indexOf('function mapHabitRow('),source.indexOf('\nvar STATE =')),c);vm.runInContext(source.slice(source.indexOf('var GENERIC_COLLECTIONS ='),source.indexOf('function diffDict(')),c);
   const raw={id:'value-habit',book_id:'emotion',user_id:'owner',name:'기도',goal:'  나의 목표\n그대로 보존  ',checked_dates:['2026-09-20','2026-09-22'],created_at:123};
   const old=c.mapHabitRow(raw);assert.equal(old.valueId,'');assert.equal(c.GENERIC_COLLECTIONS.habits.toRow(old).goal,raw.goal);
   for(const valueId of ['faith','love','virtue','wisdom','emotion','beauty','body'])for(const goal of [null,readingGoal()]){
@@ -1159,4 +1159,72 @@ test('popup calendars keep six week rows across short and long months without ad
   }
   const inline=c.habitHistoryCalendarHtml(habit,2027,1);
   assert.equal((inline.match(/class="habit-hist-cell /g)||[]).length,28);
+});
+
+test('weekday schedules persist through creation, editing and the database without losing checks or reading metadata',()=>{
+  const h=harness();h.c.submitHabit('emotion',{...payload,weekdays:[5,1,3]},null);const created={habits:{}};h.apply(created);
+  assert.deepEqual(Array.from(created.habits['new-id'].weekdays),[1,3,5]);assert.equal(created.habits['new-id'].id,'new-id');
+  h.original.weekdays=[1,3,5];h.c.editHabit('h1',{...payload,weekdays:[0,6]},null);const edited=structuredClone(h.c.STATE);edited.habits.h1.checkedDates.push('2026-09-22');h.apply(edited);
+  assert.deepEqual(Array.from(edited.habits.h1.weekdays),[0,6]);assert.deepEqual(Array.from(edited.habits.h1.checkedDates),['2026-09-01','2026-09-22']);assert.equal(edited.habits.h1.createdAt,123);assert.equal(edited.habits.h1.compatibilityField,'preserved');
+  const c={GrowellHabits:require('../habitDomain.js'),GrowellReadingHabits:readingHabits};vm.createContext(c);
+  vm.runInContext(source.slice(source.indexOf('function mapHabitRow('),source.indexOf('\nvar STATE =')),c);vm.runInContext(source.slice(source.indexOf('var GENERIC_COLLECTIONS ='),source.indexOf('function diffDict(')),c);
+  const habit={...edited.habits.h1,valueId:'wisdom',readingGoal:readingGoal()};const row=c.GENERIC_COLLECTIONS.habits.toRow(habit),restored=c.mapHabitRow(row);
+  assert.deepEqual(Array.from(row.weekdays),[0,6]);assert.deepEqual(Array.from(restored.weekdays),[0,6]);assert.deepEqual(Array.from(restored.checkedDates),habit.checkedDates);
+  assert.equal(restored.goal,habit.goal);assert.equal(restored.valueId,'wisdom');assert.deepEqual({...restored.readingGoal},readingGoal());assert.equal(restored.id,'h1');assert.equal(restored.userId,'owner');
+  for(const old of [{...row,weekdays:undefined},{...row,weekdays:null}])assert.deepEqual(Array.from(c.mapHabitRow(old).weekdays),[0,1,2,3,4,5,6]);
+});
+
+test('legacy edits retain the latest weekday schedule while explicit daily selection restores all seven days',()=>{
+  const h=harness();h.original.weekdays=[1,3,5];h.c.editHabit('h1',payload,null);const latest=structuredClone(h.c.STATE);latest.habits.h1.weekdays=[0,6];latest.habits.h1.checkedDates.push('2026-09-22');h.apply(latest);
+  assert.deepEqual(Array.from(latest.habits.h1.weekdays),[0,6]);assert.deepEqual(Array.from(latest.habits.h1.checkedDates),['2026-09-01','2026-09-22']);
+  h.c.STATE=latest;h.c.editHabit('h1',{...payload,weekdays:[0,1,2,3,4,5,6]},null);h.apply(latest);assert.deepEqual(Array.from(latest.habits.h1.weekdays),[0,1,2,3,4,5,6]);
+  const old=harness();old.c.submitHabit('emotion',payload,null);const created={habits:{}};old.apply(created);assert.deepEqual(Array.from(created.habits['new-id'].weekdays),[0,1,2,3,4,5,6]);
+});
+
+test('empty or invalid weekday selections and a goal period without a selected weekday cannot be saved',()=>{
+  for(const weekdays of [[],[7],[-1],[1.5],['1'],'daily']){
+    const h=harness();h.c.submitHabit('emotion',{...payload,weekdays},null);h.c.editHabit('h1',{...payload,weekdays},null);assert.equal(h.saves(),0);assert.equal(h.toasts.length,2);
+  }
+  const h=harness(),weekendOnly={...payload,startDate:'2026-09-22',endDate:'2026-09-22',weekdays:[0,6]};h.c.submitHabit('emotion',weekendOnly,null);assert.equal(h.saves(),0);assert.match(h.toasts[0][0],/요일|기간/);
+});
+
+test('new and legacy composers default to daily while editing restores the selected weekdays',()=>{
+  for(const savedDays of [undefined,null,[0,1,2,3,4,5,6],[0,6],[1,3,5]]){
+    const h=composerHarness(),c=h.c;c.STATE.habits.h1.weekdays=savedDays;c.openHabitComposer('emotion','h1',h.trigger);const node=c.habitComposerDialog,daily=savedDays==null||savedDays.length===7;
+    assert.equal(node.querySelector('[data-habit-repeat="daily"]').getAttribute('aria-pressed'),String(daily));assert.equal(node.querySelector('[data-habit-repeat="weekly"]').getAttribute('aria-pressed'),String(!daily));assert.equal(node.querySelector('.habit-weekday-options').hidden,daily);
+    assert.deepEqual(Array.from(node.querySelectorAll('[data-habit-weekday]'),button=>Number(button.getAttribute('data-habit-weekday'))),[1,2,3,4,5,6,0]);
+    assert.deepEqual(Array.from(c.habitComposerWeekdays(node)),daily?[0,1,2,3,4,5,6]:savedDays);
+    for(const button of node.querySelectorAll('[data-habit-weekday]'))assert.equal(button.getAttribute('aria-pressed'),String(daily||savedDays.includes(Number(button.getAttribute('data-habit-weekday')))));
+  }
+  const h=composerHarness();h.c.openHabitComposer('emotion',null,h.trigger);assert.deepEqual(Array.from(h.c.habitComposerWeekdays(h.c.habitComposerDialog)),[0,1,2,3,4,5,6]);assert.equal(h.c.habitComposerDialog.querySelector('.habit-weekday-options').hidden,true);
+});
+
+test('weekday buttons preserve the form draft and submit the chosen schedule for both new and edited habits',()=>{
+  for(const editing of [false,true]){
+    const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',editing?'h1':null,h.trigger);const node=c.habitComposerDialog;
+    node.querySelector('#habit-name').value='가벼운 산책';node.querySelector('#habit-place').value='집 앞 공원';node.querySelector('#habit-time').value='13:00';node.querySelector('#habit-goal').value='10분 걷기';
+    node.querySelector('[data-habit-repeat="weekly"]').click();assert.equal(node.querySelector('.habit-weekday-options').hidden,false);
+    for(const day of [0,2,4,6])node.querySelector('[data-habit-weekday="'+day+'"]').click();assert.deepEqual(Array.from(c.habitComposerWeekdays(node)),[1,3,5]);
+    node.querySelector('[data-habit-repeat="daily"]').click();assert.equal(node.querySelector('.habit-weekday-options').hidden,true);assert.deepEqual(Array.from(c.habitComposerWeekdays(node)),[0,1,2,3,4,5,6]);
+    node.querySelector('[data-habit-repeat="weekly"]').click();assert.deepEqual(Array.from(c.habitComposerWeekdays(node)),[1,3,5]);assert.equal(node.querySelector('#habit-place').value,'집 앞 공원');assert.equal(node.querySelector('#habit-time').value,'13:00');assert.equal(node.querySelector('#habit-goal').value,'10분 걷기');
+    node.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,1);h.saves[0].mutate(c.STATE);const saved=c.STATE.habits[editing?'h1':'new-habit'];assert.deepEqual(Array.from(saved.weekdays),[1,3,5]);assert.equal(saved.name,'가벼운 산책');assert.equal(saved.place,'집 앞 공원');assert.equal(saved.time,'13:00');
+    c.closeHabitComposer(false);c.openHabitComposer('emotion',saved.id,h.trigger);assert.deepEqual(Array.from(c.habitComposerWeekdays(c.habitComposerDialog)),[1,3,5]);
+  }
+});
+
+test('a composer cannot save custom repetition with no weekdays selected',()=>{
+  const h=composerHarness(),c=h.c;c.openHabitComposer('emotion',null,h.trigger);const node=c.habitComposerDialog;node.querySelector('#habit-name').value='산책';node.querySelector('[data-habit-repeat="weekly"]').click();
+  for(const button of node.querySelectorAll('[data-habit-weekday]'))button.click();assert.deepEqual(Array.from(c.habitComposerWeekdays(node)),[]);
+  node.querySelector('#btn-habit-submit').click();assert.equal(h.saves.length,0);assert.match(h.toasts.at(-1)[0],/요일/);assert.equal(c.habitComposerDialog,node);assert.equal(node.querySelector('#habit-name').value,'산책');
+});
+
+test('overview excludes resting habits from todays completion totals but keeps them visible with disabled checks and their schedule',()=>{
+  const c=cardHarness();Object.assign(c,{SESSION:{userId:'owner'},memberLoadState:{habits:'ready'},habitWithPendingChecks:habit=>habit,bookById:()=>({title:'테스트 책'})});
+  const habit=(id,extra={})=>({id,userId:'owner',bookId:'emotion',name:id,startDate:'2026-09-01',checkedDates:[],...extra});
+  c.STATE={habits:{done:habit('done',{weekdays:[2,4],checkedDates:['2026-09-22']}),pending:habit('pending'),rest:habit('rest',{weekdays:[1,3,5]})}};
+  const html=c.habitOverviewBodyHtml();assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.match(html,/남은 습관<\/span><strong>1<small>개/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
+  assert.match(overviewCheckbox(html,'rest','2026-09-22'),/\sdisabled(?:\s|>)/);assert.match(overviewCheckbox(html,'rest','2026-09-22'),/쉬는 날/);assert.match(html,/월·수·금/);
+  assert.equal(c.habitTodayState(c.STATE.habits.rest,'2026-09-22').canCheck,false);assert.match(c.habitTodayState(c.STATE.habits.rest,'2026-09-22').label,/쉬는 날/);
+  assert.match(c.habitFactsHtml(c.STATE.habits.rest),/월·수·금/);assert.match(c.habitFactsHtml(c.STATE.habits.pending),/매일/);
+  const week=c.habitWeekProgress(c.STATE.habits.rest,c.weekDatesOf(c.mondayOf(new c.Date())));assert.equal(week.total,3);assert.equal(week.done,0);
 });

@@ -17,7 +17,7 @@ test('habit dates validate leap years, missing end dates and an inverted period'
   assert.equal(habits.validDate('2024-02-29'),true);
   assert.equal(habits.validDate('2026-02-29'),false);
   assert.equal(habits.validDate('2026-13-01'),false);
-  assert.deepEqual(habits.validate({startDate:'',endDate:''},today),{ok:true,startDate:today,endDate:''});
+  assert.deepEqual(habits.validate({startDate:'',endDate:''},today),{ok:true,startDate:today,endDate:'',weekdays:[0,1,2,3,4,5,6]});
   assert.equal(habits.validate({startDate:'2026-09-23',endDate:today},today).ok,false);
   assert.equal(habits.validate({startDate:'2026-02-30'},today).ok,false);
 });
@@ -80,4 +80,80 @@ test('an empty week or only unchecked first-day habits never display a made-up f
   assert.equal(result.todayPending,1);assert.equal(result.weekPending,1);assert.equal(result.weekRate,null);assert.equal(result.weekFail,0);
   assert.equal(habits.overview([],today,'2026-09-21').weekRate,null);
   assert.equal(habits.overview([sample({endDate:'2026-09-20'})],today,'2026-09-21').active,0);
+});
+
+test('weekday schedules normalize without mutating input and legacy records remain daily',()=>{
+  const selected=Object.freeze([5,1,3,1]),h=Object.freeze({weekdays:selected});
+  assert.deepEqual(habits.weekdays(h),[1,3,5]);
+  assert.deepEqual(selected,[5,1,3,1]);
+  assert.deepEqual(habits.weekdays({}),[0,1,2,3,4,5,6]);
+  assert.deepEqual(habits.weekdays({weekdays:null}),[0,1,2,3,4,5,6]);
+  assert.equal(habits.scheduleLabel({weekdays:[0,5,1]}),'월·금·일');
+  assert.equal(habits.scheduleLabel({}),'매일');
+  assert.equal(habits.scheduled(h,'2026-10-02'),true);
+  assert.equal(habits.scheduled(h,'2026-10-03'),false);
+  assert.equal(habits.scheduled(h,'2026-02-30'),false);
+});
+
+test('save validation rejects empty, malformed and impossible weekday periods',()=>{
+  for(const weekdays of [[],[7],[-1],['1'],[1.5],[1,null],'1,3,5',{}]){
+    assert.equal(habits.validate({weekdays},today).ok,false,JSON.stringify(weekdays));
+    assert.deepEqual(habits.weekdays({weekdays}),[]);
+  }
+  assert.deepEqual(habits.validate({weekdays:[5,1,3,1]},today).weekdays,[1,3,5]);
+  assert.equal(habits.validate({startDate:'2026-10-03',endDate:'2026-10-04',weekdays:[1]},today).ok,false);
+  assert.equal(habits.validate({startDate:'2026-10-03',endDate:'2026-10-05',weekdays:[1]},today).ok,true);
+  assert.equal(habits.validate({startDate:'2026-10-03',endDate:'',weekdays:[1]},today).ok,true);
+});
+
+test('weekday-only calendars leave skipped days outside and preserve historical checks as saved',()=>{
+  const h=sample({startDate:'2026-09-28',endDate:'2026-10-09',weekdays:[1,3,5],checkedDates:['2026-09-28','2026-09-29','2026-09-30','2026-10-02']});
+  assert.equal(habits.status(h,'2026-10-03','2026-10-04'),'outside');
+  assert.equal(habits.status(h,'2026-09-29','2026-10-04'),'saved');
+  assert.equal(habits.status(h,'2026-10-05','2026-10-04'),'future');
+  assert.equal(habits.status(h,'2026-10-06','2026-10-04'),'outside');
+  assert.equal(habits.canCheck(h,'2026-10-03','2026-10-04'),false);
+  assert.equal(habits.canCheck(h,'2026-10-02','2026-10-04'),true);
+  const s=habits.stats(h,'2026-10-04');
+  assert.equal(s.success,3);assert.equal(s.archivedSuccess,1);assert.equal(s.fail,0);assert.equal(s.pending,0);
+  assert.equal(s.elapsed,3);assert.equal(s.total,6);assert.equal(s.remaining,3);assert.equal(s.rate,100);assert.equal(s.goalPercent,50);
+  assert.equal(s.streak,3);assert.equal(s.bestStreak,3);
+});
+
+test('streaks bridge weekends and only break on a missed selected day',()=>{
+  const h=sample({startDate:'2026-09-28',endDate:'',weekdays:[1,3,5],checkedDates:['2026-09-28','2026-09-30','2026-10-02']});
+  assert.equal(habits.stats(h,'2026-10-05').streak,3,'today may still be pending');
+  assert.equal(habits.stats(h,'2026-10-05').pending,1);
+  assert.equal(habits.stats(h,'2026-10-06').streak,0,'Monday is now a missed scheduled day');
+  const restarted={...h,checkedDates:[...h.checkedDates,'2026-10-07','2026-10-09']};
+  assert.equal(habits.stats(restarted,'2026-10-11').streak,2);
+  assert.equal(habits.stats(restarted,'2026-10-11').bestStreak,3);
+  assert.equal(habits.stats({...h,endDate:'2026-10-04'},'2026-10-11').streak,3,'closed period clips to Friday');
+});
+
+test('selected day denominators clip to month, year, future and goal boundaries',()=>{
+  const h=sample({startDate:'2026-09-28',endDate:'2026-10-09',weekdays:[1,3,5],checkedDates:['2026-09-28','2026-09-30','2026-10-02']});
+  const september=habits.monthStats(h,'2026-10-04',2026,8),october=habits.monthStats(h,'2026-10-04',2026,9);
+  assert.equal(september.elapsed,2);assert.equal(september.success,2);assert.equal(september.rate,100);
+  assert.equal(october.elapsed,1);assert.equal(october.success,1);assert.equal(october.pending,0);
+  const future=habits.stats({...h,startDate:'2026-10-05',checkedDates:[]},'2026-10-04');
+  assert.equal(future.elapsed,0);assert.equal(future.total,3);assert.equal(future.remaining,3);assert.equal(future.rate,null);
+  assert.equal(habits.scheduledDays({weekdays:[1,3,5]},'2026-12-28','2027-01-03'),3);
+  assert.equal(habits.scheduledDays({weekdays:[4]},'2024-02-28','2024-03-01'),1);
+  assert.equal(habits.scheduledDays({},'1000-01-01','9999-12-31'),habits.days('1000-01-01','9999-12-31'));
+  const longRange=habits.scheduledDays({weekdays:[1]},'1000-01-01','9999-12-31');
+  assert.ok(longRange>=Math.floor(habits.days('1000-01-01','9999-12-31')/7));
+  assert.ok(longRange<=Math.ceil(habits.days('1000-01-01','9999-12-31')/7));
+});
+
+test('overview keeps all created habits but today count and weekly attempts only include selected days',()=>{
+  const records=[
+    sample({id:'mwf',startDate:'2026-09-28',endDate:'2026-10-09',weekdays:[1,3,5],checkedDates:['2026-09-28','2026-09-30','2026-10-02']}),
+    sample({id:'saturday',startDate:'2026-09-28',endDate:'2026-10-09',weekdays:[6],checkedDates:[]}),
+    sample({id:'future',startDate:'2026-10-05',weekdays:[1],endDate:'',checkedDates:[]})
+  ];
+  const summary=habits.overview(records,'2026-10-03','2026-09-28');
+  assert.equal(summary.total,3);assert.equal(summary.active,1);assert.equal(summary.todayPending,1);assert.equal(summary.todaySuccess,0);
+  assert.equal(summary.upcoming,1);assert.equal(summary.weekSuccess,3);assert.equal(summary.weekFail,0);assert.equal(summary.weekPending,1);assert.equal(summary.weekRate,100);
+  assert.equal(habits.overview(records,'2026-10-04','2026-09-28').active,0);
 });

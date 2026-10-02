@@ -165,6 +165,49 @@ test('passed time rolls to tomorrow and expired habits do not produce reminders'
   assert.equal(D.taskPayload({...habit, end_date: '2026-10-01'}, MARK, config.origin, NOW), null);
   assert.equal(D.validDay('2026-02-31'), false);
 });
+
+test('legacy, null and all weekday selections keep the existing daily recurrence', () => {
+  for (const weekdays of [undefined, null, [0,1,2,3,4,5,6], [6,5,4,3,2,1,0,1]]) {
+    const payload = D.taskPayload({...habit, weekdays}, MARK, config.origin, NOW);
+    assert.deepEqual(payload.recurrence.pattern, {type:'daily', interval:1});
+    assert.equal(payload.reminderDateTime.dateTime, '2026-10-02T16:00:00');
+    assert.match(payload.body.content, /알림: 매일 16:00/);
+  }
+});
+
+test('weekly reminders choose the next selected Korean day and carry exact Graph weekdays', () => {
+  const payload = D.taskPayload({...habit, weekdays:[3,1,3]}, MARK, config.origin, NOW);
+  assert.equal(payload.reminderDateTime.dateTime, '2026-10-05T16:00:00');
+  assert.deepEqual(payload.recurrence.pattern, {type:'weekly', interval:1, daysOfWeek:['monday','wednesday'], firstDayOfWeek:'monday'});
+  assert.equal(payload.recurrence.range.startDate, '2026-10-05');
+  assert.equal(payload.recurrence.range.endDate, '2026-10-20');
+  assert.match(payload.body.content, /알림: 월·수 16:00 \(한국 시간\)/);
+  const passed = D.taskPayload({...habit, weekdays:[1,5], time:'11:50'}, MARK, config.origin, NOW);
+  assert.equal(passed.reminderDateTime.dateTime, '2026-10-05T11:50:00');
+  const laterToday = D.taskPayload({...habit, weekdays:[5], time:'12:10'}, MARK, config.origin, NOW);
+  assert.equal(laterToday.reminderDateTime.dateTime, '2026-10-02T12:10:00');
+});
+
+test('weekday boundaries honor future starts, Korean midnight, and inclusive end dates', () => {
+  const sunday = D.taskPayload({...habit, weekdays:[0], time:'00:00'}, MARK, config.origin, Date.parse('2026-10-03T14:59:59Z'));
+  assert.equal(sunday.reminderDateTime.dateTime, '2026-10-04T00:00:00');
+  assert.deepEqual(sunday.recurrence.pattern.daysOfWeek, ['sunday']);
+  const nextWeek = D.taskPayload({...habit, weekdays:[0], time:'00:00'}, MARK, config.origin, Date.parse('2026-10-03T15:00:00Z'));
+  assert.equal(nextWeek.reminderDateTime.dateTime, '2026-10-11T00:00:00');
+  const future = D.taskPayload({...habit, weekdays:[1], start_date:'2026-10-07'}, MARK, config.origin, NOW);
+  assert.equal(future.reminderDateTime.dateTime, '2026-10-12T16:00:00');
+  assert.equal(D.taskPayload({...habit, weekdays:[1], end_date:'2026-10-04'}, MARK, config.origin, NOW), null);
+  assert.equal(D.taskPayload({...habit, weekdays:[1], end_date:'2026-10-05'}, MARK, config.origin, NOW).recurrence.range.endDate, '2026-10-05');
+});
+
+test('invalid weekday arrays never silently create daily reminders; absent time stays unscheduled', () => {
+  for (const weekdays of [[], [7], [-1], [1.5], ['1'], [null], 'monday', {}]) {
+    assert.throws(() => D.taskPayload({...habit, weekdays}, MARK, config.origin, NOW), /invalid-habit/);
+  }
+  const payload = D.taskPayload({...habit, weekdays:[1], time:'', end_date:'2026-10-02'}, MARK, config.origin, NOW);
+  assert.equal(payload.isReminderOn, false);assert.equal(payload.recurrence,null);assert.equal(payload.reminderDateTime,null);
+  assert.equal(payload.dueDateTime,null);assert.equal(payload.startDateTime,null);assert.match(payload.body.content,/알림: 시간 미설정$/);
+});
 test('midnight and final-day boundaries use each habit time in Korea', () => {
   const beforeMidnight = Date.parse('2026-10-02T14:59:00Z');
   const midnight = Date.parse('2026-10-02T15:00:00Z');
@@ -353,6 +396,19 @@ test('clearing an exact time patches out its reminder and later restores it with
   assert.equal(f.state.remote[0].reminderDateTime.dateTime, '2026-10-02T13:20:00');
   assert.equal(f.requests.filter(item => item.opts.method === 'PATCH').length, 2);
   assert.equal(f.requests.filter(item => ['POST', 'DELETE'].includes(item.opts.method) && item.kind === 'graph').length, 0);
+});
+
+test('changing daily to weekly and back patches the same marked task without resetting completion', async () => {
+  const marked = {...D.taskPayload(habit, MARK, config.origin, NOW), id:'weekday-task', '@odata.etag':'weekday-etag', status:'completed'};
+  const f=fixture({item:{task_id:marked.id,desired:{...habit,weekdays:[1,3,5]}},remote:[marked]});
+  assert.deepEqual(await f.service.run(profile.id),{processed:1});
+  assert.equal(f.state.remote.length,1);assert.equal(f.state.remote[0].id,marked.id);assert.equal(f.state.remote[0].status,'completed');
+  assert.deepEqual(f.state.remote[0].recurrence.pattern,{type:'weekly',interval:1,daysOfWeek:['monday','wednesday','friday'],firstDayOfWeek:'monday'});
+  f.state.item.desired.weekdays=[0,1,2,3,4,5,6];f.state.item.pending=true;f.state.item.revision++;
+  assert.deepEqual(await f.service.run(profile.id),{processed:1});
+  assert.deepEqual(f.state.remote[0].recurrence.pattern,{type:'daily',interval:1});assert.equal(f.state.remote[0].status,'completed');
+  assert.equal(f.requests.filter(item=>item.kind==='graph'&&['POST','DELETE'].includes(item.opts.method)).length,0);
+  assert.equal(f.requests.filter(item=>item.opts.method==='PATCH').length,2);
 });
 test('legacy task migration verifies hidden metadata before removing body metadata and only its own link', async () => {
   const marked = {id: 'legacy-task', title: habit.name, body: {contentType: 'text', content: '실천할 습관\nGROWELL-SYNC:' + MARK},

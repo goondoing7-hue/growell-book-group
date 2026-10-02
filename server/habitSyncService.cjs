@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const D = require('./habitSyncDomain.cjs');
+const habitsDomain = require('../habitDomain.js');
 const COOKIE = '__Host-growell-habit-sync';
 const TOKEN_URL = D.LOGIN_ORIGIN + '/common/oauth2/v2.0/token';
 
@@ -73,7 +74,7 @@ function createStore(config, request) {
       const rows = await db('growell_habit_sync_queue?select=habit_id&owner_id=eq.' + encodeURIComponent(owner) + '&pending=eq.true&limit=10001');
       return Array.isArray(rows) ? Math.min(rows.length, 10000) : 0;
     },
-    habits: owner => rows('habits?select=id,user_id,name,time,start_date,end_date&user_id=eq.' + encodeURIComponent(owner) + '&order=id.asc'),
+    habits: owner => rows('habits?select=id,user_id,name,time,start_date,end_date,weekdays&user_id=eq.' + encodeURIComponent(owner) + '&order=id.asc'),
     tracked: (owner, generation) => rows('growell_habit_sync_queue?select=owner_id,habit_id,generation,task_id,pending,last_error&owner_id=eq.' + encodeURIComponent(owner) + '&generation=eq.' + encodeURIComponent(generation) + '&order=habit_id.asc'),
     oauth: (operation, payload) => rpc('oauth', {p_operation: operation, p_payload: payload}),
     configure: (owner, authId, operation, payload = {}) => rpc('configure', {p_owner: owner, p_auth: authId, p_operation: operation, p_payload: payload}),
@@ -147,11 +148,12 @@ function createService(options = {}) {
     const connection = await store.connection(profile.id);
     const [habits, tracked] = await Promise.all([store.habits(profile.id), connection?.token_cipher ? store.tracked(profile.id, connection.generation) : []]);
     if (!Array.isArray(habits) || !Array.isArray(tracked)) throw new D.SyncError('service-unavailable');
-    const today = D.koreanNow(now()).slice(0, 10), currentRows = tracked.filter(row => row.owner_id === profile.id && row.generation === connection?.generation), queue = new Map(currentRows.map(row => [row.habit_id, row]));
+    const currentRows = tracked.filter(row => row.owner_id === profile.id && row.generation === connection?.generation), queue = new Map(currentRows.map(row => [row.habit_id, row]));
     return {...safeConnection(connection, currentRows.filter(row => row.pending).length), habits: habits.filter(habit => habit.user_id === profile.id).map(habit => {
       const item = queue.get(habit.id), errorCode = item?.last_error ? safeError({code: item.last_error}) : null;
-      const validPeriod = (!habit.start_date || D.validDay(habit.start_date)) && (!habit.end_date || D.validDay(habit.end_date) && habit.end_date >= today && (!habit.start_date || habit.end_date >= habit.start_date));
-      return {habitId: habit.id, name: D.clean(habit.name, 200), time: D.parseTime(habit.time) || '', canConnect: !!validPeriod,
+      let validPeriod = false;
+      try { validPeriod = !!D.reminderSchedule(habit, now()); } catch (_) { /* invalid stored schedules cannot be connected */ }
+      return {habitId: habit.id, name: D.clean(habit.name, 200), time: D.parseTime(habit.time) || '', weekdays: habitsDomain.weekdays(habit), scheduleLabel: habitsDomain.scheduleLabel(habit), canConnect: validPeriod,
         state: !item ? 'unlinked' : errorCode ? 'attention' : item.pending || !item.task_id ? 'pending' : 'synced', ...(errorCode ? {errorCode} : {})};
     })};
   }

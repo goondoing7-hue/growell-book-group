@@ -9,6 +9,7 @@ const {PGlite}=require('@electric-sql/pglite');
 // This is an isolated, in-memory PostgreSQL instance. No application database,
 // credentials, browser storage or external reminder API is used by these tests.
 const migration=fs.readFileSync(path.join(__dirname,'../server/habit-sync.sql'),'utf8');
+const weekdaysMigration=fs.readFileSync(path.join(__dirname,'../server/habit-weekdays.sql'),'utf8');
 const AUTH='11111111-1111-4111-8111-111111111111';
 const OTHER_AUTH='22222222-2222-4222-8222-222222222222';
 const GEN='33333333-3333-4333-8333-333333333333';
@@ -88,8 +89,61 @@ test('habit-sync migration executes and can be reapplied without backfilling exi
   assert.deepEqual(await rows(),[],'ordinary editing does not enroll an old habit');
   await asRole('authenticated',()=>habit('after-connect'));
   const queued=await rows();assert.equal(queued.length,1);assert.equal(queued[0].habit_id,'after-connect');assert.equal(queued[0].generation,GEN);
-  assert.deepEqual(Object.keys(queued[0].desired).sort(),['id','user_id','name','goal','time','place','start_date','end_date','behavior_type','book_id'].sort());
+  assert.deepEqual(Object.keys(queued[0].desired).sort(),['id','user_id','name','goal','time','place','start_date','end_date','behavior_type','book_id','weekdays'].sort());
   assert.equal(queued[0].desired.checked_dates,undefined);assert.equal(queued[0].desired.created_at,undefined);
+});
+
+test('weekday schedules validate at the database boundary and edits queue without changing identity or checks',async()=>{
+  await connect();await habit();
+  let initial=(await rows())[0];
+  assert.deepEqual(initial.desired.weekdays,[0,1,2,3,4,5,6]);
+  await db.query("update public.habits set checked_dates=array['2026-10-01'],weekdays=array[1,3,5] where id='new-habit'");
+  const changed=(await rows())[0];
+  assert.equal(changed.marker,initial.marker);assert.equal(changed.revision,initial.revision+1);
+  assert.deepEqual(changed.desired.weekdays,[1,3,5]);assert.equal(changed.desired.checked_dates,undefined);
+  await db.query("update public.habits set checked_dates=array['2026-10-01','2026-10-02'] where id='new-habit'");
+  assert.equal((await rows())[0].revision,changed.revision);
+  for(const value of ['array[]::integer[]','array[7]','array[-1]','array[1,null]','array[1,1]','array[[1,2],[3,4]]']){
+    await assert.rejects(db.query('update public.habits set weekdays='+value+" where id='new-habit'"),codeIs('23514'));
+  }
+  await db.query("update public.habits set weekdays=null where id='new-habit'");
+  assert.equal((await rows())[0].desired.weekdays,null);
+});
+
+test('weekday migration is idempotent and preserves existing access controls, queue, and records',async()=>{
+  await connect();await habit();await db.query("update public.habits set weekdays=array[1,3,5],checked_dates=array['2026-10-01'] where id='new-habit'");
+  const beforeQueue=await rows();
+  const beforeHabits=(await db.query('select * from public.habits order by id')).rows;
+  const accessSql="select c.relname,c.relrowsecurity,c.relacl::text from pg_class c where c.oid in ('public.habits'::regclass,'public.growell_habit_sync_queue'::regclass) order by c.relname";
+  const beforeAccess=(await db.query(accessSql)).rows;
+  await db.exec(weekdaysMigration);await db.exec(weekdaysMigration);
+  assert.deepEqual(await rows(),beforeQueue);assert.deepEqual((await db.query('select * from public.habits order by id')).rows,beforeHabits);
+  assert.deepEqual((await db.query(accessSql)).rows,beforeAccess);
+  await asRole('authenticated',()=>assert.rejects(db.query("select public.growell_habit_sync_source('{}'::jsonb)"),codeIs('42501')));
+  await db.query("update public.habits set weekdays=array[2,4] where id='new-habit'");
+  assert.deepEqual((await rows())[0].desired.weekdays,[2,4]);
+  assert.equal((await rows())[0].revision,beforeQueue[0].revision+1);
+});
+
+test('additive upgrade gives legacy rows daily schedules without importing or requeuing them',async()=>{
+  // Reproduce the pre-weekday schema and source projection inside this temporary DB.
+  await db.exec("alter table public.habits drop column weekdays");
+  const legacySource=migration.match(/create or replace function public\.growell_habit_sync_source[\s\S]*?\$function\$;/)[0].replace(",'weekdays',p_habit->'weekdays'",'');
+  await db.exec(legacySource);
+  await habit('unlinked-legacy');await connect();await habit('linked-legacy');
+  await db.query("update public.habits set checked_dates=array['2026-10-01']");
+  const original=(await db.query('select * from public.habits order by id')).rows,queueBefore=await rows();
+  const aclBefore=(await db.query("select relacl::text as acl,relrowsecurity from pg_class where oid='public.habits'::regclass")).rows;
+  assert.equal(queueBefore[0].desired.weekdays,undefined);
+  await db.exec(weekdaysMigration);
+  assert.deepEqual(await rows(),queueBefore,'upgrade never queues existing habits on its own');
+  const upgraded=(await db.query('select * from public.habits order by id')).rows;
+  assert.deepEqual(upgraded.map(({weekdays,...row})=>row),original);
+  assert.ok(upgraded.every(row=>JSON.stringify(row.weekdays)==='[0,1,2,3,4,5,6]'));
+  assert.deepEqual((await db.query("select relacl::text as acl,relrowsecurity from pg_class where oid='public.habits'::regclass")).rows,aclBefore);
+  await db.query("update public.habits set weekdays=array[1,3,5]");
+  const queueAfter=await rows();assert.equal(queueAfter.length,1);assert.equal(queueAfter[0].habit_id,'linked-legacy');
+  assert.deepEqual(queueAfter[0].desired.weekdays,[1,3,5]);assert.equal(queueAfter[0].marker,queueBefore[0].marker);
 });
 
 test('actual habit triggers ignore check changes, enqueue metadata revisions and retain deletion tombstones',async()=>{

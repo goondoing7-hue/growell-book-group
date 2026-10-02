@@ -236,6 +236,16 @@ test('habit dashboard does not offer effective import while disconnected or paus
   assert.doesNotMatch(reminder.habitsHtml({connected:true,enabled:true,habits}),/data-sync-unavailable/);
 });
 
+test('habit dashboard includes the configured repeat days beside the reminder time',()=>{
+  const html=reminder.habitsHtml({connected:true,enabled:true,habits:[
+    {habitId:'weekly',name:'걷기',time:'13:00',scheduleLabel:'월·수·금',state:'synced',canConnect:true},
+    {habitId:'legacy',name:'기도',time:'07:00',state:'unlinked',canConnect:true},
+    {habitId:'unsafe',name:'안전 확인',time:'08:00',scheduleLabel:'<img src=x>',state:'synced',canConnect:true}
+  ]});
+  assert.match(html,/월·수·금 · 13:00/);assert.match(html,/매일 · 07:00/);
+  assert.doesNotMatch(html,/<img/);assert.match(html,/&lt;img src=x&gt;/);
+});
+
 test('habit dashboard safely renders names and rejects invalid, duplicate or unknown status data',()=>{
   const status={connected:true,enabled:true,habits:[
     {habitId:'h1',name:'<img src=x onerror="alert(1)">',time:'<script>',state:'unknown',canConnect:true,goal:'PRIVATE_GOAL',remoteTaskId:'PRIVATE_REMOTE'},

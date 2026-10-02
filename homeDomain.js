@@ -103,6 +103,10 @@
       var hasEnd=end!==undefined && end!==null && end!=='';
       if((hasStart && !validYmd(start)) || (hasEnd && !validYmd(end))) return false;
       if(hasStart && hasEnd && start>end) return false;
+      if(habit.weekdays!==undefined&&habit.weekdays!==null){
+        if(!Array.isArray(habit.weekdays)||habit.weekdays.some(function(day){return !Number.isInteger(day)||day<0||day>6;})) return false;
+        if(habit.weekdays.indexOf(new Date(todayYmd+'T00:00:00Z').getUTCDay())<0) return false;
+      }
       return (!hasStart || start<=todayYmd) && (!hasEnd || todayYmd<=end);
     }).slice().sort(function(a,b){ return compareTime(a,b,'createdAt',false); });
   }

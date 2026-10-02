@@ -64,7 +64,7 @@
     return status.habits.filter(function(row){
       if(!row||typeof row.habitId!=='string'||!/^[A-Za-z0-9_-]{1,384}$/.test(row.habitId)||seen.has(row.habitId))return false;
       seen.add(row.habitId);return true;
-    }).map(function(row){return {habitId:row.habitId,name:typeof row.name==='string'?row.name:'이름 없는 습관',time:validTime(row.time)?row.time:'',state:['synced','pending','unlinked','attention'].indexOf(row.state)>=0?row.state:'attention',canConnect:row.canConnect===true};});
+    }).map(function(row){return {habitId:row.habitId,name:typeof row.name==='string'?row.name:'이름 없는 습관',time:validTime(row.time)?row.time:'',scheduleLabel:typeof row.scheduleLabel==='string'?row.scheduleLabel.slice(0,30):'매일',state:['synced','pending','unlinked','attention'].indexOf(row.state)>=0?row.state:'attention',canConnect:row.canConnect===true};});
   }
   function habitsHtml(status){
     var rows=habitRows(status);
@@ -78,7 +78,7 @@
         var label=row.state==='synced'?'연동됨':row.state==='pending'?'전달 대기':'확인 필요',action;
         if(row.state==='unlinked')action=row.canConnect?'<button type="button" class="habit-sync-link" data-sync-import="'+escapeHtml(row.habitId)+'"'+(!status.connected||!status.enabled?' disabled data-sync-unavailable':'')+' aria-label="'+escapeHtml(row.name)+' 알림 연결">연결</button>':'<span class="habit-sync-row-state">기간 확인</span>';
         else action='<span class="habit-sync-row-state'+(row.state==='synced'?' is-linked':'')+'">'+(row.state==='synced'?'<span aria-hidden="true">✓ </span>':'')+label+'</span>';
-        return '<li><div class="habit-sync-row-copy"><strong>'+escapeHtml(row.name)+'</strong><span>'+escapeHtml(row.time||'시간 미설정')+'</span></div>'+action+'</li>';
+        return '<li><div class="habit-sync-row-copy"><strong>'+escapeHtml(row.name)+'</strong><span>'+escapeHtml(row.scheduleLabel)+' · '+escapeHtml(row.time||'시간 미설정')+'</span></div>'+action+'</li>';
       }).join('')+'</ul></section>';
     }).join('');
   }

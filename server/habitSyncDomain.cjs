@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const reading = require('../readingHabit.js');
+const habits = require('../habitDomain.js');
 const GRAPH_ORIGIN = 'https://graph.microsoft.com';
 const LOGIN_ORIGIN = 'https://login.microsoftonline.com';
 const SCOPES = 'openid offline_access https://graph.microsoft.com/Tasks.ReadWrite';
@@ -72,23 +73,38 @@ function validDay(value) {
 }
 function koreanNow(now = Date.now()) { return new Date(now + 9 * 3600000).toISOString().slice(0, 19); }
 function nextDay(day) { return new Date(Date.parse(day + 'T00:00:00Z') + 86400000).toISOString().slice(0, 10); }
-function taskPayload(habit, marker, origin, now = Date.now()) {
-  if (!habit || !clean(habit.name, 200) || !UUID.test(marker)) throw new SyncError('invalid-habit', 400);
+function reminderSchedule(habit, now = Date.now()) {
+  if (!habit) throw new SyncError('invalid-habit', 400);
   if ((habit.start_date && !validDay(habit.start_date)) || (habit.end_date && !validDay(habit.end_date))) throw new SyncError('invalid-habit', 400);
+  const weekdays = habits.weekdays(habit);
+  if (!weekdays.length) throw new SyncError('invalid-habit', 400);
   const current = koreanNow(now), time = parseTime(habit.time);
   let day = validDay(habit.start_date) && habit.start_date > current.slice(0, 10) ? habit.start_date : current.slice(0, 10);
   if (time && day + 'T' + time + ':00' <= current) day = nextDay(day);
+  // A date is selected in the Korean calendar, independent of the server zone.
+  // Unscheduled tasks keep their content even when no selected day remains.
+  if (time) {
+    for (let skipped = 0; skipped < 7 && !weekdays.includes(new Date(day + 'T00:00:00Z').getUTCDay()); skipped++) day = nextDay(day);
+  }
   const end = validDay(habit.end_date) ? habit.end_date : '';
   if (end && end < day) return null; // Expired habits never produce a new recurring reminder.
+  return {weekdays, time, day, end};
+}
+function taskPayload(habit, marker, origin, now = Date.now()) {
+  if (!habit || !clean(habit.name, 200) || !UUID.test(marker)) throw new SyncError('invalid-habit', 400);
+  const schedule = reminderSchedule(habit, now);
+  if (!schedule) return null;
+  const {weekdays, time, day, end} = schedule;
   const decoded = reading.decode(habit.goal);
   // A malformed metadata envelope must not expose its private archive IDs.
   const goal = typeof habit.goal === 'string' && habit.goal.startsWith('growell-reading-habit-v1:') && decoded.goal === habit.goal ? '' : clean(decoded.goal);
   const lines = [habit.behavior_type === 'avoid' ? '절제할 습관' : '실천할 습관'];
   if (goal) lines.push('목표: ' + goal);
   if (clean(habit.place)) lines.push('장소: ' + clean(habit.place));
-  lines.push(time ? '알림: 매일 ' + time + ' (한국 시간)' : '알림: 시간 미설정');
+  lines.push(time ? '알림: ' + habits.scheduleLabel({weekdays}) + ' ' + time + ' (한국 시간)' : '알림: 시간 미설정');
+  const names = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
   const recurrence = {
-    pattern: {type: 'daily', interval: 1},
+    pattern: weekdays.length === 7 ? {type: 'daily', interval: 1} : {type: 'weekly', interval: 1, daysOfWeek: weekdays.map(day => names[day]), firstDayOfWeek: 'monday'},
     range: {type: end ? 'endDate' : 'noEnd', startDate: day, recurrenceTimeZone: 'Korea Standard Time'}
   };
   if (end) recurrence.range.endDate = end;
@@ -125,4 +141,4 @@ function retryDelay(header, attempts = 0, now = Date.now()) {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = Math.ceil((Date.parse(header) - now) / 1000);
   return Math.max(30, Math.min(86400, Number.isFinite(seconds) && seconds > 0 ? seconds : 30 * 2 ** Math.min(attempts, 10)));
 }
-module.exports = {GRAPH_ORIGIN, LOGIN_ORIGIN, SCOPES, MARKER_EXTENSION, UUID, SyncError, getConfig, seal, unseal, hash, equal, clean, validTime, parseTime, validDay, koreanNow, taskPayload, markerExtensionPayload, markerExtension, hasHiddenMarker, hasMarker, retryDelay};
+module.exports = {GRAPH_ORIGIN, LOGIN_ORIGIN, SCOPES, MARKER_EXTENSION, UUID, SyncError, getConfig, seal, unseal, hash, equal, clean, validTime, parseTime, validDay, koreanNow, reminderSchedule, taskPayload, markerExtensionPayload, markerExtension, hasHiddenMarker, hasMarker, retryDelay};

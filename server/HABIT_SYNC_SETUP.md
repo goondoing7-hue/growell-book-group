@@ -36,9 +36,22 @@ https://growell-book.vercel.app/api/habit-sync
 
 기존 회원 승인 및 습관 종류 마이그레이션이 적용된 GROWELL 데이터베이스의 소유자 권한으로 `server/habit-sync.sql`을 실행한다. 원본 `profiles.id`, `habits.id`, `habits.user_id`는 text이며 `profiles.auth_user_id`는 UUID여야 한다. 잘못된 스키마는 실행 초기에 중단한다.
 
+이미 연동 중인 데이터베이스에 요일 기능을 추가할 때는 **앱 배포 전에 `server/habit-weekdays.sql`을 실행**한다. 새 설치용 `habit-sync.sql`에도 같은 스키마가 포함되어 있다. `habits.weekdays`는 `integer[]`이고 `0=일요일`부터 `6=토요일`까지 사용한다. 기본값 `[0,1,2,3,4,5,6]`과 기존의 누락/null은 매일이다. 빈 배열·범위 밖 숫자·중복·null 원소는 DB에서 거부한다. 앱은 선택값을 정렬·중복 제거하여 저장한다. 마이그레이션은 기존 ID·실천 기록·RLS·grants·외부 작업 대응표를 변경하거나 미연동 습관을 가져오지 않는다. 이미 존재하는 연동 source 함수에 요일만 추가하므로 이후 요일을 수정하면 기존 UPDATE trigger가 같은 외부 항목에 전달한다.
+
+적용 후에는 아래 조회로 스키마와 source 반영을 확인한다. 실제 회원 정보를 조회하거나 변경할 필요가 없다.
+
+```sql
+select data_type,udt_name,column_default
+from information_schema.columns
+where table_schema='public' and table_name='habits' and column_name='weekdays';
+select conname,convalidated from pg_constraint
+where conrelid='public.habits'::regclass and conname='habits_weekdays_valid';
+select public.growell_habit_sync_source('{"weekdays":[1,3,5]}'::jsonb)->'weekdays' as weekdays;
+```
+
 추가되는 세 테이블에는 RLS를 적용하고 `anon`, `authenticated`, `public`의 접근을 철회한다. 브라우저가 직접 RPC를 호출할 수 없다. 암호화된 refresh token과 OAuth PKCE 상태, 사용자별 목록/작업 대응표, 전송 대기열을 서버 권한으로만 읽는다.
 
-- 습관의 이름·목표·장소·시간·기간 등 메타데이터가 바뀌면 같은 데이터베이스 트랜잭션에서 대기열을 갱신한다.
+- 습관의 이름·목표·장소·시간·요일·기간 등 메타데이터가 바뀌면 같은 데이터베이스 트랜잭션에서 대기열을 갱신한다.
 - 성공 날짜 변경만으로는 대기열을 생성하지 않는다.
 - 신규 습관 자동 전송은 연결 시점 이후에 생성된 행만 대상으로 한다. 기존 습관은 명시적으로 가져온 경우만 추적한다.
 - 일시 중지 중에는 외부 호출이 없다. 이미 연결한 습관의 변경은 대기열에 보관하고, 중지 중에 새로 만든 습관을 재개 시 일괄 전송하지 않는다.
@@ -73,6 +86,7 @@ Vercel 함수 실행 시간은 최소 60초로 설정한다. 작업자는 한 �
 - 습관 이름·목표·장소·알림 시간·기간만 전달한다. 암호화된 독서 기록이나 메모, 회원 ID, 습관 ID, 비밀번호, 체크 날짜는 보내지 않는다. 복구용 무작위 식별자는 `com.growell.habitSync` open extension에 보관하며 본문에는 습관 종류·목표·장소·알림만 남긴다. 기존 항목은 숨겨진 식별자 저장·조회 확인 후 본문과 해당 GROWELL linkedResource만 정리한다. 기존 항목을 재처리할 때는 동일 계정·generation의 활성 기간 tracked queue만 재대기시키고 task_id·marker·desired를 보존한다. 미연동 습관을 일괄 추가하지 않는다.
 - 장소 이름은 본문에 반영된다. Graph To Do에는 위치 알림 속성이 없으므로 삼성·아이폰 앱의 별도 장소 알림은 자동 설정하지 않는다.
 - 알림 시각은 각 습관의 `time`만 사용한다. 새 습관·수정 화면의 빈 시간 칸을 누르면 바로 아래에 펼쳐지는 `00:00`부터 `23:50`까지 10분 간격의 세로 목록으로 고른다. 기존의 명확한 `HH:mm`, `오전/오후 N시 [M분]`은 그대로 해석하며 저장된 시간을 임의로 반올림하지 않는다. 한국 시간(`Asia/Seoul` / Graph `Korea Standard Time`) 기준이다.
+- 매일 선택은 Graph `daily` 반복으로, 일부 요일 선택은 `weekly`의 `daysOfWeek`와 `firstDayOfWeek: monday`로 전달한다. 처음 알림은 시작일 이후이며 아직 지나지 않은 선택 요일·시각 중 가장 빠른 일시다. 목표일을 넘는 회차는 만들지 않는다. 요일·시간을 수정해도 기존 항목을 갱신하며 완료 상태를 되돌리지 않는다. 연동 본문과 관리 목록에도 선택한 요일을 표시한다.
 - 시간이 없거나 `잠들기 전` 등 정확하지 않은 문장은 기본 시각으로 대체하지 않는다. 항목은 목록에 남기되 알림·반복·마감·시작 일시를 해제하고 본문에 시간 미설정을 표시한다. 그 습관에서 시간을 선택하면 같은 항목에 알림을 설정한다. DB의 `default_time`은 이전 버전과의 호환을 위해 남지만 알림 계산이나 새 API 요청에는 사용하지 않는다.
 - 본인 소유이고 공유되지 않은 `GROWELL` 목록만 사용한다. 기존에 저장해 둔 목록 ID도 매 실행 및 작업 변경 전에 소유·공유 상태를 확인한다. 공유된 목록이나 소유 여부가 확인되지 않는 목록은 `list-not-private`로 중단하여 습관 내용이 다른 구성원에게 전달되지 않게 한다. 동명의 목록이 여러 개면 자동으로 고르지 않고 `list-ambiguous`로 중단한다.
 - 외부 작업 삭제 전에는 저장한 작업 ID와 무작위 연결 표시를 모두 확인한다. 목록 조회 실패·빈 결과만으로 작업을 삭제하지 않는다. 이동/수정되어 표시가 사라진 작업도 임의로 지우지 않는다.
@@ -106,7 +120,7 @@ Graph POST 전에 대기열에 전송 중 표시를 영구 저장한다. 응답�
 | 요청 | 본문/응답 |
 | --- | --- |
 | `GET ?action=config` | 공개 `{configured}` |
-| `GET ?action=status` | `{configured,connected,enabled,timeZone,listName,pendingCount,lastSyncedAt,errorCode}` |
+| `GET ?action=status` | `{configured,connected,enabled,timeZone,listName,pendingCount,lastSyncedAt,errorCode,habits:[{habitId,name,time,weekdays,scheduleLabel,state,canConnect,errorCode?}]}` |
 | `POST ?action=connect` | `{}` → `{url}`; PKCE 상태 쿠키 설정 |
 | `GET /api/habit-sync?state=…&code=…` | Microsoft 콜백. 일회용 상태와 브라우저 쿠키 검증 후 고정 앱 주소로 이동 |
 | `POST ?action=settings` | `{enabled:true}` → 상태 |
@@ -121,6 +135,7 @@ Graph POST 전에 대기열에 전송 중 표시를 영구 저장한다. 응답�
 
 - [Microsoft Graph To Do 작업 생성 및 위임 권한](https://learn.microsoft.com/en-us/graph/api/todotasklist-post-tasks?view=graph-rest-1.0)
 - [작업의 알림·반복 속성](https://learn.microsoft.com/en-us/graph/api/resources/todotask?view=graph-rest-1.0)
+- [매일·요일별 반복 형식](https://learn.microsoft.com/en-us/graph/api/resources/recurrencepattern?view=graph-rest-1.0)
 - [작업 원본의 linkedResource](https://learn.microsoft.com/en-us/graph/api/resources/linkedresource?view=graph-rest-1.0)
 - [Samsung Reminder와 Microsoft To Do 동기화](https://support.microsoft.com/en-us/todo/sync-microsoft-to-do-with-the-samsung-reminder-app)
 - [Apple 미리 알림 계정 추가](https://support.apple.com/en-ie/guide/iphone/iph8739025dd/ios)

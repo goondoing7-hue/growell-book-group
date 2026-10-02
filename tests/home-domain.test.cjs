@@ -127,6 +127,32 @@ test('active habits sort oldest createdAt first and equal times by ID without re
   assert.deepEqual(home.activeHabits(rows,'me',new Set(unlocked),'2026-09-21').map(x=>x.id),['a','b','new','last']);
 });
 
+test('today habits include only selected weekdays and keep legacy daily habits compatible',()=>{
+  const rows=Object.freeze([
+    Object.freeze(habit('daily')),
+    Object.freeze(habit('legacy-null',{weekdays:null})),
+    Object.freeze(habit('mwf',{weekdays:Object.freeze([1,3,5])})),
+    Object.freeze(habit('weekend',{weekdays:Object.freeze([0,6])})),
+    Object.freeze(habit('empty',{weekdays:Object.freeze([])})),
+    Object.freeze(habit('invalid',{weekdays:Object.freeze([1,9])})),
+    Object.freeze(habit('invalid-type',{weekdays:'1,3,5'}))
+  ]);
+  assert.deepEqual(home.activeHabits(rows,'me',unlocked,'2026-10-02').map(x=>x.id),['daily','legacy-null','mwf']);
+  assert.deepEqual(home.activeHabits(rows,'me',unlocked,'2026-10-03').map(x=>x.id),['daily','legacy-null','weekend']);
+  assert.deepEqual(home.activeHabits(rows,'me',unlocked,'2026-10-04').map(x=>x.id),['daily','legacy-null','weekend']);
+  assert.deepEqual(home.activeHabits(rows,'me',unlocked,'2026-10-06').map(x=>x.id),['daily','legacy-null']);
+  assert.deepEqual(rows[2].weekdays,[1,3,5]);
+});
+
+test('weekday matches still respect inclusive boundaries and owner restrictions',()=>{
+  const rows=[habit('monday',{startDate:'2026-10-05',endDate:'2026-10-05',weekdays:[1]}),
+    habit('sunday',{startDate:'2026-10-05',endDate:'2026-10-05',weekdays:[0]}),
+    habit('other',{weekdays:[1],userId:'other'}),habit('locked',{weekdays:[1],bookId:'body'})];
+  assert.deepEqual(home.activeHabits(rows,'me',unlocked,'2026-10-05').map(x=>x.id),['monday']);
+  assert.deepEqual(home.activeHabits(rows,'me',unlocked,'2026-10-12'),[]);
+  assert.deepEqual(home.activeHabits(rows,'me',unlocked,'2026-09-28'),[]);
+});
+
 test('timestamps accept finite epoch milliseconds and real ISO dates without locale-dependent guessing',()=>{
   const timestamp=Date.parse('2026-09-21T00:00:00Z');
   for(const value of [timestamp,String(timestamp),'2026-09-21T00:00:00Z','2026-09-21T09:00:00+09:00','2026-09-21T00:00:00','2026-09-21']){

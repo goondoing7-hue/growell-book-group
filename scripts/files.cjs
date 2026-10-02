@@ -39,7 +39,7 @@ const TEST_FILES = Object.freeze([
 
 const PUBLISH_FILES = Object.freeze([
   'api/book-search.js',
-  'api/habit-sync.js', 'server/habitSyncDomain.cjs', 'server/habitSyncService.cjs', 'server/habit-sync.sql', 'server/habit-sync-schedule.sql', 'server/HABIT_SYNC_SETUP.md',
+  'api/habit-sync.js', 'server/habitSyncDomain.cjs', 'server/habitSyncService.cjs', 'server/habit-sync.sql', 'server/habit-sync-schedule.sql', 'server/habit-weekdays.sql', 'server/HABIT_SYNC_SETUP.md',
   'server/signup-notifications.sql', 'server/signup-notifications-verification.sql', 'server/signup-notification-worker.ts', 'server/signup-notifications-schedule.sql', 'server/signup-notifications.md',
   'server/signup-optional-photo.md', 'server/signup-optional-photo.sql', 'server/signup-optional-photo-verification.sql',
   'server/signup.ts', 'server/member-approval.sql', 'server/member-approval-verification.sql', 'server/member-approval-notes.md',

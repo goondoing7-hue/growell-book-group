@@ -26,7 +26,7 @@ function harness({read, write, signIn, signup, signOutEvent} = {}) {
   const writes = [], reads = [], auth = [], toasts = [];
   const memory = new Map();
   const context = {
-    console, Promise, Date, Uint8Array, atob, setTimeout,
+    console, Promise, Date, Uint8Array, atob, setTimeout, GrowellHabits:require('../habitDomain.js'),
     GrowellMemberAccess:require('../memberAccess.js'),GrowellProfile:require('../profile.js'),GrowellPasswordHint:PasswordHint,authMode:'signup',oauthMessage:'',
     oauthWatcherBound:false,oauthPending:null,authRestoreUserId:null,BOOTING:false,oauthBusy:false,
     STATE:freshState(), SESSION:{userId:'u1',name:'회원',keyB64:'old'}, CURRENT_KEY:'cached',

@@ -41,6 +41,17 @@ test('status omits unknown error text and never invents an exact time or valid e
   const row = (await h.service.status(profile)).habits[0];
   assert.equal(row.errorCode,'service-unavailable');assert.equal(row.state,'attention');assert.equal(row.time,'');assert.equal(row.canConnect,false);
 });
+
+test('status exposes normalized weekdays and blocks schedules with no remaining occurrence', async () => {
+  const h = fixture();
+  h.habits[0].weekdays=[5,1,3,1];
+  h.habits[1].weekdays=[1];h.habits[1].end_date='2026-10-04';
+  h.habits[2].weekdays=[];
+  const rows=(await h.service.status(profile)).habits;
+  assert.deepEqual(rows[0].weekdays,[1,3,5]);assert.equal(rows[0].scheduleLabel,'월·수·금');assert.equal(rows[0].canConnect,true);
+  assert.equal(rows[1].canConnect,false);assert.equal(rows[2].canConnect,false);
+  assert.deepEqual(rows[3].weekdays,[0,1,2,3,4,5,6]);assert.equal(rows[3].scheduleLabel,'매일');
+});
 test('status storage paginates owner-scoped reads and limits selected fields', async () => {
   const calls = [], store = createStore({database:'https://fixture.supabase.co',serviceKey:'PRIVATE_SERVICE'}, async url => {
     calls.push(new URL(url));return calls.length === 1 ? Array.from({length:1000},(_,id)=>({id})) : [{id:'last'}];
@@ -48,6 +59,7 @@ test('status storage paginates owner-scoped reads and limits selected fields', a
   assert.equal((await store.habits('owner value')).length,1001);
   assert.equal(calls[0].searchParams.get('user_id'),'eq.owner value');assert.equal(calls[1].searchParams.get('offset'),'1000');
   assert.equal(calls[0].searchParams.get('order'),'id.asc');assert.doesNotMatch(calls[0].searchParams.get('select'),/goal|place|checked|\*/);
+  assert.match(calls[0].searchParams.get('select'),/weekdays/);
   const queries = [], queueStore=createStore({database:'https://fixture.supabase.co',serviceKey:'PRIVATE_SERVICE'},async url=>{queries.push(new URL(url));return [];});
   await queueStore.tracked('owner','generation');assert.equal(queries[0].searchParams.get('owner_id'),'eq.owner');assert.equal(queries[0].searchParams.get('generation'),'eq.generation');
   assert.doesNotMatch(queries[0].searchParams.get('select'),/desired|marker|token|\*/);
