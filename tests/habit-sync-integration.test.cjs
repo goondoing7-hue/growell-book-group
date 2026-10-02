@@ -190,7 +190,7 @@ test('overview keeps a single accessible reminder icon beside values initially a
     const icon=html.match(/<button\b[^>]*data-habit-sync-settings[^>]*>([\s\S]*?)<\/button>/);
     assert.ok(icon);assert.match(icon[0],/aria-label="알림 자동 연동"/);assert.match(icon[0],/aria-haspopup="dialog"/);
     assert.match(icon[1],/<svg/);assert.equal(icon[1].replace(/<[^>]*>/g,'').trim(),'');
-    assert.ok(html.indexOf('data-habit-value-overview')<html.indexOf('data-habit-sync-settings'));
+    assert.ok(html.indexOf('data-habit-sync-settings')<html.indexOf('data-habit-value-overview'));
   }
   checkIcon(h.c.habitOverviewHtml());
   h.c.refreshHabitSaveUI('h1');
