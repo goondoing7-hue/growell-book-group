@@ -945,6 +945,99 @@ test('all habit summary covers owned books while remaining matches today count a
   assert.equal(JSON.stringify(c.STATE),before);assert.equal(h.saves.length,0);
 });
 
+test('all habit summaries show seven actual recent dates across months and distinguish rest days, misses and archived checks',()=>{
+  const c=cardHarness(),habit={id:'weekly',name:'산책',startDate:'2026-09-01',weekdays:[1,3,5],checkedDates:['2026-09-27','2026-09-28','2026-10-02']},before=JSON.stringify(habit);
+  const readDays=html=>Array.from(html.matchAll(/<span\b[^>]*data-summary-date="([^"]+)"[^>]*>/g),match=>[match[1],match[0].match(/data-status="([^"]+)"/)[1]]);
+  const html=c.habitSummaryWeekHtml(habit,'2026-10-03');
+  assert.deepEqual(readDays(html),[['2026-09-27','saved'],['2026-09-28','success'],['2026-09-29','outside'],['2026-09-30','fail'],['2026-10-01','outside'],['2026-10-02','success'],['2026-10-03','outside']]);
+  assert.doesNotMatch(html,/<button\b|<input\b|data-habit-day=|data-habit-overview-day=/,'the miniature history is read-only');
+  const pending={...habit,checkedDates:['2026-09-28']};
+  assert.deepEqual(readDays(c.habitSummaryWeekHtml(pending,'2026-10-02')).at(-1),['2026-10-02','pending']);
+  assert.deepEqual(readDays(c.habitSummaryWeekHtml({...habit,startDate:'2026-10-01',checkedDates:[]},'2026-10-03')).slice(0,4).map(day=>day[1]),['outside','outside','outside','outside']);
+  assert.equal(JSON.stringify(habit),before);
+});
+
+test('all habit success counts use selected opportunities for finite goals and elapsed opportunities for ongoing goals',()=>{
+  const c=cardHarness(),today='2026-09-22',habit={id:'weekly',startDate:'2026-09-21',endDate:'2026-09-27',weekdays:[1,3,5],checkedDates:['2026-09-20','2026-09-21','2026-09-22']};
+  const plain=html=>html.replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+  assert.match(plain(c.habitSummaryProgressHtml(habit,today)),/총 3회 중 1회 성공/);
+  assert.match(plain(c.habitSummaryProgressHtml({...habit,endDate:''},today)),/현재까지 1회 중 1회 성공/);
+  assert.match(plain(c.habitSummaryProgressHtml({...habit,startDate:'2026-09-28',endDate:''},today)),/현재까지 0회 중 0회 성공/);
+  assert.match(plain(c.habitSummaryProgressHtml({...habit,startDate:'2026-09-14',endDate:'2026-09-20'},today)),/총 3회 중 0회 성공/);
+});
+
+test('all habit list keeps ongoing goals first and separates finished goals below, without treating todays success as completion',()=>{
+  const h=habitSummaryHarness(),c=h.c,today='2026-09-22',base={userId:'owner',bookId:'emotion',createdAt:1,startDate:'2026-09-21',checkedDates:[]};
+  c.STATE.habits={
+    expired:{...base,id:'expired',name:'기간 끝난 습관',endDate:'2026-09-21'},
+    indefinite:{...base,id:'indefinite',name:'계속하는 습관',checkedDates:['2026-09-21','2026-09-22']},
+    achieved:{...base,id:'achieved',name:'목표 모두 달성',endDate:today,checkedDates:['2026-09-21','2026-09-22']},
+    todayOnly:{...base,id:'todayOnly',name:'오늘만 성공',endDate:'2026-09-30',checkedDates:[today]},
+    future:{...base,id:'future',name:'시작 전 목표',startDate:'2026-09-28',endDate:'2026-09-30'},
+    stranger:{...base,id:'stranger',name:'다른 회원의 기록',userId:'other',endDate:'2026-09-21'}
+  };
+  assert.equal(c.habitSummaryComplete(c.STATE.habits.expired,today),true);
+  assert.equal(c.habitSummaryComplete(c.STATE.habits.achieved,today),true);
+  for(const id of ['indefinite','todayOnly','future'])assert.equal(c.habitSummaryComplete(c.STATE.habits[id],today),false,id);
+  const before=JSON.stringify(c.STATE),html=c.habitSummaryBodyHtml('all',today),activeStart=html.indexOf('data-habit-summary-group="active"'),completedStart=html.indexOf('data-habit-summary-group="completed"');
+  assert.ok(activeStart>=0&&completedStart>activeStart,'completed goals are a distinct final section');
+  const active=html.slice(activeStart,completedStart),completed=html.slice(completedStart);
+  assert.match(active,/진행 중/);assert.match(completed,/완료/);
+  for(const id of ['indefinite','todayOnly','future']){assert.ok(active.includes('data-habit-summary-open="'+id+'"'));assert.ok(!completed.includes('data-habit-summary-open="'+id+'"'));}
+  for(const id of ['expired','achieved']){assert.ok(completed.includes('data-habit-summary-open="'+id+'"'));assert.ok(!active.includes('data-habit-summary-open="'+id+'"'));}
+  assert.doesNotMatch(html,/다른 회원의 기록/);assert.equal(JSON.stringify(c.STATE),before);assert.equal(h.saves.length,0);
+});
+
+test('remaining habit summary stays a compact list without whole-goal history or completion groups',()=>{
+  const h=habitSummaryHarness(),c=h.c,html=c.habitSummaryBodyHtml('remaining','2026-09-22');
+  assert.equal(Array.from(html.matchAll(/<li\b/g)).length,1);assert.match(html,/오늘 &lt;산책&gt;/);assert.match(html,/10분 &lt;천천히&gt;/);
+  assert.doesNotMatch(html,/data-summary-date=|data-habit-summary-group=|data-habit-summary-open=|현재까지|회 중/);
+});
+
+test('a habit goal opens its existing detail and closing or Back restores the same list position and focused goal',()=>{
+  for(const closeVia of ['button','back']){
+    const h=habitSummaryHarness(),c=h.c,before=JSON.stringify(c.STATE);h.browser.scrollY=620;c.openHabitSummary('all',h.trigger);
+    const summary=c.habitSummaryDialog;summary.scrollTop=230;
+    const button=summary.querySelector('[data-habit-summary-open="pending"]');assert.ok(button);assert.match(button.innerHTML,/10분 &lt;천천히&gt;/);
+    button.click();assert.equal(c.habitSummaryDialog,null);assert.equal(summary.isConnected,false);assert.equal(c.habitHistoryOpenFor,'pending');assert.equal(c.habitHistoryView,'progress');assert.equal(c.document.activeElement,h.modal);
+    c.STATE.habits.pending.goal='수정된 산책 목표';
+    if(closeVia==='back')h.back();else c.closeHabitProgress();
+    const restored=c.habitSummaryDialog;assert.ok(restored);assert.equal(restored.open,true);assert.equal(restored._mode,'all');assert.equal(restored.scrollTop,230);assert.equal(c.habitHistoryOpenFor,null);assert.equal(h.browser.scrollY,620);
+    const restoredGoal=restored.querySelector('[data-habit-summary-open="pending"]');assert.equal(c.document.activeElement,restoredGoal);assert.match(restoredGoal.innerHTML,/수정된 산책 목표/);
+    h.back();assert.equal(c.habitSummaryDialog,null);assert.equal(c.document.activeElement,h.trigger);assert.equal(h.browser.scrollY,620);assert.match(h.browser.location.href,/#\/book\/emotion\/habit$/);
+    c.STATE.habits.pending.goal='10분 <천천히>';assert.equal(JSON.stringify(c.STATE),before);assert.equal(h.saves.length,0);
+  }
+});
+
+test('stale all-list goals cannot open records after owner, route, data availability or habit ownership changes',()=>{
+  for(const change of ['signed-out','owner','same-owner-session','epoch','route','loading','error','deleted','foreign']){
+    const h=habitSummaryHarness(),c=h.c;c.openHabitSummary('all',h.trigger);const button=c.habitSummaryDialog.querySelector('[data-habit-summary-open="pending"]');
+    if(change==='signed-out')c.SESSION=null;else if(change==='owner')c.SESSION={userId:'other'};else if(change==='same-owner-session')c.SESSION={userId:'owner'};else if(change==='epoch')c.saveSessionEpoch++;else if(change==='route')h.browser.location.href='https://example.test/#/';else if(change==='deleted')delete c.STATE.habits.pending;else if(change==='foreign')c.STATE.habits.pending.userId='other';else c.memberLoadState.habits=change;
+    const before=JSON.stringify(c.STATE);button.click();assert.equal(c.habitHistoryOpenFor,null,change);assert.equal(JSON.stringify(c.STATE),before,change);assert.equal(h.saves.length,0,change);
+  }
+});
+
+test('leaving a detail after session, route or loading changes never reopens the old private list',()=>{
+  for(const change of ['signed-out','owner','same-owner-session','epoch','route','loading','error']){
+    const h=habitSummaryHarness(),c=h.c;c.openHabitSummary('all',h.trigger);c.habitSummaryDialog.querySelector('[data-habit-summary-open="pending"]').click();assert.equal(c.habitHistoryOpenFor,'pending');
+    if(change==='signed-out')c.SESSION=null;else if(change==='owner')c.SESSION={userId:'other'};else if(change==='same-owner-session')c.SESSION={userId:'owner'};else if(change==='epoch')c.saveSessionEpoch++;else if(change==='route')h.browser.location.href='https://example.test/#/';else c.memberLoadState.habits=change;
+    const before=JSON.stringify(c.STATE);c.closeHabitProgress();assert.equal(c.habitSummaryDialog,null,change);assert.equal(c.habitHistoryOpenFor,null,change);assert.equal(c.habitSummaryReturn,null,change);assert.equal(JSON.stringify(c.STATE),before,change);assert.equal(h.saves.length,0,change);
+  }
+});
+
+test('the all-list final-day check updates its recent strip, totals and completed group while undo restores progress',()=>{
+  const h=habitSummaryHarness(),c=h.c,today='2026-09-22';
+  c.STATE.habits={final:{id:'final',name:'마지막 실천',userId:'owner',bookId:'emotion',startDate:today,endDate:today,checkedDates:[]}};
+  const before=JSON.stringify(c.STATE);c.openHabitSummary('all',h.trigger);const popup=c.habitSummaryDialog;
+  for(const checked of [true,false]){
+    c.habitSaveIntents.final={[today]:{checked,status:'saving'}};c.refreshHabitSaveUI('final');assert.equal(c.habitSummaryDialog,popup);
+    const group=popup.querySelector('[data-habit-summary-group="'+(checked?'completed':'active')+'"]');assert.ok(group);assert.match(group.innerHTML,new RegExp((checked?'1':'0')+'회 성공'));
+    assert.equal(popup.querySelector('[data-summary-date="'+today+'"]').getAttribute('data-status'),checked?'success':'pending');
+    assert.ok(popup.querySelector('[data-habit-summary-open="final"]'),'refreshed goal remains a detail link');
+  }
+  assert.equal(JSON.stringify(c.STATE),before);assert.equal(h.saves.length,0);
+});
+
 test('habit list popup follows optimistic checks and day changes without changing saved check history',()=>{
   const h=habitSummaryHarness(),c=h.c,before=JSON.stringify(c.STATE);c.openHabitSummary('remaining',h.trigger);const popup=c.habitSummaryDialog;
   assert.equal(popup.open,true);assert.match(popup.querySelector('[data-habit-summary-content]').innerHTML,/오늘 &lt;산책&gt;/);

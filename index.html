@@ -1859,6 +1859,7 @@ var habitTimeDropdown = null;
 var habitValueGuideDialog = null;
 var habitValueSummaryDialog = null;
 var habitSummaryDialog = null;
+var habitSummaryReturn = null;
 var habitEditingId = null; // 수정 중인 habit id, 새로 만드는 중이면 null
 var habitHistoryOpenFor = null; // 지난 기록 팝업이 열려있는 habit id (없으면 null)
 var habitHistoryMonth = null; // 팝업에서 보고 있는 달 {y, m}(m은 0=1월 기준) — 열 때마다 이번 달로 초기화
@@ -2102,6 +2103,7 @@ function closeStaleComposersForRoute(r){
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
   if(habitValueSummaryDialog&&habitValueSummaryDialog._route!==location.href)closeHabitValueSummary(false);
   if(typeof habitSummaryDialog!=='undefined'&&habitSummaryDialog&&habitSummaryDialog._route!==location.href)closeHabitSummary(false);
+  if(typeof habitSummaryReturn!=='undefined'&&habitSummaryReturn&&habitSummaryReturn.route!==location.href)habitSummaryReturn=null;
   if(habitValueGuideDialog&&habitValueGuideDialog._route!==location.href)closeHabitValueGuide(false);
   if(shareComposerOpenFor!=null){
     var stillShare = (r.view==='book' && r.bookId===shareComposerOpenFor && r.tab==='share');
@@ -2288,6 +2290,7 @@ function clearMemberSession(){
   if(typeof habitHistoryView!=='undefined') habitHistoryView='progress';
   if(typeof habitProgressReturnPosition!=='undefined') habitProgressReturnPosition=null;
   if(typeof habitProgressReturnTarget!=='undefined') habitProgressReturnTarget=null;
+  if(typeof habitSummaryReturn!=='undefined') habitSummaryReturn=null;
   if(typeof readingTimerIntervalId!=='undefined' && readingTimerIntervalId) clearInterval(readingTimerIntervalId);
   if(typeof readingTimer!=='undefined') readingTimer=null;
   if(typeof readingSavePanelOpen!=='undefined') readingSavePanelOpen=false;
@@ -5737,14 +5740,38 @@ function habitSummaryItems(mode,today){
   var order={pending:0,success:1,rest:2,upcoming:3,ended:4};
   return myHabitOverviewItems().filter(function(habit){return mode!=='remaining'||GrowellHabits.canCheck(habit,today,today)&&GrowellHabits.status(habit,today,today)!=='success';}).sort(function(a,b){return order[habitSummaryStatus(a,today)]-order[habitSummaryStatus(b,today)]||(Number(a.createdAt)||0)-(Number(b.createdAt)||0);});
 }
+function habitSummaryComplete(habit,today){
+  var stats=GrowellHabits.stats(habit,today);
+  return !!(stats.end&&stats.end<today||stats.total>0&&stats.success>=stats.total);
+}
+function habitSummaryProgressHtml(habit,today){
+  var stats=GrowellHabits.stats(habit,today),finite=stats.total!==null,total=finite?stats.total:stats.elapsed;
+  return '<p class="habit-summary-progress">'+(finite?'총 ':'현재까지 ')+total+'회 중 <strong>'+stats.success+'회 성공</strong></p>';
+}
+function habitSummaryWeekHtml(habit,today){
+  var labels={success:'성공',saved:'이전 성공 기록',fail:'미실천',pending:'오늘 미완료',outside:'실천 일정 없음'},symbols={success:'✓',saved:'✓',fail:'−',pending:'○',outside:'·'};
+  var cells=[];
+  for(var offset=-6;offset<=0;offset++){
+    var date=GrowellHabits.shift(today,offset),status=GrowellHabits.status(habit,date,today),weekday=['일','월','화','수','목','금','토'][new Date(date+'T00:00:00Z').getUTCDay()];
+    cells.push('<span class="habit-summary-day'+(date===today?' is-today':'')+'" data-summary-date="'+date+'" data-status="'+status+'" role="img" aria-label="'+date+' '+weekday+'요일 · '+labels[status]+'"><span class="habit-summary-day-label" aria-hidden="true">'+weekday+'</span><span class="habit-summary-day-mark" aria-hidden="true">'+symbols[status]+'</span><small aria-hidden="true">'+Number(date.slice(5,7))+'/'+Number(date.slice(8))+'</small></span>');
+  }
+  return '<div class="habit-summary-week" role="group" aria-label="최근 7일 체크표">'+cells.join('')+'</div>';
+}
 function habitSummaryBodyHtml(mode,today){
   var habits=habitSummaryItems(mode,today),labels={pending:'오늘 남음',success:'오늘 완료',rest:'쉬는 날',upcoming:'시작 전',ended:'기간 종료'};
   if(!habits.length)return '<p class="habit-summary-empty">'+(mode==='remaining'?'오늘 남은 습관이 없어요.':'아직 만든 습관이 없어요.')+'</p>';
-  return '<ul class="habit-summary-list">'+habits.map(function(habit){
+  function row(habit){
     var status=habitSummaryStatus(habit,today),goal=habit.goal||(GrowellHabits.behaviorType(habit)==='avoid'?'하루 한 번 절제하기':'하루 한 번 실천하기');
     var details=[GrowellHabits.scheduleLabel(habit),habit.time||'시간 미설정'];if(habit.place)details.push(habit.place);
-    return '<li class="habit-summary-row" data-status="'+status+'"><div class="habit-summary-row-heading"><strong>'+esc(habit.name)+'</strong><span class="habit-summary-state">'+(status==='success'?'<span aria-hidden="true">✓ </span>':'')+labels[status]+'</span></div><p class="habit-summary-goal">'+esc(goal)+'</p><p class="habit-summary-meta">'+details.map(function(detail){return '<span>'+esc(detail)+'</span>';}).join('')+'</p></li>';
-  }).join('')+'</ul>';
+    var content='<span class="habit-summary-row-heading"><strong>'+esc(habit.name)+'</strong><span class="habit-summary-state">'+(status==='success'?'<span aria-hidden="true">✓ </span>':'')+labels[status]+(mode==='all'?'<span class="habit-summary-chevron" aria-hidden="true">›</span>':'')+'</span></span><span class="habit-summary-goal">'+esc(goal)+'</span>';
+    return '<li class="habit-summary-row" data-status="'+status+'">'+(mode==='all'?'<button type="button" class="habit-summary-open" data-habit-summary-open="'+esc(habit.id)+'" aria-haspopup="dialog" aria-label="'+esc(habit.name)+' · 목표 상세 보기">'+content+'</button>':content)+'<p class="habit-summary-meta">'+details.map(function(detail){return '<span>'+esc(detail)+'</span>';}).join('')+'</p>'+(mode==='all'?habitSummaryProgressHtml(habit,today)+habitSummaryWeekHtml(habit,today):'')+'</li>';
+  }
+  if(mode!=='all')return '<ul class="habit-summary-list">'+habits.map(row).join('')+'</ul>';
+  var groups={active:[],completed:[]};habits.forEach(function(habit){groups[habitSummaryComplete(habit,today)?'completed':'active'].push(habit);});
+  return '<p class="habit-summary-legend">최근 7일 <span>✓ 성공　− 미실천　○ 오늘　· 쉬는 날</span></p>'+['active','completed'].map(function(key){
+    if(!groups[key].length)return '';
+    return '<section class="habit-summary-group" data-habit-summary-group="'+key+'"><h3>'+(key==='active'?'진행 중':'완료')+' <small>'+groups[key].length+'</small></h3><ul class="habit-summary-list">'+groups[key].map(row).join('')+'</ul></section>';
+  }).join('');
 }
 function closeHabitSummary(restore){
   var node=typeof habitSummaryDialog==='undefined'?null:habitSummaryDialog;if(!node)return;
@@ -5761,6 +5788,21 @@ function refreshHabitSummary(){
   var today=ymd(new Date()),rows=habitSummaryItems(node._mode,today);
   node.querySelector('[data-habit-summary-count]').textContent=(node._mode==='remaining'?'오늘 실천할 습관 ':'등록한 습관 ')+rows.length+'개';
   node.querySelector('[data-habit-summary-content]').innerHTML=habitSummaryBodyHtml(node._mode,today);
+  node.querySelectorAll('[data-habit-summary-open]').forEach(function(button){button.onclick=function(){openHabitSummaryProgress(button.getAttribute('data-habit-summary-open'));};});
+}
+function openHabitSummaryProgress(habitId){
+  var node=typeof habitSummaryDialog==='undefined'?null:habitSummaryDialog,habit=STATE.habits[habitId];
+  if(!node||!SESSION||SESSION!==node._session||saveSessionEpoch!==node._epoch||location.href!==node._route||memberLoadState.habits!=='ready'||!habit||habit.userId!==SESSION.userId)return;
+  habitSummaryReturn={mode:node._mode,trigger:node._trigger,top:node.scrollTop,habitId:habitId,session:SESSION,epoch:saveSessionEpoch,route:location.href};
+  closeHabitSummary(false);openHabitProgress(habitId,'summary');
+}
+function restoreHabitSummaryFromProgress(saved){
+  if(!saved||!SESSION||SESSION!==saved.session||saveSessionEpoch!==saved.epoch||location.href!==saved.route||memberLoadState.habits!=='ready')return false;
+  openHabitSummary(saved.mode,saved.trigger);
+  var node=habitSummaryDialog;if(!node)return false;
+  node.scrollTop=saved.top;
+  node.querySelectorAll('[data-habit-summary-open]').forEach(function(button){if(button.getAttribute('data-habit-summary-open')===saved.habitId)button.focus({preventScroll:true});});
+  return true;
 }
 function openHabitSummary(mode,trigger){
   if(!SESSION||memberLoadState.habits!=='ready'||['all','remaining'].indexOf(mode)<0)return;
@@ -6498,7 +6540,8 @@ function openHabitProgress(habitId,origin,view){
   if(!SESSION||!habit||habit.userId!==SESSION.userId) return;
   var active=document.activeElement;
   habitHistoryView=view==='week'||view==='month'?view:'progress';
-  habitProgressReturnTarget=origin==='overview'||(active&&active.hasAttribute&&active.hasAttribute('data-habit-overview-open'))?'overview':habitHistoryView;
+  if(origin!=='summary'&&typeof habitSummaryReturn!=='undefined')habitSummaryReturn=null;
+  habitProgressReturnTarget=origin==='summary'?'summary':origin==='overview'||(active&&active.hasAttribute&&active.hasAttribute('data-habit-overview-open'))?'overview':habitHistoryView;
   habitProgressReturnPosition={url:location.href,x:window.scrollX,y:window.scrollY};
   habitHistoryOpenFor=habitId;habitHistoryMonth=null;render();focusHabitDialog();
 }
@@ -6508,11 +6551,13 @@ function focusHabitDialog(){
 }
 function closeHabitProgress(){
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.close(false);
-  var id=habitHistoryOpenFor,target=habitProgressReturnTarget,position=habitProgressReturnPosition;
+  var id=habitHistoryOpenFor,target=habitProgressReturnTarget,position=habitProgressReturnPosition,savedSummary=typeof habitSummaryReturn==='undefined'?null:habitSummaryReturn;
+  if(typeof habitSummaryReturn!=='undefined')habitSummaryReturn=null;
   habitHistoryOpenFor=null;habitHistoryMonth=null;habitHistoryView='progress';habitProgressReturnTarget=null;habitProgressReturnPosition=null;
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('habit-progress');
   render();
   if(position&&position.url!==location.href) return;
+  if(target==='summary'&&restoreHabitSummaryFromProgress(savedSummary)){if(position)window.scrollTo({left:position.x,top:position.y,behavior:'instant'});return;}
   var attr=target==='overview'?'data-habit-overview-open':target==='week'||target==='month'?'data-habit-record':'data-habit-history';
   app.querySelectorAll('['+attr+']').forEach(function(b){
     if(b.getAttribute(attr)!==id) return;
