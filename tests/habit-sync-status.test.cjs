@@ -20,6 +20,8 @@ test('status separates current owner habits by actual queue state without exposi
   assert.equal(result.habits[0].time, '16:00');
   assert.equal(result.habits.at(-1).canConnect, false);
   assert.equal(result.habits[2].errorCode, 'remote-missing');
+  assert.equal(result.pendingCount, 1);
+  assert.ok(!h.calls.some(call => call[0] === 'pending'), 'count and rows come from the same queue read');
   assert.doesNotMatch(JSON.stringify(result), /PRIVATE_|fixture-generation|fixture-owner/);
   assert.ok(h.calls.some(call => JSON.stringify(call) === JSON.stringify(['tracked',owner,generation])));
 });

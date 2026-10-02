@@ -144,11 +144,11 @@ function createService(options = {}) {
     return approved(user.id);
   }
   async function status(profile) {
-    const [connection, count] = await Promise.all([store.connection(profile.id), store.pending(profile.id)]);
+    const connection = await store.connection(profile.id);
     const [habits, tracked] = await Promise.all([store.habits(profile.id), connection?.token_cipher ? store.tracked(profile.id, connection.generation) : []]);
     if (!Array.isArray(habits) || !Array.isArray(tracked)) throw new D.SyncError('service-unavailable');
-    const today = D.koreanNow(now()).slice(0, 10), queue = new Map(tracked.filter(row => row.owner_id === profile.id && row.generation === connection?.generation).map(row => [row.habit_id, row]));
-    return {...safeConnection(connection, count), habits: habits.filter(habit => habit.user_id === profile.id).map(habit => {
+    const today = D.koreanNow(now()).slice(0, 10), currentRows = tracked.filter(row => row.owner_id === profile.id && row.generation === connection?.generation), queue = new Map(currentRows.map(row => [row.habit_id, row]));
+    return {...safeConnection(connection, currentRows.filter(row => row.pending).length), habits: habits.filter(habit => habit.user_id === profile.id).map(habit => {
       const item = queue.get(habit.id), errorCode = item?.last_error ? safeError({code: item.last_error}) : null;
       const validPeriod = (!habit.start_date || D.validDay(habit.start_date)) && (!habit.end_date || D.validDay(habit.end_date) && habit.end_date >= today && (!habit.start_date || habit.end_date >= habit.start_date));
       return {habitId: habit.id, name: D.clean(habit.name, 200), time: D.parseTime(habit.time) || '', canConnect: !!validPeriod,
