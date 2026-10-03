@@ -157,3 +157,37 @@ test('overview keeps all created habits but today count and weekly attempts only
   assert.equal(summary.upcoming,1);assert.equal(summary.weekSuccess,3);assert.equal(summary.weekFail,0);assert.equal(summary.weekPending,1);assert.equal(summary.weekRate,100);
   assert.equal(habits.overview(records,'2026-10-04','2026-09-28').active,0);
 });
+
+test('recent seven-day rate weights scheduled attempts and includes unfinished today',()=>{
+  const day='2026-10-03',daily=sample({startDate:'2026-09-01',endDate:'',checkedDates:['2026-09-28','2026-10-01']});
+  const weekly=sample({startDate:'2026-09-01',endDate:'',weekdays:[5],checkedDates:['2026-10-02']});
+  assert.deepEqual(habits.recentOverview([daily,weekly],day),{
+    from:'2026-09-27',to:day,success:3,scheduled:8,rate:38
+  });
+  assert.equal(habits.recentOverview([{...daily,checkedDates:[...daily.checkedDates,day]},weekly],day).rate,50);
+  const firstDay=sample({startDate:day,endDate:'',checkedDates:[]});
+  assert.equal(habits.recentOverview([firstDay],day).rate,0,'today is an eligible attempt, even before it is checked');
+  assert.equal(habits.overview([firstDay],day,'2026-09-28').weekRate,null,'existing settled-day statistics keep their original meaning');
+});
+
+test('recent seven-day rate clips goal boundaries and excludes saved, future and duplicate checks',()=>{
+  const records=Object.freeze([
+    Object.freeze(sample({id:'ended',startDate:'2026-09-28',endDate:'2026-09-30',checkedDates:Object.freeze(['2026-09-27','2026-09-28','2026-09-28','2026-09-30','2026-10-01','2026-10-04'])})),
+    Object.freeze(sample({id:'selected-days',startDate:'2026-09-29',endDate:'2026-10-05',weekdays:Object.freeze([1,3,5]),checkedDates:Object.freeze(['2026-09-28','2026-09-29','2026-09-30','2026-10-02','2026-10-05','invalid'])})),
+    Object.freeze(sample({id:'upcoming',startDate:'2026-10-04',endDate:'2026-10-10',checkedDates:Object.freeze(['2026-10-04'])})),
+    Object.freeze(sample({id:'old',startDate:'2026-09-01',endDate:'2026-09-26',checkedDates:Object.freeze(['2026-09-26'])})),
+    null
+  ]);
+  const before=JSON.stringify(records);
+  assert.deepEqual(habits.recentOverview(records,'2026-10-03'),{
+    from:'2026-09-27',to:'2026-10-03',success:4,scheduled:5,rate:80
+  });
+  assert.equal(JSON.stringify(records),before,'statistics do not rewrite preserved check history');
+});
+
+test('recent seven-day rate stays unavailable without scheduled attempts and handles an invalid date',()=>{
+  const day='2026-10-03',empty={from:'2026-09-27',to:day,success:0,scheduled:0,rate:null};
+  assert.deepEqual(habits.recentOverview(undefined,day),empty);
+  assert.deepEqual(habits.recentOverview([null,sample({startDate:day,endDate:'',weekdays:[1],checkedDates:[day]})],day),empty);
+  assert.deepEqual(habits.recentOverview([sample()],'invalid'),{from:null,to:null,success:0,scheduled:0,rate:null});
+});

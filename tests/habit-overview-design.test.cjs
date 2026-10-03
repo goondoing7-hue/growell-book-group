@@ -31,6 +31,8 @@ test('today statistics use active owned habits instead of the weekly success rat
   assert.doesNotMatch(html,/data-habit-summary="remaining"|남은 습관/);
   assert.match(html,/aria-label="전체 습관 4개 목록 보기"/);
   assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
+  assert.match(html,/최근 7일 실천율<\/span><strong>40<small>%/);
+  assert.match(html,/오늘 포함, 예정 5회 중 2회 완료/);
   assert.match(html,/오늘의 작은 약속/);assert.match(html,/4개의 습관/);assert.doesNotMatch(html,/주간 성공률|foreign/);
   assert.match(checkbox(html,'complete'),/ checked /);assert.doesNotMatch(checkbox(html,'pending'),/ checked /);
   assert.match(checkbox(html,'future'),/ disabled/);assert.match(checkbox(html,'ended'),/ disabled/);
@@ -42,6 +44,7 @@ test('optimistic checks update today metrics without modifying stored history an
   const c=harness();c.STATE.habits={one:habit('one'),two:habit('two')};
   c.habitSaveIntents.one={'2026-09-22':{checked:true,status:'saving'}};
   let html=c.habitOverviewBodyHtml();assert.match(html,/오늘 실천율<\/span><strong>50/);assert.match(html,/체크 저장 중/);assert.deepEqual(c.STATE.habits.one.checkedDates,[]);
+  assert.match(html,/최근 7일 실천율<\/span><strong>25/);
   c.habitSaveIntents.one['2026-09-22']={checked:false,status:'error'};
   html=c.habitOverviewBodyHtml();assert.match(html,/오늘 실천율<\/span><strong>0/);assert.doesNotMatch(checkbox(html,'one'),/ checked /);assert.match(html,/저장하지 못한 체크/);
   c.memberLoadState.habits='loading';html=c.habitOverviewBodyHtml();assert.match(html,/불러오는 중/);assert.doesNotMatch(html,/오늘 완료|오늘 실천율|data-habit-overview-id/);

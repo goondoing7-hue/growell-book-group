@@ -102,6 +102,18 @@
     result.weekRate=settled?Math.round(result.weekSuccess/settled*100):null;
     return result;
   }
+  function recentOverview(habits,today){
+    var result={from:null,to:null,success:0,scheduled:0,rate:null};
+    if(!validDate(today)) return result;
+    result.from=shift(today,-6);result.to=today;
+    (Array.isArray(habits)?habits:[]).forEach(function(habit){
+      if(!habit) return;
+      var recent=rangeStats(habit,today,result.from,today);
+      result.success+=recent.success;result.scheduled+=recent.elapsed;
+    });
+    result.rate=result.scheduled?Math.round(result.success/result.scheduled*100):null;
+    return result;
+  }
   function validate(payload,today){
     var startDate=String(payload.startDate||'').trim()||today,endDate=String(payload.endDate||'').trim();
     if(!validDate(startDate)||endDate&&!validDate(endDate)) return {ok:false,msg:'시작일과 목표일을 올바른 날짜로 선택해주세요.'};
@@ -118,5 +130,5 @@
     if(summary.success>0){var next=[3,7,14,21,30,50,100].find(function(n){return n>summary.success;})||Math.ceil((summary.success+1)/100)*100;if(summary.total) next=Math.min(next,summary.total);return '벌써 '+summary.success+'번 실천했어요. '+next+'번의 실천까지 '+(next-summary.success)+'번 남았어요.';}
     return '완벽한 시작보다 오늘 한 번의 실천이면 충분해요.';
   }
-  return {behaviorType:behaviorType,behaviorLabel:behaviorLabel,behaviorHint:behaviorHint,weekdays:weekdays,scheduleLabel:scheduleLabel,scheduled:scheduled,scheduledDays:scheduledDays,validDate:validDate,todayDate:todayDate,shift:shift,days:days,checked:checked,start:start,bounds:bounds,inPeriod:inPeriod,canCheck:canCheck,status:status,stats:stats,monthStats:monthStats,overview:overview,validate:validate,motivation:motivation};
+  return {behaviorType:behaviorType,behaviorLabel:behaviorLabel,behaviorHint:behaviorHint,weekdays:weekdays,scheduleLabel:scheduleLabel,scheduled:scheduled,scheduledDays:scheduledDays,validDate:validDate,todayDate:todayDate,shift:shift,days:days,checked:checked,start:start,bounds:bounds,inPeriod:inPeriod,canCheck:canCheck,status:status,stats:stats,monthStats:monthStats,overview:overview,recentOverview:recentOverview,validate:validate,motivation:motivation};
 });
