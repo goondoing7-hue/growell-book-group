@@ -124,6 +124,7 @@ test('backup status distinguishes pending, busy, paused, failed and confirmed su
 });
 
 test('backend backup errors describe repair without promising reconnect will recreate missing files',()=>{
+  assert.match(backup.message({code:'backup-storage-full'}),/저장 공간/);
   assert.match(backup.message({code:'backup-busy'}),/이전 백업/);
   assert.match(backup.message({code:'backup-folder-unsafe'}),/공유를 해제/);
   assert.match(backup.message({code:'backup-file-unsafe'}),/공유를 해제/);

@@ -97,3 +97,18 @@ test('the browser script exposes the same routing API without triggering navigat
   assert.equal(context.GrowellGuideRouting.target(iphone).href, '/guide.html');
   assert.deepEqual(location.calls, []);
 });
+
+test('both guide editions include a navigable Drive backup chapter and retain previous anchors', () => {
+  const guides=require('../scripts/build-guides.cjs');
+  guides.verifyGuidesFresh();
+  const expected=['start','spaces','home','write','sharing','archive','timer','notes','habit','reminders','materials','worksheet','drive-backup','help'];
+  for(const file of ['guide.html','guide-pc.html']){
+    const html=fs.readFileSync(path.join(__dirname,'../',file),'utf8');
+    assert.deepEqual([...html.matchAll(/<section class="chapter" id="([^"]+)"/g)].map(match=>match[1]),expected);
+    assert.match(html,/<a href="#drive-backup"><small>13<\/small>Google Drive 백업/);
+    assert.match(html,/<a href="#help"><small>14<\/small>자주 묻는 질문/);
+    if(file==='guide-pc.html')assert.match(html,/data-desktop-chapter="drive-backup"/);
+  }
+  const location=locationAt('/guide.html',{hash:'#drive-backup'});routing.redirect(location,desktop);
+  assert.deepEqual(location.calls,['/guide-pc.html#drive-backup']);
+});

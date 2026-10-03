@@ -58,7 +58,7 @@ function desktopEdition(mobile) {
   html = replaceRequired(html, '휴대폰을 바꾸어도 기록을 볼 수 있나요?', '다른 PC나 휴대폰에서도 기록을 볼 수 있나요?');
   html = replaceRequired(html, '</head>', '<style>\n' + desktopStyle + '\n</style>\n</head>');
   const chapters = [...html.matchAll(/<section class="chapter" id="([^"]+)" data-title="([^"]+)"/g)];
-  if (chapters.length !== 13) throw new Error('PC 가이드 목차 13개를 확인해 주세요.');
+  if (chapters.length !== 14) throw new Error('PC 가이드 목차 14개를 확인해 주세요.');
   const toc = chapters.map(([, id, title], index) => '<li><a href="#' + id + '" data-desktop-chapter="' + id + '"><small>' + String(index + 1).padStart(2, '0') + '</small>' + title + '</a></li>').join('');
   html = replaceRequired(html, '<main id="top" class="shell">', '<div class="desktop-guide-layout"><nav class="desktop-toc" aria-label="PC 가이드 목차"><p>GROWELL · PC GUIDE</p><ol>' + toc + '</ol><a class="desktop-start" href="https://growell-book.vercel.app/">GROWELL로 가기 ↗</a></nav><main id="top" class="shell">');
   html = replaceRequired(html, '</main>', '</main></div>');
