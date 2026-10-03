@@ -4,6 +4,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
+    "api/drive-backup.js": {
+      "maxDuration": 60,
+      "includeFiles": "{server/driveBackupDomain.cjs,server/driveBackupProvider.cjs,server/driveBackupService.cjs}"
+    },
     "api/material-video-transcript.js": {
       "maxDuration": 60,
       "includeFiles": "{server/materialTranscriptService.cjs,server/materialTranscriptProvider.cjs,server/materialTranscriptTranslation.cjs,server/materialVideoMetadata.cjs,server/materialVideoService.cjs,server/materialVideoAI.cjs}"

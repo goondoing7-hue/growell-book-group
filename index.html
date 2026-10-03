@@ -1099,6 +1099,7 @@
 <link rel="stylesheet" href="habitOverview.css">
 <link rel="stylesheet" href="habitCarousel.css">
 <link rel="stylesheet" href="habitReminder.css">
+<link rel="stylesheet" href="driveBackup.css">
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
 <link rel="stylesheet" href="brand.css">
@@ -1126,6 +1127,7 @@
 <script src="habitGuide.js"></script>
 <script src="habitCarousel.js"></script>
 <script src="habitReminder.js"></script>
+<script src="driveBackup.js"></script>
 <script src="readingHabit.js"></script>
 <script src="readingTimerDomain.js"></script>
 <script src="timerAlerts.js"></script>
@@ -2120,6 +2122,7 @@ function showSpaceComposerDialog(){
 /* 글쓰기 팝업은 같은 책의 같은 공간에서만 유지한다. */
 function closeStaleComposersForRoute(r){
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
+  if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.refresh();
   if(habitValueSummaryDialog&&habitValueSummaryDialog._route!==location.href)closeHabitValueSummary(false);
   if(typeof habitSummaryDialog!=='undefined'&&habitSummaryDialog&&habitSummaryDialog._route!==location.href)closeHabitSummary(false);
   if(typeof habitSummaryReturn!=='undefined'&&habitSummaryReturn&&habitSummaryReturn.route!==location.href)habitSummaryReturn=null;
@@ -2291,6 +2294,7 @@ function clearMemberSession(){
   if(typeof closeHabitValueSummary==='function')closeHabitValueSummary(false);
   if(typeof closeHabitSummary==='function')closeHabitSummary(false);
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.close(false);
+  if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.close(false);
   if(typeof clearArchiveSharedNotes==='function')clearArchiveSharedNotes();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
@@ -4132,6 +4136,7 @@ function headerHtml(route){
         '<div class="profile-dropdown-sep"></div>' +
         '<a class="profile-dropdown-item" href="#/archive" id="btn-profile-archive">아카이브</a>' +
         '<a class="profile-dropdown-item" href="#/profile/edit" id="btn-goto-profile-edit">프로필 수정</a>' +
+        '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">Google Drive 백업</button>' +
         (admin
           ? '<a class="profile-dropdown-item" href="#/admin/users">가입자 목록</a>'
           : '<button class="profile-dropdown-item" id="btn-grant-admin" type="button">운영자 코드 입력</button>') +
@@ -5997,6 +6002,24 @@ function handleHabitSyncReturn(){
   openHabitReminder(null,trigger);
   if(result!=='connected')showToast(result==='cancelled'?'연결을 취소했어요.':'계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
 }
+function openDriveBackup(trigger){
+  if(!SESSION||typeof GrowellDriveBackup==='undefined')return;
+  var session=SESSION,epoch=saveSessionEpoch,route=location.href;
+  function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
+  GrowellDriveBackup.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},restoreFocus:function(){
+    if(!current())return;
+    var target=trigger&&trigger.isConnected&&trigger.offsetParent!==null?trigger:document.getElementById('btn-profile-toggle');
+    if(target)target.focus({preventScroll:true});
+  }});
+}
+function handleDriveBackupReturn(){
+  if(!SESSION)return;
+  var url=new URL(location.href),result=url.searchParams.get('drive-backup');
+  if(['connected','error','failed','cancelled'].indexOf(result)<0)return;
+  url.searchParams.delete('drive-backup');history.replaceState(history.state,'',url.href);
+  openDriveBackup(document.getElementById('btn-profile-toggle'));
+  if(result!=='connected')showToast(result==='cancelled'?'Google 연결을 취소했어요.':'Google 계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
+}
 function openHabitReminder(habitId,trigger){
   if(typeof GrowellHabitReminder==='undefined')return;
   var session=SESSION,epoch=saveSessionEpoch,route=location.href;
@@ -7564,6 +7587,8 @@ function render(){
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
   bindEvents(route);
   handleHabitSyncReturn();
+  if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.refresh();
+  handleDriveBackupReturn();
   showSpaceComposerDialog();
   restoreDraftIfAny(route);
   enhanceLinkPreviews();
@@ -7646,6 +7671,12 @@ function bindEvents(route){
   if(restartLogin)restartLogin.addEventListener('click',restartMemberLogin);
   var logoutBtn = document.getElementById('btn-logout');
   if(logoutBtn) logoutBtn.addEventListener('click', doLogout);
+  var driveBackupBtn=document.getElementById('btn-profile-drive-backup');
+  if(driveBackupBtn)driveBackupBtn.addEventListener('click',function(){
+    if(profileDropdown)profileDropdown.hidden=true;
+    if(profileToggle)profileToggle.setAttribute('aria-expanded','false');
+    openDriveBackup(profileToggle);
+  });
   bindAccountDeletion();
   app.querySelectorAll('.admin-user-delete-btn').forEach(function(b){
     b.addEventListener('click', function(){ doDeleteAccount(b.getAttribute('data-user-id')); });
