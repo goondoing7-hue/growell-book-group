@@ -1,7 +1,7 @@
 'use strict';
 
-// Native captions only: prefer Korean, then request available English captions
-// once only after the server reserves its additional paid request.
+// Native captions only: prefer Korean, then try English once if Korean is
+// unavailable or English is advertised, after reserving the paid request.
 // https://docs.supadata.ai/get-transcript
 // https://docs.supadata.ai/api-reference/endpoint/transcript/transcript-get
 const ENDPOINT = 'https://api.supadata.ai/v1/transcript';
@@ -141,7 +141,24 @@ async function requestTranscript(videoId, options = {}) {
     return {status: 'ready', transcript: validateTranscript(value), hasEnglish: englishAvailable(value.availableLangs)};
   }
   try {
-    const first = await exchange(polling ? options.jobId : null, requestedLanguage);
+    let first;
+    try {
+      first = await exchange(polling ? options.jobId : null, requestedLanguage);
+    } catch (error) {
+      // Missing preferred-language captions can be reported as 206, empty
+      // content or a failed native job without an availableLangs list. This
+      // alone permits one reserved English attempt; other failures never do.
+      if (error?.code !== 'transcript_unavailable' || requestedLanguage !== 'ko' || typeof options.reserveFallback !== 'function') throw error;
+      let reserved;
+      try { reserved = await abortable(options.reserveFallback(), signal); }
+      catch (_) { if (signal.aborted) throw failure('temporary_error'); throw error; }
+      if (signal.aborted) throw failure('temporary_error');
+      if (reserved !== true) throw error;
+      const fallback = await exchange(null, 'en');
+      // Return directly so even an unexpected native language cannot cause a
+      // third request. Pending state persists the English stage for later polls.
+      return fallback.status === 'pending' ? fallback : {status: 'ready', transcript: fallback.transcript};
+    }
     if (first.status === 'pending') return first;
     const original = {status: 'ready', transcript: first.transcript};
     const actualLanguage = languageBase(first.transcript.language);

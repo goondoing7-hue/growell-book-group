@@ -375,3 +375,97 @@ test('caller abort during the English request rejects instead of caching a parti
   }});
   await rejectCode(promise, 'temporary_error'); assert.equal(calls, 2);
 });
+
+test('Korean 206 or empty native captions permit one reserved English request without available languages', async () => {
+  for (const absent of [() => json({error: 'transcript-unavailable'}, 206),
+    () => json({content: '', lang: 'ko'}), () => json({content: ' \n\t ', lang: 'ko'}), () => json({content: [], lang: 'ko'})]) {
+    const order = [];
+    let calls = 0;
+    const result = await requestTranscript(VIDEO, {env,
+      reserveFallback: async () => {order.push('reserved'); return true;},
+      fetch: async url => {
+        calls++; const target = new URL(url);
+        assert.equal(target.searchParams.get('mode'), 'native');
+        assert.equal(target.searchParams.get('text'), 'true');
+        order.push(target.searchParams.get('lang'));
+        return calls === 1 ? absent() : json(english);
+      }
+    });
+    assert.deepEqual(order, ['ko', 'reserved', 'en']);
+    assert.equal(calls, 2);
+    assert.deepEqual(result, {status: 'ready', transcript: englishTranscript});
+  }
+});
+
+test('a Korean native job reporting absent captions may switch to one persisted English job', async () => {
+  let calls = 0, reservations = 0;
+  const englishJob = 'english-job';
+  const result = await requestTranscript(VIDEO, {env, jobId: JOB, requestedLanguage: 'ko',
+    reserveFallback: async () => {reservations++; return true;},
+    fetch: async url => {
+      calls++;
+      if (calls === 1) {assert.equal(url, 'https://api.supadata.ai/v1/transcript/' + JOB); return json({status: 'failed', error: {error: 'transcript-unavailable'}});}
+      assert.equal(new URL(url).searchParams.get('lang'), 'en');
+      return json({jobId: englishJob}, 202);
+    }
+  });
+  assert.equal(calls, 2); assert.equal(reservations, 1);
+  assert.deepEqual(result, {status: 'pending', jobId: englishJob, requestedLanguage: 'en'});
+});
+
+test('missing or denied fallback reservation preserves the original unavailable error without a paid retry', async () => {
+  for (const reserveFallback of [undefined, async () => false, async () => null, async () => 'true', async () => {throw new Error(KEY); }]) {
+    let calls = 0;
+    await rejectCode(requestTranscript(VIDEO, {env, reserveFallback, fetch: async () => {calls++; return json({}, 206);}}), 'transcript_unavailable');
+    assert.equal(calls, 1);
+  }
+});
+
+test('other initial failures never reserve or start an English request', async () => {
+  for (const [status, code] of [[401, 'not_configured'], [403, 'video_unavailable'], [404, 'video_unavailable'], [429, 'rate_limited'], [503, 'temporary_error']]) {
+    let calls = 0, reservations = 0;
+    await rejectCode(requestTranscript(VIDEO, {env,
+      reserveFallback: async () => {reservations++; return true;},
+      fetch: async () => {calls++; return json({error: KEY}, status);}
+    }), code);
+    assert.equal(calls, 1); assert.equal(reservations, 0);
+  }
+});
+
+test('an absent Korean result followed by absent or failed English never makes a third attempt', async () => {
+  for (const [status, code] of [[206, 'transcript_unavailable'], [429, 'rate_limited'], [503, 'temporary_error']]) {
+    let calls = 0, reservations = 0;
+    await rejectCode(requestTranscript(VIDEO, {env,
+      reserveFallback: async () => {reservations++; return true;},
+      fetch: async () => {calls++; return json({}, calls === 1 ? 206 : status);}
+    }), code);
+    assert.equal(calls, 2); assert.equal(reservations, 1);
+  }
+  let calls = 0, reservations = 0;
+  const result = await requestTranscript(VIDEO, {env,
+    reserveFallback: async () => {reservations++; return true;},
+    fetch: async () => {calls++; return calls === 1 ? json({}, 206) : json(french);}
+  });
+  assert.equal(calls, 2); assert.equal(reservations, 1);
+  assert.deepEqual(result, {status: 'ready', transcript: firstTranscript});
+});
+
+test('an English-stage unavailable result never reserves another request', async () => {
+  for (const jobId of [undefined, JOB]) {
+    let calls = 0, reservations = 0;
+    await rejectCode(requestTranscript(VIDEO, {env, jobId, requestedLanguage: 'en',
+      reserveFallback: async () => {reservations++; return true;},
+      fetch: async () => {calls++; return json({}, 206);}
+    }), 'transcript_unavailable');
+    assert.equal(calls, 1); assert.equal(reservations, 0);
+  }
+});
+
+test('unavailable-caption fallback keeps the same deadline across reservation and its English fetch', async () => {
+  let calls = 0, signal;
+  await rejectCode(requestTranscript(VIDEO, {env, timeoutMs: 10,
+    reserveFallback: async () => true,
+    fetch: async (_, options) => {calls++; signal = options.signal; return calls === 1 ? json({}, 206) : new Promise(() => {});}
+  }), 'temporary_error');
+  assert.equal(calls, 2); assert.equal(signal.aborted, true);
+});

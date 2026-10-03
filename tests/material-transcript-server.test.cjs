@@ -177,6 +177,13 @@ test('fresh English extraction finishes before translation begins in the next re
   const real=fixture({translator:async()=>{throw new Error('must not translate in extraction request');},provider:async()=>({status:'ready',transcript:f.english})});
   const response=await real.service.generate(body,'token');assert.equal(response.status,'ready');assert.equal(response.translationStatus,'pending');assert.deepEqual(response.transcript,{text:f.english.text,language:'en',source:'youtube_captions'});
 });
+test('language upgrade preserves a previously saved original when the preferred captions are unavailable',async()=>{
+  const english={text:'Previously saved complete English captions.',language:'en',source:'youtube_captions'};
+  const f=fixture({provider:async()=>{throw Object.assign(new Error('no Korean track'),{code:'transcript_unavailable'});},titleProvider:async()=> 'Actual video title'});
+  f.store.previous=async(id)=>{assert.equal(id,ID);return english;};
+  const response=await f.service.generate(body,'token');assert.equal(response.status,'ready');assert.equal(response.transcript.text,english.text);assert.equal(response.transcript.title,'Actual video title');
+  assert.equal(f.calls.find(c=>c[0]==='finish')[2].transcript.source,'youtube_captions');
+});
 test('Korean captions skip AI; pending translation keeps the complete original available',async()=>{
   const korean=translationFixture();korean.cache.set(ID,{status:'ready',transcript,fetchedAt:'2026-10-03T00:00:00Z'});
   assert.equal((await korean.service.generate(body,'token')).translation,undefined);assert.equal(korean.translatedCount(),0);

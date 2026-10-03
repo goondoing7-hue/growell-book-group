@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const video = require('./materialVideoService.cjs');
 const {VideoError} = video;
-const VERSION = 2; // Korean-first captions and authoritative YouTube titles.
+const VERSION = 3; // Korean-first captions, including explicit English fallback when Korean is absent.
 const TRANSLATION_VERSION = 1;
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -89,6 +89,10 @@ function createStore(config, request, transcriptRequest) {
   const rpc = (name, payload, signal) => transport(config.database + '/rest/v1/rpc/' + name, {method: 'POST', headers, signal, body: JSON.stringify(payload)});
   return {
     user: base.user, profile: base.profile, note: base.note,
+    async previous(id,signal) {
+      const rows=await transport(config.database+'/rest/v1/growell_material_transcript_cache?select=transcript&video_id=eq.'+encodeURIComponent(id)+'&state=eq.ready&version=lt.'+VERSION+'&order=version.desc&limit=1',{headers,signal});
+      return Array.isArray(rows) && rows.length===1 ? rows[0].transcript : null;
+    },
     claim: (profile, id, lease, enabled, signal) => rpc('growell_material_transcript_claim', {p_video: id, p_version: VERSION, p_owner: profile.id, p_auth: profile.auth_user_id, p_lease: lease, p_enabled: enabled}, signal),
     reserveFallback: (profile, id, lease, signal) => rpc('growell_material_transcript_reserve_fallback', {p_video: id, p_version: VERSION, p_owner: profile.id, p_auth: profile.auth_user_id, p_lease: lease}, signal),
     claimTranslation: (profile,id,generation,enabled,signal) => rpc('growell_material_translation_claim', {p_video:id,p_version:VERSION,p_translation_version:TRANSLATION_VERSION,p_owner:profile.id,p_auth:profile.auth_user_id,p_generation:generation,p_enabled:enabled}, signal),
@@ -169,6 +173,11 @@ function createService(options = {}) {
           return (await store.reserveFallback(profile, body.videoId, lease, signal))?.reserved === true;
         }}));
     } catch (error) { result = {status: 'unavailable', reason: REASONS.has(error?.code) ? error.code : 'temporary_error'}; }
+    if(result.status==='unavailable' && ['transcript_unavailable','temporary_error','rate_limited'].includes(result.reason) && store.previous && !signal?.aborted){
+      // A language preference upgrade must not make a previously saved source
+      // disappear when the upstream has no Korean track or is temporarily down.
+      try {const previous=await store.previous(body.videoId,signal);if(previous)result={status:'ready',transcript:normalizedTranscript(previous)};} catch (_) {}
+    }
     if (result.status === 'ready' && !signal?.aborted) {
       let title = '';
       try { title = await titleProvider(body.videoId, {fetch: options.fetch || globalThis.fetch, signal}); } catch (_) {}
