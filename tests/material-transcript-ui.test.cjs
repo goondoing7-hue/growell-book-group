@@ -11,6 +11,41 @@ const translated=()=>({...ready(),transcript:{...ready().transcript,text:'Origin
   translation:{text:'한국어 번역문\n\n  <img src=x onerror=alert(1)>',language:'ko',source:'ai_translation',generatedAt:'2026-10-03T02:00:00Z',model:'translation-model',generationId:'translation-123'}});
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+
+test('paragraph formatting keeps every original character in long Korean and English captions',()=>{
+  const samples=[
+    '  '+('감정을 알아차린 뒤 잠시 멈추고 마음을 살펴봅니다. 그 과정에서 내 생각을 기록해 봅니다! ').repeat(16)+'\t마지막 문장입니다.\n',
+    ('Reading changes how we notice the world. What do we remember? Take a moment to reflect! ').repeat(18),
+    ('자막에 문장부호가 없더라도 원문에 담긴 단어와 순서 그리고 공백은 모두 그대로 남아 있어야 합니다 ').repeat(20)
+  ];
+  for(const text of samples){
+    const paragraphs=api.splitParagraphs(text);
+    assert.ok(paragraphs.length>1,'long captions need readable paragraphs');
+    assert.ok(paragraphs.every(part=>typeof part==='string' && part.trim().length>0));
+    assert.equal(paragraphs.join(''),text,'formatting must not edit, summarize, normalize, or lose whitespace');
+  }
+});
+
+test('paragraph formatting respects existing paragraph breaks and leaves short captions untouched',()=>{
+  const first='  첫 번째 단락에는 들여쓰기가 있습니다.',second='두 번째 단락입니다.',third='Last paragraph stays here.  ';
+  const text=first+'\r\n\r\n'+second+'\n \n'+third,paragraphs=api.splitParagraphs(text);
+  assert.equal(paragraphs.join(''),text);
+  for(const [left,right] of [[first,second],[second,third]]){
+    assert.equal(paragraphs.some(part=>part.includes(left) && part.includes(right)),false,'existing blank lines must remain paragraph boundaries');
+  }
+  for(const short of ['짧은 원문입니다.','  A short caption.\t','한 줄\n다음 줄'])assert.deepEqual(api.splitParagraphs(short),[short]);
+});
+
+test('paragraph formatting never splits long words or URLs and preserves literal markup',()=>{
+  const token='한'.repeat(500),url='https://example.com/'+('long-path-'.repeat(60))+'?value=1.25&next=test';
+  const text=('읽고 생각하는 시간이 쌓입니다. ').repeat(20)+token+' '+url+' <script>alert("원문")</script> '+('The original text stays intact. ').repeat(20);
+  const paragraphs=api.splitParagraphs(text);
+  assert.ok(paragraphs.length>1);assert.equal(paragraphs.join(''),text);
+  assert.ok(paragraphs.some(part=>part.includes(token)),'an unbroken word must stay whole');
+  assert.ok(paragraphs.some(part=>part.includes(url)),'an unbroken URL must stay whole');
+  assert.ok(paragraphs.join('').includes('<script>alert("원문")</script>'));
+});
+
 function harness(overrides={}){
   const states=[],requests=[],timers=new Map();let serial=0,current=true;
   const options={postId:'post-1',videoId,isCurrent:()=>current,getAccessToken:async()=> 'test-jwt',
@@ -262,6 +297,32 @@ test('translated popups default to clearly labeled Korean and print exactly the 
   assert.equal(walk(sheet).find(node=>node.className==='mat-transcript-print-text').textContent,payload.transcript.text);
   assert.match(sheet.textContent,/YouTube 공개 자막 원문 · 영어/);assert.doesNotMatch(sheet.textContent,/AI 한국어 번역|번역 시각:/);
   translation.dispatch('click');assert.equal(content.textContent,payload.translation.text);h.api.dispose();
+});
+
+test('long translated and original views render the same safe paragraphs in the popup and selected print sheet',async()=>{
+  const h=bindingHarness(),payload=translated();
+  payload.transcript.text='  '+('Keep the original words, punctuation, and spacing. ').repeat(22)+'\n\n<img src=x onerror=alert(1)>\n';
+  payload.translation.text='  '+('번역된 문장도 내용은 바꾸지 않고 단락만 구분합니다. ').repeat(22)+'\n\n<script>alert(1)</script>\n';
+  h.options.fetch=async()=>({ok:true,json:async()=>payload});h.api.bind(h.options);await tick();h.controls.open.onclick();
+  const dialog=h.browser.document.body.children[0],nodes=walk(dialog),content=nodes.find(node=>node.className==='mat-transcript-text');
+  const original=nodes.find(node=>node.getAttribute('data-transcript-view')==='original'),translation=nodes.find(node=>node.getAttribute('data-transcript-view')==='translation');
+  const print=nodes.find(node=>node.className==='mat-transcript-print');
+  for(const [view,text] of [[translation,payload.translation.text],[original,payload.transcript.text],[translation,payload.translation.text]]){
+    view.dispatch('click');
+    assert.equal(content.textContent,text,'switching views must not retain, merge, or alter the other view');
+    assert.ok(content.children.length>1);
+    assert.ok(content.children.every(node=>node.tagName==='P' && node.className.split(/\s+/).includes('mat-transcript-paragraph')));
+    assert.equal(walk(content).some(node=>['SCRIPT','IMG','IFRAME'].includes(node.tagName)),false);
+    print.dispatch('click');
+    const sheet=h.browser.document.body.children.find(node=>node.className==='mat-transcript-print-sheet');
+    const printed=walk(sheet).find(node=>node.className==='mat-transcript-print-text');
+    assert.equal(printed.textContent,text);
+    assert.ok(printed.children.every(node=>node.tagName==='P' && node.className.split(/\s+/).includes('mat-transcript-paragraph')));
+    assert.deepEqual(printed.children.map(node=>node.textContent),content.children.map(node=>node.textContent),'the printed view must keep the on-screen paragraphs');
+    assert.equal(walk(sheet).some(node=>['SCRIPT','IMG','IFRAME'].includes(node.tagName)),false);
+    h.browser.listeners.get('afterprint')();
+  }
+  h.api.dispose();
 });
 
 test('an open native popup updates when translation finishes, and pending entries are not stored as final cache',async()=>{

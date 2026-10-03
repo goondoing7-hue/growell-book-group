@@ -19,6 +19,9 @@
 .mat-transcript-meta{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:13px;font-size:11px;color:var(--ink-soft);flex:none}
 .mat-transcript-notice{font-size:11px;color:var(--ink-soft);line-height:1.65;margin:10px 0 16px;flex:none}
 .mat-transcript-text{font-family:var(--font-body,inherit);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.95;font-size:14px;overflow-y:auto;min-height:80px;max-height:58dvh;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:20px 4px 20px 0;overscroll-behavior:contain}
+.mat-transcript-text>.mat-transcript-paragraph,.mat-transcript-print-text>.mat-transcript-paragraph{margin:0;font:inherit;line-height:inherit;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;orphans:3;widows:3}
+.mat-transcript-text>.mat-transcript-paragraph+.mat-transcript-paragraph,.mat-transcript-print-text>.mat-transcript-paragraph+.mat-transcript-paragraph{margin-top:1.2em}
+.mat-transcript-text>.mat-transcript-paragraph-after-break,.mat-transcript-print-text>.mat-transcript-paragraph-after-break{margin-top:0!important}
 .mat-transcript-dialog-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;flex:none}
 .mat-transcript-dialog-actions a{color:var(--ink-soft);font-size:12px;text-decoration:none}
 .mat-transcript-dialog-actions a:hover{text-decoration:underline}

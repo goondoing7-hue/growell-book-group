@@ -140,6 +140,46 @@
     return element;
   }
   function sourceUrl(videoId){return 'https://www.youtube.com/watch?v='+videoId;}
+  function splitParagraphs(value){
+    var text=typeof value==='string'?value:'',paragraphs=[];
+    // Slice the source only: no AI call, rewriting, punctuation edits, or discarded whitespace.
+    function splitBlock(block){
+      var start=0,boundaries=[],match,spaces=/\s+/g,korean=/[가-힣]/.test(block);
+      var target=korean?200:320,minimum=korean?100:160,maximum=korean?320:440;
+      while((match=spaces.exec(block))){
+        var before=block.slice(Math.max(0,match.index-32),match.index);
+        boundaries.push({at:match.index+match[0].length,sentence:/(?:[.!?。！？][\u201d\u2019"')\]]*|[가-힣](?:요|죠|습니다|입니다|니다|한다|된다|있다|없다|했다|이다))[\u201d\u2019"')\]]*$/.test(before)});
+      }
+      var cursor=0;
+      while(block.length-start>maximum){
+        while(cursor<boundaries.length && boundaries[cursor].at<=start)cursor++;
+        var sentence=null,fallback=null;
+        for(var i=cursor;i<boundaries.length;i++){
+          var boundary=boundaries[i],length=boundary.at-start;
+          if(length>maximum || block.length-boundary.at<80)break;
+          if(length<minimum)continue;
+          if(!fallback || Math.abs(length-target)<Math.abs(fallback.at-start-target))fallback=boundary;
+          if(boundary.sentence && (!sentence || Math.abs(length-target)<Math.abs(sentence.at-start-target)))sentence=boundary;
+        }
+        var chosen=sentence || fallback;
+        if(!chosen)break; // Keep an unbroken word or URL intact.
+        paragraphs.push(block.slice(start,chosen.at));start=chosen.at;
+      }
+      if(start<block.length)paragraphs.push(block.slice(start));
+    }
+    var breaks=/\r?\n[\t ]*\r?\n(?:[\t ]*\r?\n)*/g,last=0,match;
+    while((match=breaks.exec(text))){splitBlock(text.slice(last,match.index+match[0].length));last=match.index+match[0].length;}
+    splitBlock(text.slice(last));
+    return paragraphs;
+  }
+  function renderParagraphs(document,element,text){
+    element.textContent='';
+    splitParagraphs(text).forEach(function(part,index,parts){
+      var paragraph=node(document,'p','mat-transcript-paragraph',part);
+      if(index && /\r?\n[\t ]*\r?\n[\s]*$/.test(parts[index-1]))paragraph.className+=' mat-transcript-paragraph-after-break';
+      element.appendChild(paragraph);
+    });
+  }
   function buildPrintSheet(document,details,view){
     var content=selectedContent(details,view);
     if(!content || !validId(details.videoId))return null;
@@ -153,7 +193,7 @@
     if(content.generatedAt)sheet.appendChild(node(document,'p','mat-transcript-print-meta','번역 시각: '+new Date(content.generatedAt).toLocaleString('ko-KR')));
     sheet.appendChild(node(document,'p','mat-transcript-print-source',(content.translated?'원문 영상 출처: ':'출처: ')+sourceUrl(details.videoId)));
     sheet.appendChild(node(document,'p','mat-transcript-print-notice',content.notice));
-    sheet.appendChild(node(document,'div','mat-transcript-print-text',content.text));
+    var text=node(document,'div','mat-transcript-print-text');renderParagraphs(document,text,content.text);sheet.appendChild(text);
     return sheet;
   }
   function printTranscript(browser,details,view){
@@ -203,7 +243,7 @@
       title.textContent=details.title || '영상 스크립트';metaLanguage.textContent=languageLabel(content.language)+(content.translated?' · 원문 '+languageLabel(details.language):'');
       metaFetched.textContent=fetchedLabel(details.fetchedAt);metaGenerated.hidden=!content.generatedAt;
       metaGenerated.textContent=content.generatedAt?'번역 시각: '+new Date(content.generatedAt).toLocaleString('ko-KR'):'';
-      notice.textContent=content.notice;if(text.textContent!==content.text)text.textContent=content.text;text.setAttribute('aria-label',content.translated?'AI 한국어 번역':'자막 원문');
+      notice.textContent=content.notice;if(text.textContent!==content.text)renderParagraphs(document,text,content.text);text.setAttribute('aria-label',content.translated?'AI 한국어 번역':'자막 원문');
     }
     function select(view){if(!options.isCurrent()){close();return;}selected=view;userSelected=true;renderView();text.scrollTop=0;}
     translatedButton.addEventListener('click',function(){select('translation');});originalButton.addEventListener('click',function(){select('original');});
@@ -269,5 +309,5 @@
     });
     return function(){bindings.forEach(function(binding){binding.dispose();});active=active.filter(function(binding){return bindings.indexOf(binding)<0;});if(popup && bindings.indexOf(popup.binding)>=0)popup.close();};
   }
-  return {html:html,bind:bind,dispose:dispose,createController:createController,readyData:readyData,statusText:statusText,buildPrintSheet:buildPrintSheet,printTranscript:printTranscript};
+  return {html:html,bind:bind,dispose:dispose,createController:createController,readyData:readyData,statusText:statusText,splitParagraphs:splitParagraphs,buildPrintSheet:buildPrintSheet,printTranscript:printTranscript};
 });
