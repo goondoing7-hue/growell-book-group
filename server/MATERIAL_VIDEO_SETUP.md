@@ -7,7 +7,7 @@
 1. 같은 Supabase 프로젝트에 `server/material-video-summary.sql`을 실행합니다. 재실행할 수 있는 신규 캐시 표·사용량 표·RPC이며 기존 자료글을 바꾸지 않습니다.
 2. 기존 `SUPABASE_SERVICE_ROLE_KEY`를 서버에서 사용합니다. 기본 프로젝트는 `oxaeecawijnetwmvggjs`이고 운영 요청 출처는 `https://growell-book.vercel.app`입니다.
 3. 기본 AI 연결은 배포 서버의 Vercel OIDC 인증과 AI Gateway입니다. 해당 팀의 Gateway 사용 가능 여부와 잔액이 필요합니다. 별도 키가 있으면 서버 환경변수 `AI_GATEWAY_API_KEY` 또는 `GEMINI_API_KEY`를 사용할 수 있습니다. 키는 브라우저·Git·응답·로그에 넣지 않습니다.
-4. 기본 모델은 `google/gemini-3.8-flash`입니다. `GROWELL_VIDEO_MODEL`로 바꿀 수 있으며 Gateway는 `google/gemini-…`, Google 직접 연결은 `gemini-…` 형식입니다. 영상 URL 입력을 지원하는 모델을 사용합니다.
+4. 기본 모델은 무료 AI Gateway 크레딧 대상인 `google/gemini-2.5-flash`입니다. 2026-10-03 공식 모델 페이지의 Google 공급자 행에서 무료 대상 여부를 확인했습니다. 3.8 Flash는 무료 대상이 아니므로 기본으로 사용하지 않습니다. `GROWELL_VIDEO_MODEL`로 바꿀 수 있으며 Gateway는 `google/gemini-…`, Google 직접 연결은 `gemini-…` 형식입니다. 영상 URL 입력과 해당 계정의 사용 권한을 지원하는 모델을 사용합니다. 2.5 모델은 `thinkingBudget:0`, 3.x 모델은 `thinkingLevel:low`를 전달합니다.
 5. 배포 뒤 승인 회원으로 실제 영상이 포함된 자료글을 열어 재생과 요약 생성을 확인합니다. 로컬 합성 응답·테스트 통과는 운영 AI 연결 성공을 뜻하지 않습니다.
 
 ## 데이터와 동작
@@ -23,4 +23,4 @@
 
 `npm.cmd run build`는 영상 ID 검증, 요약 출력 검증, 인증·접근권한, 취소·시간 제한, PostgreSQL의 동시 생성 임대·사용량 제한·RLS, 화면 표시를 검증합니다. 실제 회원 글을 생성하거나 변경하지 않는 별도 로컬 합성 화면으로 UI를 확인합니다.
 
-참고: [Google 영상 입력](https://ai.google.dev/gemini-api/docs/video-understanding), [Gateway 영상 입력](https://vercel.com/docs/ai-gateway/inputs-and-tools/video-input), [Gateway OIDC](https://vercel.com/docs/ai-gateway/authentication-and-byok/oidc).
+참고: [무료 크레딧·영상 입력을 지원하는 기본 모델](https://vercel.com/ai-gateway/models/gemini-2.5-flash), [Google 영상 입력](https://ai.google.dev/gemini-api/docs/video-understanding), [Gateway 영상 입력](https://vercel.com/docs/ai-gateway/inputs-and-tools/video-input), [Gateway OIDC](https://vercel.com/docs/ai-gateway/authentication-and-byok/oidc).

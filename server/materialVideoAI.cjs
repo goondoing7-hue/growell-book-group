@@ -2,7 +2,9 @@
 
 // Only canonical public video URLs are sent to the model. Member data and post
 // bodies never leave GROWELL through this adapter.
-const MODEL = 'google/gemini-3.8-flash';
+// The default is eligible for Vercel's monthly free AI Gateway credit.
+const MODEL = 'google/gemini-2.5-flash';
+const thinkingConfig = model => /(?:^|\/)gemini-2\.5-/.test(model) ? {thinkingBudget: 0} : {thinkingLevel: 'low'};
 const PROMPT = [
   'You summarize a single YouTube video for a Korean reading community.',
   'Watch and listen to the supplied video. Base every statement only on its actual contents.',
@@ -52,7 +54,7 @@ async function summarize(videoId, options = {}) {
         headers: {'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY},
         body: JSON.stringify({systemInstruction: {parts: [{text: PROMPT}]},
           contents: [{role: 'user', parts: [{fileData: {fileUri: videoUrl, mimeType: 'video/mp4'}}, {text: '이 영상의 핵심 내용을 한국어로 요약해주세요.'}]}],
-          generationConfig: {responseMimeType: 'application/json', maxOutputTokens: 2000, temperature: 0.2, thinkingConfig: {thinkingLevel: 'low'}}})
+          generationConfig: {responseMimeType: 'application/json', maxOutputTokens: 2000, temperature: 0.2, thinkingConfig: thinkingConfig(model)}})
       });
       if (!response.ok) throw {status: response.status};
       const raw = await response.text();
@@ -72,7 +74,7 @@ async function summarize(videoId, options = {}) {
     const result = await sdk.generateText({
       model: gateway(model), system: PROMPT, abortSignal: signal, maxRetries: 0, maxOutputTokens: 2000, temperature: 0.2,
       messages: [{role: 'user', content: [{type: 'file', data: new URL(videoUrl), mediaType: 'video/mp4'}, {type: 'text', text: '이 영상의 핵심 내용을 한국어로 요약해주세요.'}]}],
-      providerOptions: {gateway: {only: ['google'], tags: ['growell-material-video']}, google: {thinkingConfig: {thinkingLevel: 'low'}}}
+      providerOptions: {gateway: {only: ['google'], tags: ['growell-material-video']}, google: {thinkingConfig: thinkingConfig(model)}}
     });
     if (result.finishReason !== 'stop') throw failure(result.finishReason === 'content-filter' ? 'video_unavailable' : 'temporary_error');
     return parseSummary(result.text);
