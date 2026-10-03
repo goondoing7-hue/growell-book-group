@@ -20,6 +20,7 @@
         '<div class="mat-video-player"><iframe src="https://www.youtube-nocookie.com/embed/'+video.id+'?playsinline=1" title="'+esc(video.title || '유튜브 영상')+' 재생" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe></div>'+
         '<div class="mat-video-summary"><div class="mat-video-summary-head"><h3>영상 핵심 요약</h3><span>AI 요약</span></div>'+
         '<div data-material-video-summary aria-live="polite" aria-busy="true"><p class="mat-video-status">영상 내용을 요약하고 있어요.</p></div></div>'+
+        (root.GrowellMaterialTranscript?root.GrowellMaterialTranscript.html(postId,video):'')+
         '<a class="mat-video-original" href="https://www.youtube.com/watch?v='+video.id+'" target="_blank" rel="noopener noreferrer">YouTube에서 보기 ↗</a></section>';
     }).join('');
   }

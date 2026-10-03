@@ -4,7 +4,7 @@
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
   'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
-  'materialsMedia.js', 'materialsVideo.js', 'materialsVideo.css', ...require('../vendor/pdfjs/manifest.json').files,
+  'materialsMedia.js', 'materialsVideo.js', 'materialsVideo.css', 'materialTranscript.js', 'materialTranscript.css', ...require('../vendor/pdfjs/manifest.json').files,
   'timerAlerts.js', 'timer-alert-sw.js', 'navigation.css', 'habitReminder.js', 'habitReminder.css',
   'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css',
   'dailyVerseDomain.js', 'popupHistory.js',
@@ -24,6 +24,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/material-transcript-provider.test.cjs', 'tests/material-transcript-server.test.cjs', 'tests/material-transcript-sql.test.cjs', 'tests/material-transcript-ui.test.cjs',
   'tests/guide-routing.test.cjs',
   'tests/archive-shared-notes.test.cjs', 'tests/archive-calendar.test.cjs', 'tests/archive-stats.test.cjs',
   'tests/archive-domain.test.cjs', 'tests/archive-timer.test.cjs', 'tests/archive-integration.test.cjs', 'tests/archive-ui.test.cjs', 'tests/book-search.test.cjs', 'tests/signup-notifications.test.cjs',
@@ -39,6 +40,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'api/material-video-transcript.js', 'server/materialTranscriptService.cjs', 'server/materialTranscriptProvider.cjs', 'server/material-video-transcript.sql',
   'api/book-search.js',
   'api/material-video-summary.js', 'server/materialVideoService.cjs', 'server/materialVideoAI.cjs', 'server/material-video-summary.sql', 'server/MATERIAL_VIDEO_SETUP.md',
   'api/habit-sync.js', 'server/habitSyncDomain.cjs', 'server/habitSyncService.cjs', 'server/habit-sync.sql', 'server/habit-sync-schedule.sql', 'server/habit-weekdays.sql', 'server/HABIT_SYNC_SETUP.md',

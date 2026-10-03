@@ -4,6 +4,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
+    "api/material-video-transcript.js": {
+      "maxDuration": 60,
+      "includeFiles": "{server/materialTranscriptService.cjs,server/materialTranscriptProvider.cjs,server/materialVideoService.cjs}"
+    },
     "api/material-video-summary.js": {
       "maxDuration": 60,
       "includeFiles": "{server/materialVideoService.cjs,server/materialVideoAI.cjs,materialsMedia.js}"

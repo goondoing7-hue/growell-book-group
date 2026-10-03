@@ -1,0 +1,35 @@
+.mat-transcript{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:12px 0 0;min-width:0}
+.mat-transcript-open,.mat-transcript-retry{font:inherit;font-size:12px;cursor:pointer}
+.mat-transcript-open{border:1px solid var(--line);border-radius:8px;padding:7px 11px;background:var(--surface);color:var(--primary);white-space:nowrap}
+.mat-transcript-open:disabled{cursor:default;color:var(--ink-faint);opacity:.75}
+.mat-transcript-status{color:var(--ink-soft);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
+.mat-transcript-retry{border:0;border-bottom:1px solid var(--line);padding:1px 0;background:transparent;color:var(--primary)}
+.mat-transcript [hidden]{display:none!important}
+.mat-transcript-dialog{width:min(760px,calc(100% - 40px));max-height:calc(100dvh - 48px);padding:28px 30px 20px;border:1px solid var(--line);border-radius:20px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-lg);overflow:hidden}
+.mat-transcript-dialog[open]{display:flex;flex-direction:column}
+.mat-transcript-dialog::backdrop{background:rgba(24,21,30,.55)}
+.mat-transcript-dialog-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex:none}
+.mat-transcript-eyebrow{font-size:11px;color:var(--primary);margin:0 0 8px;letter-spacing:.02em}
+.mat-transcript-dialog h2{font-size:20px;line-height:1.5;margin:0;overflow-wrap:anywhere}
+.mat-transcript-close{flex:none;background:transparent;border:1px solid var(--line);color:var(--ink-soft);border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}
+.mat-transcript-meta{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:13px;font-size:11px;color:var(--ink-soft);flex:none}
+.mat-transcript-notice{font-size:11px;color:var(--ink-soft);line-height:1.65;margin:10px 0 16px;flex:none}
+.mat-transcript-text{font-family:var(--font-body,inherit);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.95;font-size:14px;overflow-y:auto;min-height:80px;max-height:58dvh;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:20px 4px 20px 0;overscroll-behavior:contain}
+.mat-transcript-dialog-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;flex:none}
+.mat-transcript-dialog-actions a{color:var(--ink-soft);font-size:12px;text-decoration:none}
+.mat-transcript-dialog-actions a:hover{text-decoration:underline}
+.mat-transcript-print{font:inherit;font-size:12px;border:0;border-radius:8px;background:var(--primary);color:var(--primary-ink);padding:9px 13px;cursor:pointer}
+.mat-transcript-print-help{font-size:10px;line-height:1.6;color:var(--ink-soft);text-align:right;margin:9px 0 0;flex:none}
+.mat-transcript-open:focus-visible,.mat-transcript-retry:focus-visible,.mat-transcript-dialog button:focus-visible,.mat-transcript-dialog a:focus-visible,.mat-transcript-text:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+.mat-transcript-print-sheet{display:none}
+@media(max-width:540px){.mat-transcript-dialog{width:calc(100% - 20px);max-height:calc(100dvh - 24px);padding:22px 18px 18px;border-radius:16px}.mat-transcript-dialog h2{font-size:17px}.mat-transcript-text{font-size:13px;max-height:56dvh}.mat-transcript-dialog-actions{gap:8px}.mat-transcript-dialog-actions a{font-size:11px}.mat-transcript-print{padding:10px;font-size:11px}.mat-transcript-close{min-height:36px}.mat-transcript-status{flex-basis:100%;order:3}}
+@media print{
+  body.mat-transcript-printing{display:block!important;margin:0!important;padding:0!important;background:#fff!important;color:#000!important;overflow:visible!important;height:auto!important}
+  body.mat-transcript-printing> :not(.mat-transcript-print-sheet){display:none!important}
+  body.mat-transcript-printing>.mat-transcript-print-sheet{display:block!important;position:static!important;width:auto!important;max-width:none!important;margin:0!important;padding:0!important;background:#fff!important;color:#000!important;font-family:var(--font-body,Arial,sans-serif);font-size:11pt;line-height:1.7}
+  .mat-transcript-print-sheet h1{font-size:19pt;line-height:1.45;margin:0 0 12pt;overflow-wrap:anywhere}
+  .mat-transcript-print-brand{font-size:9pt;color:#555;margin:0 0 12pt}
+  .mat-transcript-print-meta,.mat-transcript-print-source,.mat-transcript-print-notice{font-size:9pt;line-height:1.6;margin:3pt 0;overflow-wrap:anywhere}
+  .mat-transcript-print-text{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:20pt;padding-top:12pt;border-top:1px solid #aaa;font-size:11pt;line-height:1.8;overflow:visible!important;max-height:none!important}
+  .mat-transcript-print-sheet>*{color:#000!important;text-shadow:none!important}
+}

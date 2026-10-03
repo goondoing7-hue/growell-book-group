@@ -19,6 +19,8 @@
 
 실행·배포와 복구 파일 안내는 `README.md`, `DEPLOYMENT.md`를 따른다.
 
+- 자료실 원문은 `materialTranscript.js`/`.css`, `api/material-video-transcript.js`, `server/materialTranscriptService.cjs`·`materialTranscriptProvider.cjs`가 담당합니다. Supadata 공개 자막만 저장하며 AI 생성 원문이나 번역으로 대체하지 않습니다. 키는 서버 환경변수 전용이고 원문 캐시는 기존 요약 캐시와 별도입니다. 설정·무료 한도는 `server/MATERIAL_VIDEO_SETUP.md`를 따릅니다.
+
 ## PC·모바일 사용 가이드
 
 `guide.html`은 공통 내용과 모바일 가이드의 원본입니다. 수정 후 `npm.cmd run guides`로 자동 이동 코드와 `guide-pc.html`을 함께 갱신합니다. PC 전용 구성·문구는 `scripts/build-guides.cjs`에서 관리하며 빌드는 두 가이드가 최신인지 검사합니다. 기기 분류는 `guideRouting.js`를 사용하고 창 너비만으로 모바일로 전환하지 않습니다. 휴대폰·태블릿은 모바일, PC는 PC 가이드로 연결하며 기존 링크의 세부 위치를 유지합니다. 파일로 내려받은 가이드는 자동 이동하지 않습니다.

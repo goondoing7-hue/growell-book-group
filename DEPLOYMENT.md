@@ -200,6 +200,12 @@ Microsoft 앱 등록, 서버 환경변수, Supabase 마이그레이션 및 정�
 
 알림 전용 서비스 워커는 앱·회원 응답을 캐시하지 않으며 서버 푸시 예약도 생성하지 않습니다. 브라우저가 백그라운드 실행을 제한하거나 앱을 종료하면 정확한 종료 시각의 알림은 보장하지 않습니다. 다시 열면 경과시간을 복원하고 도달한 카운트다운을 처리합니다. [백그라운드 타이머 제한](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#policies_in_place_to_aid_background_page_performance)
 
-## 사용 가이드 갱신
+## 자료실 전체 스크립트
+
+2026-10-03 공개 YouTube 자막 자동 등록·열람·인쇄를 추가합니다. 새 원문 저장소 `server/material-video-transcript.sql`은 운영 Supabase SQL Editor에서 적용 성공을 확인했습니다. 원문 API는 Supadata `native` 자막만 사용하며 서버 환경변수 `SUPADATA_API_KEY`가 필요합니다. 외부 키 설정과 실제 자막 조회 확인 전에는 운영 연결 완료로 간주하지 않습니다. 상세한 연결·사용량 제한은 `server/MATERIAL_VIDEO_SETUP.md`에 있습니다.
+
+PC·모바일 가이드에 전체 스크립트 버튼, 저장본 재열람, 인쇄·PDF 저장, 자막 없는 영상과 원본 언어 안내를 함께 반영합니다.
+
+## 사용 가이드 생성
 
 공통 안내는 `guide.html`, PC 전용 레이아웃·설명은 `scripts/build-guides.cjs`를 수정한 뒤 `npm.cmd run guides`를 실행합니다. 생성된 `guide-pc.html`과 `guide.html`을 함께 검증·반영합니다. 빌드 중에는 원본을 변경하지 않으며 가이드가 서로 오래된 상태이면 빌드를 중단합니다. PC·모바일 연결과 쿼리·해시 보존은 `tests/guide-routing.test.cjs`에서 검증합니다.

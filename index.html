@@ -1104,6 +1104,7 @@
 <link rel="stylesheet" href="brand.css">
 <link rel="stylesheet" href="navigation.css">
 <link rel="stylesheet" href="materialsVideo.css">
+<link rel="stylesheet" href="materialTranscript.css">
 <script src="popupHistory.js"></script>
 <script src="profile.js"></script>
 <script src="passwordHint.js"></script>
@@ -1117,6 +1118,7 @@
 <script src="communityDomain.js"></script>
 <script src="communityFeatures.js"></script>
 <script src="materialsMedia.js"></script>
+<script src="materialTranscript.js"></script>
 <script src="materialsVideo.js"></script>
 <script src="habitDomain.js"></script>
 <script src="habitDayClock.js"></script>
@@ -7297,14 +7299,16 @@ function materialsTabHtml(book, postId){
 function bindMaterialVideos(route){
   if(typeof GrowellMaterialsVideo==='undefined')return;
   var session=SESSION,epoch=saveSessionEpoch,href=location.href;
-  GrowellMaterialsVideo.bind({container:document.getElementById('app'),owner:session && session.userId,
+  var options={container:document.getElementById('app'),owner:session && session.userId,
     fetch:window.fetch.bind(window),getAccessToken:function(){return habitSyncAccessToken(session,epoch);},
     isCurrent:function(postId,videoId){
       var note=STATE.materialNotes[postId];
       return !!session && SESSION===session && saveSessionEpoch===epoch && location.href===href &&
         route.view==='book' && route.tab==='materials' && route.postId===postId && !!note && note.bookId===route.bookId &&
         GrowellMaterialsMedia.videos(note,materialBodyUrls(note.html)).some(function(video){return video.id===videoId;});
-    }});
+    }};
+  GrowellMaterialsVideo.bind(options);
+  if(typeof GrowellMaterialTranscript!=='undefined')GrowellMaterialTranscript.bind(options);
 }
 function readFileAsDataURL(file){
   return new Promise(function(resolve, reject){
