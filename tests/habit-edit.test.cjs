@@ -332,7 +332,7 @@ test('overview includes only the current owner across books and immediately refl
   c.habitSaveIntents={mine:{'2026-09-22':{checked:true,status:'saving'}}};
   vm.runInContext(source.slice(source.indexOf('function habitWithPendingChecks('),source.indexOf('function habitSaveStatusHtml(')),c);
   const html=c.habitOverviewBodyHtml();
-  assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.match(html,/data-habit-summary="remaining"[^>]*aria-label="남은 습관 1개 목록 보기"/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
+  assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.doesNotMatch(html,/data-habit-summary="remaining"|남은 습관/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
   assert.match(html,/다른 책 습관/);assert.match(html,/data-habit-overview-open="otherBook"/);assert.doesNotMatch(html,/타인 습관/);assert.match(html,/체크 저장 중/);
   const input=overviewCheckbox(html,'mine','2026-09-22');assert.match(input,/\schecked(?:\s|>)/);assert.match(input,/aria-label="[^\"]*다시 누르면 취소/);
   assert.doesNotMatch(overviewCheckbox(html,'otherBook','2026-09-22'),/\schecked(?:\s|>)/);
@@ -1377,7 +1377,7 @@ test('overview excludes resting habits from todays completion totals but keeps t
   const c=cardHarness();Object.assign(c,{SESSION:{userId:'owner'},memberLoadState:{habits:'ready'},habitWithPendingChecks:habit=>habit,bookById:()=>({title:'테스트 책'})});
   const habit=(id,extra={})=>({id,userId:'owner',bookId:'emotion',name:id,startDate:'2026-09-01',checkedDates:[],...extra});
   c.STATE={habits:{done:habit('done',{weekdays:[2,4],checkedDates:['2026-09-22']}),pending:habit('pending'),rest:habit('rest',{weekdays:[1,3,5]})}};
-  const html=c.habitOverviewBodyHtml();assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.match(html,/data-habit-summary="remaining"[^>]*aria-label="남은 습관 1개 목록 보기"/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
+  const html=c.habitOverviewBodyHtml();assert.match(html,/오늘 완료<\/span><strong>1<small> \/ 2/);assert.doesNotMatch(html,/data-habit-summary="remaining"|남은 습관/);assert.match(html,/오늘 실천율<\/span><strong>50<small>%/);
   assert.match(overviewCheckbox(html,'rest','2026-09-22'),/\sdisabled(?:\s|>)/);assert.match(overviewCheckbox(html,'rest','2026-09-22'),/쉬는 날/);assert.match(html,/월·수·금/);
   assert.equal(c.habitTodayState(c.STATE.habits.rest,'2026-09-22').canCheck,false);assert.match(c.habitTodayState(c.STATE.habits.rest,'2026-09-22').label,/쉬는 날/);
   assert.match(c.habitFactsHtml(c.STATE.habits.rest),/월·수·금/);assert.match(c.habitFactsHtml(c.STATE.habits.pending),/매일/);
