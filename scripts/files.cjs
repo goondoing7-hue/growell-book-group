@@ -8,7 +8,7 @@ const DEPLOY_FILES = Object.freeze([
   'timerAlerts.js', 'timer-alert-sw.js', 'navigation.css', 'habitReminder.js', 'habitReminder.css',
   'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css',
   'dailyVerseDomain.js', 'popupHistory.js',
-  'index.html', 'privacy.html', 'guide.html', 'covers/guide-og.png', 'covers/guide-og.svg', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
+  'index.html', 'privacy.html', 'guide.html', 'guide-pc.html', 'guideRouting.js', 'covers/guide-og.png', 'covers/guide-og.svg', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
   'habitDomain.js', 'habitDayClock.js', 'habitSuggestions.js', 'habitGuide.js', 'habitGuide.css', 'habitOverview.css', 'habitCarousel.js', 'habitCarousel.css', 'readingHabit.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
@@ -24,6 +24,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/guide-routing.test.cjs',
   'tests/archive-shared-notes.test.cjs', 'tests/archive-calendar.test.cjs', 'tests/archive-stats.test.cjs',
   'tests/archive-domain.test.cjs', 'tests/archive-timer.test.cjs', 'tests/archive-integration.test.cjs', 'tests/archive-ui.test.cjs', 'tests/book-search.test.cjs', 'tests/signup-notifications.test.cjs',
   'tests/password-hint.test.cjs', 'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
@@ -53,7 +54,7 @@ const PUBLISH_FILES = Object.freeze([
   'server/habit-kind.sql', 'server/community-questions.sql', 'server/community-questions-verification.sql',
   'server/worksheet-admin-only.sql', 'server/worksheet-admin-verification.sql',
   'scripts/files.cjs', 'scripts/check.cjs', 'scripts/test.cjs',
-  'scripts/build.cjs', 'scripts/publish.cjs'
+  'scripts/build.cjs', 'scripts/build-guides.cjs', 'scripts/publish.cjs'
 ]);
 
 function isAllowedRemote(remote) {

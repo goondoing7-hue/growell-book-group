@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const profile=require('../profile.js');
+const guideRouting=require('../guideRouting.js');
 const html=fs.readFileSync(require('node:path').join(__dirname,'..','index.html'),'utf8');
 function section(start,end){const a=html.indexOf(start),b=html.indexOf(end,a);assert.ok(a>=0&&b>a);return html.slice(a,b);}
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {resolve,promise};}
@@ -50,11 +51,18 @@ test('profile rejects malformed supplied photos while preserving the original pr
   }
 });
 
-test('the common footer keeps contact information and places the mobile guide above privacy',()=>{
-  const c={};vm.createContext(c);vm.runInContext(section('function footerHtml(','/* ---------------- render: admin user list'),c);
-  const footer=c.footerHtml();
-  assert.match(footer,/DBKS GROWELL 독서모임/);assert.match(footer,/010-7319-7580/);
-  assert.match(footer,/<div class="footer-links"><a href="\/guide.html">모바일 사용 가이드<\/a><a href="privacy.html">개인정보처리방침<\/a><\/div>/);
+test('the common footer keeps contact information and places the device guide before privacy',()=>{
+  for(const [navigator,href,label] of [
+    [{userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',platform:'Win32'},'/guide-pc.html','PC 사용 가이드'],
+    [{userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',platform:'iPhone'},'/guide.html','모바일 사용 가이드']
+  ]){
+    const c={GrowellGuideRouting:guideRouting,window:{navigator}};
+    vm.createContext(c);vm.runInContext(section('function footerHtml(','/* ---------------- render: admin user list'),c);
+    const footer=c.footerHtml();
+    assert.match(footer,/DBKS GROWELL 독서모임/);assert.match(footer,/010-7319-7580/);
+    assert.ok(footer.includes('<div class="footer-links"><a href="'+href+'">'+label+'</a><a href="privacy.html">개인정보처리방침</a></div>'));
+    assert.ok(footer.indexOf('010-7319-7580')<footer.indexOf('class="footer-links"'));
+  }
 });
 
 test('an absent optional avatar hides its removal button even with common button display styles',()=>{

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { DEPLOY_FILES } = require('./files.cjs');
 const { PROJECT_ROOT, assertRegularFile, verifySource } = require('./check.cjs');
 const { runTests } = require('./test.cjs');
+const { verifyGuidesFresh } = require('./build-guides.cjs');
 
 function copyDeployFiles(root = PROJECT_ROOT) {
   const sourceRoot = fs.realpathSync(root);
@@ -31,6 +32,7 @@ function copyDeployFiles(root = PROJECT_ROOT) {
 }
 
 function build() {
+  verifyGuidesFresh();
   const result = verifySource();
   console.log(`소스 검사 완료 (${result.files}개 배포 파일)`);
   runTests();

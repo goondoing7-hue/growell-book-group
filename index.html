@@ -1112,6 +1112,7 @@
 <link rel="stylesheet" href="bookDetails.css">
 <script src="oauthDomain.js"></script>
 <script src="homeDomain.js"></script>
+<script src="guideRouting.js"></script>
 <script src="dailyVerseDomain.js"></script>
 <script src="communityDomain.js"></script>
 <script src="communityFeatures.js"></script>
@@ -4146,10 +4147,11 @@ function headerHtml(route){
 }
 
 function footerHtml(){
+  var guide = GrowellGuideRouting.target(window.navigator);
   return '<footer class="footer"><div class="wrap">' +
     '<span>읽고 나누고 생각하며 자라는 우리<br>DBKS GROWELL 독서모임</span>' +
     '<span>관리자 정기성 전도사 · 010-7319-7580</span>' +
-    '<div class="footer-links"><a href="/guide.html">모바일 사용 가이드</a><a href="privacy.html">개인정보처리방침</a></div>' +
+    '<div class="footer-links"><a href="'+guide.href+'">'+guide.label+'</a><a href="privacy.html">개인정보처리방침</a></div>' +
   '</div></footer>';
 }
 

@@ -7,6 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "guides": "node scripts/build-guides.cjs",
     "check": "node scripts/check.cjs",
     "test": "node scripts/test.cjs",
     "build": "node scripts/build.cjs",

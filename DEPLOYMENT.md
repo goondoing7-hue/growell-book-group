@@ -199,3 +199,7 @@ Microsoft 앱 등록, 서버 환경변수, Supabase 마이그레이션 및 정�
 휴대폰 시스템 알림은 카운트다운 설정의 알림 버튼을 사용자가 직접 눌러 권한을 허용한 경우에만 표시합니다. 소리·진동은 브라우저와 기기의 지원·무음 설정에 영향을 받습니다. iPhone/iPad는 지원 버전에서 홈 화면에 추가한 앱으로 알림 권한을 허용해야 합니다. [WebKit 안내](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/)
 
 알림 전용 서비스 워커는 앱·회원 응답을 캐시하지 않으며 서버 푸시 예약도 생성하지 않습니다. 브라우저가 백그라운드 실행을 제한하거나 앱을 종료하면 정확한 종료 시각의 알림은 보장하지 않습니다. 다시 열면 경과시간을 복원하고 도달한 카운트다운을 처리합니다. [백그라운드 타이머 제한](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API#policies_in_place_to_aid_background_page_performance)
+
+## 사용 가이드 갱신
+
+공통 안내는 `guide.html`, PC 전용 레이아웃·설명은 `scripts/build-guides.cjs`를 수정한 뒤 `npm.cmd run guides`를 실행합니다. 생성된 `guide-pc.html`과 `guide.html`을 함께 검증·반영합니다. 빌드 중에는 원본을 변경하지 않으며 가이드가 서로 오래된 상태이면 빌드를 중단합니다. PC·모바일 연결과 쿼리·해시 보존은 `tests/guide-routing.test.cjs`에서 검증합니다.
