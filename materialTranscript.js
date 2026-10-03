@@ -177,9 +177,9 @@
     var selected=translationData(details.translation)?'translation':'original',userSelected=false;
     var document=root.document,dialog=node(document,'dialog','mat-transcript-dialog'),id='mat-transcript-title-'+(++serial);
     dialog.setAttribute('aria-labelledby',id);
-    var head=node(document,'div','mat-transcript-dialog-head'),heading=node(document,'div','');
-    var eyebrow=node(document,'p','mat-transcript-eyebrow');heading.appendChild(eyebrow);
-    var title=node(document,'h2','',details.title || '영상 스크립트');title.id=id;heading.appendChild(title);head.appendChild(heading);
+    var head=node(document,'div','mat-transcript-dialog-head');
+    var eyebrow=node(document,'p','mat-transcript-eyebrow');head.appendChild(eyebrow);
+    var title=node(document,'h2','',details.title || '영상 스크립트');title.id=id;head.appendChild(title);
     var closeButton=node(document,'button','mat-transcript-close','닫기');closeButton.type='button';head.appendChild(closeButton);dialog.appendChild(head);
     var views=node(document,'div','mat-transcript-views');views.setAttribute('role','group');views.setAttribute('aria-label','스크립트 보기');
     var translatedButton=node(document,'button','','AI 한국어 번역'),originalButton=node(document,'button');
