@@ -24,13 +24,22 @@ function fixture({existing = true, mutate, handle} = {}) {
     calls.push(call);
     if (handle) { const response = await handle(call, resources, calls); if (response) return response; }
     if (parsed.pathname === '/drive/v3/about') return reply({user: {permissionId: PERMISSION}});
-    if (parsed.pathname === '/drive/v3/files/root') return reply({id: ROOT});
+    if (parsed.pathname === '/drive/v3/files/root') return reply({error: 'drive.file cannot read a pre-existing root'}, 404);
     if (parsed.pathname === '/drive/v3/files/generateIds') return reply({ids: [FOLDER, FILE].slice(0, Number(parsed.searchParams.get('count')))});
     if (parsed.pathname === '/drive/v3/files' && init.method === 'POST') {
       const data = JSON.parse(init.body);
       if (resources.has(data.id)) return reply({error: 'conflict'}, 409);
-      resources.set(data.id, {...meta(data.id), ...data});
+      resources.set(data.id, {...meta(data.id), ...data, parents: data.parents.map(id => id === 'root' ? ROOT : id)});
       return reply({id: data.id});
+    }
+    if (parsed.pathname === '/drive/v3/files' && !init.method) {
+      assert.equal(parsed.searchParams.get('q'), "'root' in parents and 'me' in owners and trashed = false and mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='growellBackup' and value='v1' } and appProperties has { key='owner' and value='" + MARKER + "' } and appProperties has { key='role' and value='folder' }");
+      assert.equal(parsed.searchParams.get('fields'), 'nextPageToken,incompleteSearch,files(id,parents)');
+      assert.equal(parsed.searchParams.get('spaces'), 'drive');
+      assert.equal(parsed.searchParams.get('corpora'), 'user');
+      const matches = [...resources.values()].filter(item => item.parents[0] === ROOT && item.mimeType === 'application/vnd.google-apps.folder' && item.ownedByMe && !item.trashed
+        && item.appProperties.growellBackup === 'v1' && item.appProperties.owner === MARKER && item.appProperties.role === 'folder');
+      return reply({files: matches.map(({id, parents}) => ({id, parents})), incompleteSearch: false});
     }
     if (parsed.pathname.startsWith('/drive/v3/files/')) return resources.has(parsed.pathname.split('/').at(-1)) ? reply(resources.get(parsed.pathname.split('/').at(-1))) : reply({error: 'missing'}, 404);
     if (parsed.pathname === '/upload/drive/v3/files/' + FILE) {
@@ -127,7 +136,7 @@ test('Initial backup creates metadata first, persists each creation, then upload
   assert.deepEqual(f.uploads, [content]);
   assert.equal(f.calls.filter(call => call.method === 'POST').length, 2);
   assert.ok(f.calls.every(call => call.redirect === 'error'));
-  assert.ok(f.calls.every(call => !call.url.includes('files?') || call.method === 'POST'));
+  assert.ok(f.calls.every(call => !call.url.includes('files?') || call.method === 'POST' || new URL(call.url).searchParams.get('q').includes("appProperties has { key='owner' and value='" + MARKER + "' }")));
 });
 test('Repeated backups update the same persisted file without creating duplicates', async () => {
   const f = fixture();
@@ -242,4 +251,78 @@ test('A mismatched upload confirmation is never recorded as successful', async (
     const f = fixture({handle: call => call.method === 'PATCH' ? reply(body) : undefined});
     await assert.rejects(f.write(), error => error.code === 'backup-response-invalid' && error.uncertain);
   }
+});
+test('Initial drive.file backup succeeds without reading the pre-existing root folder', async () => {
+  const f = fixture({existing: false});
+  await f.write();
+  assert.equal(f.calls.some(call => new URL(call.url).pathname === '/drive/v3/files/root'), false);
+  const creation = f.calls.find(call => call.method === 'POST' && JSON.parse(call.body).id === FOLDER);
+  assert.deepEqual(JSON.parse(creation.body).parents, ['root']);
+  assert.deepEqual(f.uploads, [content]);
+});
+test('The exact reserved folder must be returned by its scoped root query', async () => {
+  const f = fixture({handle: call => {
+    if (new URL(call.url).pathname === '/drive/v3/files' && !call.method) return reply({files: [{id: 'another_backup', parents: [ROOT]}]});
+  }});
+  await assert.rejects(f.write(), /backup-folder-unsafe/);
+  assert.equal(f.uploads.length, 0);
+});
+test('Malformed or incomplete root query results block all content uploads', async () => {
+  for (const result of [null, {}, {files: 'not-an-array'}, {files: [{id: FOLDER, parents: [ROOT]}], incompleteSearch: true},
+    {files: [{id: FOLDER, parents: [ROOT]}], incompleteSearch: 'false'}, {files: [{id: FOLDER, parents: []}]},
+    {files: [{id: FOLDER, parents: ['../bad-parent']}]}, {files: [{id: FOLDER, parents: [ROOT]}], nextPageToken: 42}]) {
+    const f = fixture({handle: call => new URL(call.url).pathname === '/drive/v3/files' && !call.method ? reply(result) : undefined});
+    await assert.rejects(f.write(), /backup-response-invalid/);
+    assert.equal(f.uploads.length, 0);
+  }
+});
+test('Scoped root proof follows bounded pagination and never changes its query', async () => {
+  const queries = [];
+  const f = fixture({handle: call => {
+    const url = new URL(call.url);
+    if (url.pathname !== '/drive/v3/files' || call.method) return;
+    queries.push(url.searchParams.get('q'));
+    return reply(url.searchParams.get('pageToken') === 'fixture-next'
+      ? {files: [{id: FOLDER, parents: [ROOT]}], incompleteSearch: false}
+      : {files: [{id: 'other_owned_backup', parents: [ROOT]}], nextPageToken: 'fixture-next'});
+  }});
+  await f.write();
+  assert.equal(queries.length, 2);
+  assert.equal(queries[0], queries[1]);
+  assert.deepEqual(f.uploads, [content]);
+});
+test('Repeating or unbounded root query pages fail closed even if an earlier page matched', async () => {
+  for (const repeated of [false, true]) {
+    let page = 0;
+    const f = fixture({handle: call => {
+      if (new URL(call.url).pathname !== '/drive/v3/files' || call.method) return;
+      page++;
+      return reply({files: page === 1 ? [{id: FOLDER, parents: [ROOT]}] : [], nextPageToken: repeated ? 'same-token' : 'page-' + page});
+    }});
+    await assert.rejects(f.write(), /backup-response-invalid/);
+    assert.ok(page <= 3);
+    assert.equal(f.uploads.length, 0);
+  }
+});
+test('A folder moved after the scoped root proof is rejected by the final metadata re-read', async () => {
+  const f = fixture({handle: (call, resources) => {
+    if (new URL(call.url).pathname !== '/drive/v3/files' || call.method) return;
+    resources.get(FOLDER).parents = ['moved_folder'];
+    return reply({files: [{id: FOLDER, parents: [ROOT]}]});
+  }});
+  await assert.rejects(f.write(), /backup-folder-unsafe/);
+  assert.equal(f.uploads.length, 0);
+});
+test('Delayed folder search indexing retries the same ID without duplicating or exposing data', async () => {
+  let indexed = false;
+  const f = fixture({existing: false, handle: call => {
+    if (!indexed && new URL(call.url).pathname === '/drive/v3/files' && !call.method) return reply({files: []});
+  }});
+  await assert.rejects(f.write(), /backup-folder-unsafe/);
+  assert.equal(f.resources.size, 1);
+  assert.equal(f.uploads.length, 0);
+  indexed = true;
+  await f.write();
+  assert.equal(f.calls.filter(call => call.method === 'POST' && JSON.parse(call.body).id === FOLDER).length, 1);
+  assert.deepEqual(f.uploads, [content]);
 });

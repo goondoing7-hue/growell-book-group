@@ -62,10 +62,42 @@ function createProvider(config, options = {}) {
   function validate(meta, {id, type, parent, permissionId, marker, role}) {
     if (!meta || meta.id !== id || meta.mimeType !== type || meta.trashed !== false || meta.shared !== false || meta.ownedByMe !== true || meta.driveId
       || !Array.isArray(meta.owners) || meta.owners.length !== 1 || meta.owners[0]?.permissionId !== permissionId || meta.owners[0]?.me !== true
-      || !Array.isArray(meta.parents) || meta.parents.length !== 1 || meta.parents[0] !== parent
+      || !Array.isArray(meta.parents) || meta.parents.length !== 1 || typeof meta.parents[0] !== 'string' || !D.FILE_ID.test(meta.parents[0])
+      || (parent !== 'root' && meta.parents[0] !== parent)
       || meta.appProperties?.growellBackup !== 'v1' || meta.appProperties?.owner !== marker || meta.appProperties?.role !== role
       || meta.capabilities?.canEdit !== true || (role === 'folder' && meta.capabilities?.canAddChildren !== true)) throw new D.BackupError(role === 'folder' ? 'backup-folder-unsafe' : 'backup-file-unsafe', 409);
     return meta;
+  }
+  async function verifiedRootParent(accessToken, expected) {
+    // drive.file cannot necessarily read the user's pre-existing root folder.
+    // Search only this member's app-created backup folders beneath the root alias.
+    const query = "'root' in parents and 'me' in owners and trashed = false and mimeType = '" + FOLDER_TYPE
+      + "' and appProperties has { key='growellBackup' and value='v1' }"
+      + " and appProperties has { key='owner' and value='" + expected.marker + "' }"
+      + " and appProperties has { key='role' and value='folder' }";
+    const seen = new Set(); let pageToken = '', parent = null;
+    for (let page = 0; page < 3; page++) {
+      const params = new URLSearchParams({q: query, spaces: 'drive', corpora: 'user', pageSize: '100', fields: 'nextPageToken,incompleteSearch,files(id,parents)'});
+      if (pageToken) params.set('pageToken', pageToken);
+      const result = (await request(D.DRIVE_ORIGIN + '/drive/v3/files?' + params, {headers: headers(accessToken)})).body;
+      if (!result || !Array.isArray(result.files) || result.files.length > 100 || (result.incompleteSearch !== undefined && result.incompleteSearch !== false)) throw new D.BackupError('backup-response-invalid');
+      for (const item of result.files) {
+        if (!item || typeof item.id !== 'string' || !D.FILE_ID.test(item.id) || !Array.isArray(item.parents) || item.parents.length !== 1
+          || typeof item.parents[0] !== 'string' || !D.FILE_ID.test(item.parents[0])) throw new D.BackupError('backup-response-invalid');
+        if (item.id === expected.id) {
+          if (parent !== null) throw new D.BackupError('backup-response-invalid');
+          parent = item.parents[0];
+        }
+      }
+      if (result.nextPageToken === undefined || result.nextPageToken === null || result.nextPageToken === '') {
+        if (!parent) throw new D.BackupError('backup-folder-unsafe', 409);
+        return parent;
+      }
+      pageToken = result.nextPageToken;
+      if (typeof pageToken !== 'string' || pageToken.length > 2048 || seen.has(pageToken)) throw new D.BackupError('backup-response-invalid');
+      seen.add(pageToken);
+    }
+    throw new D.BackupError('backup-response-invalid');
   }
   async function ensure(accessToken, expected, created, name, beforeWrite) {
     let meta = await metadata(accessToken, expected.id);
@@ -112,11 +144,11 @@ function createProvider(config, options = {}) {
       const about = (await request(D.DRIVE_ORIGIN + '/drive/v3/about?fields=user(permissionId)', {headers: headers(accessToken)})).body;
       const permissionId = about?.user?.permissionId;
       if (typeof permissionId !== 'string' || !permissionId) throw new D.BackupError('backup-identity-invalid');
-      const root = (await request(D.DRIVE_ORIGIN + '/drive/v3/files/root?fields=id', {headers: headers(accessToken)})).body;
-      if (typeof root?.id !== 'string' || !D.FILE_ID.test(root.id)) throw new D.BackupError('backup-response-invalid');
-      const folder = {id: folderId, type: FOLDER_TYPE, parent: root.id, permissionId, marker, role: 'folder'};
+      const folder = {id: folderId, type: FOLDER_TYPE, parent: 'root', permissionId, marker, role: 'folder'};
       const file = {id: fileId, type: 'application/json', parent: folderId, permissionId, marker, role: 'latest'};
-      await ensure(accessToken, folder, folderCreated, D.FOLDER_NAME, beforeWrite);
+      const folderMeta = await ensure(accessToken, folder, folderCreated, D.FOLDER_NAME, beforeWrite);
+      folder.parent = await verifiedRootParent(accessToken, folder);
+      validate(folderMeta, folder);
       if (!folderCreated) await onCreated({folderCreated: true, fileCreated});
       await ensure(accessToken, file, fileCreated, D.FILE_NAME, beforeWrite);
       if (!fileCreated) await onCreated({folderCreated: true, fileCreated: true});
