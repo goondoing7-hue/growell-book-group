@@ -5,6 +5,7 @@
 .mat-transcript-status{color:var(--ink-soft);font-size:11px;line-height:1.65;overflow-wrap:anywhere}
 .mat-transcript-retry{border:0;border-bottom:1px solid var(--line);padding:1px 0;background:transparent;color:var(--primary)}
 .mat-transcript [hidden]{display:none!important}
+.mat-transcript-dialog [hidden]{display:none!important}
 .mat-transcript-dialog{width:min(760px,calc(100% - 40px));max-height:calc(100dvh - 48px);padding:28px 30px 20px;border:1px solid var(--line);border-radius:20px;background:var(--surface);color:var(--ink);box-shadow:var(--shadow-lg);overflow:hidden}
 .mat-transcript-dialog[open]{display:flex;flex-direction:column}
 .mat-transcript-dialog::backdrop{background:rgba(24,21,30,.55)}
@@ -12,6 +13,9 @@
 .mat-transcript-eyebrow{font-size:11px;color:var(--primary);margin:0 0 8px;letter-spacing:.02em}
 .mat-transcript-dialog h2{font-size:20px;line-height:1.5;margin:0;overflow-wrap:anywhere}
 .mat-transcript-close{flex:none;background:transparent;border:1px solid var(--line);color:var(--ink-soft);border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer}
+.mat-transcript-views{display:flex;flex-wrap:wrap;gap:7px;margin-top:18px;flex:none}
+.mat-transcript-views button{font:inherit;font-size:12px;line-height:1.5;min-height:36px;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-soft);cursor:pointer}
+.mat-transcript-views button[aria-pressed=true]{background:var(--primary-soft);border-color:var(--primary);color:var(--primary);font-weight:650}
 .mat-transcript-meta{display:flex;flex-wrap:wrap;gap:5px 14px;margin-top:13px;font-size:11px;color:var(--ink-soft);flex:none}
 .mat-transcript-notice{font-size:11px;color:var(--ink-soft);line-height:1.65;margin:10px 0 16px;flex:none}
 .mat-transcript-text{font-family:var(--font-body,inherit);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.95;font-size:14px;overflow-y:auto;min-height:80px;max-height:58dvh;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:20px 4px 20px 0;overscroll-behavior:contain}

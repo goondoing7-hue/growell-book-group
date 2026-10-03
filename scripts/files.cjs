@@ -24,6 +24,8 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/material-transcript-translation.test.cjs', 'tests/material-translation-sql.test.cjs',
+  'tests/material-video-metadata.test.cjs',
   'tests/material-transcript-provider.test.cjs', 'tests/material-transcript-server.test.cjs', 'tests/material-transcript-sql.test.cjs', 'tests/material-transcript-ui.test.cjs',
   'tests/guide-routing.test.cjs',
   'tests/archive-shared-notes.test.cjs', 'tests/archive-calendar.test.cjs', 'tests/archive-stats.test.cjs',
@@ -40,6 +42,8 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'server/materialTranscriptTranslation.cjs', 'server/material-video-translation.sql',
+  'server/materialVideoMetadata.cjs',
   'api/material-video-transcript.js', 'server/materialTranscriptService.cjs', 'server/materialTranscriptProvider.cjs', 'server/material-video-transcript.sql',
   'api/book-search.js',
   'api/material-video-summary.js', 'server/materialVideoService.cjs', 'server/materialVideoAI.cjs', 'server/material-video-summary.sql', 'server/MATERIAL_VIDEO_SETUP.md',

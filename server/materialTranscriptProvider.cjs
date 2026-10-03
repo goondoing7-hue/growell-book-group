@@ -1,6 +1,7 @@
 'use strict';
 
-// Native captions only: never translate, generate, retry, or poll implicitly.
+// Native captions only: prefer Korean, then request available English captions
+// once only after the server reserves its additional paid request.
 // https://docs.supadata.ai/get-transcript
 // https://docs.supadata.ai/api-reference/endpoint/transcript/transcript-get
 const ENDPOINT = 'https://api.supadata.ai/v1/transcript';
@@ -8,6 +9,7 @@ const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_TRANSCRIPT_BYTES = 2 * 1024 * 1024;
 const MAX_REQUEST_MS = 40000;
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const LANGUAGE = /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/;
 const SAFE_CODES = new Set(['transcript_unavailable', 'video_unavailable', 'not_configured', 'rate_limited', 'temporary_error']);
 
 function failure(code) { const error = new Error(code); error.code = code; return error; }
@@ -62,7 +64,7 @@ function validateTranscript(value) {
   if (typeof value.content === 'string' && !value.content.trim() || Array.isArray(value.content) && value.content.length === 0) throw failure('transcript_unavailable');
   if (typeof value.content !== 'string' || Buffer.byteLength(value.content, 'utf8') > MAX_TRANSCRIPT_BYTES ||
       /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value.content) ||
-      typeof value.lang !== 'string' || !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$/.test(value.lang)) throw failure('temporary_error');
+      typeof value.lang !== 'string' || !LANGUAGE.test(value.lang)) throw failure('temporary_error');
   // Preserve the native language and text. The source follows from mode=native;
   // callers may only supply stored job IDs originating from this adapter.
   return {text: value.content, language: value.lang, source: 'youtube_captions'};
@@ -84,6 +86,11 @@ function httpCode(status, polling) {
   if (status === 404) return polling ? 'temporary_error' : 'video_unavailable';
   return 'temporary_error';
 }
+function languageBase(value) { return value.toLowerCase().split('-')[0]; }
+function englishAvailable(value) {
+  if (!Array.isArray(value)) return false;
+  return value.some(language => typeof language === 'string' && LANGUAGE.test(language) && languageBase(language) === 'en');
+}
 async function requestTranscript(videoId, options = {}) {
   if (typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) throw failure('video_unavailable');
   const env = options.env || process.env;
@@ -91,12 +98,8 @@ async function requestTranscript(videoId, options = {}) {
   if (!apiKey || apiKey.length > 4096 || /[^\x21-\x7e]/.test(apiKey)) throw failure('not_configured');
   const polling = options.jobId != null;
   if (polling && !validJobId(options.jobId)) throw failure('temporary_error');
-  const target = new URL(polling ? ENDPOINT + '/' + options.jobId : ENDPOINT);
-  if (!polling) {
-    target.searchParams.set('url', 'https://www.youtube.com/watch?v=' + videoId);
-    target.searchParams.set('mode', 'native');
-    target.searchParams.set('text', 'true');
-  }
+  const requestedLanguage = options.requestedLanguage == null ? 'ko' : options.requestedLanguage;
+  if (requestedLanguage !== 'ko' && requestedLanguage !== 'en') throw failure('temporary_error');
   const controller = new AbortController();
   const signal = controller.signal;
   const abort = () => controller.abort();
@@ -104,31 +107,60 @@ async function requestTranscript(videoId, options = {}) {
   const timer = setTimeout(abort, timeout);
   if (options.signal?.aborted) controller.abort();
   else options.signal?.addEventListener('abort', abort, {once: true});
-  try {
+  const fetcher = options.fetch || globalThis.fetch;
+  async function exchange(jobId, language) {
     if (signal.aborted) throw failure('temporary_error');
-    const fetcher = options.fetch || globalThis.fetch;
-    // Exactly one externally countable request, including when checking a job.
+    const checking = jobId != null;
+    const target = new URL(checking ? ENDPOINT + '/' + jobId : ENDPOINT);
+    if (!checking) {
+      target.searchParams.set('url', 'https://www.youtube.com/watch?v=' + videoId);
+      target.searchParams.set('mode', 'native');
+      target.searchParams.set('text', 'true');
+      target.searchParams.set('lang', language);
+    }
     const response = await abortable(fetcher(target.href, {
       method: 'GET', redirect: 'error', signal,
       headers: {'Accept': 'application/json', 'x-api-key': apiKey}
     }), signal);
     if (response.redirected || ![200, 202].includes(response.status)) {
-      cancelBody(response.body); throw failure(response.redirected ? 'temporary_error' : httpCode(response.status, polling));
+      cancelBody(response.body); throw failure(response.redirected ? 'temporary_error' : httpCode(response.status, checking));
     }
     const data = await readJson(response, signal);
     if (!isObject(data)) throw failure('temporary_error');
     if (response.status === 202) {
-      if (!validJobId(data.jobId) || polling && data.jobId !== options.jobId) throw failure('temporary_error');
-      return {status: 'pending', jobId: data.jobId};
+      if (!validJobId(data.jobId) || checking && data.jobId !== jobId) throw failure('temporary_error');
+      return {status: 'pending', jobId: data.jobId, requestedLanguage: language};
     }
-    if (polling) {
-      if (data.status === 'queued' || data.status === 'active') return {status: 'pending', jobId: options.jobId};
+    if (checking) {
+      if (data.status === 'queued' || data.status === 'active') return {status: 'pending', jobId, requestedLanguage: language};
       if (data.status === 'failed') throw failure(upstreamCode(data.error));
       if (data.status !== 'completed') throw failure('temporary_error');
     } else if (data.status != null) throw failure('temporary_error');
     if (data.error != null) throw failure(upstreamCode(data.error));
-    const transcript = validateTranscript(polling && data.result != null ? data.result : data);
-    return {status: 'ready', transcript};
+    const value = checking && data.result != null ? data.result : data;
+    return {status: 'ready', transcript: validateTranscript(value), hasEnglish: englishAvailable(value.availableLangs)};
+  }
+  try {
+    const first = await exchange(polling ? options.jobId : null, requestedLanguage);
+    if (first.status === 'pending') return first;
+    const original = {status: 'ready', transcript: first.transcript};
+    const actualLanguage = languageBase(first.transcript.language);
+    // A completed English job never starts another paid request. English already
+    // returned from the Korean preference also needs no redundant second fetch.
+    if (requestedLanguage === 'en' || actualLanguage === 'ko' || actualLanguage === 'en' || !first.hasEnglish || typeof options.reserveFallback !== 'function') return original;
+    try {
+      if (await abortable(options.reserveFallback(), signal) !== true) return original;
+      if (signal.aborted) throw failure('temporary_error');
+      const fallback = await exchange(null, 'en');
+      if (fallback.status === 'pending') return fallback;
+      const actualFallback = languageBase(fallback.transcript.language);
+      return actualFallback === 'en' || actualFallback === 'ko' ? {status: 'ready', transcript: fallback.transcript} : original;
+    } catch (error) {
+      // A quota denial or failed preferred-language fetch must not discard the
+      // valid native transcript already received. Cancellation still propagates.
+      if (signal.aborted) throw failure('temporary_error');
+      return original;
+    }
   } catch (error) {
     // Never forward upstream messages, bodies, URLs, or the API key.
     throw failure(SAFE_CODES.has(error?.code) ? error.code : 'temporary_error');

@@ -19,7 +19,8 @@
 
 실행·배포와 복구 파일 안내는 `README.md`, `DEPLOYMENT.md`를 따른다.
 
-- 자료실 원문은 `materialTranscript.js`/`.css`, `api/material-video-transcript.js`, `server/materialTranscriptService.cjs`·`materialTranscriptProvider.cjs`가 담당합니다. Supadata 공개 자막만 저장하며 AI 생성 원문이나 번역으로 대체하지 않습니다. 키는 서버 환경변수 전용이고 원문 캐시는 기존 요약 캐시와 별도입니다. 설정·무료 한도는 `server/MATERIAL_VIDEO_SETUP.md`를 따릅니다.
+- 자료실 스크립트는 `materialTranscript.js`/`.css`, `api/material-video-transcript.js`, `server/materialTranscriptService.cjs`·`materialTranscriptProvider.cjs`가 담당합니다. 공개 한국어 자막을 우선하고 없으면 영어 자막을 가져옵니다. `materialVideoMetadata.cjs`의 실제 YouTube 제목을 팝업·인쇄에 사용합니다. 원본 자막의 본문·언어·출처는 보존하며, AI로 원문을 생성하거나 번역문으로 덮어쓰지 않습니다.
+- 영어 원문의 한국어 번역은 `materialTranscriptTranslation.cjs`와 별도 번역 캐시에 저장합니다. 화면은 `AI 한국어 번역`과 원문을 구분하여 전환하고 선택한 내용을 인쇄합니다. `server/material-video-transcript.sql` 다음에 `server/material-video-translation.sql`을 적용해야 합니다. 영상·원문 버전·번역 버전당 생성 시도를 보존하여 재열람이나 실패 뒤 같은 유료 번역을 반복하지 않습니다. 최초 번역은 AI 크레딧을 사용하고 저장본 재열람은 추가 번역 크레딧을 사용하지 않습니다. 키는 서버 전용이며 설정·사용량 제한·운영 확인 절차는 `server/MATERIAL_VIDEO_SETUP.md`를 따릅니다.
 
 ## PC·모바일 사용 가이드
 

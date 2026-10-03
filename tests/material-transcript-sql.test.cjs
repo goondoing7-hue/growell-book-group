@@ -29,6 +29,8 @@ describe('native transcript PostgreSQL cache and paid-request boundary', () => {
   const finish = (result = {status: 'ready', transcript}, lease = LEASE) => role('service_role', () => call('finish', [ID, 1, lease, result]));
   const usage = async () => Number((await db.query("select coalesce(sum(attempts),0) as n from public.growell_material_transcript_usage where owner_id=''" )).rows[0].n);
   const expireRetry = () => db.exec("update public.growell_material_transcript_cache set retry_at=clock_timestamp()-interval '1 second'");
+  const reserve = (lease=LEASE, owner='owner', auth=AUTH) => role('service_role',async()=>
+    (await db.query('select public.growell_material_transcript_reserve_fallback($1,1,$2,$3::uuid,$4::uuid) as value',[ID,owner,auth,lease])).rows[0].value);
   test('migration reapplies without altering materials; RLS and RPC grants exclude all browser roles', async () => {
     await db.exec(sql);assert.deepEqual((await db.query('select * from public.material_notes')).rows, [{id: 'existing', html: 'untouched'}]);
     for (const name of ['anon', 'authenticated']) {
@@ -36,6 +38,7 @@ describe('native transcript PostgreSQL cache and paid-request boundary', () => {
       await assert.rejects(role(name, () => db.query('select * from public.growell_material_transcript_usage')), e => e.code === '42501');
       await assert.rejects(role(name, () => call('claim', [ID, 1, 'owner', AUTH, LEASE, true])), e => e.code === '42501');
       await assert.rejects(role(name, () => call('finish', [ID, 1, LEASE, {status: 'ready', transcript}])), e => e.code === '42501');
+      await assert.rejects(role(name,()=>db.query('select public.growell_material_transcript_reserve_fallback($1,1,$2,$3::uuid,$4::uuid)',[ID,'owner',AUTH,LEASE])),e=>e.code==='42501');
     }
     const rows = (await db.query("select relrowsecurity from pg_class where relname in ('growell_material_transcript_cache','growell_material_transcript_usage')")).rows;
     assert.equal(rows.length, 2);assert.ok(rows.every(r => r.relrowsecurity));
@@ -92,6 +95,36 @@ describe('native transcript PostgreSQL cache and paid-request boundary', () => {
     await finish({status: 'pending', jobId: 'native-job'});await expireRetry();
     await db.exec("update public.growell_material_transcript_cache set job_started_at=clock_timestamp()-interval '11 minutes'");
     assert.equal((await claim()).reason, 'temporary_error');assert.equal(await usage(), 1);
+  });
+  test('English fallback is billed once and only an approved live lease can reserve it', async()=>{
+    await claim();assert.equal((await reserve(OTHER)).reserved,false);assert.equal(await usage(),1);
+    assert.equal((await reserve()).reserved,true);assert.equal(await usage(),2);
+    assert.equal((await reserve()).reserved,false);assert.equal(await usage(),2);
+    await finish();assert.equal((await reserve()).reserved,false);
+    await assert.rejects(reserve(LEASE,'owner',OTHER), e=>e.code==='42501');
+  });
+  test('fallback cannot exceed daily or rolling limits and leaves existing primary work intact',async()=>{
+    for(const value of [10,100]){
+      await db.exec('truncate public.growell_material_transcript_cache,public.growell_material_transcript_usage');
+      await claim();
+      if(value===10) await db.exec("update public.growell_material_transcript_usage set attempts=10 where owner_id='owner'");
+      else await db.exec("insert into public.growell_material_transcript_usage values(((clock_timestamp() at time zone 'Asia/Seoul')::date-1),'',99)");
+      assert.equal((await reserve()).reserved,false);assert.equal((await finish()).status,'ready');
+    }
+  });
+  test('paid fallback may replace Korean job once; resumed English jobs cannot switch back',async()=>{
+    await claim();await finish({status:'pending',jobId:'ko-job',requestedLanguage:'ko'});await expireRetry();await claim();
+    await assert.rejects(finish({status:'pending',jobId:'en-job',requestedLanguage:'en'}),e=>e.code==='22023');
+    assert.equal((await reserve()).reserved,true);
+    await finish({status:'pending',jobId:'en-job',requestedLanguage:'en'});await expireRetry();
+    const resumed=await claim();assert.equal(resumed.requestedLanguage,'en');assert.equal(resumed.jobId,'en-job');
+    assert.equal((await reserve()).reserved,false);assert.equal(await usage(),2);
+    await assert.rejects(finish({status:'pending',jobId:'new-job',requestedLanguage:'en'}),e=>e.code==='22023');
+    await assert.rejects(finish({status:'pending',jobId:'en-job',requestedLanguage:'ko'}),e=>e.code==='22023');
+    const result=await finish({status:'ready',transcript:{...transcript,title:'실제 영상 제목'}});
+    assert.equal(result.transcript.title,'실제 영상 제목');
+    await db.exec(sql);
+    assert.equal((await claim()).transcript.title,'실제 영상 제목');assert.equal(await usage(),2);
   });
   test('expired leases recover safely and late responses cannot overwrite a newer lease', async () => {
     await claim();assert.equal((await finish({status: 'ready', transcript}, OTHER)).status, 'pending');

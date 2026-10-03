@@ -1,7 +1,7 @@
 'use strict';
 const {test} = require('node:test');
 const assert = require('node:assert/strict');
-const {createService, createHandler, createStore, createTranscriptTransport, normalizedTranscript, safeResult, MAX_TEXT_BYTES} = require('../server/materialTranscriptService.cjs');
+const {createService, createHandler, createStore, createTranscriptTransport, normalizedTranscript, normalizedTranslation, safeResult, MAX_TEXT_BYTES} = require('../server/materialTranscriptService.cjs');
 const AUTH = '11111111-1111-4111-8111-111111111111', ID = 'aBcDeFg1234';
 const config = {configured: true, origin: 'https://growell-book.vercel.app', database: 'https://example.supabase.co', serviceKey: 'server-only-secret'};
 const body = {postId: 'post-1', videoId: ID};
@@ -17,7 +17,7 @@ function fixture(extra = {}) {
     claim: async (_, id, lease, enabled) => {calls.push(['claim', id, enabled]);if (cache.has(id)) return cache.get(id);if (!enabled) return {status: 'unavailable', reason: 'not_configured'};cache.set(id, {status: 'pending'});return {status: 'claimed'};},
     finish: async (id, lease, result) => {calls.push(['finish', id, result]);const saved = {...result, fetchedAt: '2026-10-03T00:00:00Z'};cache.set(id, saved);return saved;}
   };
-  const service = createService({config, env: {SUPADATA_API_KEY: 'synthetic-key'}, store, provider: async (id, options) => {calls.push(['provider', id, options]);return {status: 'ready', transcript};}, ...extra});
+  const service = createService({config, env: {SUPADATA_API_KEY: 'synthetic-key'}, store, titleProvider: async () => '', provider: async (id, options) => {calls.push(['provider', id, options]);return {status: 'ready', transcript};}, ...extra});
   return {service, store, calls, profile, note, cache};
 }
 async function http(handler, patch = {}) {
@@ -51,6 +51,37 @@ test('missing provider key serves existing captions but never attempts an uncach
   assert.equal((await f.service.generate(body, 'token')).status, 'ready');f.cache.clear();
   assert.equal((await f.service.generate(body, 'token')).reason, 'not_configured');
   assert.equal(f.calls.some(c => c[0] === 'provider'), false);
+});
+
+test('actual video title is stored once and caption retrieval survives missing metadata', async () => {
+  let titles = 0;
+  const f = fixture({titleProvider: async () => {titles++;return '실제 영상 제목 — 한국어';}});
+  assert.equal((await f.service.generate(body, 'token')).transcript.title, '실제 영상 제목 — 한국어');
+  assert.equal((await f.service.generate(body, 'token')).transcript.title, '실제 영상 제목 — 한국어');
+  assert.equal(titles, 1);
+  const noTitle = fixture({titleProvider: async () => {throw new Error('metadata unavailable');}});
+  assert.equal((await noTitle.service.generate(body, 'token')).status, 'ready');
+  assert.equal(normalizedTranscript({...transcript,title:'bad\nheading'}).title, undefined);
+});
+
+test('English fallback reserves separate quota and carries its language across job polls', async () => {
+  let f;
+  f = fixture({provider: async (id, options) => {
+    assert.equal(options.requestedLanguage, 'ko');
+    assert.equal(await options.reserveFallback(), true);
+    return {status:'pending',jobId:'english-job',requestedLanguage:'en'};
+  }});
+  f.store.reserveFallback = async (profile, id, lease) => {assert.equal(profile.id,'owner');assert.equal(id,ID);assert.ok(lease);return {reserved:true};};
+  f.cache.set(ID,{status:'claimed',jobId:'korean-job',requestedLanguage:'ko'});
+  assert.equal((await f.service.generate(body,'token')).status, 'pending');
+  assert.equal(f.calls.find(c=>c[0]==='finish')[2].requestedLanguage,'en');
+  const resumed = fixture();resumed.cache.set(ID,{status:'claimed',jobId:'english-job',requestedLanguage:'en'});
+  await resumed.service.generate(body,'token');
+  assert.equal(resumed.calls.find(c=>c[0]==='provider')[2].requestedLanguage,'en');
+  const removed = fixture();removed.store.reserveFallback = async()=>{throw new Error('should not reserve');};
+  await removed.service.generate(body,'token');
+  removed.note.drive_links=[];
+  await assert.rejects(removed.calls.find(c=>c[0]==='provider')[2].reserveFallback(), e=>e.status===404);
 });
 test('unapproved/deleted members, removed links and inaccessible materials cannot view or generate captions', async () => {
   for (const state of [{is_deleted: true}, {approval_status: 'pending'}, {auth_user_id: 'other'}]) {
@@ -115,4 +146,53 @@ test('caption database transport accepts long captions, bounds streams and refus
   await assert.rejects(large('https://example.supabase.co'), e => e.message === 'temporary_error');
   const failed = createTranscriptTransport(async () => {throw new Error('database credentials');});
   await assert.rejects(failed('https://example.supabase.co'), e => e.message === 'temporary_error');
+});
+
+function translationFixture(extra={}) {
+  let translations=0, generated, savedOutput;
+  const english={text:'The complete original text.',language:'en',source:'youtube_captions',title:'Actual title'};
+  const f=fixture({translator:async(input)=>{translations++;assert.equal(input.text,english.text);return {text:'전체 원문을 한국어로 번역했습니다.',model:'google/gemini-2.5-flash',inputTokens:20,outputTokens:25,durationMs:100};},...extra});
+  f.cache.set(ID,{status:'ready',transcript:english,fetchedAt:'2026-10-03T00:00:00Z'});
+  f.store.claimTranslation=async(profile,id,generationId,enabled)=>{
+    assert.equal(profile.id,'owner');assert.equal(id,ID);assert.equal(enabled,true);
+    if(generated)return generated;
+    generated={status:'pending'};return {status:'claimed',generationId};
+  };
+  f.store.finishTranslation=async(generationId,result)=>{
+    savedOutput=result;
+    generated=result.status==='ready'?{status:'ready',translation:{text:result.text,language:'ko',source:'ai_translation',generationId,model:result.model,generatedAt:'2026-10-03T01:00:00Z'}}:{status:'unavailable'};
+    return generated;
+  };
+  return {...f,english,translatedCount:()=>translations,saved:()=>savedOutput};
+}
+test('English translation is generated once, saved before display and shared without replacing original captions',async()=>{
+  const f=translationFixture();const first=await f.service.generate(body,'token');
+  assert.deepEqual(first.transcript,f.english);assert.equal(first.translation.source,'ai_translation');assert.equal(first.translation.language,'ko');
+  assert.equal(f.saved().inputTokens,20);assert.equal(f.saved().status,'ready');
+  assert.deepEqual((await f.service.generate({...body,postId:'post-2'},'token')).translation,first.translation);
+  assert.equal(f.translatedCount(),1);
+});
+test('fresh English extraction finishes before translation begins in the next request',async()=>{
+  const f=translationFixture();f.cache.clear();
+  const real=fixture({translator:async()=>{throw new Error('must not translate in extraction request');},provider:async()=>({status:'ready',transcript:f.english})});
+  const response=await real.service.generate(body,'token');assert.equal(response.status,'ready');assert.equal(response.translationStatus,'pending');assert.deepEqual(response.transcript,{text:f.english.text,language:'en',source:'youtube_captions'});
+});
+test('Korean captions skip AI; pending translation keeps the complete original available',async()=>{
+  const korean=translationFixture();korean.cache.set(ID,{status:'ready',transcript,fetchedAt:'2026-10-03T00:00:00Z'});
+  assert.equal((await korean.service.generate(body,'token')).translation,undefined);assert.equal(korean.translatedCount(),0);
+  const f=translationFixture();f.store.claimTranslation=async()=>({status:'pending'});
+  const response=await f.service.generate(body,'token');assert.equal(response.translationStatus,'pending');assert.deepEqual(response.transcript,f.english);assert.equal(f.translatedCount(),0);
+});
+test('failed translation persists safe partial output privately and reopens original without another AI call',async()=>{
+  let calls=0;const f=translationFixture({translator:async()=>{calls++;throw Object.assign(new Error('provider-secret'),{partial:{model:'google/gemini-2.5-flash',inputTokens:20,outputTokens:10,durationMs:100,chunks:[{index:0,text:'완료한 조각',model:'google/gemini-2.5-flash',inputTokens:20,outputTokens:10}]}});}});
+  const response=await f.service.generate(body,'token');assert.equal(response.translationStatus,'unavailable');assert.deepEqual(response.transcript,f.english);
+  assert.equal(f.saved().partial[0].text,'완료한 조각');assert.equal(JSON.stringify(response).includes('완료한 조각'),false);assert.equal(JSON.stringify(f.saved()).includes('secret'),false);
+  await f.service.generate(body,'token');assert.equal(calls,1);
+});
+test('unsaved or malformed translations never replace English, and revoked membership is rechecked after AI',async()=>{
+  const f=translationFixture();f.store.finishTranslation=async()=>{throw new Error('database down');};
+  const response=await f.service.generate(body,'token');assert.equal(response.translation,undefined);assert.equal(response.translationStatus,'unavailable');
+  let revoked;revoked=translationFixture({translator:async()=>{revoked.profile.is_deleted=true;return {text:'번역 내용',model:'google/gemini-2.5-flash'};}});
+  await assert.rejects(revoked.service.generate(body,'token'),e=>e.status===403);
+  assert.throws(()=>normalizedTranslation({text:'한국어',language:'ko',source:'youtube_captions'}));
 });

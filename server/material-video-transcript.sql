@@ -19,6 +19,8 @@ create table if not exists public.growell_material_transcript_cache (
   primary key(video_id,version),
   check ((state='ready' and transcript is not null and fetched_at is not null) or (state<>'ready' and transcript is null))
 );
+alter table public.growell_material_transcript_cache add column if not exists requested_language text not null default 'ko' check (requested_language in ('ko','en'));
+alter table public.growell_material_transcript_cache add column if not exists fallback_reserved boolean not null default false;
 create table if not exists public.growell_material_transcript_usage (
   usage_day date not null,
   owner_id text not null, -- Empty string is the global paid-request counter.
@@ -75,7 +77,7 @@ begin
     -- lease, a 10-poll/10-minute bound, and never re-send the original video URL.
     update public.growell_material_transcript_cache set state='pending',reason=null,retry_at=null,
       lease_token=p_lease,lease_until=now_at+interval '90 seconds',poll_attempts=poll_attempts+1,updated_at=now_at where video_id=p_video and version=p_version;
-    return jsonb_build_object('status','claimed','jobId',entry.job_id);
+    return jsonb_build_object('status','claimed','jobId',entry.job_id,'requestedLanguage',entry.requested_language);
   end if;
   insert into public.growell_material_transcript_usage(usage_day,owner_id) values(day_key,''),(day_key,p_owner) on conflict do nothing;
   select attempts into global_total from public.growell_material_transcript_usage where usage_day=day_key and owner_id='';
@@ -91,8 +93,40 @@ begin
   insert into public.growell_material_transcript_cache(video_id,version,state,lease_token,lease_until,updated_at)
     values(p_video,p_version,'pending',p_lease,now_at+interval '90 seconds',now_at)
     on conflict(video_id,version) do update set state='pending',transcript=null,fetched_at=null,reason=null,retry_at=null,
-      lease_token=excluded.lease_token,lease_until=excluded.lease_until,job_id=null,job_started_at=null,poll_attempts=0,updated_at=excluded.updated_at;
+      lease_token=excluded.lease_token,lease_until=excluded.lease_until,job_id=null,job_started_at=null,poll_attempts=0,
+      requested_language='ko',fallback_reserved=false,updated_at=excluded.updated_at;
   return jsonb_build_object('status','claimed');
+end $$;
+
+-- A second paid request for an available English track needs its own quota.
+-- Reservation is at most once per extraction, including asynchronous polls.
+create or replace function public.growell_material_transcript_reserve_fallback(p_video text,p_version integer,p_owner text,p_auth uuid,p_lease uuid)
+returns jsonb language plpgsql security definer set search_path=pg_catalog,public as $$
+declare
+  entry public.growell_material_transcript_cache%rowtype;
+  day_key date := (clock_timestamp() at time zone 'Asia/Seoul')::date;
+  global_total integer;
+  member_total integer;
+  rolling_total bigint;
+begin
+  if not exists(select 1 from public.profiles p where p.id=p_owner and p.auth_user_id=p_auth
+    and p.is_deleted=false and p.approval_status='approved') then
+    raise exception 'active membership required' using errcode='42501';
+  end if;
+  perform pg_advisory_xact_lock(70463922);
+  select * into entry from public.growell_material_transcript_cache where video_id=p_video and version=p_version for update;
+  if not found or entry.state<>'pending' or p_lease is null or entry.lease_token is distinct from p_lease
+    or entry.lease_until<=clock_timestamp() or entry.fallback_reserved or entry.requested_language<>'ko' then
+    return jsonb_build_object('reserved',false);
+  end if;
+  insert into public.growell_material_transcript_usage(usage_day,owner_id) values(day_key,''),(day_key,p_owner) on conflict do nothing;
+  select attempts into global_total from public.growell_material_transcript_usage where usage_day=day_key and owner_id='';
+  select attempts into member_total from public.growell_material_transcript_usage where usage_day=day_key and owner_id=p_owner;
+  select coalesce(sum(attempts),0) into rolling_total from public.growell_material_transcript_usage where owner_id='' and usage_day>=day_key-30;
+  if global_total>=20 or member_total>=10 or rolling_total>=100 then return jsonb_build_object('reserved',false);end if;
+  update public.growell_material_transcript_usage set attempts=attempts+1 where usage_day=day_key and owner_id in('',p_owner);
+  update public.growell_material_transcript_cache set fallback_reserved=true where video_id=p_video and version=p_version;
+  return jsonb_build_object('reserved',true);
 end $$;
 
 create or replace function public.growell_material_transcript_finish(p_video text,p_version integer,p_lease uuid,p_result jsonb)
@@ -104,6 +138,8 @@ declare
   language_code text;
   native_transcript jsonb;
   result_job text;
+  requested_lang text;
+  title_text text;
   reason_code text;
   retry_seconds integer;
 begin
@@ -119,17 +155,26 @@ begin
       raise exception 'invalid native transcript' using errcode='22023';
     end if;
     native_transcript:=jsonb_build_object('text',content_text,'language',language_code,'source','youtube_captions');
+    title_text:=btrim(p_result#>>'{transcript,title}');
+    if jsonb_typeof(p_result#>'{transcript,title}')='string' and length(title_text) between 1 and 300 and title_text !~ '[[:cntrl:]]' then
+      native_transcript:=native_transcript||jsonb_build_object('title',title_text);
+    end if;
     update public.growell_material_transcript_cache set state='ready',transcript=native_transcript,fetched_at=now_at,reason=null,retry_at=null,
       lease_token=null,lease_until=null,job_id=null,job_started_at=null,poll_attempts=0,updated_at=now_at where video_id=p_video and version=p_version;
     return jsonb_build_object('status','ready','transcript',native_transcript,'fetchedAt',now_at);
   end if;
   if p_result->>'status'='pending' then
     result_job:=p_result->>'jobId';
+    requested_lang:=coalesce(p_result->>'requestedLanguage','ko');
     if jsonb_typeof(p_result->'jobId') is distinct from 'string' or result_job !~ '^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$'
-      or (entry.job_id is not null and entry.job_id is distinct from result_job) then
+      or requested_lang not in('ko','en')
+      or (requested_lang='en' and not entry.fallback_reserved)
+      or (entry.requested_language='en' and requested_lang<>'en')
+      or (entry.job_id is not null and entry.job_id is distinct from result_job
+        and not (entry.requested_language='ko' and requested_lang='en' and entry.fallback_reserved)) then
       raise exception 'invalid transcript job' using errcode='22023';
     end if;
-    update public.growell_material_transcript_cache set state='pending',job_id=result_job,job_started_at=coalesce(entry.job_started_at,now_at),
+    update public.growell_material_transcript_cache set state='pending',job_id=result_job,requested_language=requested_lang,job_started_at=coalesce(entry.job_started_at,now_at),
       reason=null,retry_at=now_at+interval '5 seconds',lease_token=null,lease_until=null,updated_at=now_at where video_id=p_video and version=p_version;
     return jsonb_build_object('status','pending','retryAfter',5);
   end if;
@@ -147,6 +192,8 @@ end $$;
 
 revoke all on function public.growell_material_transcript_claim(text,integer,text,uuid,uuid,boolean) from public,anon,authenticated;
 revoke all on function public.growell_material_transcript_finish(text,integer,uuid,jsonb) from public,anon,authenticated;
+revoke all on function public.growell_material_transcript_reserve_fallback(text,integer,text,uuid,uuid) from public,anon,authenticated;
 grant execute on function public.growell_material_transcript_claim(text,integer,text,uuid,uuid,boolean) to service_role;
 grant execute on function public.growell_material_transcript_finish(text,integer,uuid,jsonb) to service_role;
+grant execute on function public.growell_material_transcript_reserve_fallback(text,integer,text,uuid,uuid) to service_role;
 commit;
