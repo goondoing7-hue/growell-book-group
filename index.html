@@ -497,7 +497,6 @@
   .feed-tile .post-media-text.has-title{display:flex; align-items:center; justify-content:center; text-align:center; padding:14px 12px;}
   .feed-tile .post-media-text.has-title .post-text{display:none;}
   .feed-tile .post-title-cover{font-size:13.5px; font-weight:800; margin:0; display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow:hidden;}
-  .mat-detail-title{font-size:19px; padding:18px 22px 0;}
   /* 나눔 공간/나의 공간/자료실 글쓰기 칸은 카드(--surface, 흰색)와 같은 색으로 채워서
      "그냥 흰 칸"으로 보이게 한다 — 이전엔 페이지 배경색(--bg, 크림색)을 그대로 써서
      카드 안에 색이 다른 상자가 하나 더 있는 것처럼 보였음(35번 라운드 다음 요청). */
@@ -595,9 +594,23 @@
      달리, 자료를 편하게 읽는 게시판/블로그 느낌으로 흰 배경에 넓게 펼쳐 보여준다(요청 반영).
      사진은 잘라내지 않고 원래 비율 그대로, 글은 자연스럽게 흘러가는 본문으로 렌더한다. */
   .feed.mat-detail-feed{max-width:720px;}
-  .mat-detail-photo-wrap{width:100%; background:var(--surface-2);}
+  .mat-detail-card>.post-head{padding:22px 24px 18px;}
+  .mat-detail-content{display:flex; flex-direction:column; gap:20px; min-width:0; padding:4px 24px 24px;}
+  .mat-detail-title{margin:0; padding:0; font-family:inherit; font-size:22px; font-weight:700; line-height:1.5; letter-spacing:-.025em; color:var(--ink); text-align:left; overflow-wrap:anywhere; word-break:keep-all;}
+  .mat-detail-photo-wrap{width:100%; background:var(--surface-2); border-radius:12px; overflow:hidden;}
   .mat-detail-photo{width:100%; height:auto; display:block;}
-  .mat-detail-text{padding:18px 22px 8px; font-size:15px; line-height:1.85; overflow-wrap:break-word; word-break:break-word;}
+  .mat-detail-text{padding:0; font-size:15px; line-height:1.85; overflow-wrap:break-word; word-break:break-word;}
+  .mat-detail-title+.mat-detail-text{margin-top:-8px;}
+  .mat-detail-text>:first-child{margin-top:0;}
+  .mat-detail-text>:last-child{margin-bottom:0;}
+  .mat-detail-content>.mat-video,.mat-detail-content>.post-mat-links{margin:0;}
+  .mat-detail-content>.post-mat-links{padding:0;}
+  @media(max-width:540px){
+    .mat-detail-card>.post-head{padding:16px 16px 14px;}
+    .mat-detail-content{gap:18px; padding:4px 16px 20px;}
+    .mat-detail-title{font-size:19px;}
+    .mat-detail-title+.mat-detail-text{margin-top:-6px;}
+  }
   .post-badges{display:flex; gap:6px; flex-wrap:nowrap;}
   .post-text{font-size:14.5px; line-height:1.75; white-space:pre-wrap; overflow-wrap:break-word; word-break:break-word;}
   .post-del,.post-edit{font-size:11.5px; color:var(--ink-faint); background:none; border:none; padding:2px; display:flex; align-items:center;}
@@ -7156,11 +7169,11 @@ function materialNoteBodyBlockHtml(p){
   var photoUrl=safePhotoUrl(p.photo && p.photo.dataUrl);
   var photoHtml = photoUrl ? '<div class="mat-detail-photo-wrap"><img class="mat-detail-photo" src="'+esc(photoUrl)+'" alt="첨부 사진" loading="lazy"></div>' : '';
   var titleText = (p.title||'').trim();
-  var titleHtml = titleText ? '<div class="post-title-cover mat-detail-title">'+esc(titleText)+'</div>' : '';
+  var titleHtml = titleText ? '<h1 class="mat-detail-title">'+esc(titleText)+'</h1>' : '';
   if(!hasText && !photoHtml && !titleHtml) return '';
   var fsCls = fontSizeOf(p.fontSize).cls;
-  var textHtml = hasText ? '<div class="post-body mat-detail-text rich-content'+(fsCls?' '+fsCls:'')+'">'+bodyHtml+'</div>' : '';
-  return (titleHtml ? '<div class="post-body">'+titleHtml+'</div>' : '') + photoHtml + textHtml;
+  var textHtml = hasText ? '<div class="mat-detail-text rich-content'+(fsCls?' '+fsCls:'')+'">'+bodyHtml+'</div>' : '';
+  return titleHtml + textHtml + photoHtml;
 }
 function materialNoteCardHtml(book, p){
   var mine = SESSION && SESSION.userId===p.userId;
@@ -7168,9 +7181,9 @@ function materialNoteCardHtml(book, p){
   return '<div class="card post mat-detail-card">' +
     '<div class="post-head"><div class="post-who">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="post-time mono">'+fmtDate(p.createdAt)+'</span></div>' +
     '<div class="post-head-side">'+materialCatTagHtml(p.noteType)+postEditDelHtml(mine, mine||isAdmin(), 'edit-matnote="'+p.id+'"', 'del-matnote="'+p.id+'"')+'</div></div>' +
-    materialNoteBodyBlockHtml(p) +
+    '<div class="mat-detail-content">'+materialNoteBodyBlockHtml(p) +
     GrowellMaterialsVideo.html(p.id,GrowellMaterialsMedia.videos(p,materialBodyUrls(p.html))) +
-    matLinksHtml(p) +
+    matLinksHtml(p) +'</div>'+
     postActionsHtml(p.id, meetingBadge) +
   '</div>';
 }
