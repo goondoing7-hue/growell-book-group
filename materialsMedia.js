@@ -52,6 +52,17 @@
     if(typeof value==='string'){try{value=JSON.parse(value);}catch(error){return [];}}
     return Array.isArray(value)?value.map(normalizeAttachment).filter(Boolean):[];
   }
+  function videos(note,bodyUrls){
+    var found=[],seen={};
+    normalizeAttachments(note && note.driveLinks).map(function(link){return {href:link.driveUrl,title:link.title};})
+      .concat((Array.isArray(bodyUrls)?bodyUrls:[]).map(function(href){return {href:href,title:''};}))
+      .forEach(function(link){
+        var id=youtubeId(link.href);
+        if(!id || seen[id])return;
+        seen[id]=true;found.push({id:id,title:link.title || '유튜브 영상',href:'https://www.youtube.com/watch?v='+id});
+      });
+    return found;
+  }
   function thumbnail(note,bodyUrls){
     note=note || {};
     var links=normalizeAttachments(note.driveLinks), i, id;
@@ -136,6 +147,6 @@
     }
   }
   return {safeResourceUrl:safeResourceUrl,safeImageUrl:safeImageUrl,youtubeId:youtubeId,
-    normalizeAttachment:normalizeAttachment,normalizeAttachments:normalizeAttachments,thumbnail:thumbnail,
+    normalizeAttachment:normalizeAttachment,normalizeAttachments:normalizeAttachments,videos:videos,thumbnail:thumbnail,
     isPdf:isPdf,renderPdfThumbnail:renderPdfThumbnail,MAX_PDF_BYTES:MAX_PDF_BYTES};
 });

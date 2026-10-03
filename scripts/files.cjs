@@ -4,7 +4,7 @@
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
   'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
-  'materialsMedia.js', ...require('../vendor/pdfjs/manifest.json').files,
+  'materialsMedia.js', 'materialsVideo.js', 'materialsVideo.css', ...require('../vendor/pdfjs/manifest.json').files,
   'timerAlerts.js', 'timer-alert-sw.js', 'navigation.css', 'habitReminder.js', 'habitReminder.css',
   'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css',
   'dailyVerseDomain.js', 'popupHistory.js',
@@ -27,7 +27,7 @@ const TEST_FILES = Object.freeze([
   'tests/archive-shared-notes.test.cjs', 'tests/archive-calendar.test.cjs', 'tests/archive-stats.test.cjs',
   'tests/archive-domain.test.cjs', 'tests/archive-timer.test.cjs', 'tests/archive-integration.test.cjs', 'tests/archive-ui.test.cjs', 'tests/book-search.test.cjs', 'tests/signup-notifications.test.cjs',
   'tests/password-hint.test.cjs', 'tests/book-details.test.cjs', 'tests/member-access.test.cjs', 'tests/signup-edge.test.cjs',
-  'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs', 'tests/reading-habit.test.cjs', 'tests/habit-guide.test.cjs', 'tests/habit-value-inference.test.cjs', 'tests/habit-overview-design.test.cjs',
+  'tests/materials-media.test.cjs', 'tests/materials-ui.test.cjs', 'tests/materials-video-ui.test.cjs', 'tests/material-video-ai.test.cjs', 'tests/material-video-server.test.cjs', 'tests/material-video-sql.test.cjs', 'tests/reading-habit.test.cjs', 'tests/habit-guide.test.cjs', 'tests/habit-value-inference.test.cjs', 'tests/habit-overview-design.test.cjs',
   'tests/timer-alerts.test.cjs', 'tests/habit-carousel.test.cjs', 'tests/navigation.test.cjs', 'tests/profile-navigation.test.cjs',
   'tests/daily-verse.test.cjs', 'tests/popup-history.test.cjs', 'tests/habit-reminder.test.cjs', 'tests/habit-sync-server.test.cjs', 'tests/habit-sync-status.test.cjs', 'tests/habit-sync-sql.test.cjs', 'tests/habit-sync-integration.test.cjs',
   'tests/deployment.test.cjs', 'tests/drafts.test.cjs', 'tests/studio-layout.test.cjs',
@@ -39,6 +39,7 @@ const TEST_FILES = Object.freeze([
 
 const PUBLISH_FILES = Object.freeze([
   'api/book-search.js',
+  'api/material-video-summary.js', 'server/materialVideoService.cjs', 'server/materialVideoAI.cjs', 'server/material-video-summary.sql', 'server/MATERIAL_VIDEO_SETUP.md',
   'api/habit-sync.js', 'server/habitSyncDomain.cjs', 'server/habitSyncService.cjs', 'server/habit-sync.sql', 'server/habit-sync-schedule.sql', 'server/habit-weekdays.sql', 'server/HABIT_SYNC_SETUP.md',
   'server/signup-notifications.sql', 'server/signup-notifications-verification.sql', 'server/signup-notification-worker.ts', 'server/signup-notifications-schedule.sql', 'server/signup-notifications.md',
   'server/signup-optional-photo.md', 'server/signup-optional-photo.sql', 'server/signup-optional-photo-verification.sql',

@@ -1090,6 +1090,7 @@
 <link rel="stylesheet" href="profile.css">
 <link rel="stylesheet" href="brand.css">
 <link rel="stylesheet" href="navigation.css">
+<link rel="stylesheet" href="materialsVideo.css">
 <script src="popupHistory.js"></script>
 <script src="profile.js"></script>
 <script src="passwordHint.js"></script>
@@ -1102,6 +1103,7 @@
 <script src="communityDomain.js"></script>
 <script src="communityFeatures.js"></script>
 <script src="materialsMedia.js"></script>
+<script src="materialsVideo.js"></script>
 <script src="habitDomain.js"></script>
 <script src="habitDayClock.js"></script>
 <script src="habitSuggestions.js"></script>
@@ -1256,6 +1258,7 @@ function fetchYoutubeTitle(id, href){
 function enhanceLinkPreviews(){
   var anchors = document.querySelectorAll('.feed a[href]');
   Array.prototype.forEach.call(anchors, function(a){
+    if(a.closest('.mat-detail-card'))return;
     var href = a.getAttribute('href');
     var id = youtubeIdFromHref(href);
     if(!id) return;
@@ -7133,7 +7136,7 @@ function matComposerExtraHtml(editingPost){
 /* Drive 링크 목록 — 예전에는 눌러서 펼치면 iframe 미리보기가 나왔지만, 이제는 줄을
    누르면 그 자리에서 바로 새 탭으로 넘어간다(요청 반영). */
 function matLinksHtml(p){
-  var links = GrowellMaterialsMedia.normalizeAttachments(p.driveLinks);
+  var links = GrowellMaterialsMedia.normalizeAttachments(p.driveLinks).filter(function(link){return !GrowellMaterialsMedia.youtubeId(link.driveUrl);});
   if(!links.length) return '';
   var rows = links.map(function(l){
     var displayTitle = esc(l.title || l.fileName || (GrowellMaterialsMedia.youtubeId(l.driveUrl)?'유튜브 영상':'첨부 자료'));
@@ -7166,6 +7169,7 @@ function materialNoteCardHtml(book, p){
     '<div class="post-head"><div class="post-who">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="post-time mono">'+fmtDate(p.createdAt)+'</span></div>' +
     '<div class="post-head-side">'+materialCatTagHtml(p.noteType)+postEditDelHtml(mine, mine||isAdmin(), 'edit-matnote="'+p.id+'"', 'del-matnote="'+p.id+'"')+'</div></div>' +
     materialNoteBodyBlockHtml(p) +
+    GrowellMaterialsVideo.html(p.id,GrowellMaterialsMedia.videos(p,materialBodyUrls(p.html))) +
     matLinksHtml(p) +
     postActionsHtml(p.id, meetingBadge) +
   '</div>';
@@ -7215,8 +7219,9 @@ function materialThumbnailHtml(book,p){
   var media=GrowellMaterialsMedia.thumbnail(p,materialBodyUrls(p.html));
   if(!media)return '';
   var label=media.kind==='video'?'유튜브 영상 열기':media.kind==='image'?'첨부 사진 열기':'첨부 파일 열기';
-  var href=media.href || '#/book/'+book.id+'/materials/post/'+p.id;
-  return '<a class="mat-row-media" href="'+esc(href)+'"'+(media.href?' target="_blank" rel="noopener noreferrer"':'')+' aria-label="'+label+'">'+
+  var external=media.kind!=='video' && media.href;
+  var href=external || '#/book/'+book.id+'/materials/post/'+p.id;
+  return '<a class="mat-row-media" href="'+esc(href)+'"'+(external?' target="_blank" rel="noopener noreferrer"':'')+' aria-label="'+label+'">'+
     '<img src="'+esc(media.src)+'" alt="" loading="lazy">'+
     (media.kind==='video'?'<span class="mat-row-play" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M5 3l8 5-8 5z"/></svg></span>':'')+'</a>';
 }
@@ -7273,6 +7278,18 @@ function materialsTabHtml(book, postId){
     ? '<div class="mat-list">'+filtered.map(function(p){ return matRowHtml(book, p); }).join('')+'</div>'
     : '<div class="empty">'+(notesAll.length?'이 카테고리의 자료가 아직 없어요.':'아직 자료실에 올라온 글이 없어요.')+'</div>';
   return heading + composer + toolbar + listHtml;
+}
+function bindMaterialVideos(route){
+  if(typeof GrowellMaterialsVideo==='undefined')return;
+  var session=SESSION,epoch=saveSessionEpoch,href=location.href;
+  GrowellMaterialsVideo.bind({container:document.getElementById('app'),owner:session && session.userId,
+    fetch:window.fetch.bind(window),getAccessToken:function(){return habitSyncAccessToken(session,epoch);},
+    isCurrent:function(postId,videoId){
+      var note=STATE.materialNotes[postId];
+      return !!session && SESSION===session && saveSessionEpoch===epoch && location.href===href &&
+        route.view==='book' && route.tab==='materials' && route.postId===postId && !!note && note.bookId===route.bookId &&
+        GrowellMaterialsMedia.videos(note,materialBodyUrls(note.html)).some(function(video){return video.id===videoId;});
+    }});
 }
 function readFileAsDataURL(file){
   return new Promise(function(resolve, reject){
@@ -7389,10 +7406,15 @@ function submitMaterialPost(bookId, payload, btn){
   if(!r.ok){ showToast(r.msg, true); return; }
   var draftToken=captureComposerDraft(), draftUserId=SESSION.userId;
   var postId = uid('mn');
+  var savedRoute=location.hash;
   saveState(function(next){
     next.materialNotes[postId] = Object.assign({id:postId, bookId:bookId, userId:SESSION.userId, userName:SESSION.name, createdAt:Date.now()}, r.fields);
   }, {button:btn, originalLabel:'나누기', savingLabel:'올리는 중…', onSuccess:function(){
-    if(finishComposerDraft('materials',bookId,null,draftUserId,draftToken)){ resetMaterialsComposer(); render(); }
+    if(finishComposerDraft('materials',bookId,null,draftUserId,draftToken)){
+      resetMaterialsComposer();
+      if(SESSION && SESSION.userId===draftUserId && location.hash===savedRoute)location.hash='#/book/'+bookId+'/materials/post/'+postId;
+      render();
+    }
   }});
 }
 /* 자료실 글 수정 — 운영자 본인 글만, id를 유지한 채 내용을 덮어쓴다 */
@@ -7404,11 +7426,16 @@ function editMaterialPost(postId, payload, btn){
   var r = buildMaterialFields(payload);
   if(!r.ok){ showToast(r.msg, true); return; }
   var draftToken=captureComposerDraft(), draftUserId=SESSION.userId;
+  var savedRoute=location.hash;
   saveState(function(next){
     next.materialNotes[postId] = Object.assign({id:postId, bookId:existing.bookId, userId:existing.userId, userName:existing.userName,
       createdAt:existing.createdAt, updatedAt:Date.now()}, r.fields);
   }, {button:btn, originalLabel:'수정하기', savingLabel:'수정 중…', onSuccess:function(){
-    if(finishComposerDraft('materials',existing.bookId,postId,draftUserId,draftToken)){ resetMaterialsComposer(); render(); }
+    if(finishComposerDraft('materials',existing.bookId,postId,draftUserId,draftToken)){
+      resetMaterialsComposer();
+      if(SESSION && SESSION.userId===draftUserId && location.hash===savedRoute)location.hash='#/book/'+existing.bookId+'/materials/post/'+postId;
+      render();
+    }
   }});
 }
 function deleteMaterialNote(postId, btn){
@@ -7520,6 +7547,7 @@ function render(){
   showSpaceComposerDialog();
   restoreDraftIfAny(route);
   enhanceLinkPreviews();
+  if(typeof bindMaterialVideos==='function')bindMaterialVideos(route);
   captureComposerDraft();
 }
 

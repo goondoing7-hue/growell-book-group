@@ -5,6 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const media=require('../materialsMedia.js');
+const video=require('../materialsVideo.js');
 const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a,start);return source.slice(a,b);}
 const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -18,7 +19,7 @@ function fragment(){
   }};
 }
 function harness(){
-  const c={URL,Date,Number,String,Array,Object,Promise,Uint8Array,GrowellMaterialsMedia:media,esc,
+  const c={URL,Date,Number,String,Array,Object,Promise,Uint8Array,GrowellMaterialsMedia:media,GrowellMaterialsVideo:video,esc,
     stripHtml:value=>String(value).replace(/<[^>]*>/g,''),sanitizeHtml:value=>value||'',svgIcon:()=>'<svg></svg>',
     I_CLOSE:'',I_DOC:'',I_IMG:'',I_PLUS:'',I_EDIT:'',I_COMMENT:'',I_BACK:'',I_LINK:'',
     fmtDate:()=> '2026. 09. 24.',commentsForPost:()=>[{}],SESSION:{userId:'admin'},saveSessionEpoch:1,
@@ -50,17 +51,29 @@ test('materials always expose every category, including empty lists, and filter 
   assert.match(html,/post\/b/);assert.doesNotMatch(html,/post\/a/);
 });
 
-test('title and thumbnail use separate links, media opens its original resource, and text-only rows have no placeholder',()=>{
+test('YouTube thumbnails open the post player, other media opens its resource, and text-only rows have no placeholder',()=>{
   const c=harness();
   let html=c.matRowHtml(book,post('video',{html:'<a href="https://youtu.be/abcdefghijk">영상</a>',title:'안전한 <제목>'}));
   const links=[...html.matchAll(/<a\b[^>]*>[\s\S]*?<\/a>/g)];
   assert.equal(links.length,2);assert.match(links[0][0],/href="#\/book\/emotion\/materials\/post\/video"/);
-  assert.match(links[1][0],/href="https:\/\/youtu.be\/abcdefghijk"/);assert.match(links[1][0],/target="_blank" rel="noopener noreferrer"/);
+  assert.match(links[1][0],/href="#\/book\/emotion\/materials\/post\/video"/);assert.doesNotMatch(links[1][0],/target="_blank"/);
   assert.match(html,/유튜브 영상 열기|mat-row-play/);assert.match(html,/안전한 &lt;제목&gt;/);assert.doesNotMatch(links[0][0],/<a\b.*<a\b/);
   html=c.matRowHtml(book,post('pdf',{driveLinks:[{driveUrl:'https://files.example/book.pdf',thumbnailUrl:'https://files.example/first.jpg'}]}));
   assert.match(html,/href="https:\/\/files.example\/book.pdf"/);assert.match(html,/src="https:\/\/files.example\/first.jpg"/);
   html=c.matRowHtml(book,post('text'));
   assert.doesNotMatch(html,/mat-row-media|<img/);
+});
+
+test('material detail embeds unique body and attachment videos and keeps title, body, and non-video files',()=>{
+  const c=harness();
+  const html=c.materialNoteCardHtml(book,post('video',{title:'영상과 자료',html:'<p>읽어볼 설명</p><a href="https://youtu.be/abcdefghijk">영상 소개</a><p>https://youtube.com/shorts/ABCDEFGHIJK</p>',
+    driveLinks:[{title:'첨부 영상',driveUrl:'https://youtube.com/watch?v=abcdefghijk'},{title:'PDF 자료',driveUrl:'https://files.example/book.pdf'}]}));
+  assert.equal((html.match(/<iframe /g)||[]).length,2);
+  assert.equal((html.match(/data-material-video="abcdefghijk"/g)||[]).length,1);
+  assert.match(html,/영상과 자료/);assert.match(html,/읽어볼 설명/);assert.match(html,/영상 소개/);
+  assert.match(html,/href="https:\/\/files.example\/book.pdf"/);
+  assert.doesNotMatch(html,/<a class="post-mat-link"[^>]*youtube/);
+  assert.match(html,/영상 핵심 요약/);
 });
 
 test('rich body URLs are read from an inert template and excluded markup cannot add a video preview',()=>{
