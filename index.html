@@ -1118,6 +1118,10 @@
 <script src="dailyVerseDomain.js"></script>
 <script src="communityDomain.js"></script>
 <script src="communityFeatures.js"></script>
+<link rel="stylesheet" href="meetingRecords.css">
+<script src="meetingRecordsDomain.js"></script>
+<script src="meetingRecordsBridge.js"></script>
+<script src="meetingRecords.js"></script>
 <script src="materialsMedia.js"></script>
 <script src="materialTranscript.js"></script>
 <script src="materialsVideo.js"></script>
@@ -2286,6 +2290,8 @@ function clearMemberSession(){
   editingAnnouncement=false;
   announcementEditDraft=null;
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.reset();
+  if(typeof GrowellMeetingRecords!=='undefined')GrowellMeetingRecords.reset();
+  if(typeof meetingRecordsBridge!=='undefined')meetingRecordsBridge.reset();
   if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
   if(typeof GrowellBookDetails!=='undefined')GrowellBookDetails.reset();
   if(typeof GrowellArchive!=='undefined')GrowellArchive.reset();
@@ -5528,7 +5534,7 @@ function shareTabHtml(book, postId){
   }
   if(writing)composer=spaceComposerDialogHtml(composer,'share');
   var allPosts = Object.values(STATE.posts).filter(function(p){ return p.bookId===book.id; }).sort(function(a,b){ return b.createdAt-a.createdAt; });
-  var heading=SESSION?spaceHeadingHtml(book,'share')+spacePromptHtml(book):'';
+  var heading=SESSION?GrowellMeetingRecords.launchHtml(book.id)+spaceHeadingHtml(book,'share')+spacePromptHtml(book):'';
   if(sharedPostsLoadState==='loading')return heading+composer+'<div class="empty" role="status">모임의 글을 불러오는 중이에요…</div>';
   if(sharedPostsLoadState==='error')return heading+composer+'<div class="empty" role="alert">글을 불러오지 못했어요. <button class="btn" type="button" data-retry-community>다시 불러오기</button></div>';
   var filterKey = shareFeedFilter[book.id] || 'all';
@@ -7632,6 +7638,7 @@ function restoreDraftIfAny(route){
 function bindEvents(route){
   bindHabitDayClock();
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.bind();
+  if(typeof GrowellMeetingRecords!=='undefined')GrowellMeetingRecords.bind(document);
   bindOAuthEvents();
   bindPrivateRecovery();
   bindHomeEvents();
@@ -8686,6 +8693,37 @@ GrowellCommunityFeatures.configure({
   I_CLOSE:I_CLOSE,I_COMMENT:I_COMMENT,I_EDIT:I_EDIT,
   avatarHtml:avatarHtml,fmtPostDate:fmtPostDate,homePostExcerpt:homePostExcerpt,
   homeUnlockedIds:homeUnlockedIds,safePhotoUrl:safePhotoUrl,showToast:showToast
+});
+
+/* Meeting records keep published posts and private personal records separate. */
+function meetingMemberCanRead(bookId){
+  var member=currentUser(),book=bookById(bookId);
+  return !!(SESSION&&member&&!member.isDeleted&&member.approvalStatus==='approved'&&book&&!isBookLocked(book));
+}
+var meetingRecordsBridge=GrowellMeetingRecordsBridge({
+  sb:sb,domain:GrowellMeetingRecordsDomain,
+  sessionUserId:function(){return SESSION&&SESSION.userId;},
+  sessionEpoch:function(){return saveSessionEpoch;},
+  canReadBook:meetingMemberCanRead,isAdmin:isAdmin,
+  mapPost:function(row){return mapPostRow(row,STATE.users);},
+  mapMaterial:function(row){return mapMaterialNoteRow(row,STATE.users);},
+  showToast:showToast,
+  openSource:function(item,kind){
+    if(!meetingMemberCanRead(item.bookId))return;
+    if(kind==='post')STATE.posts[item.id]=item;
+    else STATE.materialNotes[item.id]=item;
+    GrowellMeetingRecords.close();
+    location.hash='#/book/'+encodeURIComponent(item.bookId)+'/'+(kind==='post'?'share':'materials')+'/post/'+encodeURIComponent(item.id);
+  }
+});
+GrowellMeetingRecords.configure({
+  sessionUserId:function(){return SESSION&&SESSION.userId;},
+  sessionEpoch:function(){return saveSessionEpoch;},
+  isAdmin:isAdmin,canReadBook:meetingMemberCanRead,bookById:bookById,
+  loadRecords:meetingRecordsBridge.loadRecords,saveRecord:meetingRecordsBridge.saveRecord,
+  deleteRecord:meetingRecordsBridge.deleteRecord,getInsights:meetingRecordsBridge.getInsights,
+  getMaterials:meetingRecordsBridge.getMaterials,openPost:meetingRecordsBridge.openPost,
+  openMaterial:meetingRecordsBridge.openMaterial,showToast:showToast
 });
 
 /* ---------------- boot ----------------

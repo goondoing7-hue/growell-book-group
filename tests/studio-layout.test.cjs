@@ -21,6 +21,7 @@ function harness(){
     commentsForPost:()=>[{}],SESSION:{userId:'owner',name:'독서회원',keyB64:'key-a'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{}},sharedPostsLoadState:'ready',shareFeedFilter:{},
     GrowellPrivateCategories:privateCategories,GrowellArchiveDomain:require('../archiveDomain.js'),
+    GrowellMeetingRecords:{launchHtml:bookId=>'<button type="button" data-meeting-records="'+esc(bookId)+'">모임별 기록</button>'},
     GrowellArchive:{reflectionHtml:theme=>'<section data-archive-reflection="'+esc(theme)+'"><h3>'+esc({emotion:'감정',thought:'생각',body:'신체',action:'행동'}[theme])+'에 대한 고찰</h3></section>'},memberLoadState:{privateEntries:'ready'},
     ensureKey:()=>Promise.resolve('synthetic-key'),decryptPrivateRecord:()=>Promise.resolve(privateCategories.encode([])),
     document:{getElementById:()=>null,querySelector:()=>null},
@@ -255,6 +256,18 @@ test('shared writing opens one dialog while retaining the selected record and ba
   assert.match(writing,/data-shared-detail="visible"/);assert.match(writing,/space-record-list/);
   const dialog=writing.match(/<dialog\b[\s\S]*?<\/dialog>/)[0];
   assert.match(dialog,/id="note-editor"/);assert.doesNotMatch(dialog,/data-shared-detail=|space-record-list/);
+});
+
+test('meeting records launch stays above the signed-in sharing feed without exposing a guest control',()=>{
+  const {c}=harness();c.STATE.posts={visible:post('visible')};
+  const markup=c.shareTabHtml(book);
+  assert.equal((markup.match(/data-meeting-records="emotion"/g)||[]).length,1);
+  assert.ok(markup.indexOf('data-meeting-records="emotion"')<markup.indexOf('data-heading="share"'));
+  assert.match(markup,/space-record-list/);assert.match(markup,/data-shared-detail="visible"/);
+  c.SESSION=null;
+  const guest=c.shareTabHtml(book);
+  assert.doesNotMatch(guest,/data-meeting-records=/);
+  assert.match(guest,/data-login-gate/);
 });
 
 test('personal workspace renders and schedules decryption only for the signed-in owner and requested book',()=>{

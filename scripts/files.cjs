@@ -3,6 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
+  'meetingRecords.js', 'meetingRecords.css', 'meetingRecordsDomain.js', 'meetingRecordsBridge.js',
   'driveBackup.js', 'driveBackup.css',
   'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
   'materialsMedia.js', 'materialsVideo.js', 'materialsVideo.css', 'materialTranscript.js', 'materialTranscript.css', ...require('../vendor/pdfjs/manifest.json').files,
@@ -25,6 +26,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/meeting-records-domain.test.cjs', 'tests/meeting-records-bridge.test.cjs', 'tests/meeting-records-sql.test.cjs',
   'tests/drive-backup-provider.test.cjs', 'tests/drive-backup-server.test.cjs', 'tests/drive-backup-sql.test.cjs', 'tests/drive-backup-ui.test.cjs',
   'tests/material-transcript-translation.test.cjs', 'tests/material-translation-sql.test.cjs',
   'tests/material-video-metadata.test.cjs',
@@ -44,6 +46,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'server/meeting-records.sql', 'server/meeting-records-verification.sql',
   'api/drive-backup.js', 'server/driveBackupDomain.cjs', 'server/driveBackupProvider.cjs', 'server/driveBackupService.cjs', 'server/drive-backup.sql', 'server/drive-backup-schedule.sql', 'server/DRIVE_BACKUP_SETUP.md',
   'server/materialTranscriptTranslation.cjs', 'server/material-video-translation.sql',
   'server/materialVideoMetadata.cjs',

@@ -3,7 +3,10 @@ const test=require('node:test'),assert=require('node:assert/strict'),vm=require(
 const Domain=require('../communityDomain.js');
 const featureSource=fs.readFileSync(path.join(__dirname,'../communityFeatures.js'),'utf8');
 const appSource=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
-const adapterSource=appSource.slice(appSource.indexOf('/* ---------------- community dependency adapter ---------------- */'),appSource.indexOf('/* ---------------- boot ----------------'));
+const adapterStart=appSource.indexOf('/* ---------------- community dependency adapter ---------------- */');
+const adapterEnd=appSource.indexOf('/* Meeting records keep published posts and private personal records separate. */',adapterStart);
+assert.ok(adapterStart>=0&&adapterEnd>adapterStart,'community adapter boundaries remain explicit');
+const adapterSource=appSource.slice(adapterStart,adapterEnd);
 const esc=value=>String(value).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 function harness(){
