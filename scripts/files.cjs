@@ -28,6 +28,7 @@ const DEPLOY_FILES = Object.freeze([
 
 const TEST_FILES = Object.freeze([
   'tests/insight-rounds.test.cjs',
+  'tests/meeting-records-open-round.test.cjs',
   'tests/meeting-records-domain.test.cjs', 'tests/meeting-records-bridge.test.cjs', 'tests/meeting-records-sql.test.cjs',
   'tests/drive-backup-provider.test.cjs', 'tests/drive-backup-server.test.cjs', 'tests/drive-backup-sql.test.cjs', 'tests/drive-backup-ui.test.cjs',
   'tests/material-transcript-translation.test.cjs', 'tests/material-translation-sql.test.cjs',

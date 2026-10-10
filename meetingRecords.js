@@ -80,11 +80,20 @@
   }
   function launchHtml(bookId){return '<button class="meeting-records-launch" type="button" data-meeting-records="'+esc(bookId)+'" aria-haspopup="dialog">'+icon('book')+'모임별 기록</button>';}
   function bind(container){
-    (container||document).querySelectorAll('[data-meeting-records]').forEach(function(node){if(node._meetingRecordsBound)return;node._meetingRecordsBound=true;node.addEventListener('click',function(){openList(node.getAttribute('data-meeting-records'),node);});});
+    (container||document).querySelectorAll('[data-meeting-records]').forEach(function(node){if(node._meetingRecordsBound)return;node._meetingRecordsBound=true;node.addEventListener('click',function(){
+      var round=node.getAttribute('data-meeting-round');
+      if(round!==null)openRound(node.getAttribute('data-meeting-records'),round,node);
+      else openList(node.getAttribute('data-meeting-records'),node);
+    });});
   }
-  function openList(bookId,trigger){
+  function openRound(bookId,round,trigger){
+    var value=String(round==null?'':round).normalize('NFKC').trim();
+    if(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)<1||Number(value)>9999)return;
+    openList(bookId,trigger,Number(value));
+  }
+  function openList(bookId,trigger,requestedRound){
     if(!app)return;ensureOwner();if(!allowed(bookId)||!app.bookById(bookId)||busy)return;
-    shell(trigger);state={bookId:bookId,view:'list',rows:[],loading:true,error:'',draft:null,record:null,editingConcept:null,undo:null,slide:0,dirty:false,preview:false,conflict:false};
+    shell(trigger);state={bookId:bookId,requestedRound:requestedRound||null,view:'list',rows:[],loading:true,error:'',draft:null,record:null,editingConcept:null,undo:null,slide:0,dirty:false,preview:false,conflict:false};
     render();showShell();loadRows();
   }
   function validRows(rows){
@@ -97,7 +106,12 @@
     var node=dialog,bookId=state.bookId,id=++request;state.loading=true;state.error='';render();
     return Promise.resolve().then(function(){return app.loadRecords(bookId);}).then(function(rows){
       if(dialog!==node||id!==request||!allowed(bookId))return false;
-      state.rows=validRows(rows);state.loading=false;render();return true;
+      state.rows=validRows(rows);state.loading=false;
+      if(state.requestedRound){
+        var selected=state.rows.find(function(row){return row.status==='published'&&Number(row.round)===state.requestedRound;});
+        if(selected){state.requestedRound=null;openRecord(selected);return true;}
+      }
+      render();return true;
     }).catch(function(){if(dialog===node&&id===request&&allowed(bookId)){state.loading=false;state.error='모임 기록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.';render();}return false;});
   }
   function byId(id){return state.rows.find(function(row){return row.id===id;});}
@@ -118,6 +132,10 @@
     return '<div class="mr-top">'+button(icon('back')+'모임별 기록','list','mr-back')+(editMode?'<div class="mr-modes" aria-label="모임 기록 화면 전환">'+button('작성 화면','editor-mode','','aria-pressed="'+(!state.preview)+'"')+button('미리보기','preview-mode','','aria-pressed="'+state.preview+'"')+'</div>':'')+closeButton+'</div>';
   }
   function listHtml(){
+    if(state.requestedRound){
+      var message=state.loading?'<p class="mr-empty" role="status">모임 기록을 불러오는 중이에요…</p>':state.error?'<div class="mr-empty" role="alert">'+esc(state.error)+'<br>'+button('다시 불러오기','retry')+'</div>':'<p class="mr-empty" role="status">아직 공개된 모임 기록이 없어요.</p>';
+      return '<div class="mr-body"><p class="mr-book-label">'+esc(book().title)+'</p><h1 class="mr-title">'+esc(state.requestedRound)+'번째 모임 기록</h1>'+message+button('모든 모임 기록 보기','list','mr-button')+'</div>';
+    }
     var pending=admin()?Object.keys(drafts).map(function(key){return drafts[key];}).find(function(row){return row.bookId===state.bookId&&row.revision===0&&editable(row);}):null;
     var content=state.loading?'<p class="mr-empty" role="status">모임 기록을 불러오는 중이에요…</p>':state.error?'<div class="mr-empty" role="alert">'+esc(state.error)+'<br>'+button('다시 불러오기','retry')+'</div>':state.rows.length?state.rows.map(function(row){
       var insights=insightRows(row).length;
@@ -189,7 +207,7 @@
     if(!allowed(state.bookId)){close(false,true);return;}
     var action=target.getAttribute('data-mr-action'),id=target.getAttribute('data-id'),record=state.draft,item,index;
     if(action==='close'){close();return;}
-    if(action==='list'){snapshotDraft();closeSub(false);state.view='list';state.draft=null;state.preview=false;state.error='';state.conflict=false;render();loadRows();return;}
+    if(action==='list'){snapshotDraft();closeSub(false);state.view='list';state.requestedRound=null;state.draft=null;state.preview=false;state.error='';state.conflict=false;render();loadRows();return;}
     if(action==='retry'){loadRows();return;}
     if(action==='record'){openRecord(byId(id));return;}
     if(action==='create'){beginEdit(null);return;}
@@ -316,5 +334,5 @@
     go(index,false);if(root.ResizeObserver){observer=new root.ResizeObserver(function(){if(!disposed&&!drag)go(index,false);});observer.observe(track);}
     carouselDispose=function(){disposed=true;listeners.forEach(function(remove){remove();});if(observer)observer.disconnect();if(scrollFrame)root.cancelAnimationFrame(scrollFrame);};
   }
-  return {configure:configure,launchHtml:launchHtml,bind:bind,openList:openList,close:close,reset:reset};
+  return {configure:configure,launchHtml:launchHtml,bind:bind,openList:openList,openRound:openRound,close:close,reset:reset};
 });

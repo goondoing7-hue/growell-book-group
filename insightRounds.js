@@ -35,6 +35,7 @@
   function renderGroup(book,entry,opts){
     opts=opts||{};var posts=entry.posts||[],round=roundOf(entry.round),label=roundLabel(round),pages=[];
     var latestDate=posts.length&&opts.dateText?opts.dateText(posts[0].createdAt):'';
+    var recordButton=round&&Number(round)<=9999?'<button type="button" class="insight-round-records" data-meeting-records="'+esc(book.id)+'" data-meeting-round="'+esc(round)+'" aria-haspopup="dialog" aria-label="'+esc(label+' 기록 보기')+'">모임 기록 보기 <span aria-hidden="true">↗</span></button>':'';
     var rows=posts.map(function(post){
       var answer=preview(post),href='#/book/'+encodeURIComponent(text(book.id))+'/share/post/'+encodeURIComponent(text(post.id));
       var name=text(post.userName)||'작성자',date=opts.dateText?opts.dateText(post.createdAt):'';
@@ -50,7 +51,7 @@
     for(var i=0;i<rows.length;i+=PAGE_SIZE)pages.push(pageMarkup(rows.slice(i,i+PAGE_SIZE),i/PAGE_SIZE));
     return '<section class="insight-round" data-insight-round="'+esc(entry.key)+'" data-insight-visible-rows="'+Math.max(1,Math.min(PAGE_SIZE,posts.length))+'" aria-label="'+esc(label+' 통찰 정리')+'">'+
       '<header class="insight-round-header"><span class="insight-round-number" aria-hidden="true">'+esc(round?round.padStart(2,'0'):'—')+'</span><div class="insight-round-header-copy"><span class="insight-round-eyebrow">함께 나눈 통찰</span><h3>'+esc(label)+'</h3><div class="insight-round-header-meta">'+
-      (latestDate?'<span class="insight-round-header-date">최근 기록 '+esc(latestDate)+'</span>':'')+'<span class="insight-round-count" data-insight-count>'+posts.length+'개의 기록</span></div></div></header>'+
+      (latestDate?'<span class="insight-round-header-date">최근 기록 '+esc(latestDate)+'</span>':'')+'<span class="insight-round-count" data-insight-count>'+posts.length+'개의 기록</span></div></div>'+recordButton+'</header>'+
       '<div class="insight-round-track" data-insight-track tabindex="0" role="region" aria-roledescription="캐러셀" aria-label="'+esc(label)+' 통찰 목록. 좌우로 넘겨 다른 기록을 읽을 수 있어요.">'+pages.join('')+'</div>'+
       '<div class="insight-round-navigation" data-insight-navigation><button type="button" data-insight-prev aria-label="'+esc(label)+' 이전 기록 3개" disabled><span aria-hidden="true">‹</span></button>'+
       '<span class="insight-round-position" data-insight-position aria-live="polite" aria-atomic="true">'+(posts.length?'1–'+Math.min(PAGE_SIZE,posts.length)+' / '+posts.length:'0 / 0')+'</span>'+

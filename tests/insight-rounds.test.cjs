@@ -59,6 +59,26 @@ test('preview favors the original q2 and falls back to q1, q3 or an honest empty
   }
 });
 
+test('the header opens operator records for the same book and normalized valid round with escaped attributes',()=>{
+  const bookId='book/" onfocus="attack()\'><svg>',entry=api.group([post('one',' ００３ ',{bookId})])[0];
+  const html=api.renderGroup({id:bookId},entry),header=html.match(/<header class="insight-round-header">([\s\S]*?)<\/header>/)[1];
+  assert.equal((header.match(/data-meeting-records=/g)||[]).length,1);
+  assert.ok(header.includes('data-meeting-records="book/&quot; onfocus=&quot;attack()&#39;&gt;&lt;svg&gt;"'));
+  assert.ok(header.includes('data-meeting-round="3"'));assert.ok(header.includes('aria-haspopup="dialog"'));
+  assert.ok(header.includes('aria-label="3번째 모임 기록 보기"'));assert.ok(header.includes('>모임 기록 보기 <span aria-hidden="true">↗</span></button>'));
+  assert.ok(header.indexOf('insight-round-records')>header.indexOf('insight-round-header-copy'));
+  assert.doesNotMatch(header,/<svg>|\sonfocus="/);
+  const boundary=api.renderGroup({id:'book'},api.group([post('one','9999')])[0]);assert.ok(boundary.includes('data-meeting-round="9999"'));
+});
+
+test('unknown, invalid and unsupported rounds keep their insight rows without a misleading meeting records button',()=>{
+  for(const round of ['',null,'0','-1','3.2','3번째','1e2','10000','<img onerror="attack()">']){
+    const html=api.renderGroup({id:'book'},api.group([post('one',round)])[0]);
+    assert.doesNotMatch(html,/data-meeting-records=|data-meeting-round=|class="insight-round-records"/);
+    assert.ok(html.includes('data-insight-row="one"'));assert.ok(html.includes('href="#/book/book/share/post/one"'));
+  }
+});
+
 function harness(){
   let now=1000,reduced=false,width=320,asyncSmooth=false;const observers=[];
   const win={matchMedia:()=>({matches:reduced}),ResizeObserver:class{constructor(fn){this.fn=fn;observers.push(this);}observe(node){this.node=node;}disconnect(){this.disconnected=true;}}};
