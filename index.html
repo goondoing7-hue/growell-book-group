@@ -5451,15 +5451,41 @@ function spaceListContentHtml(payload, createdAt, byline, categoryLabel){
   return '<div class="space-list-copy"><small class="space-list-meta">'+(label?esc(label)+' · ':'')+esc(fmtPostDate(createdAt))+'</small><strong class="space-list-title">'+esc(title)+'</strong><small class="space-list-byline"'+(byline?'':' aria-hidden="true"')+'>'+(byline?esc(byline):'&nbsp;')+'</small></div>'+
     (photo?'<span class="space-list-thumbnail"><img src="'+esc(photo)+'" alt="첨부 사진" loading="lazy" decoding="async"></span>':'');
 }
-function spaceShareRowHtml(book,p,selectedId){
-  var plain=p.noteType==='insight'?INSIGHT_QUESTIONS.map(function(q){return p[q.key]||'';}).join(' '):stripHtml(p.html||p.text||'');
-  var href='#/book/'+book.id+'/share/post/'+p.id;
-  return '<article class="card feed-tile space-list-item'+(p.id===selectedId?' is-selected':'')+'" data-search-text="'+esc((p.title+' '+plain+' '+p.userName).toLowerCase())+'">'+
-    '<a class="space-list-link" href="'+esc(href)+'"'+(p.id===selectedId?' aria-current="true"':'')+'>'+spaceListContentHtml(p,p.createdAt,'')+'</a>'+
-    '<div class="space-list-footer">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span>· 댓글 '+commentsForPost(p.id).length+'</span></div></article>';
+/* Shared previews are display-only; private rows and the stored rich text remain unchanged. */
+function spaceSharePreviewText(payload){
+  var html=String(payload.html||'');
+  var plain=html?stripHtml(sanitizeHtml(html).replace(/<br\b[^>]*>|<\/(?:p|div|li|blockquote|pre|ol|ul)>/gi,' ')):'';
+  return String(plain.trim()?plain:(payload.text||'')).replace(/\s+/g,' ').trim();
 }
-function spaceWorkspaceHtml(list,detail,postId,writing){
-  return '<div class="space-workspace'+(postId?' is-detail':'')+(writing?' is-writing':'')+'"><aside class="space-workspace-list" aria-label="글 목록">'+list+'</aside><section class="space-workspace-detail" aria-label="선택한 글">'+detail+'</section></div>';
+function spaceSharePreviewHtml(payload){
+  if(payload.noteType==='insight'){
+    var labels=['모임 소감','새로운 깨달음','실천할 배움'];
+    return '<div class="share-insight-preview">'+INSIGHT_QUESTIONS.map(function(q,i){
+      var answer=String(payload[q.key]||'').replace(/\s+/g,' ').trim();
+      return '<div class="share-insight-answer"><span class="share-insight-label"><span class="share-insight-number">0'+(i+1)+'</span>'+labels[i]+'</span><p class="share-insight-text'+(answer?'':' is-empty')+'">'+esc(answer||'작성한 답변이 없어요.')+'</p></div>';
+    }).join('')+'</div>';
+  }
+  var title=String(payload.title||'').trim(),plain=spaceSharePreviewText(payload);
+  var photo=safePhotoUrl(payload.photo&&payload.photo.dataUrl);
+  return '<div class="share-preview-layout"><div class="share-preview-copy">'+
+    (title?'<h3 class="share-preview-title">'+esc(title)+'</h3>':'')+
+    (plain?'<p class="share-preview-excerpt">'+esc(plain)+'</p>':(!title?'<p class="share-preview-excerpt">'+(photo?'사진으로 나눈 기록':'함께 나눈 기록')+'</p>':''))+'</div>'+
+    (photo?'<span class="share-preview-thumbnail"><img src="'+esc(photo)+'" alt="첨부 사진" loading="lazy" decoding="async"></span>':'')+'</div>';
+}
+function spaceShareRowHtml(book,p,selectedId){
+  var insight=p.noteType==='insight';
+  var plain=insight?INSIGHT_QUESTIONS.map(function(q){return p[q.key]||'';}).join(' '):spaceSharePreviewText(p);
+  var nt=insight?NOTE_TYPE_INSIGHT:noteTypeOf(p.noteType);
+  var href='#/book/'+book.id+'/share/post/'+p.id;
+  var label=insight?'통찰 정리 답변 전체 보기':(String(p.title||'').trim()||'나눔 글')+' 더 읽기';
+  var search=[p.title||'',plain,p.userName||'',p.meetingNo||''].join(' ').toLowerCase();
+  return '<article class="card feed-tile space-list-item share-preview-item'+(p.id===selectedId?' is-selected':'')+'" data-search-text="'+esc(search)+'">'+
+    '<a class="space-list-link share-preview-link" href="'+esc(href)+'" aria-label="'+esc(label)+'"'+(p.id===selectedId?' aria-current="true"':'')+'><div class="share-preview-meta"><span>'+esc(nt?nt.label:'기록')+' · '+esc(fmtPostDate(p.createdAt))+'</span>'+
+    (insight&&p.meetingNo?'<span class="share-preview-meeting">'+esc(p.meetingNo)+'번째 모임</span>':'')+'</div>'+spaceSharePreviewHtml(p)+'</a>'+
+    '<div class="space-list-footer share-preview-footer">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="share-preview-comments">· 댓글 '+commentsForPost(p.id).length+'</span><a class="share-preview-read" href="'+esc(href)+'" aria-label="'+esc(label)+'">'+(insight?'답변 전체 보기':'더 읽기')+' →</a></div></article>';
+}
+function spaceWorkspaceHtml(list,detail,postId,writing,type){
+  return '<div class="space-workspace'+(postId?' is-detail':'')+(writing?' is-writing':'')+(type==='share'?' space-share-workspace':'')+'"><aside class="space-workspace-list" aria-label="글 목록">'+list+'</aside><section class="space-workspace-detail" aria-label="선택한 글">'+detail+'</section></div>';
 }
 function spaceDetailBackHtml(book,type){
   return '<a class="post-detail-back space-detail-back" href="#/book/'+book.id+'/'+type+'">'+svgIcon(I_BACK)+'목록으로</a>';
@@ -5517,7 +5543,7 @@ function shareTabHtml(book, postId){
       '<div class="empty feed-empty-search" id="empty-'+gridId+'" style="display:none">검색 결과가 없어요.</div>'
     : (allPosts.length ? '<div class="empty">이 타입의 나눔이 아직 없어요.</div>' : '<div class="empty">아직 나눈 이야기가 없어요. 첫 번째 나눔을 남겨보세요.</div>');
   var detail=spaceDetailBackHtml(book,'share')+(selected?sharePostCardHtml(book,selected):'<div class="empty">'+(postId?'글을 찾을 수 없어요.':'목록에서 이야기를 골라 읽어보세요.')+'</div>');
-  return heading+(!SESSION?composer:'')+'<div class="space-filter-row">'+toolbar+searchRow+'</div><p class="space-feed-count">최근 나눈 이야기 '+posts.length+'개 · 최신순</p>'+spaceWorkspaceHtml(grid,detail,postId,false)+(writing?composer:'');
+  return heading+(!SESSION?composer:'')+'<div class="space-filter-row">'+toolbar+searchRow+'</div><p class="space-feed-count">최근 나눈 이야기 '+posts.length+'개 · 최신순</p>'+spaceWorkspaceHtml(grid,detail,postId,false,'share')+(writing?composer:'');
 }
 
 function loginGateHtml(msg){

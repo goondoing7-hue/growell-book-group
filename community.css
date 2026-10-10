@@ -281,6 +281,50 @@
  .space-list-footer{left:14px;bottom:14px;max-width:calc(100% - 104px)}
 }
 
+/* Shared board: prose previews and the three existing insight answers. */
+.space-share-workspace:not(.is-detail){grid-template-columns:minmax(0,1fr)}
+.space-share-workspace:not(.is-detail)>.space-workspace-detail{display:none}
+.space-share-workspace .space-workspace-list{container-type:inline-size}
+.space-share-workspace .space-record-list{gap:14px}
+.book-page .share-preview-item{border-radius:16px}
+.share-preview-item .share-preview-link{display:block;min-height:0;padding:22px 24px 12px}
+.share-preview-meta{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;color:var(--space-muted);font:500 12px/1.6 var(--font-body);margin-bottom:13px}
+.share-preview-meeting{padding:3px 9px;border-radius:6px;background:var(--space-soft);color:var(--space-green);font-size:11px}
+.share-preview-layout{display:flex;align-items:center;gap:24px;min-width:0}
+.share-preview-copy{flex:1;min-width:0}
+.share-preview-title{margin:0 0 7px;font:700 19px/1.5 var(--font-body);letter-spacing:-.025em;color:var(--ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.share-preview-excerpt{margin:0;color:var(--ink-soft);font:400 15px/1.8 var(--font-body);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;word-break:normal}
+.share-preview-thumbnail{display:block;width:88px;height:88px;flex:0 0 88px;border-radius:10px;overflow:hidden}
+.share-preview-thumbnail img{display:block;width:100%;height:100%;object-fit:contain}
+.share-preview-item .share-preview-footer{position:static;max-width:none;white-space:normal;padding:0 24px 15px;gap:7px;min-width:0;flex-wrap:wrap}
+.share-preview-footer>.community-author-control{max-width:50%;font-size:12px;min-height:36px}
+.share-preview-footer .avatar{width:24px;height:24px;font-size:11px}
+.share-preview-comments{color:var(--space-muted);font-size:12px}
+.share-preview-read{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:5px 0 5px 8px;color:var(--space-green);font:600 12px/1.5 var(--font-body);text-decoration:none;white-space:nowrap}
+.share-preview-read:focus-visible{outline:2px solid var(--space-green);outline-offset:3px;border-radius:4px}
+.share-insight-preview{display:grid;grid-template-columns:minmax(0,1fr);gap:15px;margin:18px 0 4px}
+.share-insight-answer{min-width:0}
+.share-insight-label{display:flex;gap:6px;color:var(--space-muted);font:500 12px/1.5 var(--font-body)}
+.share-insight-number{color:var(--space-green);font-weight:600}
+.share-insight-text{margin:7px 0 0;font:400 14px/1.85 var(--font-body);color:var(--ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;word-break:normal}
+.share-insight-text.is-empty{color:var(--space-muted)}
+@container (min-width:700px){
+ .share-insight-preview{grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin-top:22px}
+ .share-insight-answer{padding:0 20px;border-left:1px solid var(--line)}
+ .share-insight-answer:first-child{padding-left:0;border-left:0}
+ .share-insight-answer:last-child{padding-right:0}
+ .share-insight-text{-webkit-line-clamp:3}
+}
+@media(max-width:760px){
+ .share-preview-item .share-preview-link{padding:19px 18px 10px}
+ .share-preview-item .share-preview-footer{padding:0 18px 12px}
+ .share-preview-layout{gap:14px}
+ .share-preview-title{font-size:17px}
+ .share-preview-excerpt{font-size:14px}
+ .share-preview-thumbnail{width:68px;height:68px;flex-basis:68px}
+ .share-preview-read{min-height:44px}
+}
+
 /* Writing opens above its space without changing the underlying list layout. */
 body.space-composer-open{overflow:hidden}
 .space-composer-dialog{box-sizing:border-box;width:min(1000px,calc(100vw - 40px));max-width:none;max-height:calc(100dvh - 40px);margin:auto;padding:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);font-family:var(--font-body);box-shadow:var(--shadow-lg)}

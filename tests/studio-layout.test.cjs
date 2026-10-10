@@ -13,8 +13,8 @@ const flush=async()=>{for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));
 const book={id:'emotion',accent:'emotion'};
 function harness(){
   const scheduled=[],decrypted=[],renders=[];
-  const c={URL,Promise,Array,Object,JSON,String,esc,stripHtml:value=>String(value).replace(/<[^>]*>/g,''),
-    fmtPostDate:()=> '오늘',fmtDate:()=> '2026. 9. 23.',svgIcon:()=>'',I_BACK:'',I_LOCK:'',I_EDIT:'',I_SETTINGS:'',I_TRASH:'',
+  const c={URL,Promise,Array,Object,JSON,String,esc,stripHtml:value=>String(value).replace(/<[^>]*>/g,''),sanitizeHtml:value=>String(value??''),
+    fmtPostDate:()=> '오늘',fmtDate:()=> '2026. 9. 23.',svgIcon:()=>'',I_BACK:'',I_LOCK:'',I_EDIT:'',I_SETTINGS:'',I_TRASH:'',I_COMMENT:'',
     NOTE_TYPE_INSIGHT:{key:'insight',label:'통찰 정리'},NOTE_TYPES:[],INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],
     noteTypeOf:key=>key==='thought'?{key,label:'내 생각'}:null,
     publicAuthorHtml:(id,name)=>'<button type="button" data-community-author="'+esc(id)+'">'+esc(name)+'</button>',
@@ -148,10 +148,81 @@ test('studio rows validate and escape photo URLs while text-only and unsafe-phot
 test('shared row keeps author popup buttons outside the record link',()=>{
   const {c}=harness(),markup=c.spaceShareRowHtml(book,post('visible'),'visible');
   const links=[...markup.matchAll(/<a\b[^>]*>[\s\S]*?<\/a>/g)];
-  assert.equal(links.length,1);assert.doesNotMatch(links[0][0],/<button\b/);
+  assert.equal(links.length,2);
+  for(const [link] of links){assert.doesNotMatch(link,/<button\b/);assert.ok(link.includes('href="#/book/emotion/share/post/visible"'));}
   assert.ok(markup.includes('data-community-author="member"'));
   assert.ok(markup.includes('aria-current="true"'));
   assert.ok(markup.includes('#/book/emotion/share/post/visible'));
+});
+
+test('shared excerpts preserve HTML paragraph boundaries and legacy plain text without rewriting content',()=>{
+  const {c}=harness();
+  const payload={html:'<p>첫 문단<br>다음 줄</p><p>두 번째 문단</p><ul><li>첫 항목</li><li>둘째 항목</li></ul>',text:'이전 본문'};
+  const before=JSON.stringify(payload);
+  assert.equal(c.spaceSharePreviewText(payload),'첫 문단 다음 줄 두 번째 문단 첫 항목 둘째 항목');
+  assert.equal(JSON.stringify(payload),before);
+  for(const html of [undefined,'','  ','<p><br></p>']){
+    const legacy={html,text:'이전 <기록> & 문장\n다음 줄'};
+    assert.equal(c.spaceSharePreviewText(legacy),'이전 <기록> & 문장 다음 줄');
+    const markup=c.spaceSharePreviewHtml(legacy);
+    assert.ok(markup.includes('이전 &lt;기록&gt; &amp; 문장 다음 줄'));
+    assert.doesNotMatch(markup,/<기록>|&amp;lt;|&amp;amp;/);
+  }
+  const escaped=c.spaceSharePreviewHtml({title:'<제목> & "문장"',html:'<p>본문 <strong>강조</strong></p>'});
+  assert.ok(escaped.includes(esc('<제목> & "문장"')));assert.ok(escaped.includes('본문 강조'));
+  assert.doesNotMatch(escaped,/<strong>강조<\/strong>|<제목>/);
+});
+
+test('shared previews keep photo-only posts and reject unsafe image URLs',()=>{
+  const {c}=harness();
+  for(const url of ['https://example.org/photo.jpg?a=1&b=2','data:image/png;base64,AQID']){
+    const markup=c.spaceSharePreviewHtml({title:'사진으로 남긴 이야기',html:'',photo:{dataUrl:url}});
+    assert.ok(markup.includes('사진으로 남긴 이야기'));assert.ok(markup.includes('src="'+esc(url)+'"'));
+    assert.equal((markup.match(/<img\b/g)||[]).length,1);
+  }
+  for(const url of [undefined,'javascript:attack()','data:image/svg+xml;base64,AQID','https://example.org/x" onerror="attack()']){
+    const markup=c.spaceSharePreviewHtml({title:'읽을 수 있는 글',html:'<p>사진 없이도 남는 본문</p>',photo:{dataUrl:url}});
+    assert.doesNotMatch(markup,/<img\b|onerror=/);assert.ok(markup.includes('사진 없이도 남는 본문'));
+  }
+});
+
+test('insight previews expose each original answer separately without a generated title or HTML interpretation',()=>{
+  const {c}=harness();
+  const payload={noteType:'insight',title:'4번째 통찰 노트',meetingNo:'4',
+    q1:'<b>편안했던 모임</b>',q2:'질문 & 경청의 의미',q3:'내일 "한 번 더" 물어보기'};
+  const before=JSON.stringify(payload),markup=c.spaceSharePreviewHtml(payload);
+  for(const label of ['모임 소감','새로운 깨달음','실천할 배움'])assert.ok(markup.includes(label));
+  for(const key of ['q1','q2','q3'])assert.ok(markup.includes(esc(payload[key])),key+' remains the original answer');
+  assert.ok(markup.indexOf(esc(payload.q1))<markup.indexOf(esc(payload.q2)));
+  assert.ok(markup.indexOf(esc(payload.q2))<markup.indexOf(esc(payload.q3)));
+  assert.doesNotMatch(markup,/<b>|&amp;lt;|&amp;amp;|4번째 통찰 노트/);
+  assert.equal(JSON.stringify(payload),before);
+  for(const key of ['q1','q2','q3']){
+    const sparse=c.spaceSharePreviewHtml({noteType:'insight',title:'이전 자동 제목',q1:' ',q2:'',q3:null,[key]:'남겨둔 한 답변'});
+    assert.equal((sparse.match(/작성한 답변이 없어요\./g)||[]).length,2);
+    assert.equal((sparse.match(/남겨둔 한 답변/g)||[]).length,1);
+    assert.doesNotMatch(sparse,/이전 자동 제목|undefined|null/);
+  }
+});
+
+test('shared list searches all answers and the full body while rendering leaves STATE unchanged',()=>{
+  const {c}=harness();
+  c.STATE.posts={
+    ordinary:{...post('ordinary'),html:'<p>'+('반복되는 긴 본문 '.repeat(90))+'HTML끝검색어</p>'},
+    legacy:{...post('legacy'),html:'',text:'예전 글에서만 찾을 수 있는 LEGACY검색어'},
+    insight:{...post('insight'),noteType:'insight',title:'3번째 통찰 노트',meetingNo:'3',html:'',
+      q1:'첫 답변 '+('소감 '.repeat(90))+'Q1끝검색어',q2:'둘째 답변 Q2끝검색어',q3:'셋째 답변 Q3끝검색어'}
+  };
+  c.STATE.privateEntries={private:entry('private')};
+  const before=JSON.stringify(c.STATE);
+  for(const [id,keywords] of [['ordinary',['html끝검색어']],['legacy',['legacy검색어']],['insight',['q1끝검색어','q2끝검색어','q3끝검색어']]]){
+    const markup=c.spaceShareRowHtml(book,c.STATE.posts[id],null);
+    const search=markup.match(/data-search-text="([^"]*)"/);
+    assert.ok(search,'row supplies searchable content');
+    for(const keyword of keywords)assert.ok(search[1].includes(keyword),keyword+' remains searchable beyond the preview');
+    assert.doesNotMatch(markup,/encrypted-record/);
+  }
+  c.shareTabHtml(book);assert.equal(JSON.stringify(c.STATE),before);
 });
 
 test('shared preview honors its filter but highlights only explicitly opened posts and reports missing IDs',()=>{
@@ -160,9 +231,9 @@ test('shared preview honors its filter but highlights only explicitly opened pos
   c.STATE.posts.newer.noteType='quote';c.shareFeedFilter.emotion='thought';
   const initial=c.shareTabHtml(book);
   assert.match(initial,/data-shared-detail="older"/);
-  assert.doesNotMatch(initial,/space-list-item is-selected|aria-current="true"/,'the initial preview does not mark a row as selected');
+  assert.doesNotMatch(initial,/class="[^"]*\bspace-list-item\b[^"]*\bis-selected\b|aria-current="true"/,'the initial preview does not mark a row as selected');
   const opened=c.shareTabHtml(book,'older');
-  assert.match(opened,/space-list-item is-selected/);assert.match(opened,/aria-current="true"/);
+  assert.match(opened,/class="[^"]*\bspace-list-item\b[^"]*\bis-selected\b/);assert.match(opened,/aria-current="true"/);
   assert.match(c.shareTabHtml(book,'newer'),/data-shared-detail="newer"/,'direct links remain available outside the current type filter');
   for(const id of ['foreign','missing']){
     const markup=c.shareTabHtml(book,id);
