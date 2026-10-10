@@ -3,6 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
+  'guides/growell-connection-guide.pdf',
   'insightRounds.js', 'insightRounds.css',
   'meetingRecords.js', 'meetingRecords.css', 'meetingRecordsDomain.js', 'meetingRecordsBridge.js',
   'driveBackup.js', 'driveBackup.css',

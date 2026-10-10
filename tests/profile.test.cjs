@@ -51,7 +51,7 @@ test('profile rejects malformed supplied photos while preserving the original pr
   }
 });
 
-test('the common footer keeps contact information and places the device guide before privacy',()=>{
+test('the common footer keeps contact information and places the connection PDF below the device guide',()=>{
   for(const [navigator,href,label] of [
     [{userAgent:'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',platform:'Win32'},'/guide-pc.html','PC 사용 가이드'],
     [{userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',platform:'iPhone'},'/guide.html','모바일 사용 가이드']
@@ -60,7 +60,14 @@ test('the common footer keeps contact information and places the device guide be
     vm.createContext(c);vm.runInContext(section('function footerHtml(','/* ---------------- render: admin user list'),c);
     const footer=c.footerHtml();
     assert.match(footer,/DBKS GROWELL 독서모임/);assert.match(footer,/010-7319-7580/);
-    assert.ok(footer.includes('<div class="footer-links"><a href="'+href+'">'+label+'</a><a href="privacy.html">개인정보처리방침</a></div>'));
+    const links=[...footer.matchAll(/<a\b([^>]*)>([^<]*)<\/a>/g)];
+    assert.deepEqual(links.map(([,attributes])=>attributes.match(/href="([^"]+)"/)[1]),[
+      href,'guides/growell-connection-guide.pdf','guides/growell-connection-guide.pdf','privacy.html'
+    ]);
+    assert.equal(links[0][2],label);
+    assert.equal(links[1][2],'홈 화면·백업·알림 연결 가이드');
+    assert.match(links[1][1],/target="_blank" rel="noopener"/);
+    assert.match(links[2][1],/download="GROWELL_모바일_연결_가이드.pdf"/);
     assert.ok(footer.indexOf('010-7319-7580')<footer.indexOf('class="footer-links"'));
   }
 });
