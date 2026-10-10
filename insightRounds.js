@@ -4,7 +4,7 @@
   else root.GrowellInsightRounds=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   'use strict';
-  var PAGE_SIZE=3,controllers=new Map();
+  var PAGE_SIZE=2,controllers=new Map();
   function text(value){return value==null?'':String(value);}
   function esc(value){return text(value).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
   function normalize(value){return text(value).normalize('NFC').toLocaleLowerCase().trim();}
@@ -52,10 +52,10 @@
     return '<section class="insight-round" data-insight-round="'+esc(entry.key)+'" data-insight-visible-rows="'+Math.max(1,Math.min(PAGE_SIZE,posts.length))+'" aria-label="'+esc(label+' 통찰 정리')+'">'+
       '<header class="insight-round-header"><span class="insight-round-number" aria-hidden="true">'+esc(round?round.padStart(2,'0'):'—')+'</span><div class="insight-round-header-copy"><span class="insight-round-eyebrow">함께 나눈 통찰</span><h3>'+esc(label)+'</h3><div class="insight-round-header-meta">'+
       (latestDate?'<span class="insight-round-header-date">최근 기록 '+esc(latestDate)+'</span>':'')+'<span class="insight-round-count" data-insight-count>'+posts.length+'개의 기록</span></div></div>'+recordButton+'</header>'+
-      '<div class="insight-round-track" data-insight-track tabindex="0" role="region" aria-roledescription="캐러셀" aria-label="'+esc(label)+' 통찰 목록. 좌우로 넘겨 다른 기록을 읽을 수 있어요.">'+pages.join('')+'</div>'+
-      '<div class="insight-round-navigation" data-insight-navigation><button type="button" data-insight-prev aria-label="'+esc(label)+' 이전 기록 3개" disabled><span aria-hidden="true">‹</span></button>'+
+      '<div class="insight-round-track" data-insight-track tabindex="0" role="region" aria-roledescription="캐러셀" aria-label="'+esc(label)+' 통찰 목록. 한 번에 '+PAGE_SIZE+'개씩, 좌우로 넘겨 다른 기록을 읽을 수 있어요.">'+pages.join('')+'</div>'+
+      '<div class="insight-round-navigation" data-insight-navigation><button type="button" data-insight-prev aria-label="'+esc(label)+' 이전 기록 '+PAGE_SIZE+'개" disabled><span aria-hidden="true">‹</span></button>'+
       '<span class="insight-round-position" data-insight-position aria-live="polite" aria-atomic="true">'+(posts.length?'1–'+Math.min(PAGE_SIZE,posts.length)+' / '+posts.length:'0 / 0')+'</span>'+
-      '<button type="button" data-insight-next aria-label="'+esc(label)+' 다음 기록 3개"'+(posts.length<=PAGE_SIZE?' disabled':'')+'><span aria-hidden="true">›</span></button></div></section>';
+      '<button type="button" data-insight-next aria-label="'+esc(label)+' 다음 기록 '+PAGE_SIZE+'개"'+(posts.length<=PAGE_SIZE?' disabled':'')+'><span aria-hidden="true">›</span></button></div></section>';
   }
   function panels(root){
     var result=Array.from(root.querySelectorAll('[data-insight-round]'));

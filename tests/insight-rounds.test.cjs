@@ -28,19 +28,22 @@ test('unknown or invalid rounds remain visible in one unknown group per book wit
   assert.deepEqual(api.group(null),[]);
 });
 
-test('render uses three rows per page, original links, author controls, dates, counts and complete escaped search text',()=>{
+test('render uses two rows per page, original links, author controls, dates, counts and complete escaped search text',()=>{
   const posts=Array.from({length:7},(_,i)=>post('p'+i,'3'));
   posts[0]=post('p/"<&>','3',{userName:'이름 <script>',title:'제목 "끝"',q1:'Q1 <script> 원문',q2:'Q2 & "원문"\n다음 줄',q3:'Q3 마지막 검색어',createdAt:123});
   const calls=[];const html=api.renderGroup({id:'book/"<>'},api.group(posts)[0],{
     authorHtml:p=>'<button data-author="'+posts.indexOf(p)+'">안전한 작성자</button>',
     dateText:value=>{calls.push(value);return '<날짜>';},comments:id=>id===posts[0].id?2:0,selectedId:'p5'
   });
-  assert.equal((html.match(/data-insight-page=/g)||[]).length,3);assert.equal((html.match(/data-insight-row=/g)||[]).length,7);
-  assert.equal((html.match(/class="insight-round-page"[^>]*>([\s\S]*?)(?=<div class="insight-round-page"|<\/div><div class="insight-round-navigation")/g)||[]).length,3);
+  assert.equal((html.match(/data-insight-page=/g)||[]).length,4);assert.equal((html.match(/data-insight-row=/g)||[]).length,7);
+  const renderedPages=html.match(/class="insight-round-page"[^>]*>([\s\S]*?)(?=<div class="insight-round-page"|<\/div><div class="insight-round-navigation")/g)||[];
+  assert.deepEqual(renderedPages.map(page=>(page.match(/data-insight-row=/g)||[]).length),[2,2,2,1]);
   assert.ok(html.includes('href="#/book/book%2F%22%3C%3E/share/post/p%2F%22%3C%26%3E"'));
   assert.ok(html.includes('Q1 &lt;script&gt; 원문'));assert.ok(html.includes('Q2 &amp; &quot;원문&quot;\n다음 줄'));assert.ok(html.includes('Q3 마지막 검색어'));
   assert.ok(html.includes('제목 &quot;끝&quot;'));assert.ok(html.includes('이름 &lt;script&gt;'));assert.ok(html.includes('&lt;날짜&gt;'));
-  assert.ok(html.includes('댓글 2'));assert.ok(html.includes('1–3 / 7'));assert.ok(html.includes('data-insight-selected="true"'));
+  assert.ok(html.includes('댓글 2'));assert.ok(html.includes('1–2 / 7'));assert.ok(html.includes('data-insight-selected="true"'));
+  assert.ok(html.includes('이전 기록 2개'));assert.ok(html.includes('다음 기록 2개'));assert.ok(html.includes('한 번에 2개씩'));
+  assert.doesNotMatch(html,/이전 기록 3개|다음 기록 3개|data-insight-visible-rows="3"/);
   assert.ok(html.includes('class="insight-round-number" aria-hidden="true">03</span>'));assert.ok(html.includes('최근 기록 &lt;날짜&gt;'));
   assert.ok(html.includes('<button data-author="0">'));assert.equal(calls[0],123);
   assert.doesNotMatch(html,/<script>|class="[^"]*feed-tile/);
@@ -127,7 +130,7 @@ function harness(){
     const position=node.appendChild(new Node('span',{'data-insight-position':''})),count=node.appendChild(new Node('span',{'data-insight-count':''}));
     const rows=[];
     for(let i=0;i<length;i++){
-      if(i%3===0)track.appendChild(new Node('div',{'data-insight-page':String(i/3)}));
+      if(i%2===0)track.appendChild(new Node('div',{'data-insight-page':String(i/2)}));
       const row=track.children.at(-1).appendChild(new Node('article',{'data-insight-row':'p'+i,'data-insight-search':'작성자'+i+' '+(i%2?'독서 함께':'기도 함께')+' Q1끝'+i+' Q2끝'+i+' Q3끝'+i,'data-insight-selected':i===selected?'true':'false'}));
       row.link=row.appendChild(new Node('a',{href:'#/book/book/share/post/p'+i}));row.author=row.appendChild(new Node('button',{'data-community-author':'u'+i}));rows.push(row);
     }
@@ -139,22 +142,41 @@ function harness(){
   return {api:localApi,panel,bind,root,document,observers,reduced:value=>{reduced=value;},smooth:value=>{asyncSmooth=value;},advance:ms=>{now+=ms;},resize:value=>{width=value;observers.filter(observer=>!observer.disconnected).forEach(observer=>observer.fn());}};
 }
 
-test('three-row pages navigate to both edges with keyboard and buttons, resize correctly and bind once',()=>{
+test('two-row pages navigate to both edges with keyboard and buttons, resize correctly and bind once',()=>{
   const h=harness(),p=h.panel();h.bind(p);h.api.bind(h.root);
-  assert.equal(p.position.textContent,'1–3 / 7');assert.equal(p.previous.disabled,true);assert.equal(p.next.listeners.click.length,1);
-  p.next.click();assert.equal(p.position.textContent,'4–6 / 7');assert.equal(p.track.scrollLeft,320);assert.equal(p.track.lastScroll.behavior,'smooth');
-  h.resize(215);assert.equal(p.track.scrollLeft,215);assert.equal(p.position.textContent,'4–6 / 7');
-  h.reduced(true);p.next.click();assert.equal(p.position.textContent,'7–7 / 7');assert.equal(p.next.disabled,true);assert.equal(p.track.lastScroll.behavior,'instant');
-  assert.equal(p.track.emit('keydown',{key:'Home'}).defaultPrevented,true);assert.equal(p.position.textContent,'1–3 / 7');
-  p.track.emit('keydown',{key:'ArrowLeft'});assert.equal(p.position.textContent,'1–3 / 7');
-  p.track.emit('keydown',{key:'End',ctrlKey:true});assert.equal(p.position.textContent,'1–3 / 7');
-  p.rows[0].author.emit('keydown',{key:'End'});assert.equal(p.position.textContent,'1–3 / 7');
+  assert.equal(p.position.textContent,'1–2 / 7');assert.equal(p.previous.disabled,true);assert.equal(p.next.listeners.click.length,1);
+  p.next.click();assert.equal(p.position.textContent,'3–4 / 7');assert.equal(p.track.scrollLeft,320);assert.equal(p.track.lastScroll.behavior,'smooth');
+  h.resize(215);assert.equal(p.track.scrollLeft,215);assert.equal(p.position.textContent,'3–4 / 7');
+  h.reduced(true);p.next.click();assert.equal(p.position.textContent,'5–6 / 7');assert.equal(p.next.disabled,false);assert.equal(p.track.lastScroll.behavior,'instant');
+  p.next.click();assert.equal(p.position.textContent,'7–7 / 7');assert.equal(p.next.disabled,true);assert.equal(p.track.scrollLeft,645);
+  assert.equal(p.track.emit('keydown',{key:'Home'}).defaultPrevented,true);assert.equal(p.position.textContent,'1–2 / 7');
+  p.track.emit('keydown',{key:'ArrowLeft'});assert.equal(p.position.textContent,'1–2 / 7');
+  p.track.emit('keydown',{key:'End',ctrlKey:true});assert.equal(p.position.textContent,'1–2 / 7');
+  p.rows[0].author.emit('keydown',{key:'End'});assert.equal(p.position.textContent,'1–2 / 7');
   p.track.emit('keydown',{key:'End'});assert.equal(p.position.textContent,'7–7 / 7');
 });
 
+test('one or two records fit one page while three records keep the third original on a second page',()=>{
+  for(const length of [1,2,3]){
+    const originals=frozen(Array.from({length},(_,i)=>post('original-'+i,'2',{createdAt:100+i,attachment:{id:'attachment-'+i}})));
+    const snapshot=JSON.stringify(originals),html=api.renderGroup({id:'book'},api.group(originals)[0]);
+    assert.equal((html.match(/data-insight-page=/g)||[]).length,length===3?2:1);
+    assert.ok(html.includes('data-insight-visible-rows="'+Math.min(2,length)+'"'));
+    for(const original of originals){assert.ok(html.includes('/share/post/'+original.id));assert.ok(html.includes(original.q1));assert.ok(html.includes(original.q2));assert.ok(html.includes(original.q3));}
+    assert.equal(JSON.stringify(originals),snapshot);
+    const h=harness(),p=h.panel(length);h.bind(p);
+    assert.equal(p.position.textContent,'1–'+Math.min(2,length)+' / '+length);assert.equal(p.next.disabled,length<=2);
+    if(length===3){
+      const last=p.rows[2];p.next.click();assert.equal(p.position.textContent,'3–3 / 3');assert.equal(p.next.disabled,true);
+      assert.equal(p.track.children[1].children[0],last);assert.equal(p.node.getAttribute('data-insight-visible-rows'),'2');
+      p.previous.click();assert.equal(p.position.textContent,'1–2 / 3');assert.deepEqual(p.track.querySelectorAll('[data-insight-row]'),p.rows);
+    }
+  }
+});
+
 test('offscreen pages are inert and untabbable, active links restore their original tabindex and selected rows are revealed',()=>{
-  const h=harness(),p=h.panel(7,5);p.rows[0].link.setAttribute('tabindex','2');h.bind(p);
-  assert.equal(p.position.textContent,'4–6 / 7');assert.equal(p.track.children[0].inert,true);assert.equal(p.track.children[1].inert,false);
+  const h=harness(),p=h.panel(7,3);p.rows[0].link.setAttribute('tabindex','2');h.bind(p);
+  assert.equal(p.position.textContent,'3–4 / 7');assert.equal(p.track.children[0].inert,true);assert.equal(p.track.children[1].inert,false);
   assert.equal(p.rows[0].link.getAttribute('tabindex'),'-1');assert.equal(p.rows[3].link.hasAttribute('tabindex'),false);
   h.document.activeElement=p.rows[3].link;p.previous.click();assert.equal(h.document.activeElement,p.track);
   assert.equal(p.rows[0].link.getAttribute('tabindex'),'2');assert.equal(p.rows[3].link.getAttribute('tabindex'),'-1');
@@ -163,29 +185,30 @@ test('offscreen pages are inert and untabbable, active links restore their origi
 
 test('rapid navigation uses the latest requested page while earlier animation frames and scrollend events arrive',()=>{
   const h=harness(),p=h.panel(10);h.bind(p);h.smooth(true);
-  p.next.click();assert.equal(p.track.lastScroll.left,320);assert.equal(p.position.textContent,'4–6 / 10');
-  p.track.scrollLeft=45;p.track.emit('scroll');assert.equal(p.position.textContent,'4–6 / 10');
-  p.next.click();assert.equal(p.track.lastScroll.left,640);assert.equal(p.position.textContent,'7–9 / 10');
-  p.track.scrollLeft=320;p.track.emit('scroll');p.track.emit('scrollend');assert.equal(p.position.textContent,'7–9 / 10');
-  p.next.click();assert.equal(p.track.lastScroll.left,960);assert.equal(p.position.textContent,'10–10 / 10');assert.equal(p.next.disabled,true);
-  p.previous.click();assert.equal(p.track.lastScroll.left,640);assert.equal(p.position.textContent,'7–9 / 10');
-  p.track.scrollLeft=640;p.track.emit('scroll');p.track.emit('scrollend');assert.equal(p.position.textContent,'7–9 / 10');
-  p.previous.click();assert.equal(p.track.lastScroll.left,320);p.track.scrollLeft=460;p.track.emit('scroll');
+  p.next.click();assert.equal(p.track.lastScroll.left,320);assert.equal(p.position.textContent,'3–4 / 10');
+  p.track.scrollLeft=45;p.track.emit('scroll');assert.equal(p.position.textContent,'3–4 / 10');
+  p.next.click();assert.equal(p.track.lastScroll.left,640);assert.equal(p.position.textContent,'5–6 / 10');
+  p.track.scrollLeft=320;p.track.emit('scroll');p.track.emit('scrollend');assert.equal(p.position.textContent,'5–6 / 10');
+  p.next.click();assert.equal(p.track.lastScroll.left,960);assert.equal(p.position.textContent,'7–8 / 10');assert.equal(p.next.disabled,false);
+  p.next.click();assert.equal(p.track.lastScroll.left,1280);assert.equal(p.position.textContent,'9–10 / 10');assert.equal(p.next.disabled,true);
+  p.previous.click();assert.equal(p.track.lastScroll.left,960);assert.equal(p.position.textContent,'7–8 / 10');
+  p.track.scrollLeft=960;p.track.emit('scroll');p.track.emit('scrollend');assert.equal(p.position.textContent,'7–8 / 10');
+  p.previous.click();assert.equal(p.track.lastScroll.left,640);p.track.scrollLeft=460;p.track.emit('scroll');
   p.track.emit('pointerdown',{pointerType:'touch',pointerId:1,clientX:200,clientY:20});assert.equal(p.track.lastScroll.behavior,'instant');assert.equal(p.track.lastScroll.left,460);
-  p.track.scrollLeft=0;p.track.emit('scroll');assert.equal(p.position.textContent,'1–3 / 10');
+  p.track.scrollLeft=0;p.track.emit('scroll');assert.equal(p.position.textContent,'1–2 / 10');
 });
 
 test('search repaginates matching original rows, searches all answers, hides empty groups and restores every original node',()=>{
   const h=harness(),p=h.panel(),other=h.panel(2);h.bind(p);h.bind(other);const original=p.rows.slice();
-  assert.equal(p.node.getAttribute('data-insight-visible-rows'),'3');assert.equal(other.node.getAttribute('data-insight-visible-rows'),'2');
-  assert.equal(h.api.filter(h.root,'기도 함께'),5);assert.equal(p.position.textContent,'1–3 / 4');
+  assert.equal(p.node.getAttribute('data-insight-visible-rows'),'2');assert.equal(other.node.getAttribute('data-insight-visible-rows'),'2');
+  assert.equal(h.api.filter(h.root,'기도 함께'),5);assert.equal(p.position.textContent,'1–2 / 4');
   assert.deepEqual(p.track.querySelectorAll('[data-insight-row]'),[original[0],original[2],original[4],original[6]]);
-  assert.deepEqual(p.track.children.map(page=>page.children.length),[3,1]);p.next.click();assert.equal(p.position.textContent,'4–4 / 4');
+  assert.deepEqual(p.track.children.map(page=>page.children.length),[2,2]);p.next.click();assert.equal(p.position.textContent,'3–4 / 4');
   for(const key of ['Q1끝6','Q2끝6','Q3끝6']){assert.equal(h.api.filter(h.root,key),1);assert.equal(p.track.querySelectorAll('[data-insight-row]')[0],original[6]);assert.equal(other.node.hidden,true);assert.equal(p.node.getAttribute('data-insight-visible-rows'),'1');}
   assert.equal(h.api.filter(h.root,'없는 검색어'),0);assert.equal(p.node.hidden,true);assert.equal(p.position.textContent,'0 / 0');
   assert.equal(h.api.filter(h.root,''),9);assert.equal(p.node.hidden,false);assert.equal(other.node.hidden,false);
-  assert.deepEqual(p.track.querySelectorAll('[data-insight-row]'),original);assert.deepEqual(p.track.children.map(page=>page.children.length),[3,3,1]);
-  assert.equal(p.node.getAttribute('data-insight-visible-rows'),'3');p.next.click();p.next.click();assert.equal(p.node.getAttribute('data-insight-visible-rows'),'3');
+  assert.deepEqual(p.track.querySelectorAll('[data-insight-row]'),original);assert.deepEqual(p.track.children.map(page=>page.children.length),[2,2,2,1]);
+  assert.equal(p.node.getAttribute('data-insight-visible-rows'),'2');p.track.emit('keydown',{key:'End'});assert.equal(p.node.getAttribute('data-insight-visible-rows'),'2');assert.equal(p.position.textContent,'7–7 / 7');
   assert.equal(api.matches('한글 질문 답변','한글'.normalize('NFD')+' 답변'),true);assert.equal(api.matches('질문 답변','질문 없음'),false);
 });
 
@@ -194,7 +217,7 @@ test('mouse drag starting on a link or author suppresses the next pointer click 
     const h=harness(),p=h.panel();h.bind(p);const target=p.rows[0][name];let calls=0;target.addEventListener('click',()=>calls++);
     target.emit('pointerdown',{pointerType:'mouse',pointerId:1,button:0,clientX:250,clientY:50});
     assert.equal(p.track.emit('pointermove',{pointerId:1,clientX:160,clientY:51}).defaultPrevented,true);
-    p.track.emit('pointerup',{pointerId:1});assert.equal(p.position.textContent,'4–6 / 7');assert.equal(p.track.captures.size,0);
+    p.track.emit('pointerup',{pointerId:1});assert.equal(p.position.textContent,'3–4 / 7');assert.equal(p.track.captures.size,0);
     const click=target.click();assert.equal(click.defaultPrevented,true);assert.equal(calls,0);
     target.click({detail:0});assert.equal(calls,1);h.advance(451);target.click();assert.equal(calls,2);
   }
@@ -208,7 +231,7 @@ test('clicks and vertical gestures remain usable, native touch scroll updates pa
   assert.equal(p.track.emit('pointermove',{pointerId:2,clientX:102,clientY:130}).defaultPrevented,false);assert.equal(p.track.captures.size,0);
   p.track.emit('pointerdown',{pointerType:'touch',pointerId:3,button:0,clientX:100,clientY:100});
   assert.equal(p.track.emit('pointermove',{pointerId:3,clientX:10,clientY:100}).defaultPrevented,false);
-  p.track.scrollLeft=640;p.track.emit('scroll');assert.equal(p.position.textContent,'7–7 / 7');
+  p.track.scrollLeft=960;p.track.emit('scroll');assert.equal(p.position.textContent,'7–7 / 7');
   p.track.emit('pointerdown',{pointerType:'mouse',pointerId:4,button:0,clientX:100,clientY:100});
   p.track.emit('pointermove',{pointerId:4,clientX:190,clientY:100});p.track.emit('pointercancel',{pointerId:4});assert.equal(p.track.classes.has('is-dragging'),false);
   p.node.isConnected=false;h.root.replaceChildren();h.api.bind(h.root);assert.equal(p.track.listeners.click.length,0);assert.equal(h.observers[0].disconnected,true);
