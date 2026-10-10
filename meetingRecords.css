@@ -118,6 +118,8 @@
 .meeting-records-dialog .mr-insight:hover{border-color:var(--line-strong)}
 .meeting-records-dialog .mr-author{display:flex;align-items:center;gap:9px;margin-bottom:19px}
 .meeting-records-dialog .mr-avatar{display:grid;place-items:center;flex:none;width:31px;height:31px;border-radius:50%;font-size:12px;font-weight:650;color:var(--mr-green);background:var(--mr-soft)}
+.meeting-records-dialog .mr-avatar .avatar{width:100%;height:100%;margin:0;font-size:inherit;overflow:hidden;border-radius:inherit}
+.meeting-records-dialog .mr-avatar img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
 .meeting-records-dialog .mr-author strong{font-size:13px;font-weight:650;min-width:0}
 .meeting-records-dialog .mr-author small{font-size:11px;color:var(--ink-soft);margin-left:auto;flex:none}
 .meeting-records-dialog .mr-answers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:17px}

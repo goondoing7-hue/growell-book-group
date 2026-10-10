@@ -130,6 +130,33 @@ test('invalid or missing rounds do not open a dialog or request records',async t
   await tick();assert.equal(h.current(),null);assert.deepEqual(h.calls.loads,[]);
 });
 
+test('insight cards resolve current profile photos in read, edit and preview without changing content',async t=>{
+  const h=harness(t,{rows:[record(1,{userId:'reader'})],session:{admin:true}});
+  const rows=[{id:'insight-1',bookId:'emotion',userId:'member-1',round:1,name:'가람',answers:['소감','깨달음','실천']}];
+  const before=JSON.stringify(rows),users={'member-1':{avatar:'https://example.com/old.jpg'}};
+  const page=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  // Exercise the same safe renderer used by the sharing feed, not a test-only photo formatter.
+  const avatarSource=page.slice(page.indexOf('function avatarHtml('),page.indexOf('function publicAuthorHtml('));
+  const context={STATE:{users},GrowellProfile:require('../profile.js'),
+    esc:value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
+    initials:name=>(name||'?').trim().slice(0,1)};
+  vm.runInNewContext(avatarSource,context);h.adapter.avatarHtml=context.avatarHtml;
+  h.adapter.getInsights=()=>rows;
+  h.api.openRound('emotion',1);await tick();
+  assert.match(h.html(),/src="https:\/\/example.com\/old.jpg"/);
+  users['member-1'].avatar='https://example.com/new.jpg?a=1&b=2';h.click('edit');
+  assert.match(h.html(),/src="https:\/\/example.com\/new.jpg\?a=1&amp;b=2"/);
+  h.click('preview-mode');assert.match(h.html(),/new.jpg/);assert.doesNotMatch(h.html(),/old.jpg/);
+  for(const avatar of ['', 'javascript:alert(1)']){
+    users['member-1'].avatar=avatar;h.click('editor-mode');
+    assert.doesNotMatch(h.html(),/<img|javascript:/);assert.match(h.html(),/>가<\/div>/);
+    h.click('preview-mode');assert.doesNotMatch(h.html(),/<img/);
+  }
+  delete users['member-1'];h.click('editor-mode');assert.match(h.html(),/>가<\/div>/);
+  delete h.adapter.avatarHtml;h.click('preview-mode');assert.match(h.html(),/class="mr-avatar" aria-hidden="true">가<\/div>/);
+  assert.equal(JSON.stringify(rows),before);assert.match(h.html(),/소감/);assert.match(h.html(),/깨달음/);assert.match(h.html(),/실천/);
+});
+
 test('binding a round link opens its record once and existing launch buttons still open the list',async t=>{
   const h=harness(t,{rows:[record(1),record(2)]}),container=h.document.createElement('section');
   container.innerHTML='<button data-meeting-records="emotion" data-meeting-round="０１">회차 기록</button>'+h.api.launchHtml('emotion')+'<button data-meeting-records="emotion" data-meeting-round="">잘못된 회차</button>';

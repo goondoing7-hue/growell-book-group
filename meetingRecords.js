@@ -151,10 +151,16 @@
   function ownMaterials(){var rows=app.getOwnMaterials?app.getOwnMaterials(state.bookId):materialRows();return (Array.isArray(rows)?rows:[]).filter(function(row){return row&&row.bookId===state.bookId&&row.userId===member();});}
   function materialIcon(row){return row.type==='영상'||row.type==='video'?'play':'file';}
   function materialType(row){return ({video:'추천영상',guide:'안내',meeting:'모임자료',deepen:'심화자료',article:'글',document:'문서'})[row.type]||row.type||'자료';}
+  function insightAvatarHtml(row){
+    var name=row.name||'모임원';
+    // Resolve the current member profile when rendering; never store a photo in the record.
+    var content=typeof app.avatarHtml==='function'?app.avatarHtml(row.userId,name,book().accent||'emotion'):esc(Array.from(String(name))[0]);
+    return '<div class="mr-avatar" aria-hidden="true">'+content+'</div>';
+  }
   function carouselHtml(record){
     var rows=insightRows(record),labels=['모임 소감','새로운 깨달음','실천할 배움'];state.slide=Math.max(0,Math.min(state.slide,rows.length-1));
     return '<section class="mr-section mr-divider" data-mr-carousel aria-label="이 모임의 회원 통찰"><div class="mr-section-head"><h2>함께 나눈 통찰<small>'+rows.length+'개</small></h2>'+(rows.length?'<div class="mr-carousel-nav"><span class="mr-count" data-mr-count aria-live="polite">'+(state.slide+1)+' / '+rows.length+'</span>'+button(icon('back'),'previous','mr-icon-button','aria-label="이전 통찰"')+button(icon('next'),'next','mr-icon-button','aria-label="다음 통찰"')+'</div>':'')+'</div><p class="mr-subtitle">'+esc(record.round)+'번째 모임에 남긴 통찰 정리가 자동으로 연결돼요.</p>'+(rows.length?'<div class="mr-track" data-mr-track tabindex="0" aria-label="통찰 목록. 좌우 방향키로 넘길 수 있어요.">'+rows.map(function(row,index){
-      return '<article class="mr-insight" role="link" tabindex="0" data-mr-post="'+esc(row.id)+'" aria-label="'+esc(row.name||'모임원')+'의 통찰 원문 보기, '+(index+1)+' / '+rows.length+'"><div class="mr-author"><span class="mr-avatar" aria-hidden="true">'+esc(Array.from(String(row.name||'모임원'))[0])+'</span><strong>'+esc(row.name||'모임원')+'</strong><small>'+esc(row.date?dateText(row.date):'')+'</small></div><div class="mr-answers">'+labels.map(function(label,j){return '<div class="mr-answer"><h3>'+label+'</h3><p>'+esc(row.answers[j]||'작성한 답변이 없어요.')+'</p></div>';}).join('')+'</div><span class="mr-insight-tail">통찰 원문 보기 ↗</span></article>';
+      return '<article class="mr-insight" role="link" tabindex="0" data-mr-post="'+esc(row.id)+'" aria-label="'+esc(row.name||'모임원')+'의 통찰 원문 보기, '+(index+1)+' / '+rows.length+'"><div class="mr-author">'+insightAvatarHtml(row)+'<strong>'+esc(row.name||'모임원')+'</strong><small>'+esc(row.date?dateText(row.date):'')+'</small></div><div class="mr-answers">'+labels.map(function(label,j){return '<div class="mr-answer"><h3>'+label+'</h3><p>'+esc(row.answers[j]||'작성한 답변이 없어요.')+'</p></div>';}).join('')+'</div><span class="mr-insight-tail">통찰 원문 보기 ↗</span></article>';
     }).join('')+'</div><div class="mr-slide-foot"><span>옆으로 넘기고, 카드를 눌러 원문을 읽어보세요.</span><div class="mr-dots" aria-hidden="true">'+rows.map(function(_,i){return '<span class="'+(i===state.slide?'is-active':'')+'"></span>';}).join('')+'</div></div>':'<div class="mr-empty">아직 이 회차에 등록된 통찰이 없어요.</div>')+'</section>';
   }
   function resourcesHtml(record,editing){

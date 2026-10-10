@@ -24,6 +24,14 @@ test('late load cannot cross login session or reset and cannot populate source c
  if(action==='change')f.change();else f.bridge.reset();
  f.release({data:[]});await assert.rejects(load,/계정/);assert.deepEqual(f.bridge.getInsights('emotion',1),[]);}
 });
+test('insights retain author identity for current profile lookup without copying attachment photos',async()=>{
+ const f=fixture();Object.assign(f.rows.posts[0],{userId:'member-1',userName:'회원',photo:'attachment.jpg'});
+ const before=JSON.stringify(f.rows);await f.bridge.loadRecords('emotion');
+ const insight=f.bridge.getInsights('emotion',1)[0];
+ assert.equal(insight.userId,'member-1');assert.equal(insight.name,'회원');
+ assert.equal(Object.hasOwn(insight,'photo'),false);assert.equal(Object.hasOwn(insight,'avatar'),false);
+ assert.equal(JSON.stringify(f.rows),before,'profile display must not change original member posts');
+});
 test('failed partial reads preserve earlier valid results and report failure rather than fake empty record list',async()=>{
  const f=fixture();await f.bridge.loadRecords('emotion');f.result({error:{message:'offline'}});
  await assert.rejects(f.bridge.loadRecords('emotion'),/처리하지/);assert.equal(f.bridge.getInsights('emotion',1).length,1);

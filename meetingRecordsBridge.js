@@ -60,7 +60,7 @@
   function getInsights(bookId,round){
     return content(bookId,'posts').filter(function(p){return p.bookId===bookId&&p.noteType==='insight'&&Number(p.meetingNo)===Number(round);})
       .sort(function(x,y){return new Date(x.createdAt)-new Date(y.createdAt);})
-      .map(function(p){return {id:p.id,bookId:p.bookId,round:Number(p.meetingNo),name:p.userName||'회원',date:p.createdAt,answers:[p.q1||'',p.q2||'',p.q3||'']};});
+      .map(function(p){return {id:p.id,bookId:p.bookId,userId:p.userId,round:Number(p.meetingNo),name:p.userName||'회원',date:p.createdAt,answers:[p.q1||'',p.q2||'',p.q3||'']};});
   }
   function getMaterials(bookId){return content(bookId,'materials').map(function(m){return {id:m.id,bookId:m.bookId,userId:m.userId,title:m.title||'자료실 글',type:m.noteType||'자료',date:m.createdAt};});}
   function openSource(id,bookId,kind){
