@@ -197,3 +197,45 @@ test('a delayed composer draft cannot reopen writing after route, owner or sessi
     assert.equal(draft.variants.standard.html,'<b>보관한 초안</b>');
   }
 });
+
+test('sharing form hides retired weather controls and retains legacy draft weather across reopening',async()=>{
+  const {ctx,saved,mount}=setup(),node=mount('share','standard','book-a',null,{checkin:'rainy'});
+  const lookup=node.querySelector;
+  node.querySelector=selector=>selector==='[data-checkin-val].is-sel'?null:selector==='#note-retained-checkin'?{value:'rainy'}:lookup(selector);
+  const token=ctx.captureComposerDraft();await flush(ctx);
+  const fresh=setup(saved),draft=await fresh.ctx.loadComposerDraft('share','book-a',null);
+  assert.equal(draft.variants.standard.checkin,'rainy');
+  const markup=fresh.ctx.noteComposerHtml({id:'book-a',accent:'emotion'},{containerId:'share-composer',selectedNoteType:'thought',withCheckin:false});
+  assert.doesNotMatch(markup,/data-check=|checkin-grid|오늘의 감정/);
+  assert.match(markup,/type="hidden" id="note-retained-checkin" value="rainy"/);
+  assert.match(markup,/소중한 개인 기록/);assert.equal(ctx.composerDrafts[token.key].variants.standard.checkin,'rainy');
+});
+
+test('weather-free sharing can be created and edited while retaining existing weather and identity',()=>{
+  const {ctx}=setup(),books={emotion:{checkin:{type:'weather'}},thought:{checkin:{type:'gauge'}}};
+  Object.assign(ctx,{STATE:{posts:{}},bookById:key=>books[key],sanitizeHtml:v=>v,
+    captureComposerDraft:()=>null,saveState:change=>change(ctx.STATE),uid:()=> 'new-post'});
+  ctx.document.createElement=()=>({innerHTML:'',get textContent(){return this.innerHTML.replace(/<[^>]*>/g,'');}});
+  vm.runInContext(html.slice(html.indexOf('function buildShareFields('),html.indexOf('function deleteSharePost(')),ctx);
+  const payload={noteType:'thought',title:'제목',html:'<p>본문</p>'};
+  assert.equal(ctx.buildShareFields(null,payload,'emotion').ok,true);
+  assert.equal(ctx.buildShareFields(null,payload,'thought').ok,false,'other retained categories keep their check-in behavior');
+  assert.equal(ctx.buildShareFields(null,{...payload,title:''},'emotion').ok,false);
+  assert.equal(ctx.buildShareFields(null,{...payload,html:''},'emotion').ok,false);
+  ctx.submitSharePost('emotion',null,payload);assert.equal(ctx.STATE.posts['new-post'].checkin,null);
+  const existing={id:'old-post',bookId:'emotion',userId:ctx.SESSION.userId,userName:'작성자',createdAt:123,
+    checkin:'rainy',...payload};ctx.STATE.posts[existing.id]={...existing};
+  ctx.editSharePost(existing.id,null,{...payload,title:'수정 제목'});
+  const edited=ctx.STATE.posts[existing.id];
+  for(const key of ['id','bookId','userId','userName','createdAt','checkin','html'])assert.equal(edited[key],existing[key]);
+  assert.equal(edited.title,'수정 제목');assert.deepEqual(Object.keys(ctx.STATE.posts).sort(),['new-post','old-post']);
+});
+
+test('no weather choice renders no fabricated cloudy badge while old choices and zero gauges still display',()=>{
+  const {ctx}=setup();ctx.checkinOptFor=()=>({label:'비'});ctx.weatherIcon=()=>'<svg></svg>';
+  vm.runInContext(html.slice(html.indexOf('function checkinBadgeHtml('),html.indexOf('/* 수정은 본인 글만')),ctx);
+  const book={accent:'emotion',checkin:{type:'weather'}};
+  for(const value of [null,undefined,''])assert.equal(ctx.checkinBadgeHtml(book,{checkin:value}),'');
+  assert.match(ctx.checkinBadgeHtml(book,{checkin:'rainy'}),/비/);
+  assert.match(ctx.checkinBadgeHtml({...book,checkin:{type:'gauge'}},{checkin:0}),/머릿속 0%/);
+});

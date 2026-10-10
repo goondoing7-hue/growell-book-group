@@ -10,7 +10,7 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a,start);return source.slice(a,b);}
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 const flush=async()=>{for(let i=0;i<4;i++)await new Promise(r=>setImmediate(r));};
-const book={id:'emotion',accent:'emotion'};
+const book={id:'emotion',accent:'emotion',checkin:{type:'weather'}};
 function harness(){
   const scheduled=[],decrypted=[],renders=[];
   const c={URL,Promise,Array,Object,JSON,String,esc,stripHtml:value=>String(value).replace(/<[^>]*>/g,''),sanitizeHtml:value=>String(value??''),
@@ -267,6 +267,8 @@ test('sharing groups insight rounds while preserving ordinary previews, filters 
 
 test('shared writing opens one dialog while retaining the selected record and background list',()=>{
   const {c}=harness();c.STATE.posts={visible:post('visible')};c.shareComposerOpenFor='emotion';
+  const renderComposer=c.noteComposerHtml;
+  c.noteComposerHtml=(b,options)=>{assert.equal(options.withCheckin,false,'weather selection stays out of the sharing form');return renderComposer(b,options);};
   const selected=c.shareTabHtml(book,'visible');
   assert.match(selected,/data-shared-detail="visible"/);
   assert.match(selected,/<dialog[^>]*id="space-composer-dialog"[^>]*data-composer-type="share"/);

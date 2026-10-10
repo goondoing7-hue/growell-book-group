@@ -1953,7 +1953,7 @@ function captureComposerDraft(){
   var fields = {noteType:selected('.nt-pill.is-sel','data-nt')||selected('#nt-set','data-original-note-type')||null,
     title:field('note-title'), page:field('note-page'), html:editor ? editor.innerHTML : '',
     photo:photo ? {dataUrl:photo.getAttribute('src'), mimeType:'image/jpeg'} : null,
-    checkin:gauge ? Number(gauge.value) : (selected('[data-checkin-val].is-sel','data-checkin-val')||null),
+    checkin:gauge ? Number(gauge.value) : (selected('[data-checkin-val].is-sel','data-checkin-val')||field('note-retained-checkin')||null),
     bgColor:selected('.bg-swatch.is-sel','data-bg-color'), fontSize:selected('.font-size-btn.is-sel','data-font-size'),
     meetingNo:field(mode==='insight'?'insight-meeting-no':'mat-meeting-no'),
     q1:field('insight-q1'), q2:field('insight-q2'), q3:field('insight-q3'),
@@ -3195,7 +3195,7 @@ async function doForgotPassword(id, hint, pw, pw2, btn){
 /* ---------------- content actions ---------------- */
 /* 생각 나눔(나눔 공간) 글의 필드 검증 + 정리 — 새 글/수정 양쪽에서 함께 쓴다.
    통찰 정리 타입은 체크인 없이 몇 번째 모임 + 질문 3개로 구성이 완전히 다르다. */
-function buildShareFields(checkinVal, payload){
+function buildShareFields(checkinVal, payload, bookId){
   if(payload.noteType==='insight'){
     var meetingNoRaw = (payload.meetingNo||'').trim();
     if(!meetingNoRaw) return {ok:false, msg:'몇 번째 모임인지 먼저 적어주세요.'};
@@ -3209,7 +3209,8 @@ function buildShareFields(checkinVal, payload){
       q1:(payload.q1||'').trim(), q2:(payload.q2||'').trim(), q3:(payload.q3||'').trim(),
       page:'', html:'', photo:null, bgColor:payload.bgColor||'', fontSize:'', title:meetingNo+'번째 통찰 노트'}};
   }
-  if(checkinVal==null || checkinVal===''){ return {ok:false, msg:'오늘의 체크인을 먼저 골라주세요.'}; }
+  var shareBook=bookById(bookId);
+  if((!shareBook||shareBook.checkin.type!=='weather')&&(checkinVal==null || checkinVal==='')){ return {ok:false, msg:'오늘의 체크인을 먼저 골라주세요.'}; }
   var cleanHtml = sanitizeHtml(payload.html);
   var plain = (function(){ var d=document.createElement('div'); d.innerHTML=cleanHtml; return d.textContent.trim(); })();
   if(!plain && !payload.photo) return {ok:false, msg:'나눌 이야기를 적어주세요.'};
@@ -3221,7 +3222,7 @@ function buildShareFields(checkinVal, payload){
 }
 function submitSharePost(bookId, checkinVal, payload, btn){
   if(!SESSION){ showToast('먼저 로그인해주세요.', true); return; }
-  var r = buildShareFields(checkinVal, payload);
+  var r = buildShareFields(checkinVal, payload, bookId);
   if(!r.ok){ showToast(r.msg, true); return; }
   var draftToken=captureComposerDraft(), draftUserId=SESSION.userId;
   var postId = uid('p');
@@ -3242,7 +3243,9 @@ function editSharePost(postId, checkinVal, payload, btn){
   if(!SESSION) return;
   var existing = STATE.posts[postId];
   if(!existing || existing.userId!==SESSION.userId) return;
-  var r = buildShareFields(checkinVal, payload);
+  // Weather selection is retired from the form; keep the original value on older posts.
+  if(bookById(existing.bookId).checkin.type==='weather')checkinVal=existing.checkin;
+  var r = buildShareFields(checkinVal, payload, existing.bookId);
   if(!r.ok){ showToast(r.msg, true); return; }
   var draftToken=captureComposerDraft(), draftUserId=SESSION.userId;
   saveState(function(next){
@@ -5231,7 +5234,7 @@ function noteComposerHtml(book, opts){
     var previewPhoto=safePhotoUrl(editing && editing.photo && editing.photo.dataUrl);
     var photoPreviewInner = previewPhoto ? ('<div class="thumb"><img src="'+esc(previewPhoto)+'" alt="첨부 사진 미리보기"><button type="button" id="btn-photo-remove">&times;</button></div>') : '';
     bodyHtml =
-      (opts.withCheckin ? checkinPickerHtml(book, editing?editing.checkin:null) : '') +
+      (opts.withCheckin ? checkinPickerHtml(book, editing?editing.checkin:null) : draftType==='share'?'<input type="hidden" id="note-retained-checkin" value="'+esc(editing&&editing.checkin!=null?editing.checkin:'')+'">':'') +
       (opts.editorLabel ? '<label class="field-label" for="note-editor">'+esc(opts.editorLabel)+'</label>' : '') +
       rtToolbarHtml() +
       '<div class="note-editor" id="note-editor" contenteditable="true" role="textbox" aria-label="글 내용" aria-multiline="true" data-placeholder="'+esc(opts.placeholder||'마음에 남은 문장과 생각을 자유롭게 적어보세요.')+'">'+(editing?(editing.html||''):'')+'</div>' +
@@ -5415,6 +5418,7 @@ function feedToolbarHtml(book, filterKey, count){
   '</div>';
 }
 function checkinBadgeHtml(book, p){
+  if(p.checkin==null||p.checkin==='')return '';
   var opt = checkinOptFor(book, p.checkin);
   if(book.checkin.type==='weather'){ return '<span class="post-checkin" style="--accent-soft:var(--'+book.accent+'-soft); --accent-ink:var(--'+book.accent+'-ink)">'+weatherIcon(p.checkin)+(opt?esc(opt.label):'')+'</span>'; }
   if(book.checkin.type==='tempo'){ return '<span class="post-checkin" style="--accent-soft:var(--'+book.accent+'-soft); --accent-ink:var(--'+book.accent+'-ink)">'+(opt?esc(opt.label):'')+'</span>'; }
@@ -5526,7 +5530,7 @@ function shareTabHtml(book, postId){
     var shareEditingPost = shareEditingId ? STATE.posts[shareEditingId] : null;
     composer = writing
       ? noteComposerHtml(book, {containerId:'share-composer', closeId:'btn-close-share-composer', submitId:'btn-share-submit',
-          heading: shareEditingPost?'나눔 글 수정':'생각 나눔', withCheckin:true, editorLabel:'느낀 점, 깨달은 점을 나눠주세요',
+          heading: shareEditingPost?'나눔 글 수정':'생각 나눔', withCheckin:book.checkin.type!=='weather', editorLabel:'느낀 점, 깨달은 점을 나눠주세요',
           placeholder:'', hint:'이름과 시간이 함께 표시돼요',
           submitLabel: shareEditingPost?'수정하기':'나누기', withBgColor:true, withFontSize:true,
           extraNoteTypes:[NOTE_TYPE_INSIGHT], selectedNoteType:shareComposerNoteType, insightMode:shareComposerInsightMode,
@@ -7822,7 +7826,8 @@ function bindEvents(route){
   var bodypick = document.getElementById('bodypick');
   /* 수정 화면을 열 때는 체크인 그리드/몸 그림이 기존 값으로 미리 선택된 채(is-sel) 그려지므로,
      그 표시를 그대로 초기값으로 읽어들인다(그렇지 않으면 다시 누르기 전까진 값이 비어 있게 됨). */
-  var selectedCheckin = null;
+  var retainedCheckin = document.getElementById('note-retained-checkin');
+  var selectedCheckin = retainedCheckin&&retainedCheckin.value||null;
   if(gaugeRange){ selectedCheckin = Number(gaugeRange.value); }
   else {
     var preSel = (grid && grid.querySelector('.checkin-opt.is-sel')) || (bodypick && bodypick.querySelector('button.is-sel'));
