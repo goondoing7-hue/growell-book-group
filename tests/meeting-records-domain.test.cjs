@@ -10,7 +10,7 @@ function record(extra={}){
     id:id(1),bookId:'emotion',round:1,date:'2026-10-11',topic:'감정을 이해하는 첫 모임',
     sections:[{id:id(2),summary:'감정은 내 마음을 알려주는 신호입니다.',detail:'첫 문단입니다.\n\n  두 번째 문단과 여백도 보존합니다.  '}],
     concepts:[{id:id(3),word:'핵심 감정',meaning:'내 마음에서 자주 되풀이되는 감정입니다.'}],
-    materialIds:['mn_m12example'],status:'published',userId:'operator-profile',revision:2,
+    materialIds:['mn_m12example'],nextMeeting:null,status:'published',userId:'operator-profile',revision:2,
     createdAt:'2026-10-10T00:00:00+00:00',updatedAt:'2026-10-11T14:30:00.123456+09:00',...extra
   };
 }
@@ -22,6 +22,7 @@ test('new drafts have distinct stable UUIDs without fabricated content or server
   assert.deepEqual(first.sections,[]);
   assert.deepEqual(first.concepts,[]);
   assert.deepEqual(first.materialIds,[]);
+  assert.equal(first.nextMeeting,null);
   assert.equal(first.createdAt,null);
   assert.equal(first.updatedAt,null);
   assert.equal(first.revision,0);
@@ -147,4 +148,31 @@ test('browser export produces secure UUIDs with the crypto fallback and no Math.
   const unavailable=vm.createContext({});
   vm.runInContext(source,unavailable);
   assert.throws(()=>unavailable.GrowellMeetingRecordsDomain.newId(),/안전한 ID/);
+});
+
+test('optional next meeting preparation preserves legacy records and exact editable text',()=>{
+  const legacy=record();delete legacy.nextMeeting;
+  assert.equal(domain.validateRecord(legacy).ok,true);
+  assert.equal(domain.normalizeRecord(legacy).nextMeeting,null);
+  const nextMeeting={date:'2026-10-24',time:'13:30',place:'추후 안내',reading:'1부 1장, 64쪽까지',sharing:'  나눔 글 1편\n\n읽으며 떠오른 생각  ',habit:'자신의 속도로 읽기'};
+  const original=record({nextMeeting}),copy=domain.normalizeRecord(original);
+  assert.equal(domain.validateRecord(copy).ok,true);
+  assert.deepEqual(copy.nextMeeting,nextMeeting);
+  copy.nextMeeting.sharing='다른 안내';
+  assert.equal(original.nextMeeting.sharing,nextMeeting.sharing);
+  assert.equal(domain.validateRecord(record({nextMeeting:{date:'',time:'',place:'',reading:'',sharing:'',habit:''}})).ok,true);
+});
+
+test('preparation rejects invalid dates, times, shapes and oversized text without coercing or truncating',()=>{
+  const good={date:'2024-02-29',time:'00:00',place:'',reading:'',sharing:'',habit:''};
+  assert.equal(domain.validateRecord(record({nextMeeting:good})).ok,true);
+  for(const nextMeeting of [[],42,'text']) assert.equal(domain.validateRecord(record({nextMeeting})).ok,false);
+  for(const fields of [{date:'2026-02-29'},{date:'0000-01-01'},{time:'24:00'},{time:'9:30'},{time:'13:60'},
+    {place:null},{reading:[]},{sharing:undefined},{habit:42},{unknown:'extra'},
+    {place:'가'.repeat(1001)},{reading:'가'.repeat(4001)},{sharing:'\u0000'}]){
+    const value=record({nextMeeting:{...good,...fields}});
+    assert.equal(domain.validateRecord(domain.normalizeRecord(value)).ok,false,JSON.stringify(fields));
+    assert.deepEqual(domain.normalizeRecord(value).nextMeeting,value.nextMeeting);
+  }
+  assert.equal(domain.validateRecord(record({nextMeeting:{...good,place:'😀'.repeat(1000),sharing:'😀'.repeat(4000)}})).ok,true);
 });

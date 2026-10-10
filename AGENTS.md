@@ -22,6 +22,13 @@
 
 실행·배포와 복구 파일 안내는 `README.md`, `DEPLOYMENT.md`를 따른다.
 
+## 모임 녹음 정리
+
+- 모임 기록은 진행 상황이 아닌 내용 중심으로 작성한다. ‘진행자가 소개하였다’, ‘이야기를 나누었다’ 같은 진행 서술을 피하고, 개념과 관계를 직접 설명한다.
+- 기본 문체는 ‘~이다·~한다’이며 모임 내용은 주제마다 약 네 문장으로 정리한다. 소제목을 핵심 요약에도 동일하게 사용한다.
+- 개인의 경험을 보편적인 효과나 진단으로 단정하지 않는다. 참여자의 실명과 구체적인 개인 사연은 운영자 요약에 옮기지 않는다.
+- 다음 모임 준비는 함께 나눈 통찰 바로 위의 별도 영역에 작성하고 나눔 과제를 강조한다.
+
 - 자료실 스크립트는 `materialTranscript.js`/`.css`, `api/material-video-transcript.js`, `server/materialTranscriptService.cjs`·`materialTranscriptProvider.cjs`가 담당합니다. 공개 한국어 자막을 우선하고 없으면 영어 자막을 가져옵니다. `materialVideoMetadata.cjs`의 실제 YouTube 제목을 팝업·인쇄에 사용합니다. 원본 자막의 본문·언어·출처는 보존하며, AI로 원문을 생성하거나 번역문으로 덮어쓰지 않습니다.
 - 영어 원문의 한국어 번역은 `materialTranscriptTranslation.cjs`와 별도 번역 캐시에 저장합니다. 화면은 `AI 한국어 번역`과 원문을 구분하여 전환하고 선택한 내용을 인쇄합니다. `server/material-video-transcript.sql` 다음에 `server/material-video-translation.sql`을 적용해야 합니다. 영상·원문 버전·번역 버전당 생성 시도를 보존하여 재열람이나 실패 뒤 같은 유료 번역을 반복하지 않습니다. 최초 번역은 AI 크레딧을 사용하고 저장본 재열람은 추가 번역 크레딧을 사용하지 않습니다. 키는 서버 전용이며 설정·사용량 제한·운영 확인 절차는 `server/MATERIAL_VIDEO_SETUP.md`를 따릅니다.
 

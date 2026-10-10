@@ -49,7 +49,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
-  'server/meeting-records.sql', 'server/meeting-records-verification.sql',
+  'server/meeting-records.sql', 'server/meeting-records-next-preparation.sql', 'server/meeting-records-verification.sql',
   'api/drive-backup.js', 'server/driveBackupDomain.cjs', 'server/driveBackupProvider.cjs', 'server/driveBackupService.cjs', 'server/drive-backup.sql', 'server/drive-backup-schedule.sql', 'server/DRIVE_BACKUP_SETUP.md',
   'server/materialTranscriptTranslation.cjs', 'server/material-video-translation.sql',
   'server/materialVideoMetadata.cjs',

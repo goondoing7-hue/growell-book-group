@@ -208,6 +208,10 @@ Microsoft 앱 등록, 서버 환경변수, Supabase 마이그레이션 및 정�
 
 PC·모바일 가이드와 화면은 `AI 한국어 번역`·원문 전환, 선택한 글의 인쇄·PDF 저장, 번역 준비 중·실패 시 원문 표시를 안내합니다. 이 항목은 구현·배포 준비 기록입니다. SQL 적용, Vercel 배포, 승인 회원의 실제 영상 조회·번역·재열람을 확인하기 전에는 운영 완료로 간주하지 않습니다. 상세 설정과 검증 절차는 `server/MATERIAL_VIDEO_SETUP.md`를 따릅니다.
 
+## 모임 기록의 다음 모임 준비
+
+기존 `server/meeting-records.sql`이 적용된 GROWELL 데이터베이스에 `server/meeting-records-next-preparation.sql`을 먼저 적용한 뒤 화면을 배포합니다. 새 nullable `next_meeting` 항목은 날짜·시간·장소·읽기 범위·나눔·독서 습관을 저장합니다. 기존 행과 버전은 변경하지 않으며 이전 화면이 해당 항목 없이 저장하면 준비 내용을 보존합니다. 준비란은 작성·미리보기·열람에서 함께 나눈 통찰 바로 위에 표시하고, 나눔은 강조합니다. 실제 첫 모임 내용은 소스나 테스트에 포함하지 않고 운영자가 화면에서 저장합니다.
+
 ## 사용 가이드 생성
 
 공통 안내는 `guide.html`, PC 전용 레이아웃·설명은 `scripts/build-guides.cjs`를 수정한 뒤 `npm.cmd run guides`를 실행합니다. 생성된 `guide-pc.html`과 `guide.html`을 함께 검증·반영합니다. 빌드 중에는 원본을 변경하지 않으며 가이드가 서로 오래된 상태이면 빌드를 중단합니다. PC·모바일 연결과 쿼리·해시 보존은 `tests/guide-routing.test.cjs`에서 검증합니다.

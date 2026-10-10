@@ -79,7 +79,7 @@ function harness(t,options={}){
   const adapter={sessionUserId:()=>session.userId,sessionEpoch:()=>session.epoch,isAdmin:()=>session.admin,
     canReadBook:()=>session.readable,bookById:bookId=>books[bookId],
     loadRecords(bookId){calls.loads.push(bookId);return options.load?options.load(bookId,calls.loads.length):options.rows||[];},
-    saveRecord(...args){calls.writes.push(['save',...args]);throw new Error('Viewing must not save');},
+    saveRecord(...args){calls.writes.push(['save',...args]);if(options.save)return options.save(...args);throw new Error('Viewing must not save');},
     deleteRecord(...args){calls.writes.push(['delete',...args]);throw new Error('Viewing must not delete');},
     getInsights:()=>[],getMaterials:()=>[],openPost:(...args)=>calls.navigation.push(['post',...args]),
     openMaterial:(...args)=>calls.navigation.push(['material',...args]),showToast:value=>calls.toasts.push(value)};
@@ -93,8 +93,18 @@ function harness(t,options={}){
     const button=dialog.querySelectorAll('[data-mr-action]').find(node=>node.getAttribute('data-mr-action')===action&&(recordId===undefined||node.getAttribute('data-id')===recordId));
     assert.ok(button,'the rendered '+action+' button must exist');button.click();
   }
-  t.after(()=>{assert.deepEqual(calls.writes,[],'reading, retrying and navigating must never call write APIs');api.reset();});
-  return {api,adapter,document,session,calls,current,click,html:()=>current()?.innerHTML||''};
+  function input(selector,value){
+    const node=current()?.querySelector(selector);assert.ok(node,'the rendered input '+selector+' must exist');
+    node.value=value;
+    const event={target:node};
+    for(let parent=node;parent;parent=parent.parentNode)for(const handler of parent.listeners.input||[])handler(event);
+  }
+  t.after(()=>{
+    if(options.save)assert.equal(calls.writes.some(call=>call[0]==='delete'),false,'preparation changes must not delete a record');
+    else assert.deepEqual(calls.writes,[],'reading, retrying and navigating must never call write APIs');
+    api.reset();
+  });
+  return {api,adapter,document,session,calls,current,click,input,html:()=>current()?.innerHTML||''};
 }
 
 test('openRound reads only the published record for the same book and normalized numeric round',async t=>{
@@ -234,4 +244,70 @@ test('openList remains a list even when a published record exists and reading it
   assert.match(h.html(),/함께 쌓은 이야기/);assert.doesNotMatch(h.html(),/class="mr-topic"/);
   h.click('record',id(1));assert.match(h.html(),/class="mr-topic">공개 모임 1/);
   h.click('list');await tick();assert.match(h.html(),/함께 쌓은 이야기/);assert.match(h.html(),/공개 모임 2/);
+});
+
+test('next meeting preparation appears immediately before member insights with only sharing highlighted',async t=>{
+  const nextMeeting={date:'2026-10-24',time:'13:30',place:'추후 안내',reading:'1부 1장, 64쪽까지',sharing:'나눔 글 1편\n  <생각> & 질문을 남긴다.  ',habit:'자신의 속도로 읽기'};
+  const selected=record(1,{nextMeeting}),snapshot=JSON.stringify(selected),h=harness(t,{rows:[selected]});
+  h.api.openRound('emotion',1);await tick();
+  const html=h.html(),prep=html.indexOf('data-mr-preparation'),insights=html.indexOf('data-mr-carousel');
+  assert.ok(prep>html.indexOf('원본 본문 1')&&prep<insights);
+  assert.match(html.slice(prep,insights),/다음 모임 준비/);
+  assert.match(html,/<dt>일시<\/dt><dd>2026\.10\.24 · 13:30<\/dd>/);
+  assert.match(html,/<dt>읽기 범위<\/dt><dd>1부 1장, 64쪽까지<\/dd>/);
+  assert.match(html,/<div class="mr-preparation-row mr-preparation-highlight"><dt>나눔<\/dt><dd><mark>나눔 글 1편\n  &lt;생각&gt; &amp; 질문을 남긴다\.  <\/mark><\/dd><\/div>/);
+  assert.equal((html.match(/<mark>/g)||[]).length,1,'only the sharing instruction receives emphasis');
+  assert.doesNotMatch(html,/<생각>/,'stored text is escaped rather than rendered as HTML');
+  assert.equal(JSON.stringify(selected),snapshot,'reading preparation cannot change the source record');
+});
+
+test('legacy and blank preparation stay hidden in reading view but the owner can add it',async t=>{
+  for(const extra of [{},{nextMeeting:null},{nextMeeting:{date:'',time:'',place:' ',reading:'',sharing:'',habit:''}}]){
+    const h=harness(t,{session:{admin:true},rows:[record(1,{userId:'reader',...extra})]});
+    h.api.openRound('emotion',1);await tick();
+    assert.doesNotMatch(h.html(),/data-mr-preparation|다음 모임 준비/);
+    h.click('edit');
+    assert.match(h.html(),/data-mr-preparation/);
+    assert.equal(h.current().querySelectorAll('[data-mr-next]').length,6);
+    h.click('preview-mode');
+    assert.doesNotMatch(h.html(),/data-mr-preparation|다음 모임 준비/,'opening the editor alone does not create empty published content');
+  }
+});
+
+test('preparation input survives preview, return to editor and saving without changing existing meeting text',async t=>{
+  const selected=record(1,{userId:'reader'}),snapshot=JSON.stringify(selected);
+  const h=harness(t,{session:{admin:true},rows:[selected],save:payload=>({...payload,revision:payload.revision+1,updatedAt:'2026-10-12T00:00:00Z'})});
+  const nextMeeting={date:'2026-10-24',time:'13:30',place:'추후 안내',reading:'1부 1장, 64쪽까지',sharing:'  나눔 글 1편\n\n문장과 생각을 남긴다.  ',habit:'시간과 장소 정하기'};
+  h.api.openRound('emotion',1);await tick();h.click('edit');
+  for(const [key,value] of Object.entries(nextMeeting))h.input('[data-mr-next="'+key+'"]',value);
+  h.click('preview-mode');assert.match(h.html(),/<mark>  나눔 글 1편\n\n문장과 생각을 남긴다\.  <\/mark>/);
+  h.click('editor-mode');assert.match(h.html(),/>  나눔 글 1편\n\n문장과 생각을 남긴다\.  <\/textarea>/);
+  h.click('publish');await tick();
+  assert.equal(h.calls.writes.length,1);
+  const payload=h.calls.writes[0][1];
+  assert.equal(JSON.stringify(payload.nextMeeting),JSON.stringify(nextMeeting));
+  assert.equal(JSON.stringify(payload.sections),JSON.stringify(selected.sections));
+  assert.equal(payload.id,selected.id);assert.equal(payload.revision,1);
+  assert.match(h.html(),/<h2>다음 모임 준비<\/h2>/);assert.match(h.html(),/<mark>  나눔 글 1편/);
+  assert.doesNotMatch(h.html(),/data-mr-next=/,'committed result returns to reading view');
+  assert.equal(JSON.stringify(selected),snapshot,'the original loaded record was never edited in place');
+});
+
+test('failed preparation save retains the draft, supports retry and leaves the original intact',async t=>{
+  const selected=record(1,{userId:'reader'}),snapshot=JSON.stringify(selected);let attempts=0;
+  const h=harness(t,{session:{admin:true},rows:[selected],save:payload=>{
+    if(++attempts===1)throw new Error('임시 연결 오류');
+    return {...payload,revision:payload.revision+1,updatedAt:'2026-10-12T00:00:00Z'};
+  }});
+  h.api.openRound('emotion',1);await tick();h.click('edit');
+  h.input('[data-mr-next="sharing"]','나눔 글 1편을 남긴다.');
+  h.click('publish');await tick();
+  assert.match(h.html(),/data-mr-next="sharing"/,'failure does not discard the editor');
+  h.click('preview-mode');assert.match(h.html(),/<mark>나눔 글 1편을 남긴다\.<\/mark>/);
+  h.click('publish');await tick();
+  assert.equal(h.calls.writes.length,2);
+  assert.equal(JSON.stringify(h.calls.writes[0][1]),JSON.stringify(h.calls.writes[1][1]),'retry preserves the exact draft and expected version');
+  assert.match(h.html(),/<mark>나눔 글 1편을 남긴다\.<\/mark>/);
+  assert.doesNotMatch(h.html(),/data-mr-next=/);
+  assert.equal(JSON.stringify(selected),snapshot);
 });

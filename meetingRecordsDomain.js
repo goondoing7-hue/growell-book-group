@@ -5,12 +5,12 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(root){
   'use strict';
 
-  var LIMITS = Object.freeze({ topic:160, summary:120, detail:10000, word:80, meaning:4000, sections:20, concepts:30, materials:30, round:9999 });
+  var LIMITS = Object.freeze({ topic:160, summary:120, detail:10000, word:80, meaning:4000, sections:20, concepts:30, materials:30, round:9999, nextPlace:1000, nextText:4000 });
   var BOOKS = ['emotion','thought','body','action'];
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   var NODE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
   var MATERIAL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/;
-  var FIELDS=['id','bookId','round','date','topic','sections','concepts','materialIds','status','userId','revision','createdAt','updatedAt'];
+  var FIELDS=['id','bookId','round','date','topic','sections','concepts','materialIds','nextMeeting','status','userId','revision','createdAt','updatedAt'];
   var own = function(object,key){ return Object.prototype.hasOwnProperty.call(object,key); };
   function plainObject(value){
     if(!value || Object.prototype.toString.call(value)!=='[object Object]') return false;
@@ -59,6 +59,7 @@
     if(!own(result,'sections')) result.sections=[];
     if(!own(result,'concepts')) result.concepts=[];
     if(!own(result,'materialIds')) result.materialIds=[];
+    if(!own(result,'nextMeeting')) result.nextMeeting=null;
     if(!own(result,'createdAt')) result.createdAt=null;
     if(!own(result,'updatedAt')) result.updatedAt=null;
     return result;
@@ -84,6 +85,18 @@
       if(published) errors.push('모임 날짜를 선택해주세요.');
     } else if(!validDate(record.date)) errors.push('모임 날짜가 올바르지 않습니다.');
     text(record.topic,LIMITS.topic,'모임 주제',published);
+    if(record.nextMeeting!==undefined && record.nextMeeting!==null){
+      var preparation=record.nextMeeting, preparationFields=['date','time','place','reading','sharing','habit'];
+      if(!plainObject(preparation)) errors.push('다음 모임 준비 형식이 올바르지 않습니다.');
+      else {
+        if(Object.keys(preparation).some(function(key){return preparationFields.indexOf(key)===-1;})) errors.push('다음 모임 준비에 알 수 없는 항목이 있습니다.');
+        preparationFields.forEach(function(key){
+          text(preparation[key],key==='date'?10:key==='time'?5:key==='place'?LIMITS.nextPlace:LIMITS.nextText,'다음 모임 준비',false);
+        });
+        if(typeof preparation.date==='string' && preparation.date!=='' && !validDate(preparation.date)) errors.push('다음 모임 날짜가 올바르지 않습니다.');
+        if(typeof preparation.time==='string' && preparation.time!=='' && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(preparation.time)) errors.push('다음 모임 시간은 24시간 형식으로 입력해주세요.');
+      }
+    }
     ['createdAt','updatedAt'].forEach(function(key){
       if(record[key]!==undefined && record[key]!==null && !validTimestamp(record[key])) errors.push('기록 시각이 올바르지 않습니다.');
     });
@@ -137,7 +150,7 @@
     return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
   }
   function newRecord(bookId,userId){
-    return {id:newId(),bookId:bookId,round:1,date:null,topic:'',sections:[],concepts:[],materialIds:[],status:'draft',userId:userId || '',revision:0,createdAt:null,updatedAt:null};
+    return {id:newId(),bookId:bookId,round:1,date:null,topic:'',sections:[],concepts:[],materialIds:[],nextMeeting:null,status:'draft',userId:userId || '',revision:0,createdAt:null,updatedAt:null};
   }
 
   return Object.freeze({LIMITS:LIMITS,normalizeRecord:normalizeRecord,validateRecord:validateRecord,newRecord:newRecord,newId:newId,isUuid:isUuid,validDate:validDate});

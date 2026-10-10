@@ -5,6 +5,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {PGlite}=require('@electric-sql/pglite');
 const migration=fs.readFileSync(path.join(__dirname,'../server/meeting-records.sql'),'utf8');
+const preparationMigration=fs.readFileSync(path.join(__dirname,'../server/meeting-records-next-preparation.sql'),'utf8');
 const verification=fs.readFileSync(path.join(__dirname,'../server/meeting-records-verification.sql'),'utf8');
 const AUTH='11111111-1111-4111-8111-111111111111';
 const OTHER='22222222-2222-4222-8222-222222222222';
@@ -189,5 +190,103 @@ describe('Meeting records PostgreSQL authorization and persistence',()=>{
     assert.deepEqual((await db.query('select * from public.profiles order by id')).rows,beforeProfiles);
     assert.deepEqual((await db.query('select * from public.material_notes order by id')).rows,beforeSources);
     assert.equal((await db.query('select count(*)::int as n from auth.users')).rows[0].n,0);
+  });
+});
+
+describe('Next meeting preparation additive PostgreSQL migration',()=>{
+  let db,legacySnapshot;
+  const LEGACY='99999999-9999-4999-8999-999999999999';
+  const preparation=()=>({date:'2026-10-24',time:'13:30',place:'추후 안내',reading:'1부 1장, 64쪽까지',sharing:'  나눔 글 1편\n\n자신의 생각을 남긴다.  ',habit:'읽을 시간과 장소 정하기'});
+  before(async()=>{
+    db=new PGlite();
+    await db.exec(`create role anon nologin;create role authenticated nologin;
+      grant usage on schema public to anon,authenticated;create schema auth;
+      create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+      grant usage on schema auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;
+      create table public.profiles(id text primary key,auth_user_id uuid unique,is_deleted boolean default false,is_admin boolean default false,approval_status text default 'approved');
+      create table public.book_locks(book_id text primary key,locked boolean);
+      create table public.material_notes(id text primary key,user_id text,book_id text,html text);
+      create function public.growell_is_active_member() returns boolean language sql stable security definer set search_path='' as $$
+        select exists(select 1 from public.profiles where auth_user_id=auth.uid() and not is_deleted and approval_status='approved')$$;
+      create function public.growell_is_approved_admin() returns boolean language sql stable security definer set search_path='' as $$
+        select exists(select 1 from public.profiles where auth_user_id=auth.uid() and not is_deleted and approval_status='approved' and is_admin)$$;
+      insert into public.profiles(id,auth_user_id,is_admin) values('owner','${AUTH}',true),('other','${OTHER}',true),('member','${MEMBER}',false);
+      insert into public.material_notes values('mn_owner','owner','emotion','Original source content');`);
+    await db.exec(migration);
+    await db.query(`insert into public.growell_meeting_records(id,book_id,round,meeting_date,topic,sections,concepts,material_ids,status,user_id,revision,created_at,updated_at)
+      values($1,'emotion',999,'2026-10-10','이전 기록','[{"id":"old-section","summary":"원래 요약","detail":"  원문과 여백\\n\\n😀 그대로  "}]','[]','{}','published','owner',17,'2026-10-10T10:00:00Z','2026-10-10T11:00:00Z')`,[LEGACY]);
+    legacySnapshot=(await db.query('select to_jsonb(r) as value from public.growell_meeting_records r where id=$1',[LEGACY])).rows[0].value;
+    await db.exec(preparationMigration);
+  });
+  beforeEach(async()=>{await db.exec('reset role');await db.query('delete from public.growell_meeting_records where id<>$1',[LEGACY]);});
+  after(async()=>{await db?.close();});
+  async function as(auth,operation,role='authenticated'){
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)",[auth||'']);await db.exec('set role '+role);
+    try{return await operation();}finally{await db.exec('reset role');}
+  }
+  const save=(value=record(),revision=0,auth=AUTH)=>as(auth,async()=>(await db.query('select public.growell_save_meeting_record($1::jsonb,$2::bigint) as value',[JSON.stringify(value),revision])).rows[0].value);
+  const list=(auth=AUTH)=>as(auth,async()=>(await db.query("select public.growell_get_meeting_records('emotion') as value")).rows[0].value);
+
+  test('migration preserves every prior field, ID, timestamp and revision and is repeatable',async()=>{
+    const current=(await db.query('select to_jsonb(r) as value from public.growell_meeting_records r where id=$1',[LEGACY])).rows[0].value;
+    assert.equal(current.next_meeting,null);delete current.next_meeting;assert.deepEqual(current,legacySnapshot);
+    const saved=await save(record({nextMeeting:preparation()}));
+    await db.exec(preparationMigration);
+    assert.deepEqual((await list()).find(row=>row.id===ID),saved);
+    const reloaded=(await db.query('select to_jsonb(r)-\'next_meeting\' as value from public.growell_meeting_records r where id=$1',[LEGACY])).rows[0].value;
+    assert.deepEqual(reloaded,legacySnapshot);
+    assert.equal((await db.query("select html from public.material_notes where id='mn_owner'")).rows[0].html,'Original source content');
+  });
+
+  test('new preparation is stored exactly and published to approved members',async()=>{
+    const nextMeeting=preparation(),saved=await save(record({nextMeeting,status:'published'}));
+    assert.deepEqual(saved.nextMeeting,nextMeeting);
+    assert.deepEqual((await list(MEMBER)).find(row=>row.id===ID).nextMeeting,nextMeeting);
+    assert.deepEqual(await save(record({nextMeeting,status:'published'})),saved,'same creation retry has no extra revision');
+    const edited=await save({...saved,nextMeeting:{...nextMeeting,sharing:'수정한 나눔 안내'}},1);
+    assert.equal(edited.revision,2);assert.equal(edited.createdAt,saved.createdAt);
+    assert.deepEqual(await save({...saved,nextMeeting:edited.nextMeeting},1),edited,'same edit retry is idempotent');
+    await assert.rejects(save({...saved,nextMeeting:{...nextMeeting,sharing:'동시에 수정한 안내'}},1),errorCode('40001'));
+    assert.deepEqual((await list()).find(row=>row.id===ID),edited);
+  });
+
+  test('older RPC callers preserve preparation when they omit the new field',async()=>{
+    const saved=await save(record({nextMeeting:preparation()}));
+    const edited=await save(record({topic:'이전 화면에서 주제만 수정'}),1);
+    assert.deepEqual(edited.nextMeeting,saved.nextMeeting);
+    assert.deepEqual(await save(record({topic:'이전 화면에서 주제만 수정'}),1),edited);
+    const cleared=await save({...edited,nextMeeting:null},2);
+    assert.equal(cleared.nextMeeting,null);
+    assert.equal(cleared.topic,edited.topic);
+    assert.deepEqual(cleared.sections,edited.sections);
+    const legacyCreate=await save(record({id:ID2,round:2}));assert.equal(legacyCreate.nextMeeting,null);
+  });
+
+  test('invalid preparation fails atomically and never truncates existing content',async()=>{
+    const saved=await save(record({nextMeeting:preparation()}));
+    const invalid=[[],12,'text',{}, {...preparation(),extra:'unknown'}, {...preparation(),habit:null},
+      {...preparation(),date:'2026-02-29'}, {...preparation(),date:'0000-01-01'}, {...preparation(),date:'2026-2-01'},
+      {...preparation(),time:'24:00'}, {...preparation(),time:'13:60'}, {...preparation(),time:'1:30'},
+      {...preparation(),place:'가'.repeat(1001)}, {...preparation(),reading:'가'.repeat(4001)}, {...preparation(),sharing:[]},
+      {date:'',time:'',place:'',reading:'',sharing:''}];
+    for(const nextMeeting of invalid) await assert.rejects(save({...saved,nextMeeting},1),errorCode('22023'));
+    assert.deepEqual((await list()).find(row=>row.id===ID),saved);
+    const accepted={date:'2024-02-29',time:'23:59',place:'😀'.repeat(1000),reading:'',sharing:'😀'.repeat(4000),habit:''};
+    assert.deepEqual((await save({...saved,nextMeeting:accepted},1)).nextMeeting,accepted);
+  });
+
+  test('preparation remains protected by existing owner, role, draft, and tombstone checks',async()=>{
+    const saved=await save(record({nextMeeting:preparation()}));
+    assert.equal((await list(MEMBER)).some(row=>row.id===ID),false);
+    assert.equal((await list(OTHER)).some(row=>row.id===ID),false);
+    await assert.rejects(save({...saved,userId:'other'},1,OTHER),errorCode('42501'));
+    await assert.rejects(save({...saved,userId:'member'},1,MEMBER),errorCode('42501'));
+    for(const role of ['anon','authenticated']){
+      await assert.rejects(as(AUTH,()=>db.exec('select next_meeting from public.growell_meeting_records'),role),errorCode('42501'));
+      await assert.rejects(as(AUTH,()=>db.exec("select public.growell_valid_meeting_preparation('{}')"),role),errorCode('42501'));
+    }
+    await as(AUTH,()=>db.query('select public.growell_delete_meeting_record($1,1)',[ID]));
+    await assert.rejects(save({...saved,nextMeeting:preparation()},2),errorCode('40001'));
+    assert.deepEqual((await db.query('select next_meeting from public.growell_meeting_records where id=$1',[ID])).rows[0].next_meeting,preparation());
   });
 });

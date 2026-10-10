@@ -55,6 +55,16 @@
 .meeting-records-dialog .mr-story h3{display:flex;align-items:flex-start;gap:11px;font-size:16px;font-weight:650;line-height:1.7;margin-bottom:10px}
 .meeting-records-dialog .mr-story h3>span:last-child{min-width:0}
 .meeting-records-dialog .mr-summary{font-size:15px;line-height:1.95}
+.meeting-records-dialog .mr-preparation-list{display:grid;gap:0;margin:0;padding:0;border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.meeting-records-dialog .mr-preparation-row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start;margin:0;padding:15px 18px}
+.meeting-records-dialog .mr-preparation-row+.mr-preparation-row{border-top:1px solid var(--line)}
+.meeting-records-dialog .mr-preparation-row dt{font-size:12px;font-weight:650;color:var(--ink-soft);line-height:1.9}
+.meeting-records-dialog .mr-preparation-row dd{margin:0;font-size:14px;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere}
+.meeting-records-dialog .mr-preparation-highlight{background:var(--mr-soft)}
+.meeting-records-dialog .mr-preparation-highlight dt,.meeting-records-dialog .mr-preparation-highlight mark{color:var(--mr-green);font-weight:650}
+.meeting-records-dialog .mr-preparation-highlight mark{background:transparent;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+.meeting-records-dialog .mr-preparation-sharing-field{padding:15px;border-radius:11px;background:var(--mr-soft)}
+.meeting-records-dialog [data-mr-preparation] textarea{min-height:85px}
 .meeting-records-dialog .mr-note{font-size:11px;line-height:1.8;color:var(--ink-soft);margin-top:10px}
 .meeting-records-dialog .mr-empty{padding:23px 18px;background:var(--bg);border-radius:10px;color:var(--ink-soft);font-size:13px;line-height:1.8;text-align:center}
 .meeting-records-dialog .mr-empty .mr-button{margin-top:14px}
@@ -157,6 +167,7 @@
  .meeting-records-dialog .mr-core-list{gap:11px}
  .meeting-records-dialog .mr-core-list li{font-size:14px;gap:8px}
  .meeting-records-dialog .mr-story h3{font-size:15px;gap:8px}
+ .meeting-records-dialog .mr-preparation-row{grid-template-columns:60px minmax(0,1fr);gap:10px;padding:13px 14px}
  .meeting-records-dialog .mr-outline-row{grid-template-columns:18px minmax(0,1fr) 35px;gap:6px}
  .meeting-records-dialog .mr-keyword-editor{padding:15px}
  .meeting-records-dialog .mr-insight{flex-basis:calc(100% - 22px);padding:18px}
