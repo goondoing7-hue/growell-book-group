@@ -99,7 +99,7 @@
 .meeting-records-dialog .mr-local-notice{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:9px 12px;border-radius:8px;background:var(--mr-soft);font-size:12px;color:var(--mr-green);margin:10px 0}
 .meeting-records-dialog .mr-carousel-nav{display:flex;align-items:center;gap:6px}
 .meeting-records-dialog .mr-count{min-width:35px;margin-right:3px;font-size:12px;text-align:center;color:var(--ink-soft);font-variant-numeric:tabular-nums}
-.meeting-records-dialog .mr-track{display:flex;align-items:stretch;gap:14px;width:100%;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 0 5px;cursor:grab;-webkit-overflow-scrolling:touch}
+.meeting-records-dialog .mr-track{display:flex;align-items:flex-start;gap:14px;width:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 0 5px;cursor:grab;-webkit-overflow-scrolling:touch}
 .meeting-records-dialog .mr-track::-webkit-scrollbar{display:none}
 .meeting-records-dialog .mr-track.is-dragging{scroll-snap-type:none;cursor:grabbing;user-select:none}
 .meeting-records-dialog .mr-track.is-dragging *{cursor:grabbing!important;user-select:none}

@@ -298,11 +298,19 @@
   function bindCarousel(){
     var panel=dialog&&dialog.querySelector('[data-mr-carousel]'),track=panel&&panel.querySelector('[data-mr-track]');if(!track)return;
     var cards=Array.from(track.querySelectorAll('[data-mr-post]')),previous=panel.querySelector('[data-mr-action="previous"]'),next=panel.querySelector('[data-mr-action="next"]'),counter=panel.querySelector('[data-mr-count]'),dots=Array.from(panel.querySelectorAll('.mr-dots span'));
-    var listeners=[],observer=null,drag=null,index=Math.max(0,Math.min(state.slide,cards.length-1)),suppressUntil=0,disposed=false,scrollFrame=null;
+    var listeners=[],observer=null,drag=null,index=Math.max(0,Math.min(state.slide,cards.length-1)),suppressUntil=0,disposed=false,scrollFrame=null,trackWidth=track.clientWidth;
     function on(node,type,handler,options){node.addEventListener(type,handler,options);listeners.push(function(){node.removeEventListener(type,handler,options);});}
     function left(card){return card.getBoundingClientRect().left-track.getBoundingClientRect().left+track.scrollLeft;}
     function closest(){var value=0,distance=Infinity;cards.forEach(function(card,i){var d=Math.abs(left(card)-track.scrollLeft);if(d<distance){value=i;distance=d;}});return value;}
-    function controls(){if(!state||disposed)return;state.slide=index;previous.disabled=busy||index===0;next.disabled=busy||index===cards.length-1;counter.textContent=(index+1)+' / '+cards.length;dots.forEach(function(dot,i){dot.classList.toggle('is-active',i===index);});}
+    function fitHeight(){
+      if(disposed||!cards[index])return;
+      // Offscreen long answers must not stretch the current card or its track.
+      var height=cards[index].getBoundingClientRect().height;if(!(height>0))return;
+      var style=root.getComputedStyle(track),size=Math.ceil(height+(parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0))+'px';
+      if(track.style.height!==size)track.style.height=size;
+      if(track.scrollTop)track.scrollTop=0;
+    }
+    function controls(){if(!state||disposed)return;state.slide=index;previous.disabled=busy||index===0;next.disabled=busy||index===cards.length-1;counter.textContent=(index+1)+' / '+cards.length;dots.forEach(function(dot,i){dot.classList.toggle('is-active',i===index);});fitHeight();}
     function go(value,smooth){index=Math.max(0,Math.min(cards.length-1,value));controls();var reduced=root.matchMedia&&root.matchMedia('(prefers-reduced-motion: reduce)').matches;track.scrollTo({left:left(cards[index]),behavior:smooth&&!reduced?'smooth':'instant'});}
     on(previous,'click',function(){go(index-1,true);});on(next,'click',function(){go(index+1,true);});
     on(track,'scroll',function(){if(drag||disposed||scrollFrame)return;scrollFrame=root.requestAnimationFrame(function(){scrollFrame=null;if(!disposed){index=closest();controls();}});},{passive:true});
@@ -331,7 +339,10 @@
     on(track,'pointerup',function(event){finish(event,false);});on(track,'pointercancel',function(event){finish(event,true);});on(track,'lostpointercapture',function(event){finish(event,true);});
     on(track,'pointerleave',function(event){if(drag&&drag.id===event.pointerId&&!drag.moved)drag=null;});
     on(track,'click',function(event){if(Date.now()<suppressUntil&&event.detail!==0){event.preventDefault();event.stopImmediatePropagation();return;}var card=event.target.closest('[data-mr-post]');if(card){event.preventDefault();navigateOriginal('post',card.getAttribute('data-mr-post'));}},true);
-    go(index,false);if(root.ResizeObserver){observer=new root.ResizeObserver(function(){if(!disposed&&!drag)go(index,false);});observer.observe(track);}
+    go(index,false);if(root.ResizeObserver){observer=new root.ResizeObserver(function(){
+      if(disposed)return;
+      if(!drag&&track.clientWidth!==trackWidth){trackWidth=track.clientWidth;go(index,false);}else fitHeight();
+    });observer.observe(track);cards.forEach(function(card){observer.observe(card);});}
     carouselDispose=function(){disposed=true;listeners.forEach(function(remove){remove();});if(observer)observer.disconnect();if(scrollFrame)root.cancelAnimationFrame(scrollFrame);};
   }
   return {configure:configure,launchHtml:launchHtml,bind:bind,openList:openList,openRound:openRound,close:close,reset:reset};
