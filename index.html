@@ -196,8 +196,6 @@
   .footer{border-top:1px solid var(--line); padding:26px 0 40px; color:var(--ink-faint); font-size:12.5px;}
   .footer .wrap{display:flex; flex-wrap:wrap; gap:6px 14px; justify-content:space-between; align-items:center;}
   .footer-links{display:flex;flex-direction:column;align-items:flex-end;gap:8px;margin-left:auto;}
-  .footer-connection-guide{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px 12px;}
-  .footer-connection-guide .footer-pdf-download{color:var(--primary);text-decoration:underline;text-underline-offset:3px;}
 
   /* hero (poster-layered: blurred cover collage behind large centered type) */
   .hero{position:relative; min-height:320px; display:flex; align-items:center; justify-content:center; text-align:center; overflow:hidden; border-radius:0 0 var(--r-xl) var(--r-xl); margin-bottom:56px; padding:68px 24px;}
@@ -4172,7 +4170,7 @@ function footerHtml(){
     '<span>읽고 나누고 생각하며 자라는 우리<br>DBKS GROWELL 독서모임</span>' +
     '<span>관리자 정기성 전도사 · 010-7319-7580</span>' +
     '<div class="footer-links"><a href="'+guide.href+'">'+guide.label+'</a>' +
-      '<div class="footer-connection-guide"><a href="guides/growell-connection-guide.pdf" target="_blank" rel="noopener">홈 화면·백업·알림 연결 가이드</a><a class="footer-pdf-download" href="guides/growell-connection-guide.pdf" download="GROWELL_모바일_연결_가이드.pdf" aria-label="홈 화면·백업·알림 연결 가이드 PDF 저장">PDF 저장</a></div>' +
+      '<a href="connection-guide.html">홈 화면·백업·알림 연결 가이드</a>' +
       '<a href="privacy.html">개인정보처리방침</a></div>' +
   '</div></footer>';
 }
