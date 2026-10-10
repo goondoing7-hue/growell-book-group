@@ -21,6 +21,7 @@ function harness(){
     commentsForPost:()=>[{}],SESSION:{userId:'owner',name:'독서회원',keyB64:'key-a'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{}},sharedPostsLoadState:'ready',shareFeedFilter:{},
     GrowellPrivateCategories:privateCategories,GrowellArchiveDomain:require('../archiveDomain.js'),
+    GrowellInsightRounds:require('../insightRounds.js'),
     GrowellMeetingRecords:{launchHtml:bookId=>'<button type="button" data-meeting-records="'+esc(bookId)+'">모임별 기록</button>'},
     GrowellArchive:{reflectionHtml:theme=>'<section data-archive-reflection="'+esc(theme)+'"><h3>'+esc({emotion:'감정',thought:'생각',body:'신체',action:'행동'}[theme])+'에 대한 고찰</h3></section>'},memberLoadState:{privateEntries:'ready'},
     ensureKey:()=>Promise.resolve('synthetic-key'),decryptPrivateRecord:()=>Promise.resolve(privateCategories.encode([])),
@@ -242,6 +243,26 @@ test('shared preview honors its filter but highlights only explicitly opened pos
     assert.doesNotMatch(markup,/data-shared-detail=/);
     assert.ok(!markup.includes('제목 foreign'));
   }
+});
+
+test('sharing groups insight rounds while preserving ordinary previews, filters and original posts',()=>{
+  const {c}=harness();
+  c.STATE.posts={ordinary:{...post('ordinary','emotion',20),html:'<p>일반 글 미리보기</p>'}};
+  for(let i=1;i<=7;i++)c.STATE.posts['insight'+i]={...post('insight'+i,'emotion',i),noteType:'insight',meetingNo:i===7?'2':'01',q1:'소감 '+i,q2:'깨달음 '+i,q3:'배움 '+i};
+  c.STATE.posts.foreign={...post('foreign','thought',30),noteType:'insight',meetingNo:'1',q2:'다른 책의 통찰'};
+  const before=JSON.stringify(c.STATE),all=c.shareTabHtml(book);
+  assert.ok(all.includes('일반 글 미리보기'));
+  assert.equal((all.match(/data-insight-round=/g)||[]).length,2);
+  for(let i=1;i<=7;i++)assert.ok(all.includes('#/book/emotion/share/post/insight'+i));
+  assert.ok(!all.includes('다른 책의 통찰'));
+  c.shareFeedFilter.emotion='insight';
+  const filtered=c.shareTabHtml(book,'insight5');
+  assert.equal((filtered.match(/data-insight-round=/g)||[]).length,2);
+  assert.ok(!filtered.includes('일반 글 미리보기'));
+  assert.ok(filtered.includes('data-shared-detail="insight5"'));
+  c.shareFeedFilter.emotion='thought';
+  assert.equal((c.shareTabHtml(book).match(/data-insight-round=/g)||[]).length,0);
+  assert.equal(JSON.stringify(c.STATE),before);
 });
 
 test('shared writing opens one dialog while retaining the selected record and background list',()=>{

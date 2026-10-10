@@ -3,6 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
+  'insightRounds.js', 'insightRounds.css',
   'meetingRecords.js', 'meetingRecords.css', 'meetingRecordsDomain.js', 'meetingRecordsBridge.js',
   'driveBackup.js', 'driveBackup.css',
   'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
@@ -26,6 +27,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/insight-rounds.test.cjs',
   'tests/meeting-records-domain.test.cjs', 'tests/meeting-records-bridge.test.cjs', 'tests/meeting-records-sql.test.cjs',
   'tests/drive-backup-provider.test.cjs', 'tests/drive-backup-server.test.cjs', 'tests/drive-backup-sql.test.cjs', 'tests/drive-backup-ui.test.cjs',
   'tests/material-transcript-translation.test.cjs', 'tests/material-translation-sql.test.cjs',

@@ -1091,6 +1091,7 @@
 </style>
 <link rel="stylesheet" href="home.css">
 <link rel="stylesheet" href="community.css">
+<link rel="stylesheet" href="insightRounds.css">
 <link rel="stylesheet" href="privateCategories.css">
 <link rel="stylesheet" href="archive.css">
 <link rel="stylesheet" href="archiveCalendar.css">
@@ -1118,6 +1119,7 @@
 <script src="dailyVerseDomain.js"></script>
 <script src="communityDomain.js"></script>
 <script src="communityFeatures.js"></script>
+<script src="insightRounds.js"></script>
 <link rel="stylesheet" href="meetingRecords.css">
 <script src="meetingRecordsDomain.js"></script>
 <script src="meetingRecordsBridge.js"></script>
@@ -5399,6 +5401,7 @@ function applyFeedSearch(gridId){
     t.style.display = match ? '' : 'none';
     if(match) visible++;
   });
+  if(gridId.indexOf('share-grid-')===0&&typeof GrowellInsightRounds!=='undefined')visible+=GrowellInsightRounds.filter(grid,q);
   grid.style.display = (visible===0 && (q||category!=='all')) ? 'none' : '';
   if(emptyEl) emptyEl.style.display = (visible===0 && (q||category!=='all')) ? '' : 'none';
   if(grid.hasAttribute('data-private-category')){var count=document.querySelector('[data-private-count]');if(count)count.textContent='나의 기록 '+visible+'개 · 최신순';}
@@ -5545,7 +5548,12 @@ function shareTabHtml(book, postId){
   var gridId = 'share-grid-'+book.id;
   var searchRow = allPosts.length ? feedSearchHtml(gridId, '나눔 글 검색') : '';
   var grid = posts.length
-    ? '<div class="space-record-list" id="'+gridId+'">'+posts.map(function(p){ return spaceShareRowHtml(book,p,postId&&selected&&selected.id); }).join('')+'</div>' +
+    ? '<div class="space-record-list" id="'+gridId+'">'+GrowellInsightRounds.group(posts).map(function(item){
+        if(item.kind==='post')return spaceShareRowHtml(book,item.post,postId&&selected&&selected.id);
+        return GrowellInsightRounds.renderGroup(book,item,{selectedId:postId&&selected&&selected.id,
+          authorHtml:function(p){return publicAuthorHtml(p.userId,p.userName,book.accent);},
+          dateText:fmtPostDate,comments:function(id){return commentsForPost(id).length;}});
+      }).join('')+'</div>' +
       '<div class="empty feed-empty-search" id="empty-'+gridId+'" style="display:none">검색 결과가 없어요.</div>'
     : (allPosts.length ? '<div class="empty">이 타입의 나눔이 아직 없어요.</div>' : '<div class="empty">아직 나눈 이야기가 없어요. 첫 번째 나눔을 남겨보세요.</div>');
   var detail=spaceDetailBackHtml(book,'share')+(selected?sharePostCardHtml(book,selected):'<div class="empty">'+(postId?'글을 찾을 수 없어요.':'목록에서 이야기를 골라 읽어보세요.')+'</div>');
@@ -7639,6 +7647,7 @@ function bindEvents(route){
   bindHabitDayClock();
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.bind();
   if(typeof GrowellMeetingRecords!=='undefined')GrowellMeetingRecords.bind(document);
+  if(typeof GrowellInsightRounds!=='undefined')GrowellInsightRounds.bind(document);
   bindOAuthEvents();
   bindPrivateRecovery();
   bindHomeEvents();
