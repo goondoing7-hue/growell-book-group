@@ -130,3 +130,64 @@ test('drafts, malformed fields, unsupported glyphs, and unsafe URLs fail before 
   const unknownGlyph = fixture(); unknownGlyph.record.sections[0].detail = '지원하지 않는 문자 \u{10FFFF}';
   await assert.rejects(createMeetingRecordPdf(unknownGlyph), error => error.code === 'PDF_UNSUPPORTED_GLYPH' && /지원하지 않는 문자/.test(error.message));
 });
+
+test('a multi-page public insight preserves all answers with visible author and question context', async () => {
+  const source = fixture(), drawn = [];
+  source.record.sections = [{ summary: '감정 알아차리기', detail: '내용을 그대로 보존한다.' }];
+  source.record.concepts = [];
+  source.record.nextMeeting = null;
+  source.materials = [];
+  source.insights = [{
+    authorName: '긴 통찰 작성자', date: '2026-10-10',
+    q1: '마음을 살피는 출발점이다. FIRST_ANSWER',
+    q2: ('불편한 감정을 판단하기 전에 그 감정이 전하는 마음을 살핀다. 각자의 생각과 경험을 이해할 때 다른 관점을 알아차릴 수 있다.\n\n').repeat(75) + 'LAST_LONG_ANSWER',
+    q3: '기록을 읽고 일상에서 작은 행동을 선택한다. LAST_ANSWER'
+  }];
+  const before = JSON.stringify(source), originalText = PDFDocument.prototype.text;
+  PDFDocument.prototype.text = function(value, ...args) {
+    if (typeof value === 'string') drawn.push({ value, size: this._fontSize, options: args.at(-1) });
+    return originalText.call(this, value, ...args);
+  };
+  let pdf;
+  try { pdf = await createMeetingRecordPdf(source); }
+  finally { PDFDocument.prototype.text = originalText; }
+  const pageCount = (pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length;
+  assert.ok(pageCount >= 2 && pageCount <= 7, `expected a flowing, compact note, found ${pageCount} pages`);
+  assert.ok(drawn.some(item => item.value === '1. 긴 통찰 작성자'));
+  ['01  모임 소감', '02  새로운 깨달음', '03  실천할 배움'].forEach(label => assert.ok(drawn.some(item => item.value === label)));
+  ['q1', 'q2', 'q3'].forEach(key => {
+    const answer = drawn.find(item => item.value === source.insights[0][key]);
+    assert.ok(answer, 'complete authored answers reach the writer');
+    assert.equal(answer.size, 10.5, 'answer font remains readable');
+    assert.equal(answer.options.height, undefined, 'answers are never placed inside a clipping box');
+  });
+  assert.ok(drawn.some(item => item.value === '긴 통찰 작성자 · 새로운 깨달음 · 이어서'), 'continuation identifies the author and active question');
+  assert.equal(JSON.stringify(source), before);
+});
+
+test('a new public author moved to the next page starts a fresh note without a false continuation label', async () => {
+  const source = fixture(), drawn = [];
+  source.record.topic = '새 통찰 페이지 경계';
+  source.record.sections = [];
+  source.record.concepts = [];
+  source.record.nextMeeting = null;
+  source.bookTitle = '';
+  source.materials = [];
+  source.insights = [
+    { authorName: '첫 작성자', q1: '첫 답변이다.', q2: ('서로의 마음을 천천히 읽고 다른 생각을 살펴본다. 불편한 감정 속에 숨은 바람을 이해하는 출발점이다.\n\n').repeat(11), q3: '마지막 답변이다.' },
+    { authorName: '다음 작성자 이름을 그대로 보존하는 긴 이름'.repeat(4), q1: '다음 첫 답변이다.', q2: '다음 두 번째 답변이다.', q3: '다음 마지막 답변이다.' }
+  ];
+  const before = JSON.stringify(source), originalText = PDFDocument.prototype.text;
+  PDFDocument.prototype.text = function(value, ...args) {
+    if (typeof value === 'string') drawn.push({ value, page: this.page });
+    return originalText.call(this, value, ...args);
+  };
+  try { await createMeetingRecordPdf(source); }
+  finally { PDFDocument.prototype.text = originalText; }
+  const firstAuthor = drawn.find(item => item.value === '1. 첫 작성자');
+  const nextAuthor = drawn.find(item => item.value === `2. ${source.insights[1].authorName}`);
+  assert.ok(firstAuthor && nextAuthor);
+  assert.notEqual(firstAuthor.page, nextAuthor.page, 'the second author starts on a new page');
+  assert.equal(drawn.some(item => item.page === nextAuthor.page && item.value.endsWith(' · 이어서')), false, 'a fresh note is never labelled as a continued answer');
+  assert.equal(JSON.stringify(source), before);
+});

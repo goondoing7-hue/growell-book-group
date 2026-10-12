@@ -48,6 +48,28 @@ test('printing and canceling restore title and remove only the temporary print s
   assert.equal(b.document.title,'GROWELL original title');assert.equal(b.listeners.size,0);
 });
 
+test('each printed insight keeps its author, date, and three complete answers together in reading order',()=>{
+  const b=browser(),row=record(),answers=['첫 번째 답변 원문\n다음 문장',('긴 깨달음 원문을 보존한다. ').repeat(400)+'끝 답변', '<b>실천 원문 그대로</b>'];
+  const insights=[{id:'one',bookId:row.bookId,round:row.round,name:'첫 작성자',date:'2026-10-13',answers},
+    {id:'two',bookId:row.bookId,round:row.round,name:'둘째 작성자',date:'2026-10-12',answers:['둘째 소감','둘째 깨달음','둘째 실천']}];
+  const before=JSON.stringify(insights),sheet=api.buildPrintSheet(b.document,row,{insights});
+  const cards=walk(sheet).filter(item=>item.className==='mr-print-insight');
+  assert.equal(cards.length,2);
+  cards.forEach((card,index)=>{
+    const header=card.children[0];
+    assert.equal(header.tagName,'HEADER');
+    assert.equal(header.children[0].textContent,insights[index].name);
+    assert.equal(header.children[1].textContent,insights[index].date.replace(/-/g,'.'));
+    assert.equal(card.children.length,4);
+    card.children.slice(1).forEach((answer,questionIndex)=>{
+      assert.equal(answer.children[0].tagName,'H4');
+      assert.equal(answer.children[0].children[0].textContent,String(questionIndex+1).padStart(2,'0'));
+      assert.equal(answer.children[1].textContent,insights[index].answers[questionIndex]);
+    });
+  });
+  assert.equal(JSON.stringify(insights),before);
+});
+
 test('print errors never leave a sheet, hidden app, or changed page title behind',()=>{
   const b=browser();b.print=()=>{throw new Error('printing failed');};
   assert.throws(()=>api.printRecord(b,record()),/printing failed/);

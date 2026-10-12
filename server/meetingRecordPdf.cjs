@@ -7,7 +7,7 @@ const fontkit = require('fontkit');
 const FONT_REGULAR = path.join(__dirname, 'fonts', 'Pretendard-Regular.otf');
 const FONT_BOLD = path.join(__dirname, 'fonts', 'Pretendard-Bold.otf');
 const FONT_EMOJI = path.join(__dirname, 'fonts', 'NotoEmoji.ttf');
-const COLOR = Object.freeze({ ink: '#263D33', green: '#3A624E', muted: '#67736B', rule: '#DCE3D9' });
+const COLOR = Object.freeze({ ink: '#263D33', green: '#3A624E', muted: '#67736B', rule: '#DCE3D9', pale: '#EDF2E9', accent: '#9EB5A0' });
 const PREPARATION = Object.freeze([['place', '장소'], ['reading', '읽기 범위'], ['sharing', '나눔'], ['habit', '독서 습관']]);
 const LIMITS = Object.freeze({ sections: 20, concepts: 30, materials: 30, title: 160, summary: 120, detail: 10000, word: 80, meaning: 4000, url: 2000 });
 let fontCoverage;
@@ -132,11 +132,15 @@ async function createMeetingRecordPdf(input) {
   doc.registerFont('NotoEmoji', FONT_EMOJI);
   let currentFont = 'Pretendard', currentSize = 10.5, currentColor = COLOR.ink;
   const left = 48, width = 595.28 - 96;
+  let pageNumber = -1, insightContext = null;
+  const continuationContexts = new Map();
   function style(font = 'Pretendard', size = 10.5, color = COLOR.ink) {
     currentFont = font; currentSize = size; currentColor = color;
     doc.font(font).fontSize(size).fillColor(color);
   }
   doc.on('pageAdded', () => {
+    pageNumber += 1;
+    if (insightContext) continuationContexts.set(pageNumber, { ...insightContext });
     doc.moveTo(left, 47).lineTo(left + width, 47).lineWidth(0.6).strokeColor(COLOR.rule).stroke();
     doc.font(currentFont).fontSize(currentSize).fillColor(currentColor);
     doc.x = left; doc.y = 62;
@@ -144,13 +148,14 @@ async function createMeetingRecordPdf(input) {
   doc.addPage();
   function remaining() { return doc.page.height - doc.page.margins.bottom - doc.y; }
   function reserve(height) { if (remaining() < height && doc.y > doc.page.margins.top) doc.addPage(); }
-  function write(value, options) {
+  function write(value, options = {}) {
     const runs = fontRuns(value, currentFont === 'PretendardBold');
     const originalFont = currentFont;
+    const { x = left, width: lineWidth = width, ...textOptions } = options;
     runs.forEach((run, index) => {
       style(run.font, currentSize, currentColor);
-      if (index === 0) doc.text(run.text, left, doc.y, { width, ...options, continued: runs.length > 1 });
-      else doc.text(run.text, { width, ...options, continued: index < runs.length - 1 });
+      if (index === 0) doc.text(run.text, x, doc.y, { width: lineWidth, ...textOptions, continued: runs.length > 1 });
+      else doc.text(run.text, { width: lineWidth, ...textOptions, continued: index < runs.length - 1 });
     });
     style(originalFont, currentSize, currentColor);
   }
@@ -160,10 +165,10 @@ async function createMeetingRecordPdf(input) {
     write(value, { lineGap: 1.7, paragraphGap: 1.5, align: 'left', ...options.text });
     doc.y += options.gap === undefined ? 4 : options.gap;
   }
-  function textHeight(value, font, size) {
+  function textHeight(value, font, size, lineWidth = width) {
     const saved = [currentFont, currentSize, currentColor];
     style(font, size);
-    const height = doc.heightOfString(value, { width, lineGap: 1.7, paragraphGap: 1.5 });
+    const height = doc.heightOfString(value, { width: lineWidth, lineGap: 1.7, paragraphGap: 1.5 });
     style(...saved);
     return height;
   }
@@ -179,9 +184,13 @@ async function createMeetingRecordPdf(input) {
     style('PretendardBold', fontSize, COLOR.green);
     const height = doc.heightOfString(value, { width, lineGap: 1.7 });
     // Keep the complete short heading and at least two body lines together.
-    reserve(height + 5 + bodyLinesHeight(2) + (level === 2 ? 6 : 0));
+    reserve(height + 5 + bodyLinesHeight(2) + (level === 2 ? 11 : 0));
     if (level === 2) doc.y += 6;
     write(value, { lineGap: 1.7 });
+    if (level === 2) {
+      doc.y += 4;
+      doc.moveTo(left, doc.y).lineTo(left + width, doc.y).lineWidth(0.6).strokeColor(COLOR.rule).stroke();
+    }
     doc.y += 5;
   }
   paragraph(`${content.round}번째 모임 · ${dateLabel(content.date)}`, { size: 10, color: COLOR.muted, gap: 4 });
@@ -218,17 +227,54 @@ async function createMeetingRecordPdf(input) {
         const parsed = new Date(item.date);
         date = Number.isFinite(parsed.getTime()) ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed) : item.date;
       }
-      // Keep an author/date together with the first answer heading and lines,
-      // rather than stranding a member's identity at the bottom of a page.
-      // Measure this minimum instead of reserving a fixed 125 pt for each
-      // member, which previously left large empty bottoms on shorter pages.
-      reserve(textHeight(`${index + 1}. ${item.authorName}`, 'PretendardBold', 11.5) + 5
-        + (date ? textHeight(date, 'Pretendard', 9) + 3 : 0)
-        + textHeight(labels[0][1], 'PretendardBold', 11.5) + 5 + bodyLinesHeight(2));
-      heading(`${index + 1}. ${item.authorName}`, 3);
-      if (date) paragraph(date, { size: 9, color: COLOR.muted, gap: 3 });
-      labels.forEach(([key, label]) => { heading(label, 3); paragraph(item[key] || '작성한 답변이 없습니다.'); });
+      const name = `${index + 1}. ${item.authorName}`;
+      const nameWidth = width - 120;
+      const headerHeight = Math.max(textHeight(name, 'PretendardBold', 11.5, nameWidth), date ? textHeight(date, 'Pretendard', 9, 100) : 0) + 16;
+      // A compact author bar distinguishes each complete note. Reserve only
+      // its identity, first question and two answer lines; do not force an
+      // entire long note onto the next page or place text in a fixed box.
+      // A new note moved intact to the next page is a fresh start, not a
+      // continuation of the previous author or an answer not yet written.
+      insightContext = null;
+      reserve(headerHeight + 8 + textHeight(`01  ${labels[0][1]}`, 'PretendardBold', 9.5) + 4 + bodyLinesHeight(2) + 6);
+      if (index) doc.y += 6;
+      const headerTop = doc.y;
+      doc.rect(left, headerTop, width, headerHeight).fill(COLOR.pale);
+      doc.y = headerTop + 8;
+      paragraph(name, { bold: true, size: 11.5, gap: 0, text: { x: left + 10, width: nameWidth } });
+      if (date) {
+        doc.y = headerTop + 9;
+        paragraph(date, { size: 9, color: COLOR.muted, gap: 0, text: { x: left + width - 110, width: 100, align: 'right' } });
+      }
+      doc.y = headerTop + headerHeight + 8;
+      insightContext = { authorName: item.authorName, label: labels[0][1] };
+      labels.forEach(([key, label], questionIndex) => {
+        const value = item[key] || '작성한 답변이 없습니다.';
+        insightContext = { authorName: item.authorName, label };
+        const rowWidth = width - 15;
+        const labelHeight = textHeight(`${String(questionIndex + 1).padStart(2, '0')}  ${label}`, 'PretendardBold', 9.5, rowWidth);
+        reserve(labelHeight + 4 + Math.min(textHeight(value, 'Pretendard', 10.5, rowWidth), bodyLinesHeight(2)) + 3 + (questionIndex ? 6 : 0));
+        if (questionIndex) {
+          doc.moveTo(left + 15, doc.y).lineTo(left + width, doc.y).lineWidth(0.4).strokeColor(COLOR.rule).stroke();
+          doc.y += 6;
+        }
+        const rowStartPage = pageNumber, rowTop = doc.y;
+        paragraph(`${String(questionIndex + 1).padStart(2, '0')}  ${label}`, { bold: true, size: 9.5, color: COLOR.green, gap: 4, text: { x: left + 15, width: rowWidth } });
+        paragraph(value, { gap: 6, text: { x: left + 15, width: rowWidth } });
+        const rowEndPage = pageNumber, rowBottom = doc.y;
+        // Draw the accent in the margin of every flowing fragment. It never
+        // covers, clips, or replaces authored text on continuation pages.
+        for (let page = rowStartPage; page <= rowEndPage; page += 1) {
+          doc.switchToPage(page);
+          const top = page === rowStartPage ? rowTop : doc.page.margins.top;
+          const bottom = page === rowEndPage ? rowBottom - 6 : doc.page.height - doc.page.margins.bottom;
+          doc.moveTo(left + 5, top).lineTo(left + 5, Math.max(top, bottom)).lineWidth(1.3).strokeColor(COLOR.accent).stroke();
+        }
+        doc.switchToPage(rowEndPage);
+        doc.x = left; doc.y = rowBottom;
+      });
     });
+    insightContext = null;
   }
   if (content.materials.length) {
     heading('함께 읽고 볼 자료');
@@ -253,6 +299,16 @@ async function createMeetingRecordPdf(input) {
     // pageAdded can inherit PDFKit's active paragraph wrapper on page breaks.
     doc.font('PretendardBold').fontSize(8.5).fillColor(COLOR.green);
     doc.text('GROWELL  |  모임별 기록', left, 29, { width, lineBreak: false });
+    const continuation = continuationContexts.get(index);
+    if (continuation) {
+      doc.font('Pretendard').fontSize(8).fillColor(COLOR.muted);
+      const contextWidth = width - 160;
+      const complete = `${continuation.authorName} · ${continuation.label} · 이어서`;
+      // A repeated navigation label may omit a very long author name, while
+      // the full authored name remains unaltered in its original note bar.
+      const label = doc.widthOfString(complete) <= contextWidth ? complete : `통찰 정리 · ${continuation.label} · 이어서`;
+      doc.text(label, left + 160, 29, { width: contextWidth, align: 'right', lineBreak: false });
+    }
     doc.font('Pretendard').fontSize(8).fillColor(COLOR.muted);
     doc.text(`${index + 1} / ${pages.count}`, left, doc.page.height - 34, { width, align: 'right', lineBreak: false });
     doc.page.margins.bottom = previousBottom;

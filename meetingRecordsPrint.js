@@ -67,11 +67,16 @@
       var shared=section(document,sheet,'함께 나눈 통찰'),labels=['모임 소감','새로운 깨달음','실천할 배움'];
       paragraph(document,shared,'열람할 수 있는 통찰 '+insights.length+'개의 현재 내용입니다.','mr-print-note');
       insights.forEach(function(row){
-        var item=node(document,'article','mr-print-insight');
-        item.appendChild(node(document,'h3','',row.name||'모임원'));
-        if(row.date)paragraph(document,item,dateLabel(row.date),'mr-print-note');
+        var item=node(document,'article','mr-print-insight'),author=node(document,'header','mr-print-insight-header');
+        author.appendChild(node(document,'h3','mr-print-insight-name',row.name||'모임원'));
+        if(row.date)paragraph(document,author,dateLabel(row.date),'mr-print-insight-date');
+        item.appendChild(author);
         labels.forEach(function(label,index){
-          item.appendChild(node(document,'h4','',label));paragraph(document,item,row.answers[index]||'작성한 답변이 없어요.');
+          var answer=node(document,'div','mr-print-answer'),question=node(document,'h4','mr-print-question');
+          question.appendChild(node(document,'span','mr-print-question-number',String(index+1).padStart(2,'0')));
+          question.appendChild(node(document,'span','',label));answer.appendChild(question);
+          paragraph(document,answer,row.answers[index]||'작성한 답변이 없어요.','mr-print-text mr-print-answer-text');
+          item.appendChild(answer);
         });shared.appendChild(item);
       });
     }

@@ -12,9 +12,9 @@
   body.mr-record-printing>.mr-print-sheet{display:block!important;page:growell-meeting-record;position:static!important;width:auto!important;max-width:none!important;height:auto!important;margin:0!important;padding:0!important;overflow:visible!important;font:500 10.5pt/1.42 var(--font-body,'Pretendard Variable',Pretendard,Arial,sans-serif);color:#26382f!important;background:#fff!important}
   .mr-print-sheet,.mr-print-sheet *{box-sizing:border-box;max-height:none!important;overflow:visible!important;box-shadow:none!important;text-shadow:none!important}
   .mr-print-sheet h1,.mr-print-sheet h2,.mr-print-sheet h3,.mr-print-sheet h4{font-family:inherit;font-weight:700;word-break:keep-all;overflow-wrap:anywhere;break-after:avoid-page;page-break-after:avoid}
-  .mr-print-header{border-bottom:1.5pt solid #3c634d;padding-bottom:9pt;margin-bottom:12pt;break-inside:avoid-page;page-break-inside:avoid}
-  .mr-print-sheet h1{font-size:23pt;line-height:1.3;margin:6pt 0 7pt;letter-spacing:-.5pt}
-  .mr-print-brand{margin:0 0 4pt;color:#3c634d;font-size:10pt;font-weight:700}
+  .mr-print-header{border-top:3pt solid #3c634d;border-bottom:.6pt solid #d9e1d8;padding:9pt 0;margin-bottom:12pt;break-inside:avoid-page;page-break-inside:avoid}
+  .mr-print-sheet h1{font-size:23pt;line-height:1.25;margin:6pt 0 7pt;letter-spacing:-.5pt;color:#26382f}
+  .mr-print-brand{margin:0 0 6pt;color:#3c634d;font-size:9pt;font-weight:700}
   .mr-print-meta,.mr-print-book,.mr-print-status{margin:3pt 0;color:#526156;font-size:9pt}
   .mr-print-status{font-weight:700}
   .mr-print-section{margin:12pt 0 0;break-inside:auto;page-break-inside:auto}
@@ -22,11 +22,19 @@
   .mr-print-sheet h3{font-size:11pt;line-height:1.4;margin:7pt 0 4pt}
   .mr-print-sheet h4{font-size:9pt;line-height:1.4;margin:5pt 0 2pt;color:#526156}
   .mr-print-text{margin:0 0 4pt;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;orphans:2;widows:2;break-inside:auto;page-break-inside:auto}
-  .mr-print-outline{margin:0;padding:0 0 0 18pt;list-style:decimal}
+  .mr-print-outline{margin:0;padding:6pt 9pt 3pt 26pt;list-style:decimal;background:#f3f5f0;border-left:2pt solid #3c634d}
   .mr-print-outline li{padding-left:3pt;break-inside:avoid-page;page-break-inside:avoid}
   .mr-print-story,.mr-print-concept,.mr-print-insight,.mr-print-preparation{break-inside:auto;page-break-inside:auto}
   .mr-print-story+.mr-print-story,.mr-print-concept+.mr-print-concept{margin-top:7pt}
-  .mr-print-insight{margin-top:10pt;padding-top:2pt;border-top:.6pt solid #d9e1d8}
+  .mr-print-insight{margin:9pt 0 0;padding:0 0 2pt;border-left:1.5pt solid #3c634d;border-right:.6pt solid #d9e1d8;border-bottom:.6pt solid #d9e1d8;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+  .mr-print-insight-header{display:flex;align-items:baseline;justify-content:space-between;gap:8pt;background:#edf2e8;padding:6pt 9pt;break-inside:avoid-page;page-break-inside:avoid;break-after:avoid-page;page-break-after:avoid}
+  .mr-print-sheet .mr-print-insight-name{margin:0;font-size:11.5pt;line-height:1.4;min-width:0;flex:1;color:#3c634d}
+  .mr-print-insight-date{margin:0;max-width:40%;font-size:8.5pt;line-height:1.4;color:#526156;text-align:right;overflow-wrap:anywhere}
+  .mr-print-answer{padding:6pt 9pt 3pt;break-inside:auto;page-break-inside:auto}
+  .mr-print-answer+.mr-print-answer{border-top:.5pt solid #e2e7df}
+  .mr-print-sheet .mr-print-question{display:flex;align-items:baseline;gap:6pt;margin:0 0 3pt;font-size:9pt;line-height:1.4;color:#3c634d}
+  .mr-print-question-number{font-size:8pt;font-weight:700;color:#67736b;flex-shrink:0}
+  .mr-print-answer-text{margin:0;line-height:1.42}
   .mr-print-preparation{padding:2pt 0 4pt}
   .mr-print-preparation h3{margin-top:4pt}
   .mr-print-sharing{padding:6pt 8pt;border-left:2pt solid #3c634d;background:#edf2e8}
