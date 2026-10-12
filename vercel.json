@@ -6,7 +6,7 @@
   "functions": {
     "api/meeting-record-mail.js": {
       "maxDuration": 60,
-      "includeFiles": "{server/meetingMailService.cjs,server/meetingRecordPdf.cjs,server/fonts/**,server/driveBackupDomain.cjs,server/driveBackupService.cjs,server/driveBackupProvider.cjs,server/googleConnectionService.cjs,server/meetingCalendarDomain.cjs,server/meetingCalendarProvider.cjs,server/meetingCalendarService.cjs}"
+      "includeFiles": "{server/*.cjs,server/fonts/**}"
     },
     "api/meeting-calendar.js": {
       "maxDuration": 60,
@@ -14,7 +14,7 @@
     },
     "api/drive-backup.js": {
       "maxDuration": 60,
-      "includeFiles": "{server/driveBackupDomain.cjs,server/driveBackupProvider.cjs,server/driveBackupService.cjs,server/googleConnectionService.cjs,server/meetingMailService.cjs,server/meetingCalendarDomain.cjs,server/meetingCalendarProvider.cjs,server/meetingCalendarService.cjs}"
+      "includeFiles": "{server/driveBackup*.cjs,server/googleConnectionService.cjs,server/meetingMailService.cjs,server/meetingCalendar*.cjs}"
     },
     "api/material-video-transcript.js": {
       "maxDuration": 60,
