@@ -44,6 +44,7 @@ function fakeDocument(){
     close(){this.open=false;}
     focus(){this.focusCount++;document.activeElement=this;}
     getBoundingClientRect(){return {left:0,top:0,right:1000,bottom:1000};}
+    scrollTo(options){this.scrollTop=options.top??this.scrollTop;this.lastScroll=options;}
     addEventListener(type,handler){(this.listeners[type]||=[]).push(handler);}
     removeEventListener(type,handler){this.listeners[type]=(this.listeners[type]||[]).filter(value=>value!==handler);}
     matches(selector){
@@ -83,7 +84,7 @@ function harness(t,options={}){
     deleteRecord(...args){calls.writes.push(['delete',...args]);throw new Error('Viewing must not delete');},
     getInsights:()=>[],getMaterials:()=>[],openPost:(...args)=>calls.navigation.push(['post',...args]),
     openMaterial:(...args)=>calls.navigation.push(['material',...args]),showToast:value=>calls.toasts.push(value)};
-  const context={document,GrowellMeetingRecordsDomain:domain};context.window=context;
+  const context={document,GrowellMeetingRecordsDomain:domain,GrowellMeetingRecordsPrint:options.printer};context.window=context;
   vm.runInNewContext(source,context,{filename:'meetingRecords.js'});
   const api=context.GrowellMeetingRecords;
   if(options.configure!==false)api.configure(adapter);
@@ -128,6 +129,26 @@ test('invalid or missing rounds do not open a dialog or request records',async t
   const h=harness(t,{rows:[record(1)]});
   for(const round of [undefined,null,'',' ',0,'０',-1,10000,'10000',1.5,NaN,Infinity,'1.0','1e0','0x1','+1','one',{},[]])h.api.openRound('emotion',round);
   await tick();assert.equal(h.current(),null);assert.deepEqual(h.calls.loads,[]);
+});
+
+test('core-summary buttons focus and scroll the matching content without navigation or writes',async t=>{
+  const row=record(1,{sections:[{id:'first',summary:'첫 주제',detail:'첫 원문'},{id:'second',summary:'다음 주제',detail:'다음 원문'}]});
+  const before=JSON.stringify(row),h=harness(t,{rows:[row]});h.api.openRound('emotion',1);await tick();
+  const body=h.current().querySelector('.mr-body'),target=h.current().querySelectorAll('[data-mr-story]').find(node=>node.getAttribute('data-mr-story')==='second');
+  body.scrollTop=60;body.getBoundingClientRect=()=>({top:40});target.getBoundingClientRect=()=>({top:420});
+  assert.match(h.html(),/aria-controls="mr-story-second"/);h.click('jump-section','second');
+  assert.equal(target.focusCount,1);assert.equal(body.lastScroll.top,426);assert.equal(body.lastScroll.behavior,'smooth');
+  assert.equal(JSON.stringify(row),before);assert.deepEqual(h.calls.navigation,[]);
+});
+
+test('record PDF action passes only the currently readable snapshot and cleans up on closing',async t=>{
+  const row=record(1),before=JSON.stringify(row);let printed,cleanup=0;
+  const printer={printRecord(browser,value,options){printed={value,options};return ()=>{cleanup++;};}};
+  const h=harness(t,{rows:[row],printer});h.adapter.getInsights=()=>[{id:'allowed',bookId:'emotion',round:1,answers:['원문']},{id:'private',bookId:'emotion',round:1,private:true,answers:['비공개']}];
+  h.api.openRound('emotion',1);await tick();h.click('print-record');
+  assert.equal(printed.value.id,row.id);assert.equal(printed.options.bookTitle,'감정의 책');
+  assert.deepEqual(Array.from(printed.options.insights,row=>row.id),['allowed']);
+  assert.match(h.html(),/PDF로 저장/);assert.equal(JSON.stringify(row),before);h.api.close();assert.equal(cleanup,1);
 });
 
 test('insight cards resolve current profile photos in read, edit and preview without changing content',async t=>{

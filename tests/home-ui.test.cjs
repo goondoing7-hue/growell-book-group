@@ -9,6 +9,7 @@ const GrowellReadingTimer=require('../readingTimerDomain.js');
 const GrowellDailyVerse=require('../dailyVerseDomain.js');
 const GrowellBookDetails=require('../bookDetails.js');
 const GrowellHabitSuggestions=require('../habitSuggestions.js');
+const GrowellMeetingCalendar=require('../meetingCalendar.js');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),source.indexOf('function welcomeHomeHtml(){'));
 const announcementSource=source.slice(source.indexOf('function canEditAnnouncement(){'),source.indexOf('function announceEditHtml(){'));
@@ -44,7 +45,7 @@ function control(attrs){
 function harness(){
   const controls={},queued=[],opened=[],renders=[],createdElements=[],toasts=[],storage=new Map();
   const books=[{id:'emotion',title:'감정의 책',totalPages:200},{id:'thought',title:'생각의 책',totalPages:250},{id:'locked',title:'잠긴 책',locked:true}];
-  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellBookDetails,GrowellHabitSuggestions,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
+  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellBookDetails,GrowellHabitSuggestions,GrowellMeetingCalendar,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
     BOOKS:books,SESSION:{userId:'me',keyB64:'my-key'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{},worksheets:{},habits:{},users:{me:{id:'me',name:'회원'}},readingMeta:{},readingLogs:{},announcement:{reading:{bookId:'emotion'},next:{}}},
     INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],
@@ -152,7 +153,7 @@ test('home meeting presents only date, time, place and reading range without pre
   assert.match(meeting,/<dt>시간<\/dt><dd>19:30<\/dd>/);
   assert.match(meeting,/<dt>장소<\/dt><dd>모임 공간 &lt;2층&gt;<\/dd>/);
   assert.match(meeting,/<dt>읽을 범위<\/dt><dd>3장 · 80~120쪽<\/dd>/);
-  assert.doesNotMatch(meeting,/button|생각의 책|숨겨야/);
+  assert.match(meeting,/btn-home-meeting-calendar/);assert.doesNotMatch(meeting,/btn-edit-announcement|생각의 책|숨겨야/);
   assert.doesNotMatch(html,/준비 보기|data-home-meeting|home-meeting-details|모임 안내 · 전체 독서 여정|숨겨야/);
 });
 
@@ -164,8 +165,8 @@ test('only active administrators see home meeting editing controls with escaped 
   c.editingAnnouncement=true;c.STATE.announcement.next.place='2층 "모임방" <안내>';
   const html=c.homeMeetingHtml();
   assert.match(html,/value="2층 &quot;모임방&quot; &lt;안내&gt;"/);
-  for(const id of ['an-date','an-time','an-place','an-chapter','an-range'])assert.match(html,new RegExp('id="'+id+'"'));
-  assert.doesNotMatch(html,/an-next-note|an-book|an-meeting-no|an-reading-note/);
+  for(const id of ['an-calendar-date','an-calendar-start','an-calendar-end','an-meeting-no','an-place','an-chapter','an-range'])assert.match(html,new RegExp('id="'+id+'"'));
+  assert.doesNotMatch(html,/an-next-note|an-book|an-reading-note/);
   c.announcementEditDraft=JSON.parse(JSON.stringify(c.STATE.announcement));c.announcementEditDraft.next.place='화면 갱신 중인 입력';
   assert.match(c.homeMeetingHtml(),/value="화면 갱신 중인 입력"/,'rerender uses the editing draft');
   c.STATE.users.me.isDeleted=true;assert.doesNotMatch(c.homeMeetingHtml(),/btn-save-announcement|btn-edit-announcement/);
@@ -175,18 +176,18 @@ test('only active administrators see home meeting editing controls with escaped 
 test('home meeting save patches visible fields while preserving the shared book and hidden announcement fields',async()=>{
   const {c,renders}=harness();c.STATE.users.me.isAdmin=true;c.editingAnnouncement=true;
   c.STATE.announcement={next:{date:'이전 날짜',time:'18:00',place:'이전 장소',note:'준비물 유지'},reading:{bookId:'thought',meetingNo:'3',chapter:'2장',range:'30~60쪽',concept:'개념 유지',note:'메모 유지'}};
-  const button={},inputs={'an-date':{value:' 10월 1일 '},'an-time':{value:'19:00'},'an-place':{value:'새 모임방'},'an-chapter':{value:'3장'},'an-range':{value:'60~90쪽'},'btn-save-announcement':button};
+  const button={},inputs={'an-calendar-date':{value:'2026-10-01'},'an-calendar-start':{value:'19:00'},'an-calendar-end':{value:'20:30'},'an-place':{value:'새 모임방'},'an-chapter':{value:'3장'},'an-range':{value:'60~90쪽'},'btn-save-announcement':button};
   c.document.getElementById=id=>inputs[id]||null;
   let pending;c.saveState=(mutate,opts)=>{pending={mutate,opts};return Promise.resolve(true);};
   const saved=c.saveAnnouncementEdit(button);
   assert.equal(c.editingAnnouncement,true);assert.equal(c.announcementSaveBusy,true);
   assert.equal(await c.saveAnnouncementEdit(button),false,'double submission is ignored');
   const next=JSON.parse(JSON.stringify(c.STATE));pending.mutate(next);c.STATE=next;
-  assert.equal(next.announcement.next.date,'10월 1일');assert.equal(next.announcement.reading.range,'60~90쪽');
+  assert.equal(next.announcement.next.date,'2026.10.01 (목)');assert.equal(next.announcement.next.time,'19:00–20:30');assert.equal(next.announcement.next.calendarDate,'2026-10-01');assert.equal(next.announcement.reading.range,'60~90쪽');
   assert.equal(next.announcement.next.note,'준비물 유지');assert.equal(next.announcement.reading.bookId,'thought');
   assert.equal(next.announcement.reading.meetingNo,'3');assert.equal(next.announcement.reading.concept,'개념 유지');assert.equal(next.announcement.reading.note,'메모 유지');
   pending.opts.onSuccess();await saved;
-  assert.equal(c.editingAnnouncement,false);assert.equal(renders.length,1);assert.match(c.homeMeetingHtml(),/10월 1일/);
+  assert.equal(c.editingAnnouncement,false);assert.equal(renders.length,1);assert.match(c.homeMeetingHtml(),/2026.10.01/);
 });
 
 test('failed meeting save preserves editing and input; queued saves recheck administrator access',async()=>{

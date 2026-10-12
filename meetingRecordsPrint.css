@@ -1,0 +1,36 @@
+.meeting-records-dialog .mr-core-jump{display:block;min-width:0;width:100%;padding:0;border:0;background:none;text-align:left;font:inherit;line-height:inherit;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit;cursor:pointer}
+.meeting-records-dialog .mr-core-jump:hover{text-decoration:underline;text-decoration-color:var(--mr-green);text-underline-offset:4px}
+.meeting-records-dialog .mr-story[data-mr-story]{scroll-margin-top:14px}
+.meeting-records-dialog .mr-story[data-mr-story]:focus{outline:2px solid var(--mr-green);outline-offset:9px;border-radius:2px}
+.meeting-records-dialog .mr-print-help{margin:0 auto 0 0;max-width:100%;font-size:11px;line-height:1.7;color:var(--ink-soft)}
+.mr-print-sheet{display:none}
+@page growell-meeting-record{size:A4 portrait;margin:16mm 17mm 18mm}
+@media print{
+  html:has(body.mr-record-printing){height:auto!important;overflow:visible!important}
+  body.mr-record-printing{display:block!important;width:auto!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;background:#fff!important;color:#26382f!important;overflow:visible!important;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  body.mr-record-printing> :not(.mr-print-sheet){display:none!important}
+  body.mr-record-printing>.mr-print-sheet{display:block!important;page:growell-meeting-record;position:static!important;width:auto!important;max-width:none!important;height:auto!important;margin:0!important;padding:0!important;overflow:visible!important;font:500 10.5pt/1.7 var(--font-body,'Pretendard Variable',Pretendard,Arial,sans-serif);color:#26382f!important;background:#fff!important}
+  .mr-print-sheet,.mr-print-sheet *{box-sizing:border-box;max-height:none!important;overflow:visible!important;box-shadow:none!important;text-shadow:none!important}
+  .mr-print-sheet h1,.mr-print-sheet h2,.mr-print-sheet h3,.mr-print-sheet h4{font-family:inherit;font-weight:700;word-break:keep-all;overflow-wrap:anywhere;break-after:avoid-page;page-break-after:avoid}
+  .mr-print-header{border-bottom:1.5pt solid #3c634d;padding-bottom:12pt;margin-bottom:18pt;break-inside:avoid-page;page-break-inside:avoid}
+  .mr-print-sheet h1{font-size:23pt;line-height:1.35;margin:8pt 0 9pt;letter-spacing:-.5pt}
+  .mr-print-brand{margin:0 0 5pt;color:#3c634d;font-size:10pt;font-weight:700}
+  .mr-print-meta,.mr-print-book,.mr-print-status{margin:3pt 0;color:#526156;font-size:9pt}
+  .mr-print-status{font-weight:700}
+  .mr-print-section{margin:18pt 0 0;break-inside:auto;page-break-inside:auto}
+  .mr-print-sheet h2{font-size:14pt;line-height:1.45;margin:0 0 9pt;padding-bottom:5pt;border-bottom:.6pt solid #d9e1d8;color:#3c634d}
+  .mr-print-sheet h3{font-size:11pt;line-height:1.55;margin:12pt 0 5pt}
+  .mr-print-sheet h4{font-size:9pt;line-height:1.6;margin:9pt 0 3pt;color:#526156}
+  .mr-print-text{margin:0 0 6pt;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;orphans:3;widows:3;break-inside:auto;page-break-inside:auto}
+  .mr-print-outline{margin:0;padding:0 0 0 18pt;list-style:decimal}
+  .mr-print-outline li{padding-left:3pt;break-inside:avoid-page;page-break-inside:avoid}
+  .mr-print-story,.mr-print-concept,.mr-print-insight,.mr-print-preparation{break-inside:auto;page-break-inside:auto}
+  .mr-print-story+.mr-print-story,.mr-print-concept+.mr-print-concept{margin-top:12pt}
+  .mr-print-insight{margin-top:15pt;padding-top:4pt;border-top:.6pt solid #d9e1d8}
+  .mr-print-preparation{padding:3pt 0 6pt}
+  .mr-print-preparation h3{margin-top:5pt}
+  .mr-print-sharing{padding:8pt 10pt;border-left:2pt solid #3c634d;background:#edf2e8}
+  .mr-print-note{margin:3pt 0 6pt;color:#526156;font-size:8.5pt;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+  .mr-print-resource{margin:5pt 0;font-size:10pt;line-height:1.7;overflow-wrap:anywhere;break-inside:avoid-page;page-break-inside:avoid}
+  .mr-print-sheet a{color:#3c634d;text-decoration:none}
+}

@@ -8,6 +8,7 @@ const DEPLOY_FILES = Object.freeze([
   'insightRounds.js', 'insightRounds.css',
   'meetingRecords.js', 'meetingRecords.css', 'meetingRecordsDomain.js', 'meetingRecordsBridge.js',
   'driveBackup.js', 'driveBackup.css',
+  'meetingCalendar.js', 'meetingCalendar.css', 'meetingRecordsPrint.js', 'meetingRecordsPrint.css',
   'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
   'materialsMedia.js', 'materialsVideo.js', 'materialsVideo.css', 'materialTranscript.js', 'materialTranscript.css', ...require('../vendor/pdfjs/manifest.json').files,
   'timerAlerts.js', 'timer-alert-sw.js', 'navigation.css', 'habitReminder.js', 'habitReminder.css',
@@ -29,6 +30,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/meeting-calendar-ui.test.cjs', 'tests/meeting-calendar-provider.test.cjs', 'tests/meeting-calendar-server.test.cjs', 'tests/meeting-calendar-sql.test.cjs', 'tests/meeting-records-print.test.cjs',
   'tests/insight-rounds.test.cjs',
   'tests/meeting-records-open-round.test.cjs',
   'tests/meeting-records-domain.test.cjs', 'tests/meeting-records-bridge.test.cjs', 'tests/meeting-records-sql.test.cjs',
@@ -51,6 +53,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'api/meeting-calendar.js', 'server/meetingCalendarDomain.cjs', 'server/meetingCalendarProvider.cjs', 'server/meetingCalendarService.cjs', 'server/meeting-calendar.sql', 'server/meeting-calendar-schedule.sql', 'server/MEETING_CALENDAR_SETUP.md',
   'server/meeting-records.sql', 'server/meeting-records-next-preparation.sql', 'server/meeting-records-verification.sql',
   'api/drive-backup.js', 'server/driveBackupDomain.cjs', 'server/driveBackupProvider.cjs', 'server/driveBackupService.cjs', 'server/drive-backup.sql', 'server/drive-backup-schedule.sql', 'server/DRIVE_BACKUP_SETUP.md',
   'server/materialTranscriptTranslation.cjs', 'server/material-video-translation.sql',
