@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { createMeetingRecordPdf, editorialContent } = require('../server/meetingRecordPdf.cjs');
 
 function fixture() {
@@ -41,6 +43,33 @@ test('actual PDF is a binary A4 attachment with embedded Korean/emoji fonts', as
   assert.match(pdf.toString('latin1'), /\/ToUnicode/);
   assert.match(pdf.subarray(-80).toString('latin1'), /%%EOF/);
   assert.equal(JSON.stringify(source), before);
+});
+
+test('a traced deployment without any implicit standard-font module still renders Korean PDF', () => {
+  const code = `
+    const Module = require('node:module');
+    const original = Module._resolveFilename;
+    let blocked = 0;
+    Module._resolveFilename = function(request, ...args) {
+      if (typeof request === 'string' && request.startsWith('#standard-fonts/')) {
+        blocked += 1;
+        const error = new Error('Synthetic omitted standard-font module');
+        error.code = 'MODULE_NOT_FOUND';
+        throw error;
+      }
+      return original.call(this, request, ...args);
+    };
+    require('./server/meetingRecordPdf.cjs').createMeetingRecordPdf({
+      record: { status: 'published', round: 1, date: '2026-10-10', topic: '한국어 모임 기록', sections: [{ summary: '균형', detail: '원문을 보존한 PDF이다. 😊' }], concepts: [] }
+    }).then(buffer => {
+      if (buffer.subarray(0, 5).toString() !== '%PDF-' || !buffer.subarray(-80).toString().includes('%%EOF')) throw new Error('invalid_binary');
+      console.log(JSON.stringify({ rendered: true, bytes: buffer.length, blocked }));
+    }).catch(() => { process.exitCode = 1; });
+  `;
+  const child = spawnSync(process.execPath, ['-e', code], { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 20000 });
+  assert.equal(child.status, 0, 'PDF must render even when deployment contains no dynamic standard-font modules');
+  const result = JSON.parse(child.stdout.trim());
+  assert.equal(result.rendered, true); assert.ok(result.bytes > 100); assert.equal(result.blocked, 0);
 });
 
 test('long Korean sections flow to multiple complete A4 pages without fixed clipping', async () => {

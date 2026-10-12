@@ -114,6 +114,10 @@ async function createMeetingRecordPdf(input) {
   strings.forEach(value => { fontRuns(value); fontRuns(value, true); });
   const doc = new PDFDocument({
     size: 'A4', bufferPages: true, autoFirstPage: false, compress: true,
+    // PDFKit's implicit Helvetica uses a dynamic package-import loader, which
+    // deployment tracing can omit. Initialize from our bundled font instead;
+    // every drawn font below is explicitly bundled and embedded as a subset.
+    font: FONT_REGULAR,
     margins: { top: 62, right: 48, bottom: 58, left: 48 },
     info: { Title: `GROWELL ${content.round}번째 모임 - ${content.topic}`, Author: 'GROWELL', Creator: 'GROWELL 모임 기록', Subject: '운영자가 정리한 모임 기록' }
   });
