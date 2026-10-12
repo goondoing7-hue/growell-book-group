@@ -60,3 +60,16 @@ test('service store sends only fixed privileged RPC endpoints and serializes exa
   assert.equal(calls[0][0],CONFIG.database+'/rest/v1/rpc/growell_meeting_mail_configure');assert.equal(calls[0][1].headers.Authorization,'Bearer fixture-service');
   assert.deepEqual(JSON.parse(calls[1][1].body),{p_job:JOB,p_lease:LEASE,p_operation:'prepare',p_payload:{record_revision:2}});
 });
+test('PDF preparation diagnostics reveal a fixed category only, preserving all source and credential details',()=>{
+  for(const [error,expected] of [
+    [Object.assign(new Error('PRIVATE PATH AND RECORD'),{code:'MODULE_NOT_FOUND'}),'pdf-module-missing'],
+    [Object.assign(new Error('PRIVATE PATH AND RECORD'),{code:'ENOENT'}),'pdf-font-asset-missing'],
+    [Object.assign(new Error('PRIVATE GLYPH AND RECORD'),{code:'PDF_UNSUPPORTED_GLYPH'}),'pdf-glyph-unsupported'],
+    [new TypeError('PRIVATE CONTENT'), 'pdf-content-invalid'],
+    [new Error('SECRET PROVIDER'), 'pdf-render-unavailable']
+  ]){
+    const result=Mail.pdfFailure(error);
+    assert.equal(result.code,expected);assert.equal(result.status,503);
+    assert.equal(result.message.includes('PRIVATE'),false);assert.equal(result.message.includes('SECRET'),false);
+  }
+});

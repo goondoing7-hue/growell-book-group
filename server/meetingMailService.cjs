@@ -3,8 +3,15 @@
 const D = require('./driveBackupDomain.cjs');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BOOKS = Object.freeze({emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'});
-const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','connection-required','invalid-request','service-unavailable','rate-limited','pdf-unavailable','record-changed']);
+const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','connection-required','invalid-request','service-unavailable','rate-limited','pdf-unavailable','record-changed','pdf-module-missing','pdf-font-asset-missing','pdf-glyph-unsupported','pdf-content-invalid','pdf-render-unavailable']);
 function safeError(error) { return SAFE_CODES.has(error?.code) ? error.code : 'service-unavailable'; }
+function pdfFailure(error) {
+  // Fixed diagnostics only. No original text, paths, addresses or provider
+  // messages may leave the authenticated worker route.
+  const code=error?.code==='MODULE_NOT_FOUND'?'pdf-module-missing':error?.code==='ENOENT'?'pdf-font-asset-missing':
+    error?.code==='PDF_UNSUPPORTED_GLYPH'?'pdf-glyph-unsupported':error instanceof TypeError?'pdf-content-invalid':'pdf-render-unavailable';
+  return new D.BackupError(code,503);
+}
 
 function createStore(config,request) {
   const headers = {apikey:config.serviceKey,Authorization:'Bearer '+config.serviceKey,'Content-Type':'application/json'};
@@ -45,8 +52,10 @@ function createService(options={}) {
     // Use only service-validated operator fields and expressly selected public
     // insights. Never receive a recipient, private record, HTML or URL from a caller.
     const record=snapshot.record;
-    const buffer=await pdfFactory({record,bookTitle:BOOKS[record.bookId],materials:snapshot.materials.map(m=>({title:typeof m.title==='string'?m.title:''})),
-      insights:snapshot.insights.map(i=>({authorName:i.authorName,date:i.date,q1:i.q1,q2:i.q2,q3:i.q3}))});
+    let buffer;
+    try { buffer=await pdfFactory({record,bookTitle:BOOKS[record.bookId],materials:snapshot.materials.map(m=>({title:typeof m.title==='string'?m.title:''})),
+      insights:snapshot.insights.map(i=>({authorName:i.authorName,date:i.date,q1:i.q1,q2:i.q2,q3:i.q3}))}); }
+    catch(error) { throw pdfFailure(error); }
     if (!Buffer.isBuffer(buffer) || buffer.length<100 || buffer.length>8*1024*1024 || buffer.subarray(0,5).toString()!=='%PDF-') throw new D.BackupError('pdf-unavailable');
     return {buffer,revision:record.revision,contentHash:snapshot.content_hash,filename:'GROWELL-meeting-'+record.round+'.pdf'};
   }
@@ -80,4 +89,4 @@ function createHandler(options={}) {
     }catch(error){return send(error instanceof D.BackupError?error.status:503,{error:safeError(error)});}
   };
 }
-module.exports={UUID,BOOKS,createStore,safeStatus,safeError,createService,createHandler};
+module.exports={UUID,BOOKS,createStore,safeStatus,safeError,pdfFailure,createService,createHandler};

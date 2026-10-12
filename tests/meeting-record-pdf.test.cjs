@@ -69,5 +69,5 @@ test('drafts, malformed fields, unsupported glyphs, and unsafe URLs fail before 
   const credentials = fixture(); credentials.materials[0].url = 'https://secret:password@example.com/';
   await assert.rejects(createMeetingRecordPdf(credentials), /자료 주소/);
   const unknownGlyph = fixture(); unknownGlyph.record.sections[0].detail = '지원하지 않는 문자 \u{10FFFF}';
-  await assert.rejects(createMeetingRecordPdf(unknownGlyph), /지원하지 않는 문자/);
+  await assert.rejects(createMeetingRecordPdf(unknownGlyph), error => error.code === 'PDF_UNSUPPORTED_GLYPH' && /지원하지 않는 문자/.test(error.message));
 });

@@ -25,7 +25,11 @@ function fontRuns(value, bold = false) {
     const characters = Array.from(item.segment);
     const supported = font => characters.every(character => /[\r\n\t]/.test(character) || font.hasGlyphForCodePoint(character.codePointAt(0)));
     const font = supported(main) ? mainName : supported(coverage.emoji) ? 'NotoEmoji' : null;
-    if (!font) throw new TypeError('PDF 글꼴에서 지원하지 않는 문자가 있어 원문을 보존한 채 발송을 중단했습니다.');
+    if (!font) {
+      const error = new TypeError('PDF 글꼴에서 지원하지 않는 문자가 있어 원문을 보존한 채 발송을 중단했습니다.');
+      error.code = 'PDF_UNSUPPORTED_GLYPH';
+      throw error;
+    }
     const previous = result[result.length - 1];
     if (previous && previous.font === font) previous.text += item.segment;
     else result.push({ font, text: item.segment });
