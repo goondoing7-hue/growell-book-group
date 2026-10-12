@@ -137,7 +137,6 @@ async function createMeetingRecordPdf(input) {
     doc.font(font).fontSize(size).fillColor(color);
   }
   doc.on('pageAdded', () => {
-    doc.font('PretendardBold').fontSize(8.5).fillColor(COLOR.green).text('GROWELL  |  모임별 기록', left, 29, { width, lineBreak: false });
     doc.moveTo(left, 47).lineTo(left + width, 47).lineWidth(0.6).strokeColor(COLOR.rule).stroke();
     doc.font(currentFont).fontSize(currentSize).fillColor(currentColor);
     doc.x = left; doc.y = 62;
@@ -158,25 +157,39 @@ async function createMeetingRecordPdf(input) {
   function paragraph(value, options = {}) {
     style(options.bold ? 'PretendardBold' : 'Pretendard', options.size || 10.5, options.color || COLOR.ink);
     // No fixed height / ellipsis: PDFKit flows every line over page boundaries.
-    write(value, { lineGap: 4.2, paragraphGap: 3, align: 'left', ...options.text });
-    doc.y += options.gap === undefined ? 8 : options.gap;
+    write(value, { lineGap: 1.7, paragraphGap: 1.5, align: 'left', ...options.text });
+    doc.y += options.gap === undefined ? 4 : options.gap;
+  }
+  function textHeight(value, font, size) {
+    const saved = [currentFont, currentSize, currentColor];
+    style(font, size);
+    const height = doc.heightOfString(value, { width, lineGap: 1.7, paragraphGap: 1.5 });
+    style(...saved);
+    return height;
+  }
+  function bodyLinesHeight(count) {
+    const saved = [currentFont, currentSize, currentColor];
+    style('Pretendard', 10.5);
+    const height = count * (doc.currentLineHeight(true) + 1.7);
+    style(...saved);
+    return height;
   }
   function heading(value, level = 2) {
     const fontSize = level === 2 ? 14 : 11.5;
     style('PretendardBold', fontSize, COLOR.green);
-    const height = doc.heightOfString(value, { width, lineGap: 3.2 });
+    const height = doc.heightOfString(value, { width, lineGap: 1.7 });
     // Keep the complete short heading and at least two body lines together.
-    reserve(height + 41 + (level === 2 ? 10 : 0));
-    if (level === 2) doc.y += 10;
-    write(value, { lineGap: 3.2 });
-    doc.y += 8;
+    reserve(height + 5 + bodyLinesHeight(2) + (level === 2 ? 6 : 0));
+    if (level === 2) doc.y += 6;
+    write(value, { lineGap: 1.7 });
+    doc.y += 5;
   }
-  paragraph(`${content.round}번째 모임 · ${dateLabel(content.date)}`, { size: 10, color: COLOR.muted, gap: 8 });
-  paragraph(content.topic, { bold: true, size: 23, gap: 9 });
-  if (content.bookTitle) paragraph(content.bookTitle, { size: 10.5, color: COLOR.muted, gap: 12 });
+  paragraph(`${content.round}번째 모임 · ${dateLabel(content.date)}`, { size: 10, color: COLOR.muted, gap: 4 });
+  paragraph(content.topic, { bold: true, size: 23, gap: 6 });
+  if (content.bookTitle) paragraph(content.bookTitle, { size: 10.5, color: COLOR.muted, gap: 8 });
 
   heading('핵심 요약');
-  content.sections.forEach((item, index) => paragraph(`${index + 1}. ${item.summary}`, { gap: 4 }));
+  content.sections.forEach((item, index) => paragraph(`${index + 1}. ${item.summary}`, { gap: 2 }));
   if (content.concepts.length) {
     heading('함께 살펴본 개념');
     content.concepts.forEach(item => { heading(item.word, 3); paragraph(item.meaning); });
@@ -200,15 +213,20 @@ async function createMeetingRecordPdf(input) {
     heading('함께 나눈 통찰');
     const labels = [['q1', '모임 소감'], ['q2', '새로운 깨달음'], ['q3', '실천할 배움']];
     content.insights.forEach((item, index) => {
-      // Keep an author/date together with the first answer heading and lines,
-      // rather than stranding a member's identity at the bottom of a page.
-      reserve(125);
-      heading(`${index + 1}. ${item.authorName}`, 3);
+      let date = '';
       if (item.date) {
         const parsed = new Date(item.date);
-        const date = Number.isFinite(parsed.getTime()) ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed) : item.date;
-        paragraph(date, { size: 9, color: COLOR.muted, gap: 5 });
+        date = Number.isFinite(parsed.getTime()) ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(parsed) : item.date;
       }
+      // Keep an author/date together with the first answer heading and lines,
+      // rather than stranding a member's identity at the bottom of a page.
+      // Measure this minimum instead of reserving a fixed 125 pt for each
+      // member, which previously left large empty bottoms on shorter pages.
+      reserve(textHeight(`${index + 1}. ${item.authorName}`, 'PretendardBold', 11.5) + 5
+        + (date ? textHeight(date, 'Pretendard', 9) + 3 : 0)
+        + textHeight(labels[0][1], 'PretendardBold', 11.5) + 5 + bodyLinesHeight(2));
+      heading(`${index + 1}. ${item.authorName}`, 3);
+      if (date) paragraph(date, { size: 9, color: COLOR.muted, gap: 3 });
       labels.forEach(([key, label]) => { heading(label, 3); paragraph(item[key] || '작성한 답변이 없습니다.'); });
     });
   }
@@ -216,14 +234,14 @@ async function createMeetingRecordPdf(input) {
     heading('함께 읽고 볼 자료');
     content.materials.forEach((item, index) => {
       style('PretendardBold', 10.5);
-      let resourceHeight = doc.heightOfString(`${index + 1}. ${item.title}`, { width, lineGap: 4.2, paragraphGap: 3 }) + 10;
+      let resourceHeight = doc.heightOfString(`${index + 1}. ${item.title}`, { width, lineGap: 1.7, paragraphGap: 1.5 }) + 6;
       if (item.url) {
         style('Pretendard', 9);
-        resourceHeight += doc.heightOfString(item.url, { width, lineGap: 4.2, paragraphGap: 3 }) + 15;
+        resourceHeight += doc.heightOfString(item.url, { width, lineGap: 1.7, paragraphGap: 1.5 }) + 8;
       }
       reserve(Math.min(resourceHeight, doc.page.height - doc.page.margins.top - doc.page.margins.bottom - 10));
-      paragraph(`${index + 1}. ${item.title}`, { bold: true, gap: item.url ? 3 : 8 });
-      if (item.url) paragraph(item.url, { size: 9, color: COLOR.green, text: { link: item.url }, gap: 9 });
+      paragraph(`${index + 1}. ${item.title}`, { bold: true, gap: item.url ? 2 : 4 });
+      if (item.url) paragraph(item.url, { size: 9, color: COLOR.green, text: { link: item.url }, gap: 5 });
     });
   }
   const pages = doc.bufferedPageRange();
@@ -231,6 +249,10 @@ async function createMeetingRecordPdf(input) {
     doc.switchToPage(pages.start + index);
     const previousBottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
+    // Draw page furniture after body flow has finished. Writing a header from
+    // pageAdded can inherit PDFKit's active paragraph wrapper on page breaks.
+    doc.font('PretendardBold').fontSize(8.5).fillColor(COLOR.green);
+    doc.text('GROWELL  |  모임별 기록', left, 29, { width, lineBreak: false });
     doc.font('Pretendard').fontSize(8).fillColor(COLOR.muted);
     doc.text(`${index + 1} / ${pages.count}`, left, doc.page.height - 34, { width, align: 'right', lineBreak: false });
     doc.page.margins.bottom = previousBottom;

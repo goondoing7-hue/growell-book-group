@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const PDFDocument = require('pdfkit');
 const { createMeetingRecordPdf, editorialContent } = require('../server/meetingRecordPdf.cjs');
 
 function fixture() {
@@ -84,6 +85,35 @@ test('long Korean sections flow to multiple complete A4 pages without fixed clip
   assert.ok(pages.length >= 4, `expected multi-page PDF, found ${pages.length}`);
   assert.equal((encoded.match(/\/MediaBox \[0 0 595\.28 841\.89\]/g) || []).length, pages.length);
   assert.match(pdf.subarray(-80).toString('latin1'), /%%EOF/);
+});
+
+test('compact A4 spacing fits complete editorial and public insight text into a bounded page count', async () => {
+  const source = fixture(), drawn = [];
+  source.record.sections = [
+    { summary: '감정·생각·몸의 균형 살피기', detail: ('감정과 생각과 몸은 서로 영향을 주는 관계이다. 한 영역이 지나치게 높아지거나 낮아지면 다른 영역의 움직임을 조정해 균형을 이룰 수 있다. 사고가 비대해질 때 행동을 활성화하면 머릿속에 머물던 생각을 낮추고 현실에 집중할 수 있다. 균형은 모든 영역을 같은 수준에 맞추는 일이 아니라 지금 필요한 방향으로 조절하는 과정이다.\n\n').repeat(13) + 'END_ONE' },
+    { summary: '자신의 감정에 이름 붙이기', detail: ('감정에 이름을 붙이는 것은 지금의 마음을 구체적으로 알아차리는 일이다. 막연한 불편함을 긴장, 서운함, 걱정과 같이 구분하면 원하는 도움이나 필요한 행동을 살필 수 있다. 같은 상황에서도 사람마다 경험과 기대가 다르기 때문에 느끼는 감정은 서로 다를 수 있다. 이름을 붙인 감정은 옳고 그름을 판단할 대상이 아니라 이해할 출발점이다. ').repeat(15) + 'END_TWO' },
+    { summary: '감정에 대한 감정 살펴보기', detail: ('감정에 대한 감정은 자신의 마음을 어떻게 바라보고 느끼는지 살피는 개념이다. 슬픔을 느끼면서 자신을 부끄럽게 여기는 마음처럼 한 감정 위에 다른 감정이 더해질 수 있다. 원래의 감정과 그 감정에 대한 해석을 구분하면 자신을 비난하는 습관을 알아차릴 수 있다. 감정을 빠르게 없애기보다 그 감정이 있다는 사실을 인정하고 필요한 반응을 고르는 과정이다. ').repeat(15) + 'END_THREE' }
+  ];
+  source.insights.push({ authorName: '두 번째 공개 작성자', date: '2026-10-10', q1: '서로의 이야기를 천천히 읽을 수 있어 의미가 있었다.', q2: ('불편한 감정을 빨리 없애려고 했지만 그 안에 내가 바라는 것이 숨어 있음을 살펴보았다. 감정에 이름을 붙이는 일부터 시작해도 좋겠다는 생각이 들었다. ').repeat(15) + 'PUBLIC_END', q3: '나의 마음을 알아차리고 필요한 행동을 작게 선택해 볼 것이다.' });
+  source.materials.push({ title: '긴 자료 주소', url: 'https://example.com/' + 'long-unbroken-resource-path'.repeat(23) + '?end=END_RESOURCE' });
+  const before = JSON.stringify(source), originalText = PDFDocument.prototype.text;
+  PDFDocument.prototype.text = function(value, ...args) {
+    if (typeof value === 'string') drawn.push(value);
+    return originalText.call(this, value, ...args);
+  };
+  let pdf;
+  try { pdf = await createMeetingRecordPdf(source); }
+  finally { PDFDocument.prototype.text = originalText; }
+  const pageCount = (pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length;
+  // This synthetic long record occupied seven pages before compact spacing.
+  // The budget protects paper length without shortening the authored input.
+  assert.ok(pageCount >= 4 && pageCount <= 5, `expected four to five complete A4 pages, found ${pageCount}`);
+  const rendered = drawn.join('');
+  source.record.sections.forEach(item => assert.ok(rendered.includes(item.detail), 'every authored detail must reach the PDF writer'));
+  source.insights.forEach(item => ['q1', 'q2', 'q3'].forEach(key => assert.ok(rendered.includes(item[key]), 'every public answer must reach the PDF writer')));
+  assert.ok(rendered.includes(source.materials[1].url));
+  assert.equal(drawn.filter(value => value === 'GROWELL  |  모임별 기록').length, pageCount, 'every continuation page has a header');
+  assert.equal(JSON.stringify(source), before);
 });
 
 test('drafts, malformed fields, unsupported glyphs, and unsafe URLs fail before delivery', async () => {
