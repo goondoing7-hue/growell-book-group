@@ -54,13 +54,17 @@ function rows(value, maximum) {
 // round insights are a separate canonical input. Never accept private entries,
 // author email/photo, source dumps, or arbitrary unknown object fields.
 // Reject oversize/malformed content rather than shortening the saved record.
-function editorialContent(input) {
+function editorialContent(input, options = {}) {
   if (!input || !input.record || typeof input.record !== 'object') throw new TypeError('모임 기록을 확인할 수 없습니다.');
   const record = input.record;
-  if (record.status !== undefined && record.status !== 'published') throw new TypeError('게시된 모임 기록만 이메일 PDF로 만들 수 있습니다.');
+  // Only an already-authorized server preview route can opt into drafts.
+  // Request payload fields are never treated as this option; the default
+  // email/worker path remains published-only and uses its canonical snapshot.
+  const preview = options.preview === true;
+  if (record.status !== undefined && record.status !== 'published' && !(preview && record.status === 'draft')) throw new TypeError('게시된 모임 기록만 이메일 PDF로 만들 수 있습니다.');
   if (!Number.isInteger(record.round) || record.round < 1 || record.round > 9999) throw new TypeError('모임 회차가 올바르지 않습니다.');
   const topic = text(record.topic, LIMITS.title);
-  if (!topic.trim()) throw new TypeError('모임 주제를 확인할 수 없습니다.');
+  if (!topic.trim() && !preview) throw new TypeError('모임 주제를 확인할 수 없습니다.');
   const date = text(record.date, 10, true);
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new TypeError('모임 날짜가 올바르지 않습니다.');
   const sections = rows(record.sections, LIMITS.sections).map(item => ({ summary: text(item && item.summary, LIMITS.summary), detail: text(item && item.detail, LIMITS.detail) }));
@@ -101,8 +105,9 @@ function dateLabel(value) { return value ? value.replace(/-/g, '.') : '날짜 �
  * No browser, network request, database write, AI call, or source mutation.
  * The caller must obtain an authorized canonical editorial snapshot first.
  */
-async function createMeetingRecordPdf(input) {
-  const content = editorialContent(input);
+async function createMeetingRecordPdf(input, options = {}) {
+  const content = editorialContent(input, options);
+  const title = content.topic.trim() ? content.topic : '모임 기록';
   // Validate every outgoing character before starting the stream. Unsupported
   // glyphs must never silently become missing squares or alter the source.
   const strings = [content.topic, content.bookTitle];
@@ -119,7 +124,7 @@ async function createMeetingRecordPdf(input) {
     // every drawn font below is explicitly bundled and embedded as a subset.
     font: FONT_REGULAR,
     margins: { top: 62, right: 48, bottom: 58, left: 48 },
-    info: { Title: `GROWELL ${content.round}번째 모임 - ${content.topic}`, Author: 'GROWELL', Creator: 'GROWELL 모임 기록', Subject: '운영자가 정리한 모임 기록' }
+    info: { Title: `GROWELL ${content.round}번째 모임 - ${title}`, Author: 'GROWELL', Creator: 'GROWELL 모임 기록', Subject: '운영자가 정리한 모임 기록' }
   });
   const chunks = [];
   const done = new Promise((resolve, reject) => {
@@ -194,34 +199,33 @@ async function createMeetingRecordPdf(input) {
     doc.y += 5;
   }
   paragraph(`${content.round}번째 모임 · ${dateLabel(content.date)}`, { size: 10, color: COLOR.muted, gap: 4 });
-  paragraph(content.topic, { bold: true, size: 23, gap: 6 });
+  paragraph(title, { bold: true, size: 23, gap: 6 });
   if (content.bookTitle) paragraph(content.bookTitle, { size: 10.5, color: COLOR.muted, gap: 8 });
 
   heading('핵심 요약');
   content.sections.forEach((item, index) => paragraph(`${index + 1}. ${item.summary}`, { gap: 2 }));
-  if (content.concepts.length) {
-    heading('함께 살펴본 개념');
-    content.concepts.forEach(item => { heading(item.word, 3); paragraph(item.meaning); });
+  if (!content.sections.length) paragraph('등록된 핵심 요약이 없습니다.', { color: COLOR.muted });
+  heading('함께 살펴본 개념');
+  content.concepts.forEach(item => { heading(item.word, 3); paragraph(item.meaning); });
+  if (!content.concepts.length) paragraph('등록된 개념이 없습니다.', { color: COLOR.muted });
+
+  // Five deliberate reading groups: overview, meeting details, two public
+  // insight pages, and preparation/resources. Oversize authored content can
+  // safely continue beyond its group; never clip or shrink it to five pages.
+  function nextReadingPage() {
+    insightContext = null;
+    doc.addPage();
   }
+  nextReadingPage();
+  heading('모임 내용');
   if (content.sections.length) {
-    heading('모임 내용');
     content.sections.forEach((item, index) => { heading(`${index + 1}. ${item.summary}`, 3); paragraph(item.detail); });
+  } else {
+    paragraph('등록된 모임 내용이 없습니다.', { color: COLOR.muted });
   }
-  if (content.nextMeeting) {
-    const next = content.nextMeeting;
-    const preparation = [];
-    const when = [next.date ? dateLabel(next.date) : '', next.time].filter(Boolean).join(' · ');
-    if (when) preparation.push(['일시', when]);
-    PREPARATION.forEach(([key, label]) => { if (next[key].trim()) preparation.push([label, next[key]]); });
-    if (preparation.length) {
-      heading('다음 모임 준비');
-      preparation.forEach(([label, value]) => { heading(label, 3); paragraph(value, { bold: label === '나눔' }); });
-    }
-  }
-  if (content.insights.length) {
-    heading('함께 나눈 통찰');
-    const labels = [['q1', '모임 소감'], ['q2', '새로운 깨달음'], ['q3', '실천할 배움']];
-    content.insights.forEach((item, index) => {
+
+  const labels = [['q1', '모임 소감'], ['q2', '새로운 깨달음'], ['q3', '실천할 배움']];
+  const insightLayouts = content.insights.map((item, index) => {
       let date = '';
       if (item.date) {
         const parsed = new Date(item.date);
@@ -230,6 +234,31 @@ async function createMeetingRecordPdf(input) {
       const name = `${index + 1}. ${item.authorName}`;
       const nameWidth = width - 120;
       const headerHeight = Math.max(textHeight(name, 'PretendardBold', 11.5, nameWidth), date ? textHeight(date, 'Pretendard', 9, 100) : 0) + 16;
+      const rowWidth = width - 15;
+      const height = headerHeight + 8 + 6 + labels.reduce((total, [key, label], questionIndex) => total
+        + textHeight(`${String(questionIndex + 1).padStart(2, '0')}  ${label}`, 'PretendardBold', 9.5, rowWidth) + 4
+        + textHeight(item[key] || '작성한 답변이 없습니다.', 'Pretendard', 10.5, rowWidth) + 6 + (questionIndex ? 6 : 0), 0);
+      return { item, index, date, name, nameWidth, headerHeight, height };
+  });
+  // Keep the original author order. Choose the author boundary nearest half
+  // the measured total, so six ordinary notes naturally become three + three.
+  // A long single answer stays whole in its group and uses safe continuation.
+  let split = insightLayouts.length ? 1 : 0;
+  if (insightLayouts.length > 1) {
+    const total = insightLayouts.reduce((sum, item) => sum + item.height, 0);
+    let prefix = 0, closest = Infinity;
+    for (let index = 0; index < insightLayouts.length - 1; index += 1) {
+      prefix += insightLayouts[index].height;
+      const difference = Math.abs(total - prefix * 2);
+      if (difference < closest) { closest = difference; split = index + 1; }
+    }
+  }
+  const insightPages = [insightLayouts.slice(0, split), insightLayouts.slice(split)];
+  insightPages.forEach((items, part) => {
+    nextReadingPage();
+    heading(part ? '함께 나눈 통찰 · 계속' : '함께 나눈 통찰');
+    if (!items.length) paragraph(part && content.insights.length ? '모든 공개 통찰을 앞 페이지에서 확인할 수 있습니다.' : '등록된 공개 통찰이 없습니다.', { color: COLOR.muted });
+    items.forEach(({ item, index, date, name, nameWidth, headerHeight }, localIndex) => {
       // A compact author bar distinguishes each complete note. Reserve only
       // its identity, first question and two answer lines; do not force an
       // entire long note onto the next page or place text in a fixed box.
@@ -237,7 +266,7 @@ async function createMeetingRecordPdf(input) {
       // continuation of the previous author or an answer not yet written.
       insightContext = null;
       reserve(headerHeight + 8 + textHeight(`01  ${labels[0][1]}`, 'PretendardBold', 9.5) + 4 + bodyLinesHeight(2) + 6);
-      if (index) doc.y += 6;
+      if (localIndex) doc.y += 6;
       const headerTop = doc.y;
       doc.rect(left, headerTop, width, headerHeight).fill(COLOR.pale);
       doc.y = headerTop + 8;
@@ -275,9 +304,21 @@ async function createMeetingRecordPdf(input) {
       });
     });
     insightContext = null;
+  });
+
+  nextReadingPage();
+  heading('다음 모임 준비');
+  const preparation = [];
+  if (content.nextMeeting) {
+    const next = content.nextMeeting;
+    const when = [next.date ? dateLabel(next.date) : '', next.time].filter(Boolean).join(' · ');
+    if (when) preparation.push(['일시', when]);
+    PREPARATION.forEach(([key, label]) => { if (next[key].trim()) preparation.push([label, next[key]]); });
   }
+  preparation.forEach(([label, value]) => { heading(label, 3); paragraph(value, { bold: label === '나눔' }); });
+  if (!preparation.length) paragraph('등록된 다음 모임 준비가 없습니다.', { color: COLOR.muted });
+  heading('함께 읽고 볼 자료');
   if (content.materials.length) {
-    heading('함께 읽고 볼 자료');
     content.materials.forEach((item, index) => {
       style('PretendardBold', 10.5);
       let resourceHeight = doc.heightOfString(`${index + 1}. ${item.title}`, { width, lineGap: 1.7, paragraphGap: 1.5 }) + 6;
@@ -289,6 +330,8 @@ async function createMeetingRecordPdf(input) {
       paragraph(`${index + 1}. ${item.title}`, { bold: true, gap: item.url ? 2 : 4 });
       if (item.url) paragraph(item.url, { size: 9, color: COLOR.green, text: { link: item.url }, gap: 5 });
     });
+  } else {
+    paragraph('연결된 자료가 없습니다.', { color: COLOR.muted });
   }
   const pages = doc.bufferedPageRange();
   for (let index = 0; index < pages.count; index += 1) {

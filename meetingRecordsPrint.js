@@ -108,5 +108,51 @@
     try{browser.print();}catch(error){cleanup();throw error;}
     return cleanup;
   }
-  return {buildPrintSheet:buildPrintSheet,printRecord:printRecord};
+  function downloadRecord(browser,record,options){
+    options=options||{};
+    var controller=browser&&typeof browser.AbortController==='function'?new browser.AbortController():null;
+    var cancelled=false,timer=null;
+    function active(){
+      if(cancelled||typeof options.isCurrent!=='function'||!options.isCurrent())throw new Error('계정이나 화면이 변경되어 PDF 다운로드를 중단했어요.');
+    }
+    var task=(async function(){
+      active();
+      if(!browser||typeof browser.fetch!=='function'||!browser.document||!browser.URL||typeof browser.URL.createObjectURL!=='function'||typeof options.getAccessToken!=='function')throw new Error('PDF 다운로드 기능을 불러오지 못했어요. 페이지를 새로 열어주세요.');
+      if(!record||!record.id||!record.bookId||!Number.isInteger(record.round)||record.round<1||record.round>9999)throw new Error('내려받을 모임 기록을 확인하지 못했어요.');
+      var payload=options.preview?{preview:JSON.parse(JSON.stringify(record))}:{bookId:record.bookId,recordId:record.id};
+      var token=await options.getAccessToken();active();
+      if(typeof token!=='string'||!token)throw new Error('다시 로그인한 뒤 PDF를 저장해주세요.');
+      if(controller&&typeof browser.setTimeout==='function')timer=browser.setTimeout(function(){cancelled=true;controller.abort();},65000);
+      var response=await browser.fetch('/api/meeting-record-pdf',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+        body:JSON.stringify(payload),credentials:'same-origin',cache:'no-store',redirect:'error',signal:controller?controller.signal:undefined});
+      active();
+      if(!response.ok){
+        var result;try{result=await response.json();}catch(_){result={};}active();
+        var messages={'authentication-required':'다시 로그인한 뒤 PDF를 저장해주세요.','membership-required':'이 모임 기록을 내려받을 권한이 없어요.',
+          'record-unavailable':'모임 기록을 다시 연 뒤 PDF를 저장해주세요.','record-changed':'모임 기록이 변경됐어요. 다시 연 뒤 PDF를 저장해주세요.',
+          'not-configured':'PDF 다운로드 준비가 아직 완료되지 않았어요.','invalid-request':'모임 기록 내용을 확인한 뒤 다시 저장해주세요.',
+          'pdf-glyph-unsupported':'PDF 글꼴에서 지원하지 않는 문자가 있어요. 원문은 그대로 보존돼 있어요.','rate-limited':'잠시 후 다시 PDF를 저장해주세요.'};
+        throw new Error(messages[result&&result.error]||'PDF를 만들지 못했어요. 잠시 후 다시 저장해주세요.');
+      }
+      var type=response.headers&&response.headers.get('Content-Type')||'',length=Number(response.headers&&response.headers.get('Content-Length'));
+      if(type.split(';')[0].trim().toLowerCase()!=='application/pdf'||length>8*1024*1024)throw new Error('PDF 파일을 확인하지 못했어요. 잠시 후 다시 저장해주세요.');
+      var blob=await response.blob();active();
+      if(!blob||blob.size<100||blob.size>8*1024*1024||await blob.slice(0,5).text()!=='%PDF-'||!(await blob.slice(-1024).text()).includes('%%EOF'))throw new Error('완전한 PDF 파일을 받지 못했어요. 다시 저장해주세요.');
+      active();
+      var filename='GROWELL-meeting-'+record.round+'.pdf',url=browser.URL.createObjectURL(blob),anchor=browser.document.createElement('a');
+      try{
+        anchor.href=url;anchor.download=filename;anchor.setAttribute('hidden','');anchor.setAttribute('rel','noopener');
+        browser.document.body.appendChild(anchor);active();anchor.click();
+      }finally{
+        anchor.remove();
+        if(typeof browser.setTimeout==='function')browser.setTimeout(function(){browser.URL.revokeObjectURL(url);},60000);
+        else browser.URL.revokeObjectURL(url);
+      }
+      return {filename:filename,size:blob.size};
+    })();
+    task.cancel=function(){cancelled=true;if(controller)controller.abort();};
+    var completed=task.finally(function(){if(timer!==null&&typeof browser.clearTimeout==='function')browser.clearTimeout(timer);});
+    completed.cancel=task.cancel;return completed;
+  }
+  return {buildPrintSheet:buildPrintSheet,printRecord:printRecord,downloadRecord:downloadRecord};
 });

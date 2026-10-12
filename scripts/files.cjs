@@ -31,6 +31,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/meeting-record-download.test.cjs',
   'tests/meeting-mail-server.test.cjs', 'tests/meeting-mail-sql.test.cjs', 'tests/meeting-record-pdf.test.cjs', 'tests/meeting-email-worker.test.cjs',
   'tests/google-connection-ui.test.cjs', 'tests/google-connection-server.test.cjs',
   'tests/meeting-calendar-ui.test.cjs', 'tests/meeting-calendar-provider.test.cjs', 'tests/meeting-calendar-server.test.cjs', 'tests/meeting-calendar-sql.test.cjs', 'tests/meeting-records-print.test.cjs',
@@ -56,6 +57,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'api/meeting-record-pdf.js', 'server/meetingRecordDownloadService.cjs',
   'api/meeting-record-mail.js', 'server/meetingMailService.cjs', 'server/meetingRecordPdf.cjs', 'server/meeting-record-email-worker.ts', 'server/meeting-mail.sql', 'server/meeting-mail-activate.sql', 'server/meeting-mail-schedule.sql', 'server/MEETING_MAIL_SETUP.md',
   'server/fonts/Pretendard-Regular.otf', 'server/fonts/Pretendard-Bold.otf', 'server/fonts/NotoEmoji.ttf', 'server/fonts/OFL.txt', 'server/fonts/NotoEmoji-OFL.txt', 'server/fonts/README.md',
   'server/googleConnectionService.cjs',

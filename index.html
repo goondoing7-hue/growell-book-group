@@ -4158,8 +4158,7 @@ function headerHtml(route){
         '<div class="profile-dropdown-sep"></div>' +
         '<a class="profile-dropdown-item" href="#/archive" id="btn-profile-archive">아카이브</a>' +
         '<a class="profile-dropdown-item" href="#/profile/edit" id="btn-goto-profile-edit">프로필 수정</a>' +
-        '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">Google 연동</button>' +
-        '<button class="profile-dropdown-item" id="btn-profile-habit-reminder" type="button" aria-haspopup="dialog">습관 알림 연동</button>' +
+        '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">연동</button>' +
         (admin
           ? '<a class="profile-dropdown-item" href="#/admin/users">가입자 목록</a>'
           : '<button class="profile-dropdown-item" id="btn-grant-admin" type="button">운영자 코드 입력</button>') +
@@ -7804,12 +7803,6 @@ function bindEvents(route){
     if(profileToggle)profileToggle.setAttribute('aria-expanded','false');
     openGoogleConnection(profileToggle);
   });
-  var profileHabitReminderBtn=document.getElementById('btn-profile-habit-reminder');
-  if(profileHabitReminderBtn)profileHabitReminderBtn.addEventListener('click',function(){
-    if(profileDropdown)profileDropdown.hidden=true;
-    if(profileToggle)profileToggle.setAttribute('aria-expanded','false');
-    openHabitReminder(null,profileToggle);
-  });
   bindAccountDeletion();
   app.querySelectorAll('.admin-user-delete-btn').forEach(function(b){
     b.addEventListener('click', function(){ doDeleteAccount(b.getAttribute('data-user-id')); });
@@ -8821,6 +8814,7 @@ var meetingRecordsBridge=GrowellMeetingRecordsBridge({
 GrowellMeetingRecords.configure({
   sessionUserId:function(){return SESSION&&SESSION.userId;},
   sessionEpoch:function(){return saveSessionEpoch;},
+  getAccessToken:function(){return habitSyncAccessToken(SESSION,saveSessionEpoch);},
   isAdmin:isAdmin,canReadBook:meetingMemberCanRead,bookById:bookById,
   loadRecords:meetingRecordsBridge.loadRecords,saveRecord:meetingRecordsBridge.saveRecord,
   deleteRecord:meetingRecordsBridge.deleteRecord,getInsights:meetingRecordsBridge.getInsights,

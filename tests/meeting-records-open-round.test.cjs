@@ -141,14 +141,37 @@ test('core-summary buttons focus and scroll the matching content without navigat
   assert.equal(JSON.stringify(row),before);assert.deepEqual(h.calls.navigation,[]);
 });
 
-test('record PDF action passes only the currently readable snapshot and cleans up on closing',async t=>{
-  const row=record(1),before=JSON.stringify(row);let printed,cleanup=0;
-  const printer={printRecord(browser,value,options){printed={value,options};return ()=>{cleanup++;};}};
+test('record PDF action downloads directly without copying client-side insights or writing source records',async t=>{
+  const row=record(1),before=JSON.stringify(row);let downloaded;
+  const printer={downloadRecord(browser,value,options){downloaded={value,options};return Promise.resolve({filename:'GROWELL-meeting-1.pdf'});},printRecord(){throw new Error('PDF save must not open a print dialog');}};
   const h=harness(t,{rows:[row],printer});h.adapter.getInsights=()=>[{id:'allowed',bookId:'emotion',round:1,answers:['원문']},{id:'private',bookId:'emotion',round:1,private:true,answers:['비공개']}];
-  h.api.openRound('emotion',1);await tick();h.click('print-record');
-  assert.equal(printed.value.id,row.id);assert.equal(printed.options.bookTitle,'감정의 책');
-  assert.deepEqual(Array.from(printed.options.insights,row=>row.id),['allowed']);
-  assert.match(h.html(),/PDF로 저장/);assert.equal(JSON.stringify(row),before);h.api.close();assert.equal(cleanup,1);
+  h.adapter.getAccessToken=async()=> 'synthetic-token';
+  h.api.openRound('emotion',1);await tick();h.click('download-record');await tick();
+  assert.equal(downloaded.value.id,row.id);assert.equal(downloaded.options.getAccessToken,h.adapter.getAccessToken);
+  assert.equal(downloaded.options.isCurrent(),true);assert.equal(downloaded.options.preview,false);
+  assert.equal(downloaded.options.insights,undefined);assert.equal(downloaded.options.materials,undefined);
+  assert.match(h.html(),/PDF 파일을 바로 내려받습니다/);assert.doesNotMatch(h.html(),/인쇄 창|PDF로 저장/);
+  assert.equal(JSON.stringify(row),before);assert.deepEqual(h.calls.toasts,['PDF 파일을 내려받았어요.']);
+});
+
+test('a PDF download blocks repeat clicks and cancels when the owner session resets',async t=>{
+  const deferredDownload=deferred();let calls=0,cancelled=0,downloadOptions;
+  deferredDownload.promise.cancel=()=>{cancelled++;};
+  const h=harness(t,{rows:[record(1)],printer:{downloadRecord(browser,value,options){calls++;downloadOptions=options;return deferredDownload.promise;}}});
+  h.adapter.getAccessToken=async()=> 'synthetic-token';h.api.openRound('emotion',1);await tick();
+  h.click('download-record');h.click('download-record');assert.equal(calls,1);
+  h.session.epoch++;h.api.reset();assert.equal(cancelled,1);assert.equal(downloadOptions.isCurrent(),false);
+  deferredDownload.resolve({filename:'GROWELL-meeting-1.pdf'});await tick();assert.deepEqual(h.calls.toasts,[]);
+});
+
+test('operator preview PDF includes unsaved changes without saving or changing the source',async t=>{
+  const row=record(1,{userId:'reader'}),before=JSON.stringify(row);let downloaded;
+  const h=harness(t,{rows:[row],session:{admin:true},printer:{downloadRecord(browser,value,options){downloaded={value,options};return Promise.resolve();}}});
+  h.adapter.getAccessToken=async()=> 'synthetic-token';h.api.openRound('emotion',1);await tick();h.click('edit');
+  h.input('[data-mr-field="topic"]','작성 중인 확인용 제목');h.input('[data-mr-field="round"]','2');h.click('preview-mode');h.click('download-record');await tick();
+  assert.equal(downloaded.value.topic,'작성 중인 확인용 제목');assert.equal(downloaded.options.preview,true);
+  assert.equal(downloaded.value.round,2);assert.equal(downloaded.value.status,'draft');
+  assert.equal(JSON.stringify(row),before);assert.deepEqual(h.calls.writes,[]);
 });
 
 test('insight cards resolve current profile photos in read, edit and preview without changing content',async t=>{

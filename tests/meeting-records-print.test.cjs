@@ -83,3 +83,53 @@ test('draft and unsaved preview labels remain explicit on printed copies',()=>{
   assert.match(api.buildPrintSheet(b.document,row).textContent,/임시 저장 · 나에게만 공개/);
   assert.match(api.buildPrintSheet(b.document,row,{preview:true}).textContent,/작성 중인 내용의 미리보기/);
 });
+
+function downloadBrowser(fetch){
+  const clicked=[],created=[],revoked=[],document={body:new Element('body'),createElement:tag=>{
+    const element=new Element(tag);element.click=()=>clicked.push({href:element.href,filename:element.download});return element;
+  }};
+  return {document,fetch,AbortController,URL:{createObjectURL:blob=>{created.push(blob);return 'blob:synthetic-pdf';},revokeObjectURL:url=>revoked.push(url)},
+    print(){throw new Error('PDF download must not print');},clicked,created,revoked};
+}
+function pdfResponse(extra={}){
+  const blob=new Blob(['%PDF-1.3\n'+('synthetic binary content ').repeat(15)+'\n%%EOF']);
+  return {ok:true,headers:{get:name=>name.toLowerCase()==='content-type'?'application/pdf':String(blob.size)},blob:async()=>blob,...extra};
+}
+
+test('PDF download uses a same-origin authorized request and downloads a complete file without printing',async()=>{
+  const calls=[],b=downloadBrowser(async(url,options)=>{calls.push({url,options});return pdfResponse();}),row=record(),before=JSON.stringify(row);
+  const result=await api.downloadRecord(b,row,{getAccessToken:async()=> 'synthetic-token',isCurrent:()=>true});
+  assert.equal(calls[0].url,'/api/meeting-record-pdf');assert.deepEqual(JSON.parse(calls[0].options.body),{bookId:row.bookId,recordId:row.id});
+  assert.equal(calls[0].options.headers.Authorization,'Bearer synthetic-token');assert.equal(calls[0].options.credentials,'same-origin');
+  assert.equal(calls[0].options.cache,'no-store');assert.equal(calls[0].options.redirect,'error');
+  assert.deepEqual(b.clicked,[{href:'blob:synthetic-pdf',filename:'GROWELL-meeting-1.pdf'}]);
+  assert.deepEqual(b.revoked,['blob:synthetic-pdf']);assert.equal(b.document.body.children.length,0);
+  assert.equal(result.filename,'GROWELL-meeting-1.pdf');assert.equal(JSON.stringify(row),before);
+});
+
+test('preview download sends only its complete editorial copy without public or private client-side notes',async()=>{
+  let sent;const b=downloadBrowser(async(_,options)=>{sent=JSON.parse(options.body);return pdfResponse();}),row=record(),before=JSON.stringify(row);
+  await api.downloadRecord(b,row,{preview:true,getAccessToken:async()=> 'synthetic-token',isCurrent:()=>true,insights:['private client note'],materials:['injected material']});
+  assert.deepEqual(sent,{preview:row});assert.equal(JSON.stringify(row),before);
+});
+
+test('changed sessions or a cancelled download never create a PDF download link',async()=>{
+  let resolve,current=true,calls=0;const token=new Promise(r=>resolve=r),b=downloadBrowser(async()=>{calls++;return pdfResponse();});
+  const task=api.downloadRecord(b,record(),{getAccessToken:()=>token,isCurrent:()=>current});current=false;resolve('old-token');
+  await assert.rejects(task,/계정이나 화면/);assert.equal(calls,0);assert.deepEqual(b.clicked,[]);
+  let finish;const response=new Promise(r=>finish=r),c=downloadBrowser(()=>response);
+  const cancelled=api.downloadRecord(c,record(),{getAccessToken:async()=> 'synthetic-token',isCurrent:()=>true});
+  await Promise.resolve();cancelled.cancel();finish(pdfResponse());await assert.rejects(cancelled,/계정이나 화면/);
+  assert.deepEqual(c.created,[]);assert.deepEqual(c.clicked,[]);
+});
+
+test('failed, partial or non-PDF responses never download or expose server details',async()=>{
+  for(const response of [pdfResponse({ok:false,json:async()=>({error:'PRIVATE PROVIDER DETAILS'})}),
+    pdfResponse({headers:{get:()=> 'text/html'}}),pdfResponse({blob:async()=>new Blob(['not a pdf file'])}),
+    pdfResponse({blob:async()=>new Blob(['%PDF-'+('incomplete ').repeat(30)])}),
+    pdfResponse({headers:{get:name=>name.toLowerCase()==='content-type'?'application/pdf':String(9*1024*1024)}})]){
+    const b=downloadBrowser(async()=>response);
+    await assert.rejects(api.downloadRecord(b,record(),{getAccessToken:async()=> 'synthetic-token',isCurrent:()=>true}),error=>!error.message.includes('PRIVATE PROVIDER'));
+    assert.deepEqual(b.clicked,[]);assert.deepEqual(b.created,[]);
+  }
+});

@@ -8,7 +8,7 @@
   // The application owns authorization, RPCs and original-post navigation. No
   // meeting content or draft is persisted by this module outside those RPCs.
   var app=null,dialog=null,subdialog=null,returnFocus=null,owner=null,epoch=null;
-  var state=null,drafts=Object.create(null),request=0,busy=false,carouselDispose=null,printDispose=null;
+  var state=null,drafts=Object.create(null),request=0,busy=false,carouselDispose=null,downloadCancel=null;
   var limits={sections:20,concepts:30,materials:30,topic:160,summary:120,detail:10000,word:80,meaning:4000};
   var paths={close:'m6 6 12 12M18 6 6 18',back:'m15 18-6-6 6-6',next:'m9 6 6 6-6 6',plus:'M12 5v14M5 12h14',book:'M12 5v15M12 5C8 2 4 3 2 4v15c4-2 7-1 10 1 3-2 6-3 10-1V4c-2-1-6-2-10 1Z',file:'M14 2H5v20h14V7l-5-5Zm0 0v6h5M8 12h8M8 16h8',out:'M8 5h11v11M19 5 5 19',play:'m9 5 11 7-11 7V5Z'};
   function icon(name){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+paths[name]+'"/></svg>';}
@@ -48,7 +48,7 @@
   }
   function close(restore,force){
     if(busy&&!force)return false;
-    if(printDispose){printDispose();printDispose=null;}
+    if(downloadCancel){downloadCancel();downloadCancel=null;}
     snapshotDraft();closeSub(false);request++;
     if(carouselDispose){carouselDispose();carouselDispose=null;}
     if(dialog){var node=dialog,focus=returnFocus;dialog=null;returnFocus=null;state=null;if(node.open)node.close();node.remove();if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('meeting-records');if(restore!==false&&focus&&focus.isConnected)focus.focus({preventScroll:true});}
@@ -211,8 +211,8 @@
   function editorHtml(record){return '<div class="mr-body"><h1 id="mr-dialog-title" class="mr-edit-title">모임의 이야기를 남겨요</h1><p class="mr-editor-book">'+esc(book().title)+'</p>'+(state.dirty?'<div class="mr-notice">작성 중인 내용을 이어서 편집하고 있어요.</div>':'')+'<div class="mr-fields-row"><label class="mr-field"><span>모임 회차</span><input type="number" min="1" max="9999" step="1" inputmode="numeric" data-mr-field="round" value="'+esc(record.round)+'" aria-label="모임 회차"></label><label class="mr-field"><span>모임 날짜</span><input type="date" data-mr-field="date" value="'+esc(record.date)+'"></label></div><label class="mr-field"><span>모임 주제</span><input type="text" maxlength="'+limits.topic+'" data-mr-field="topic" value="'+esc(record.topic)+'" placeholder="이번 모임에서 함께 나눈 주제"><small>모임 주제가 기록의 제목으로 표시돼요.</small></label>'+outlineHtml(record)+conceptsHtml(record)+'<section class="mr-edit-section mr-divider"><div class="mr-section-head"><h2>모임 내용</h2><span class="mr-auto">핵심 요약과 연결</span></div><p class="mr-subtitle">각 주제 아래에 모임에서 나눈 내용을 풀어 적어주세요.</p>'+record.sections.map(function(section,i){return '<label class="mr-field mr-detail-field"><span><span class="mr-number">'+(i+1)+'.</span><span data-mr-heading="'+esc(section.id)+'">'+esc(section.summary||'새 주제를 입력해주세요.')+'</span></span><textarea maxlength="'+limits.detail+'" rows="4" data-mr-section="'+esc(section.id)+'" data-part="detail" placeholder="이 주제에 대해 나눈 이야기와 생각">'+esc(section.detail)+'</textarea></label>';}).join('')+(!record.sections.length?'<div class="mr-empty">위에서 핵심 요약의 주제를 추가해주세요.</div>':'')+'</section>'+preparationHtml(record,true)+carouselHtml(record)+resourcesHtml(record,true)+'</div>';}
   function actionsHtml(){
     if(state.view==='list')return '';
-    if(state.view==='edit'||state.preview){var published=state.record&&state.record.status==='published';return '<div class="mr-actions"><span class="mr-note" data-mr-save-note>'+ (published?'저장하면 게시한 기록에 반영돼요.':'임시 저장한 기록은 나에게만 보여요.')+'</span>'+(state.preview?button('PDF 저장','print-record'):'')+(!published?button('임시 저장','save-draft'):'')+button(published?'수정 저장':'게시하기','publish','mr-button mr-primary')+'</div>';}
-    return '<div class="mr-actions"><p class="mr-print-help">인쇄 창에서 ‘PDF로 저장’을 선택해주세요.</p>'+button('PDF 저장','print-record')+(editable(state.record)?button('기록 삭제','delete','mr-link mr-danger')+button(state.record.status==='draft'?'이어서 작성':'내용 수정','edit'):'')+'</div>';
+    if(state.view==='edit'||state.preview){var published=state.record&&state.record.status==='published';return '<div class="mr-actions"><span class="mr-note" data-mr-save-note>'+ (published?'저장하면 게시한 기록에 반영돼요.':'임시 저장한 기록은 나에게만 보여요.')+'</span>'+(state.preview?button('PDF 저장','download-record'):'')+(!published?button('임시 저장','save-draft'):'')+button(published?'수정 저장':'게시하기','publish','mr-button mr-primary')+'</div>';}
+    return '<div class="mr-actions"><p class="mr-print-help">PDF 파일을 바로 내려받습니다.</p>'+button('PDF 저장','download-record')+(editable(state.record)?button('기록 삭제','delete','mr-link mr-danger')+button(state.record.status==='draft'?'이어서 작성':'내용 수정','edit'):'')+'</div>';
   }
   function render(preserveScroll,focus){
     if(!dialog||!state)return;
@@ -250,7 +250,7 @@
     if(action==='create'){beginEdit(null);return;}
     if(action==='edit'){beginEdit(state.record);return;}
     if(action==='jump-section'){jumpToSection(id);return;}
-    if(action==='print-record'){printMeeting();return;}
+    if(action==='download-record'){downloadMeeting();return;}
     if(action==='concept'){openConcept(id,target);return;}
     if(action==='material'){navigateOriginal('material',id);return;}
     if(action==='delete'){confirmDelete(target);return;}
@@ -279,16 +279,22 @@
     var reduced=root.matchMedia&&root.matchMedia('(prefers-reduced-motion: reduce)').matches;
     body.scrollTo({top:Math.max(0,top),behavior:reduced?'instant':'smooth'});
   }
-  function printMeeting(){
-    if(!state||!allowed(state.bookId))return;
+  function downloadMeeting(){
+    if(busy||!state||!allowed(state.bookId))return;
     var record=state.preview?state.draft:state.record;if(!record)return;
-    var printer=root.GrowellMeetingRecordsPrint;
-    if(!printer||typeof printer.printRecord!=='function'){setMessage('PDF 저장 기능을 불러오지 못했어요. 페이지를 새로 열어주세요.');return;}
-    if(printDispose){printDispose();printDispose=null;}
-    try{
-      printDispose=printer.printRecord(root,record,{bookTitle:book().title,preview:state.preview,insights:insightRows(record),materials:materialRows()});
-      setMessage('');
-    }catch(error){setMessage(error&&error.message&&/[가-힣]/.test(error.message)?error.message:'인쇄 창을 열지 못했어요. 잠시 후 다시 시도해주세요.');}
+    var downloader=root.GrowellMeetingRecordsPrint;
+    if(!downloader||typeof downloader.downloadRecord!=='function'||typeof app.getAccessToken!=='function'){setMessage('PDF 저장 기능을 불러오지 못했어요. 페이지를 새로 열어주세요.');return;}
+    var node=dialog,viewState=state,bookId=state.bookId,id=++request,preview=state.preview,task,outputRecord=clone(normalize(record));
+    outputRecord.round=Number(outputRecord.round);
+    if(preview)outputRecord.status='draft';
+    function active(){return dialog===node&&state===viewState&&request===id&&allowed(bookId);}
+    state.error='';busy=true;render(true);setMessage('PDF 파일을 준비하고 있어요.');
+    try{task=downloader.downloadRecord(root,outputRecord,{preview:preview,getAccessToken:app.getAccessToken,isCurrent:active});}
+    catch(error){task=Promise.reject(error);}
+    downloadCancel=typeof task.cancel==='function'?task.cancel:null;
+    Promise.resolve(task).then(function(){if(active())app.showToast('PDF 파일을 내려받았어요.');}).catch(function(error){
+      if(active())state.error=error&&error.message&&/[가-힣]/.test(error.message)?error.message:'PDF를 내려받지 못했어요. 잠시 후 다시 저장해주세요.';
+    }).finally(function(){if(active()){busy=false;downloadCancel=null;render(true);}});
   }
   function openConcept(id,trigger){
     var record=state.preview?state.draft:state.record;if(!record)return;
