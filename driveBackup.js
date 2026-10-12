@@ -4,7 +4,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
   var active=null;
-  var actions={config:'GET',status:'GET','google-status':'GET',connect:'POST',sync:'POST',configure:'POST',disconnect:'POST'};
+  var actions={config:'GET',status:'GET','google-status':'GET',connect:'POST',sync:'POST',configure:'POST','mail-configure':'POST',disconnect:'POST'};
   function failure(code){var error=new Error(code);error.code=code;return error;}
   function authorizationUrl(value,origin){
     try{
@@ -25,7 +25,7 @@
     function request(action,payload){
       if(!Object.prototype.hasOwnProperty.call(actions,action))return Promise.reject(failure('invalid_action'));
       var method=actions[action],body;
-      if(action==='configure'){
+      if(action==='configure'||action==='mail-configure'){
         if(!payload||typeof payload.enabled!=='boolean')return Promise.reject(failure('invalid_settings'));
         body={enabled:payload.enabled};
       }else if(method==='POST')body={};

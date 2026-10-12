@@ -14,7 +14,7 @@ const CONFIG = Drive.getConfig({GROWELL_GOOGLE_CLIENT_ID: 'fixture-client', GROW
 const TOKENS = {accessToken: 'fixture-access', refreshToken: 'fixture-refresh', scope: Drive.GOOGLE_SCOPES};
 const IDENTITY = {subject: 'fixture-google-account', email: 'member@example.test'};
 
-function fixture({scope = Drive.GOOGLE_SCOPES, driveFailure, calendarFailure} = {}) {
+function fixture({scope = Drive.GOOGLE_SCOPES, driveFailure, calendarFailure, mailFailure} = {}) {
   const state = {pending: null, member: structuredClone(PROFILE), calls: [], writes: [], exchange: 0};
   const configure = (name, failure) => async (owner, auth, operation, payload) => {
     state.calls.push({name, owner, auth, operation, payload});
@@ -29,10 +29,16 @@ function fixture({scope = Drive.GOOGLE_SCOPES, driveFailure, calendarFailure} = 
     oauth: async (operation, payload) => { if (operation === 'put') { state.pending = payload; return {}; }
       const pending = state.pending; state.pending = null; return pending; }};
   const calendarStore = {connection: async () => state.calendar, jobs: async () => [], configure: configure('calendar', calendarFailure)};
+  state.mail = {connected:true,enabled:true,accountEmail:IDENTITY.email,latestStatus:'pending',pendingCount:1,lastSentAt:null};
+  const mailStore = {configure: async (owner, auth, operation, payload) => {
+    if (mailFailure) throw mailFailure;
+    if (operation !== 'status') state.calls.push({name:'mail',owner,auth,operation,payload});
+    return state.mail;
+  }};
   const provider = {exchange: async () => { state.exchange++; return {...TOKENS, scope}; }, identity: async () => IDENTITY};
-  const service = Service.createService({config: CONFIG, store: driveStore, calendarStore, providerFactory: () => provider,
+  const service = Service.createService({config: CONFIG, store: driveStore, calendarStore, mailStore, providerFactory: () => provider,
     now: () => NOW, request: async () => ({id: AUTH})});
-  return {state, service, driveStore, calendarStore, provider};
+  return {state, service, driveStore, calendarStore, mailStore, provider};
 }
 
 async function finish(f, combined = true) {
@@ -60,7 +66,8 @@ test('one grant creates both owner-specific encrypted connections without export
   const [drive, calendar] = f.state.writes;
   assert.deepEqual(f.state.calls.map(({name, owner, auth, operation}) => ({name, owner, auth, operation})), [
     {name: 'drive', owner: PROFILE.id, auth: AUTH, operation: 'connect'},
-    {name: 'calendar', owner: PROFILE.id, auth: AUTH, operation: 'connect'}]);
+    {name: 'calendar', owner: PROFILE.id, auth: AUTH, operation: 'connect'},
+    {name: 'mail', owner: PROFILE.id, auth: AUTH, operation: 'connect'}]);
   assert.equal(drive.payload.account_id, calendar.payload.account_id);
   assert.equal(drive.payload.account_id, Drive.hash(IDENTITY.subject));
   assert.equal(drive.payload.account_email, IDENTITY.email);
@@ -206,4 +213,44 @@ test('combined status is authenticated and same-source filtered without acceptin
   const accepted = await invoke({authorization: 'Bearer fixture.jwt'});
   assert.equal(accepted.statusCode, 200); assert.equal(accepted.body.connected, true);
   assert.equal(accepted.headers['cache-control'], 'no-store, private');
+});
+
+test('mail enrollment follows both grants, derives recipient only on the server, and preserves independent failures', async () => {
+  const f=fixture();await finish(f);
+  assert.deepEqual(f.state.calls.at(-1),{name:'mail',owner:PROFILE.id,auth:AUTH,operation:'connect',payload:{}});
+  const partial=fixture({mailFailure:new Error('private mail database detail')});
+  assert.equal((await finish(partial)).result,CONFIG.origin+'/?google-connection=partial#/');
+  assert.equal(partial.state.writes.length,2);
+  const value=await partial.service.googleStatus(PROFILE);
+  assert.equal(value.drive.connected,true);assert.equal(value.calendar.connected,true);
+  assert.equal(value.mail.connected,null);assert.equal(value.mail.unavailable,true);
+  assert.equal(JSON.stringify(value).includes('private mail database detail'),false);
+  const missing=fixture({mailFailure:new Drive.BackupError('not-configured')});
+  assert.deepEqual((await missing.service.googleStatus(PROFILE)).mail,{configured:false});
+});
+
+test('mail settings are owner authenticated, enabled-only and never change either Google token store', async () => {
+  const f=fixture(),handler=Service.createHandler({service:f.service});
+  async function invoke(body,origin=CONFIG.origin){
+    const res={setHeader(){},end(value){this.body=JSON.parse(value);}};
+    await handler({method:'POST',url:'/api/drive-backup?action=mail-configure',headers:{authorization:'Bearer fixture.jwt',origin,'content-type':'application/json'},body},res);
+    return res;
+  }
+  assert.equal((await invoke({enabled:false})).statusCode,200);
+  assert.deepEqual(f.state.calls,[{name:'mail',owner:PROFILE.id,auth:AUTH,operation:'settings',payload:{enabled:false}}]);
+  for(const body of [{enabled:true,recipient:'foreign@example.test'},{owner:'foreign',enabled:true},{enabled:'true'},{}])assert.equal((await invoke(body)).statusCode,400);
+  assert.equal((await invoke({enabled:true},'https://foreign.example')).statusCode,403);
+  assert.equal(f.state.writes.length,0);
+});
+
+test('only a missing mail RPC maps to setup state, temporary or unrelated lookup failures remain unavailable', async () => {
+  for(const [url,dbCode,expected] of [
+    [CONFIG.database+'/rest/v1/rpc/growell_meeting_mail_configure','PGRST202','not-configured'],
+    [CONFIG.database+'/rest/v1/rpc/growell_meeting_mail_configure','42883','not-configured'],
+    [CONFIG.database+'/rest/v1/rpc/growell_meeting_mail_configure','57014','service-unavailable'],
+    [CONFIG.database+'/rest/v1/rpc/growell_drive_backup_configure','PGRST202','service-unavailable']
+  ]){
+    const transport=Service.createTransport(async()=>new Response(JSON.stringify({code:dbCode,message:'private detail'}),{status:404}));
+    await assert.rejects(transport(url),{code:expected});
+  }
 });

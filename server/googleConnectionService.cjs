@@ -19,7 +19,7 @@ function requireGrantedScopes(tokens) {
 // their existing owner-bound encrypted stores. Their RPCs retain same-account
 // folder/file IDs and calendar delivery receipts. Never roll back a successful
 // connector by disconnecting it when the other RPC has a temporary failure.
-async function saveConnections({config, driveStore, calendarStore, approved, owner, authId, tokens, identity}) {
+async function saveConnections({config, driveStore, calendarStore, mailStore, approved, owner, authId, tokens, identity}) {
   requireGrantedScopes(tokens);
   if (typeof identity?.subject !== 'string' || !/^[A-Za-z0-9_-]{1,255}$/.test(identity.subject)) {
     throw new Drive.BackupError('identity-invalid', 403);
@@ -43,6 +43,14 @@ async function saveConnections({config, driveStore, calendarStore, approved, own
     }
   }
   if (!connected) throw new Drive.BackupError('service-unavailable');
+  if (connected === 2 && mailStore) {
+    await approved(authId, owner);
+    try { await mailStore.configure(owner, authId, 'connect', {}); }
+    catch (error) {
+      if (['membership-required', 'authentication-required'].includes(error?.code)) throw error;
+      return 'partial';
+    }
+  }
   return connected === 2 ? 'connected' : 'partial';
 }
 

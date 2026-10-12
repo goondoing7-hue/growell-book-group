@@ -4159,6 +4159,7 @@ function headerHtml(route){
         '<a class="profile-dropdown-item" href="#/archive" id="btn-profile-archive">아카이브</a>' +
         '<a class="profile-dropdown-item" href="#/profile/edit" id="btn-goto-profile-edit">프로필 수정</a>' +
         '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">Google 연동</button>' +
+        '<button class="profile-dropdown-item" id="btn-profile-habit-reminder" type="button" aria-haspopup="dialog">습관 알림 연동</button>' +
         (admin
           ? '<a class="profile-dropdown-item" href="#/admin/users">가입자 목록</a>'
           : '<button class="profile-dropdown-item" id="btn-grant-admin" type="button">운영자 코드 입력</button>') +
@@ -6100,6 +6101,7 @@ function openGoogleConnection(trigger,result){
     }check();});
   },
     onDriveDetails:function(){if(current())openDriveBackup(trigger);},onCalendarDetails:function(){if(current())openMeetingCalendar(trigger);},
+    onReminderSettings:function(){if(current())openHabitReminder(null,trigger);},
     restoreFocus:function(){if(!current())return;var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});}});
 }
 function handleGoogleConnectionReturn(){
@@ -6139,6 +6141,8 @@ function handleDriveBackupReturn(){
 }
 function openHabitReminder(habitId,trigger){
   if(typeof GrowellHabitReminder==='undefined')return;
+  if(!SESSION)return;
+  if(memberLoadState.habits!=='ready'){if(habitId===null)showToast('습관을 불러오는 중이에요. 잠시 후 다시 열어주세요.',true);return;}
   var session=SESSION,epoch=saveSessionEpoch,route=location.href;
   function current(){return !!session&&SESSION===session&&saveSessionEpoch===epoch&&location.href===route&&memberLoadState.habits==='ready';}
   function getHabit(){
@@ -7799,6 +7803,12 @@ function bindEvents(route){
     if(profileDropdown)profileDropdown.hidden=true;
     if(profileToggle)profileToggle.setAttribute('aria-expanded','false');
     openGoogleConnection(profileToggle);
+  });
+  var profileHabitReminderBtn=document.getElementById('btn-profile-habit-reminder');
+  if(profileHabitReminderBtn)profileHabitReminderBtn.addEventListener('click',function(){
+    if(profileDropdown)profileDropdown.hidden=true;
+    if(profileToggle)profileToggle.setAttribute('aria-expanded','false');
+    openHabitReminder(null,profileToggle);
   });
   bindAccountDeletion();
   app.querySelectorAll('.admin-user-delete-btn').forEach(function(b){

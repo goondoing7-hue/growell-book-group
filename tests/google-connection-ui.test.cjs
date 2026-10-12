@@ -12,7 +12,7 @@ const response=(value,extra={})=>({ok:true,status:200,json:async()=>value,...ext
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve;const promise=new Promise(done=>{resolve=done;});return {promise,resolve};};
 const connected=(overrides={})=>({configured:true,connected:true,enabled:true,accountEmail:'fixture@example.invalid',...overrides});
-const joint=(overrides={})=>({configured:true,drive:connected({lastBackedUpAt:'2026-10-11T01:00:00Z'}),calendar:connected({lastSyncedAt:'2026-10-11T02:00:00Z'}),sameAccount:true,connected:true,partial:false,unavailable:false,...overrides});
+const joint=(overrides={})=>({configured:true,drive:connected({lastBackedUpAt:'2026-10-11T01:00:00Z'}),calendar:connected({lastSyncedAt:'2026-10-11T02:00:00Z'}),mail:connected({latestStatus:'none',pendingCount:0,lastSentAt:null}),sameAccount:true,connected:true,partial:false,unavailable:false,...overrides});
 function harness(extra={}){
   let current=true;const calls=[];
   const client=Google.createClient({isCurrent:()=>current,getAccessToken:async()=> 'SYNTHETIC_MEMBER_TOKEN',fetch:async(url,options)=>{calls.push({url,options});return response(url.endsWith('action=config')?{configured:true}:joint());},...extra});
@@ -110,10 +110,66 @@ function uiHarness(extra={}){
   return {root,calls,navigation,documentEvents,history,node:dialogs.at(-1),setCurrent:value=>{current=value;},q(selector){return this.node.querySelector(selector);},close(){root.GrowellGoogleConnection.close(false);}};
 }
 
-test('the dialog displays both cards, separate switches and a validated Drive folder',async()=>{
+test('the dialog displays three services with separate switches and a validated Drive folder',async()=>{
   const url='https://drive.google.com/drive/folders/Fixture_123';const box=uiHarness({root:{fetch:async(urlPath)=>response(urlPath.endsWith('action=config')?{configured:true}:joint({drive:connected({folderUrl:url})}))}});await flush();
   assert.equal(box.q('[data-google-connect]').hidden,true);assert.equal(box.q('[data-google-drive-enabled]').checked,true);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);
+  assert.equal(box.q('[data-google-mail-enabled]').checked,true);assert.match(box.node.html,/모임 기록 PDF 이메일/);assert.match(box.node.html,/이미 보낸 기록을 수정해도 다시 보내지/);assert.doesNotMatch(box.node.html,/data-google-mail-sync/);
+  assert.equal(box.q('[data-google-mail-email]').hidden,false);assert.equal(box.q('[data-google-mail-email]').textContent,'fixture@example.invalid');
   assert.equal(box.q('[data-google-drive-folder]').href,url);assert.equal(box.q('[data-google-drive-folder]').hidden,false);assert.match(box.q('[data-google-summary]').textContent,/같은 Google 계정/);assert.equal(box.node.open,true);box.close();
+});
+
+test('mail status rejects malformed connection data and strips unsafe fields',()=>{
+  for(const value of [null,{}, {configured:true,connected:null},{configured:true,connected:'true'}])assert.throws(()=>Google.statusView('mail',value),{code:'unavailable'});
+  const status=Google.statusView('mail',connected({lastSentAt:'invalid',latestStatus:'<script>',pendingCount:'3',recipientId:'PRIVATE_OWNER',refreshToken:'PRIVATE_SECRET',errorCode:'<script>'}));
+  assert.equal(status.lastSentAt,'');assert.equal(status.latestStatus,'');assert.equal(status.pending,false);assert.equal(status.errorCode,'');assert.doesNotMatch(JSON.stringify(status),/PRIVATE_OWNER|PRIVATE_SECRET|script/);
+  assert.match(Google.stateText('mail',status),/자동 발송 켜짐/);assert.doesNotMatch(Google.stateText('mail',status),/완료/);
+});
+
+test('uncertain mail delivery remains distinct from confirmed sent status',()=>{
+  const mail=Google.statusView('mail',connected({latestStatus:'uncertain',errorCode:'delivery-uncertain',lastSentAt:'2026-10-11T01:00:00Z'}));
+  assert.match(Google.stateText('mail',mail),/미확인/);assert.doesNotMatch(Google.stateText('mail',mail),/발송 완료/);
+  assert.match(Google.stateText('mail',Google.statusView('mail',connected({latestStatus:'sent'}))),/발송 완료/);
+  assert.match(Google.message('mail',{code:'delivery-uncertain'}),/중복 발송/);
+});
+
+test('a stopped PDF preparation failure stays distinct from an uncertain delivered email',()=>{
+  const status=Google.statusView('mail',connected({latestStatus:'failed',errorCode:'pdf-unavailable',pendingCount:0}));
+  assert.equal(status.latestStatus,'failed');assert.match(Google.stateText('mail',status),/PDF 이메일 준비 실패/);assert.doesNotMatch(Google.stateText('mail',status),/미확인|발송 완료/);
+});
+
+test('mail unavailable or unconfigured does not pretend delivery succeeded or disable Google connect',async()=>{
+  for(const mail of [{configured:false},{unavailable:true,errorCode:'service-unavailable'}]){
+    const box=uiHarness({root:{fetch:async(url)=>response(url.endsWith('action=config')?{configured:true}:joint({mail}))}});await flush();
+    assert.equal(box.q('[data-google-mail-connected]').hidden,true);assert.equal(box.q('[data-google-mail-enabled]').disabled,true);
+    assert.doesNotMatch(box.q('[data-google-mail-status]').textContent,/발송 완료/);assert.equal(box.q('[data-google-connect]').disabled,false);
+    assert.equal(box.q('[data-google-drive-enabled]').checked,true);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);box.close();
+  }
+});
+
+test('mail configure uses one owner authenticated request with enabled-only payload',async()=>{
+  const box=harness();await box.client.request('mail','configure',{enabled:false,userId:'PRIVATE_OWNER',email:'OTHER_OWNER',records:'PRIVATE_RECORD'});
+  assert.deepEqual(box.calls.map(call=>[call.url,JSON.parse(call.options.body)]),[['/api/drive-backup?action=mail-configure',{enabled:false}]]);
+  assert.equal(box.calls[0].options.headers.Authorization,'Bearer SYNTHETIC_MEMBER_TOKEN');
+  for(const action of ['sync','connect','send','disconnect'])await assert.rejects(box.client.request('mail',action,{}),{code:'invalid_action'});box.client.dispose();
+});
+
+test('failed mail switch save rolls back without changing Drive or Calendar settings',async()=>{
+  const box=uiHarness({root:{fetch:async(url)=>response(url.endsWith('action=config')?{configured:true}:url.endsWith('action=mail-configure')?{error:'service-unavailable'}:joint(),url.endsWith('action=mail-configure')?{ok:false,status:503}:{})}});await flush();
+  const toggle=box.q('[data-google-mail-enabled]');toggle.checked=false;toggle.onchange();await flush();
+  assert.equal(toggle.checked,true);assert.equal(box.q('[data-google-drive-enabled]').checked,true);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);
+  assert.match(box.q('[data-google-mail-status]').textContent,/확인하지 못/);box.close();
+});
+
+test('mail configuration stops before network if current member is replaced while obtaining token',async()=>{
+  const token=deferred(),box=harness({getAccessToken:()=>token.promise});const pending=box.client.request('mail','configure',{enabled:true});await flush();box.setCurrent(false);token.resolve('OLD_MEMBER_TOKEN');
+  await assert.rejects(pending,{code:'session_changed'});assert.equal(box.calls.length,0);box.client.dispose();
+});
+
+test('Microsoft reminder settings close the Google dialog without triggering Google OAuth',async()=>{
+  let opened=0;const box=uiHarness({options:{onReminderSettings(){opened++;assert.equal(box.node.removed,true);assert.equal(box.documentEvents.visibilitychange.length,0);}}});await flush();
+  assert.equal(box.q('[data-google-reminder]').hidden,false);assert.match(box.node.html,/Microsoft 계정을 한 번 더 연결/);
+  assert.match(box.node.html,/같은 책·해당 회차에 회원이 공개한 통찰/);assert.match(box.node.html,/개인 기록과 공개하지 않은 글은 포함하지/);
+  box.q('[data-google-reminder-open]').onclick();assert.equal(opened,1);assert.equal(box.calls.some(call=>call.url.endsWith('action=connect')),false);assert.equal(box.navigation.length,0);box.close();
 });
 
 test('failed checkbox saves roll back the displayed setting and preserve the other service',async()=>{

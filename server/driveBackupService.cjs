@@ -5,6 +5,7 @@ const D = require('./driveBackupDomain.cjs');
 const {createProvider} = require('./driveBackupProvider.cjs');
 const {saveConnections, requireGrantedScopes} = require('./googleConnectionService.cjs');
 const CalendarService = require('./meetingCalendarService.cjs');
+const MailService = require('./meetingMailService.cjs');
 const COOKIE = '__Host-growell-drive-backup';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TABLES = Object.freeze(['private_entries', 'habits', 'material_notes', 'posts', 'comments', 'worksheets', 'reading_logs', 'reading_meta']);
@@ -24,6 +25,7 @@ function createTransport(fetchImpl = globalThis.fetch) {
           const text = await res.text();
           let dbCode;
           try { dbCode = text.length < 16000 ? JSON.parse(text).code : ''; } catch (_) { /* no provider text crosses API */ }
+          if (['42883','PGRST202'].includes(dbCode) && new URL(url).pathname.startsWith('/rest/v1/rpc/growell_meeting_mail_')) { code = 'not-configured'; }
           if (dbCode === '42501') { code = 'membership-required'; status = 403; }
           if (dbCode === '40001') { code = 'backup-busy'; status = 409; }
           if (dbCode === '55000') { code = 'connection-required'; status = 409; }
@@ -113,6 +115,7 @@ function createService(options = {}) {
   const request = options.request || createTransport(options.fetch);
   const store = options.store || createStore(config, request);
   const calendarStore = options.calendarStore || CalendarService.createStore(config, CalendarService.createTransport(options.fetch));
+  const mailStore = options.mailStore || MailService.createStore(config, request);
   const providerFactory = options.providerFactory || (deadline => createProvider(config, {fetch: options.fetch, now, deadline}));
   const callbackRedirect = state => config.origin + '/?drive-backup=' + state + '#/';
   const oauthContext = (owner, hash) => 'drive-backup-oauth:' + owner + ':' + hash;
@@ -162,7 +165,12 @@ function createService(options = {}) {
     const sameAccount = unknown ? null : bothConnected && typeof driveConnection.account_id === 'string' && driveConnection.account_id !== ''
       && D.equal(driveConnection.account_id, calendarConnection.account_id);
     const connected = unknown ? null : bothConnected && sameAccount;
-    return {configured: true, drive, calendar, sameAccount, connected,
+    let mail;
+    try { mail = MailService.safeStatus(await mailStore.configure(profile.id, profile.auth_user_id, 'status')); }
+    catch (error) {
+      mail = error?.code === 'not-configured' ? {configured:false} : unavailable(error);
+    }
+    return {configured: true, drive, calendar, mail, sameAccount, connected,
       partial: (drive.connected === true || calendar.connected === true) && connected !== true, unavailable: unknown};
   }
   async function connect(profile, combined = false) {
@@ -186,7 +194,7 @@ function createService(options = {}) {
     const identity = await provider.identity(tokens.accessToken), generation = crypto.randomUUID();
     await approved(pending.auth_user_id, pending.owner_id);
     if (googleConnection === true) {
-      const result = await saveConnections({config, driveStore: store, calendarStore, approved, owner: pending.owner_id,
+      const result = await saveConnections({config, driveStore: store, calendarStore, mailStore, approved, owner: pending.owner_id,
         authId: pending.auth_user_id, tokens, identity});
       return config.origin + '/?google-connection=' + result + '#/';
     }
@@ -232,6 +240,10 @@ function createService(options = {}) {
     return {processed};
   }
   async function mutate(profile, action, body) {
+    if (action === 'mail-configure') {
+      if (typeof body.enabled !== 'boolean' || Object.keys(body).some(key => key !== 'enabled')) throw new D.BackupError('invalid-request', 400);
+      return MailService.safeStatus(await mailStore.configure(profile.id, profile.auth_user_id, 'settings', {enabled:body.enabled}));
+    }
     if (action === 'configure') {
       if (typeof body.enabled !== 'boolean') throw new D.BackupError('invalid-request', 400);
       await store.configure(profile.id, profile.auth_user_id, 'settings', {enabled: body.enabled});
@@ -274,7 +286,7 @@ function createHandler(options = {}) {
       if (typeof body === 'string') { if (body.length > 2048) return send(413, {error: 'request-too-large'}); try { body = JSON.parse(body); } catch (_) { return send(400, {error: 'invalid-json'}); } }
       if (!body || typeof body !== 'object' || Array.isArray(body) || JSON.stringify(body).length > 2048) return send(400, {error: 'invalid-json'});
       // Never accept user-supplied snapshots, owner IDs, file IDs or tokens.
-      if (Object.keys(body).some(key => action !== 'configure' || key !== 'enabled')) return send(400, {error: 'invalid-request'});
+      if (Object.keys(body).some(key => !['configure','mail-configure'].includes(action) || key !== 'enabled')) return send(400, {error: 'invalid-request'});
       if (action === 'connect') { const result = await service.connect(profile, true); res.setHeader('Set-Cookie', result.cookie); return send(200, {url: result.url}); }
       return send(200, await service.mutate(profile, action, body));
     } catch (error) { return send(error instanceof D.BackupError ? error.status : 503, {error: safeError(error)}); }
