@@ -4,7 +4,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
   var active=null;
-  var actions={config:'GET',status:'GET',connect:'POST',sync:'POST',configure:'POST',disconnect:'POST'};
+  var actions={config:'GET',status:'GET','google-status':'GET',connect:'POST',sync:'POST',configure:'POST',disconnect:'POST'};
   function failure(code){var error=new Error(code);error.code=code;return error;}
   function authorizationUrl(value,origin){
     try{
@@ -159,7 +159,7 @@
         return view.client.request('status').then(function(status){if(current())draw(status);});
       }).catch(failed).finally(function(){if(current()){busy(false);schedulePoll();}});
     }
-    function connect(){change('connect',{},function(result){var url=authorizationUrl(result.url,root.location.origin);if(!url)throw failure('unavailable');root.location.assign(url);});}
+    function connect(){if(typeof options.onConnectGoogle==='function'){options.onConnectGoogle();return;}change('connect',{},function(result){var url=authorizationUrl(result.url,root.location.origin);if(!url)throw failure('unavailable');root.location.assign(url);});}
     node.querySelector('[data-drive-close]').onclick=function(){close();};node.addEventListener('cancel',function(event){event.preventDefault();close();});
     node.addEventListener('click',function(event){if(event.target!==node)return;var rect=node.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)close();});
     node.querySelector('[data-drive-connect]').onclick=connect;node.querySelector('[data-drive-reconnect]').onclick=connect;

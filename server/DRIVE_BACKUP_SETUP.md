@@ -4,7 +4,7 @@
 
 ## 백업 내용과 동작
 
-프로필 → **Google Drive 백업**에서 회원이 직접 자신의 Google 계정을 연결합니다. `GROWELL 백업` 폴더의 `GROWELL-backup.json`에 본인의 최신 전체 데이터를 저장합니다. 같은 계정을 다시 연결하면 기존 파일을 사용하고, 다른 Google 계정으로 연결하면 새 파일을 만듭니다. 파일은 회원의 My Drive 최상위에 만들며 공유하지 않습니다.
+프로필 → **Google 연동**에서 회원이 직접 자신의 Google 계정을 한 번 연결합니다. Drive 백업과 모임 캘린더의 두 권한을 확인하고 각 서비스에 별도로 암호화 저장하여 자동 실행을 함께 켭니다. `GROWELL 백업` 폴더의 `GROWELL-backup.json`에 본인의 최신 전체 데이터를 저장합니다. 같은 계정을 다시 연결하면 기존 파일을 사용하고, 다른 Google 계정으로 연결하면 새 파일을 만듭니다. 파일은 회원의 My Drive 최상위에 만들며 공유하지 않습니다. 백업과 캘린더는 각각 중지·실행·상세 관리할 수 있습니다.
 
 - `private_entries`: 암호문·IV·ID·생성/수정 시각. 이 안에 암호화된 개인 기록, 책장, 메모 및 아카이브 설정이 포함됩니다.
 - `habits`: 이름·목표·장소·시간·요일·기간·독서 연결 정보와 전체 체크 날짜.
@@ -21,7 +21,7 @@ JSON 백업은 데이터 보관용입니다. 현재 앱에는 JSON 가져오기�
 
 1. GROWELL 전용 프로젝트에서 **Google Drive API**를 활성화합니다.
 2. Google Auth Platform에서 앱 이름·지원 이메일·홈페이지(`https://growell-book.vercel.app`)·개인정보처리방침(`https://growell-book.vercel.app/privacy.html`)을 확인합니다.
-3. 최소 범위는 `openid`, `email`, `https://www.googleapis.com/auth/drive.file`입니다. 전체 Drive 접근 범위는 요청하지 않습니다.
+3. 통합 연결은 `openid`, `email`, `https://www.googleapis.com/auth/drive.file`, `https://www.googleapis.com/auth/calendar.events.owned`를 요청합니다. 전체 Drive 접근 범위는 요청하지 않습니다. 기존 Drive 콜백 `/api/drive-backup`을 재사용하며, 이전 개별 Drive 연결의 진행 중 콜백도 호환됩니다. `server/googleConnectionService.cjs`는 두 권한이 실제 승인되었는지 먼저 확인하고, 같은 계정의 폴더·파일 및 모임 일정 식별자를 보존합니다. 일부 서비스 저장이 실패하면 성공한 연결을 삭제하지 않고 통합 화면에 부분 연결을 표시합니다.
 4. 웹 애플리케이션 OAuth 클라이언트를 만들고 승인된 리디렉션 URI에 정확히 `https://growell-book.vercel.app/api/drive-backup`을 등록합니다. 기존 Supabase 로그인 클라이언트를 수정하는 대신 백업 전용 클라이언트를 권장합니다.
 5. Google Testing 모드에서는 테스트 사용자 제한과 refresh token 유효기간 제한이 적용될 수 있습니다. 모든 회원의 계속되는 백업을 운영하려면 외부 앱의 게시 상태와 필요한 검증을 마칩니다. 실제 콘솔 요구사항을 확인하며 완료 전 전체 회원 연결을 보장하지 않습니다.
 

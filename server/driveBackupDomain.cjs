@@ -7,6 +7,8 @@ const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const DRIVE_ORIGIN = 'https://www.googleapis.com';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const SCOPES = 'openid email ' + DRIVE_SCOPE;
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events.owned';
+const GOOGLE_SCOPES = SCOPES + ' ' + CALENDAR_SCOPE;
 const FOLDER_NAME = 'GROWELL 백업';
 const FILE_NAME = 'GROWELL-backup.json';
 const FILE_ID = /^[A-Za-z0-9_-]{5,200}$/;
@@ -65,13 +67,14 @@ function retryDelay(header, now = Date.now()) {
   if (!Number.isFinite(seconds) || seconds < 0) seconds = Math.ceil((Date.parse(header) - now) / 1000);
   return Math.max(30, Math.min(86400, Number.isFinite(seconds) && seconds > 0 ? seconds : 30));
 }
-function authorizationUrl(config, {state, verifier} = {}) {
+function authorizationUrl(config, {state, verifier, combined = false} = {}) {
   if (!config.configured) throw new BackupError('backup-not-configured');
   if (typeof state !== 'string' || !/^[A-Za-z0-9_-]{20,200}$/.test(state) || typeof verifier !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) throw new BackupError('invalid-request', 400);
-  const params = new URLSearchParams({client_id: config.clientId, redirect_uri: config.redirectUri, response_type: 'code', scope: SCOPES,
+  if (typeof combined !== 'boolean') throw new BackupError('invalid-request', 400);
+  const params = new URLSearchParams({client_id: config.clientId, redirect_uri: config.redirectUri, response_type: 'code', scope: combined ? GOOGLE_SCOPES : SCOPES,
     access_type: 'offline', prompt: 'consent select_account', state,
     code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256'});
   return AUTH_URL + '?' + params;
 }
-module.exports = {AUTH_URL, TOKEN_URL, USERINFO_URL, DRIVE_ORIGIN, DRIVE_SCOPE, SCOPES, FOLDER_NAME, FILE_NAME, FILE_ID,
+module.exports = {AUTH_URL, TOKEN_URL, USERINFO_URL, DRIVE_ORIGIN, DRIVE_SCOPE, CALENDAR_SCOPE, SCOPES, GOOGLE_SCOPES, FOLDER_NAME, FILE_NAME, FILE_ID,
   MAX_CONTENT_BYTES, BackupError, getConfig, seal, unseal, hash, equal, clean, tokenContext, marker, retryDelay, authorizationUrl};

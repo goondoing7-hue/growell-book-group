@@ -3,6 +3,8 @@
 const crypto = require('node:crypto');
 const D = require('./driveBackupDomain.cjs');
 const {createProvider} = require('./driveBackupProvider.cjs');
+const {saveConnections, requireGrantedScopes} = require('./googleConnectionService.cjs');
+const CalendarService = require('./meetingCalendarService.cjs');
 const COOKIE = '__Host-growell-drive-backup';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TABLES = Object.freeze(['private_entries', 'habits', 'material_notes', 'posts', 'comments', 'worksheets', 'reading_logs', 'reading_meta']);
@@ -110,6 +112,7 @@ function createService(options = {}) {
   const config = options.config || D.getConfig(), now = options.now || Date.now;
   const request = options.request || createTransport(options.fetch);
   const store = options.store || createStore(config, request);
+  const calendarStore = options.calendarStore || CalendarService.createStore(config, CalendarService.createTransport(options.fetch));
   const providerFactory = options.providerFactory || (deadline => createProvider(config, {fetch: options.fetch, now, deadline}));
   const callbackRedirect = state => config.origin + '/?drive-backup=' + state + '#/';
   const oauthContext = (owner, hash) => 'drive-backup-oauth:' + owner + ':' + hash;
@@ -132,11 +135,41 @@ function createService(options = {}) {
     if (c && (c.owner_id !== profile.id || c.auth_user_id !== profile.auth_user_id)) throw new D.BackupError('membership-required', 403);
     return safeConnection(c, now());
   }
-  async function connect(profile) {
+  async function googleStatus(profile) {
+    const results = await Promise.allSettled([store.connection(profile.id), calendarStore.connection(profile.id)]);
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value && (result.value.owner_id !== profile.id || result.value.auth_user_id !== profile.auth_user_id)) {
+        throw new D.BackupError('membership-required', 403);
+      }
+    }
+    const unavailable = error => ({configured: true, connected: null, enabled: null, accountEmail: '', unavailable: true, errorCode: safeError(error)});
+    const driveConnection = results[0].status === 'fulfilled' ? results[0].value : null;
+    const calendarConnection = results[1].status === 'fulfilled' ? results[1].value : null;
+    const drive = results[0].status === 'fulfilled' ? safeConnection(driveConnection, now()) : unavailable(results[0].reason);
+    let calendar;
+    if (results[1].status === 'rejected') calendar = unavailable(results[1].reason);
+    else {
+      try {
+        const jobs = calendarConnection?.token_cipher ? await calendarStore.jobs(profile.id, calendarConnection.generation) : [];
+        if (!Array.isArray(jobs) || jobs.some(job => job.owner_id !== profile.id || job.generation !== calendarConnection?.generation)) {
+          throw new D.BackupError('service-unavailable');
+        }
+        calendar = CalendarService.safeConnection(calendarConnection, jobs, now());
+      } catch (error) { calendar = unavailable(error); }
+    }
+    const unknown = drive.unavailable === true || calendar.unavailable === true;
+    const bothConnected = drive.connected === true && calendar.connected === true;
+    const sameAccount = unknown ? null : bothConnected && typeof driveConnection.account_id === 'string' && driveConnection.account_id !== ''
+      && D.equal(driveConnection.account_id, calendarConnection.account_id);
+    const connected = unknown ? null : bothConnected && sameAccount;
+    return {configured: true, drive, calendar, sameAccount, connected,
+      partial: (drive.connected === true || calendar.connected === true) && connected !== true, unavailable: unknown};
+  }
+  async function connect(profile, combined = false) {
     const state = crypto.randomBytes(32).toString('base64url'), verifier = crypto.randomBytes(48).toString('base64url'), stateHash = D.hash(state);
     await store.oauth('put', {state_hash: stateHash, owner_id: profile.id, auth_user_id: profile.auth_user_id,
-      verifier_cipher: D.seal({verifier}, config.key, oauthContext(profile.id, stateHash)), expires_at: new Date(now() + 600000).toISOString()});
-    return {url: D.authorizationUrl(config, {state, verifier}), cookie: COOKIE + '=' + state + '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600'};
+      verifier_cipher: D.seal({verifier, ...(combined ? {googleConnection: true} : {})}, config.key, oauthContext(profile.id, stateHash)), expires_at: new Date(now() + 600000).toISOString()});
+    return {url: D.authorizationUrl(config, {state, verifier, combined}), cookie: COOKIE + '=' + state + '; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600'};
   }
   async function callback(query, cookies) {
     requireConfigured();
@@ -146,11 +179,17 @@ function createService(options = {}) {
     if (!pending || !Number.isFinite(Date.parse(pending.expires_at)) || Date.parse(pending.expires_at) <= now()) throw new D.BackupError('oauth-state-invalid', 400);
     await approved(pending.auth_user_id, pending.owner_id);
     if (query.get('error') || !query.get('code') || query.get('code').length > 16000) throw new D.BackupError('oauth-cancelled', 400);
-    const {verifier} = D.unseal(pending.verifier_cipher, config.key, oauthContext(pending.owner_id, D.hash(state)));
+    const {verifier, googleConnection} = D.unseal(pending.verifier_cipher, config.key, oauthContext(pending.owner_id, D.hash(state)));
     const provider = providerFactory(now() + 35000), tokens = await provider.exchange({code: query.get('code'), verifier});
     if (!tokens.refreshToken) throw new D.BackupError('consent-required', 403);
+    if (googleConnection === true) requireGrantedScopes(tokens);
     const identity = await provider.identity(tokens.accessToken), generation = crypto.randomUUID();
     await approved(pending.auth_user_id, pending.owner_id);
+    if (googleConnection === true) {
+      const result = await saveConnections({config, driveStore: store, calendarStore, approved, owner: pending.owner_id,
+        authId: pending.auth_user_id, tokens, identity});
+      return config.origin + '/?google-connection=' + result + '#/';
+    }
     await store.configure(pending.owner_id, pending.auth_user_id, 'connect', {generation, account_id: D.hash(identity.subject), account_email: identity.email,
       token_cipher: D.seal({refreshToken: tokens.refreshToken, scope: tokens.scope}, config.key, D.tokenContext(pending.owner_id, generation))});
     return callbackRedirect('connected');
@@ -203,7 +242,7 @@ function createService(options = {}) {
     } else throw new D.BackupError('invalid-request', 400);
     return status(profile);
   }
-  return {config, store, authenticate, approved, status, connect, callback, callbackRedirect, mutate, run};
+  return {config, store, authenticate, approved, status, googleStatus, connect, callback, callbackRedirect, mutate, run};
 }
 
 function createHandler(options = {}) {
@@ -226,16 +265,17 @@ function createHandler(options = {}) {
         if (!service.config.cronSecret || !D.equal(req.headers.authorization || '', 'Bearer ' + service.config.cronSecret)) throw new D.BackupError('authentication-required', 401);
         return send(200, await service.run());
       }
-      if (req.method !== 'POST' && !(req.method === 'GET' && action === 'status')) return send(405, {error: 'method-not-allowed'});
+      if (req.method !== 'POST' && !(req.method === 'GET' && ['status', 'google-status'].includes(action))) return send(405, {error: 'method-not-allowed'});
       if (req.method === 'POST' && (req.headers.origin !== service.config.origin || !/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || ''))) return send(403, {error: 'same-origin-required'});
       const profile = await service.authenticate(req);
       if (action === 'status' && req.method === 'GET') return send(200, await service.status(profile));
+      if (action === 'google-status' && req.method === 'GET') return send(200, await service.googleStatus(profile));
       let body = req.body;
       if (typeof body === 'string') { if (body.length > 2048) return send(413, {error: 'request-too-large'}); try { body = JSON.parse(body); } catch (_) { return send(400, {error: 'invalid-json'}); } }
       if (!body || typeof body !== 'object' || Array.isArray(body) || JSON.stringify(body).length > 2048) return send(400, {error: 'invalid-json'});
       // Never accept user-supplied snapshots, owner IDs, file IDs or tokens.
       if (Object.keys(body).some(key => action !== 'configure' || key !== 'enabled')) return send(400, {error: 'invalid-request'});
-      if (action === 'connect') { const result = await service.connect(profile); res.setHeader('Set-Cookie', result.cookie); return send(200, {url: result.url}); }
+      if (action === 'connect') { const result = await service.connect(profile, true); res.setHeader('Set-Cookie', result.cookie); return send(200, {url: result.url}); }
       return send(200, await service.mutate(profile, action, body));
     } catch (error) { return send(error instanceof D.BackupError ? error.status : 503, {error: safeError(error)}); }
   };

@@ -1102,6 +1102,7 @@
 <link rel="stylesheet" href="habitReminder.css">
 <link rel="stylesheet" href="driveBackup.css">
 <link rel="stylesheet" href="meetingCalendar.css">
+<link rel="stylesheet" href="googleConnection.css">
 <link rel="stylesheet" href="meetingRecordsPrint.css">
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
@@ -1138,6 +1139,7 @@
 <script src="habitReminder.js"></script>
 <script src="driveBackup.js"></script>
 <script src="meetingCalendar.js"></script>
+<script src="googleConnection.js"></script>
 <script src="readingHabit.js"></script>
 <script src="readingTimerDomain.js"></script>
 <script src="timerAlerts.js"></script>
@@ -2134,6 +2136,7 @@ function closeStaleComposersForRoute(r){
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
   if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.refresh();
   if(typeof GrowellMeetingCalendar!=='undefined')GrowellMeetingCalendar.refresh();
+  if(typeof GrowellGoogleConnection!=='undefined')GrowellGoogleConnection.refresh();
   if(habitValueSummaryDialog&&habitValueSummaryDialog._route!==location.href)closeHabitValueSummary(false);
   if(typeof habitSummaryDialog!=='undefined'&&habitSummaryDialog&&habitSummaryDialog._route!==location.href)closeHabitSummary(false);
   if(typeof habitSummaryReturn!=='undefined'&&habitSummaryReturn&&habitSummaryReturn.route!==location.href)habitSummaryReturn=null;
@@ -2309,6 +2312,7 @@ function clearMemberSession(){
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.close(false);
   if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.close(false);
   if(typeof GrowellMeetingCalendar!=='undefined')GrowellMeetingCalendar.close(false);
+  if(typeof GrowellGoogleConnection!=='undefined')GrowellGoogleConnection.close(false);
   if(typeof clearArchiveSharedNotes==='function')clearArchiveSharedNotes();
   sharedPostsLoadState='idle';
   if(SESSION && typeof captureComposerDraft==='function') captureComposerDraft();
@@ -4154,8 +4158,7 @@ function headerHtml(route){
         '<div class="profile-dropdown-sep"></div>' +
         '<a class="profile-dropdown-item" href="#/archive" id="btn-profile-archive">아카이브</a>' +
         '<a class="profile-dropdown-item" href="#/profile/edit" id="btn-goto-profile-edit">프로필 수정</a>' +
-        '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">Google Drive 백업</button>' +
-        '<button class="profile-dropdown-item" id="btn-profile-meeting-calendar" type="button" aria-haspopup="dialog">모임 일정 · Google 캘린더</button>' +
+        '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">Google 연동</button>' +
         (admin
           ? '<a class="profile-dropdown-item" href="#/admin/users">가입자 목록</a>'
           : '<button class="profile-dropdown-item" id="btn-grant-admin" type="button">운영자 코드 입력</button>') +
@@ -4360,7 +4363,7 @@ function homeMeetingHtml(){
     content='<dl class="home-meeting-facts">'+[['날짜',a.next.date],['시간',a.next.time],['장소',a.next.place],['읽을 범위',[a.reading.chapter,a.reading.range].filter(Boolean).join(' · ')]].map(function(field){return '<div><dt>'+field[0]+'</dt><dd>'+esc(field[1]||'추후 안내')+'</dd></div>';}).join('')+'</dl>';
   }
   return '<section class="home-card home-meeting"><div class="home-meeting-summary">'+heading+content+
-    (SESSION&&!editingAnnouncement?'<button type="button" id="btn-home-meeting-calendar" class="home-meeting-calendar" aria-haspopup="dialog">'+svgIcon('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>')+'내 Google 캘린더 연결·관리</button>':'')+'</div></section>';
+    (SESSION&&!editingAnnouncement?'<button type="button" id="btn-home-meeting-calendar" class="home-meeting-calendar" aria-haspopup="dialog">'+svgIcon('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>')+'Google 연동·관리</button>':'')+'</div></section>';
 }
 function homeDailyVerse(){
   return typeof GrowellDailyVerse!=='undefined'&&typeof GrowellDailyVerses!=='undefined'?GrowellDailyVerse.getCompact(GrowellDailyVerses):null;
@@ -6076,7 +6079,37 @@ function openMeetingCalendar(trigger){
   if(!SESSION||typeof GrowellMeetingCalendar==='undefined')return;
   var session=SESSION,epoch=saveSessionEpoch,route=location.href;
   function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
-  GrowellMeetingCalendar.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},restoreFocus:function(){if(!current())return;var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});}});
+  GrowellMeetingCalendar.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},onConnectGoogle:function(){GrowellMeetingCalendar.close(false);openGoogleConnection(trigger);},restoreFocus:function(){if(!current())return;var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});}});
+}
+function openGoogleConnection(trigger,result){
+  if(!SESSION)return;
+  if(typeof GrowellGoogleConnection==='undefined'){showToast('Google 연결 화면을 불러오지 못했어요. 새로고침 후 다시 열어주세요.',true);return;}
+  var session=SESSION,epoch=saveSessionEpoch,route=location.href;
+  function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
+  if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.close(false);
+  if(typeof GrowellMeetingCalendar!=='undefined')GrowellMeetingCalendar.close(false);
+  GrowellGoogleConnection.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},connectionResult:result||'',beforeConnect:function(){
+    captureComposerDraft();
+    function pendingDraft(){return Object.keys(composerDrafts).some(function(key){return composerDrafts[key].userId===session.userId&&composerDrafts[key].unsaved;});}
+    return new Promise(function(resolve,reject){var started=Date.now();function check(){
+      if(!current()){var changed=new Error('session_changed');changed.code='session_changed';reject(changed);return;}
+      if(editingAnnouncement){var announcementError=new Error('draft_not_saved');announcementError.code='draft_not_saved';reject(announcementError);return;}
+      if(composerDraftPending&&Date.now()-started<5000){setTimeout(check,100);return;}
+      if(composerDraftPending||pendingDraft()){var draftError=new Error('draft_not_saved');draftError.code='draft_not_saved';reject(draftError);return;}
+      resolve();
+    }check();});
+  },
+    onDriveDetails:function(){if(current())openDriveBackup(trigger);},onCalendarDetails:function(){if(current())openMeetingCalendar(trigger);},
+    restoreFocus:function(){if(!current())return;var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});}});
+}
+function handleGoogleConnectionReturn(){
+  if(!SESSION)return;
+  var url=new URL(location.href),result=url.searchParams.get('google-connection');
+  if(['connected','partial','error','failed','cancelled'].indexOf(result)<0)return;
+  url.searchParams.delete('google-connection');history.replaceState(history.state,'',url.href);
+  openGoogleConnection(document.getElementById('btn-profile-toggle'),result);
+  if(result==='partial')showToast('연결이 일부만 완료됐어요. Google 연동 화면에서 두 항목의 상태를 확인해주세요.',true);
+  else if(result!=='connected')showToast(result==='cancelled'?'Google 연결을 취소했어요.':'Google 계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
 }
 function handleMeetingCalendarReturn(){
   if(!SESSION)return;
@@ -6090,7 +6123,7 @@ function openDriveBackup(trigger){
   if(!SESSION||typeof GrowellDriveBackup==='undefined')return;
   var session=SESSION,epoch=saveSessionEpoch,route=location.href;
   function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
-  GrowellDriveBackup.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},restoreFocus:function(){
+  GrowellDriveBackup.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},onConnectGoogle:function(){GrowellDriveBackup.close(false);openGoogleConnection(trigger);},restoreFocus:function(){
     if(!current())return;
     var target=trigger&&trigger.isConnected&&trigger.offsetParent!==null?trigger:document.getElementById('btn-profile-toggle');
     if(target)target.focus({preventScroll:true});
@@ -6101,7 +6134,7 @@ function handleDriveBackupReturn(){
   var url=new URL(location.href),result=url.searchParams.get('drive-backup');
   if(['connected','error','failed','cancelled'].indexOf(result)<0)return;
   url.searchParams.delete('drive-backup');history.replaceState(history.state,'',url.href);
-  openDriveBackup(document.getElementById('btn-profile-toggle'));
+  openGoogleConnection(document.getElementById('btn-profile-toggle'),result);
   if(result!=='connected')showToast(result==='cancelled'?'Google 연결을 취소했어요.':'Google 계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
 }
 function openHabitReminder(habitId,trigger){
@@ -7675,6 +7708,8 @@ function render(){
   handleDriveBackupReturn();
   if(typeof GrowellMeetingCalendar!=='undefined')GrowellMeetingCalendar.refresh();
   handleMeetingCalendarReturn();
+  if(typeof GrowellGoogleConnection!=='undefined')GrowellGoogleConnection.refresh();
+  handleGoogleConnectionReturn();
   showSpaceComposerDialog();
   restoreDraftIfAny(route);
   enhanceLinkPreviews();
@@ -7763,7 +7798,7 @@ function bindEvents(route){
   if(driveBackupBtn)driveBackupBtn.addEventListener('click',function(){
     if(profileDropdown)profileDropdown.hidden=true;
     if(profileToggle)profileToggle.setAttribute('aria-expanded','false');
-    openDriveBackup(profileToggle);
+    openGoogleConnection(profileToggle);
   });
   bindAccountDeletion();
   app.querySelectorAll('.admin-user-delete-btn').forEach(function(b){
@@ -7811,7 +7846,7 @@ function bindEvents(route){
   });
 
   /* home: 모임 안내 편집 (admin) */
-  ['btn-home-meeting-calendar','btn-profile-meeting-calendar'].forEach(function(id){var trigger=document.getElementById(id);if(trigger)trigger.addEventListener('click',function(){var menu=document.getElementById('profile-dropdown'),toggle=document.getElementById('btn-profile-toggle');if(menu)menu.hidden=true;if(toggle)toggle.setAttribute('aria-expanded','false');openMeetingCalendar(trigger);});});
+  ['btn-home-meeting-calendar','btn-profile-meeting-calendar'].forEach(function(id){var trigger=document.getElementById(id);if(trigger)trigger.addEventListener('click',function(){var menu=document.getElementById('profile-dropdown'),toggle=document.getElementById('btn-profile-toggle');if(menu)menu.hidden=true;if(toggle)toggle.setAttribute('aria-expanded','false');openGoogleConnection(trigger);});});
   var editAnnounceBtn = document.getElementById('btn-edit-announcement');
   if(editAnnounceBtn) editAnnounceBtn.addEventListener('click', function(){ if(!canEditAnnouncement()||announcementSaveBusy)return; announcementEditDraft=JSON.parse(JSON.stringify(STATE.announcement)); editingAnnouncement = true; render(); });
   var closeAnnounceBtn = document.getElementById('btn-close-announcement');
