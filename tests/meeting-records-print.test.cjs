@@ -133,3 +133,9 @@ test('failed, partial or non-PDF responses never download or expose server detai
     assert.deepEqual(b.clicked,[]);assert.deepEqual(b.created,[]);
   }
 });
+
+test('a record exceeding readable five-page limits reports preservation instead of downloading a clipped file',async()=>{
+  const b=downloadBrowser(async()=>pdfResponse({ok:false,json:async()=>({error:'pdf-layout-overflow'})})),row=record(),before=JSON.stringify(row);
+  await assert.rejects(api.downloadRecord(b,row,{getAccessToken:async()=> 'synthetic-token',isCurrent:()=>true}),/5페이지.*그대로 보존/);
+  assert.deepEqual(b.clicked,[]);assert.deepEqual(b.created,[]);assert.equal(JSON.stringify(row),before);
+});

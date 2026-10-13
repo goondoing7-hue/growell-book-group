@@ -93,6 +93,10 @@ test('body/PDF size bounds and rendering errors return safe failures without exp
   const failed=await invoke(fixture({renderError:true}).handler);assert.equal(failed.headers.status,503);assert.equal(failed.body.error,'pdf-unavailable');assert.equal(JSON.stringify(failed.body).includes('PRIVATE'),false);
   const unsupported=await invoke(fixture({renderError:Object.assign(new Error('PRIVATE ORIGINAL GLYPH'),{code:'PDF_UNSUPPORTED_GLYPH'})}).handler);
   assert.equal(unsupported.headers.status,503);assert.equal(unsupported.body.error,'pdf-glyph-unsupported');assert.equal(JSON.stringify(unsupported.body).includes('PRIVATE'),false);
+  const overflowFixture=fixture({renderError:Object.assign(new Error('PRIVATE ORIGINAL OVERFLOW TEXT'),{code:'PDF_LAYOUT_OVERFLOW',group:'insights'})}),original=JSON.stringify(overflowFixture.state.records);
+  const overflow=await invoke(overflowFixture.handler);
+  assert.equal(overflow.headers.status,422);assert.equal(overflow.body.error,'pdf-layout-overflow');assert.equal(Buffer.isBuffer(overflow.body),false);
+  assert.equal(JSON.stringify(overflow.body).includes('PRIVATE'),false);assert.equal(JSON.stringify(overflowFixture.state.records),original);
   assert.equal((await invoke(fixture({buffer:Buffer.from('not a PDF')}).handler)).headers.status,503);
   const huge=Buffer.alloc(S.MAX_PDF_BYTES+1);huge.write('%PDF-');assert.equal((await invoke(fixture({buffer:huge}).handler)).headers.status,413);
   const malformed=fixture();malformed.state.records[0].sections[0].detail='x'.repeat(10001);assert.equal((await invoke(malformed.handler)).headers.status,503);assert.equal(malformed.state.renders.length,0);

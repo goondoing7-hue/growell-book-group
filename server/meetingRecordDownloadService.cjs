@@ -7,7 +7,7 @@ const {BOOKS} = require('./meetingMailService.cjs');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_BODY_BYTES = 750000;
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
-const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','administrator-required','invalid-request','record-unavailable','record-changed','service-unavailable','rate-limited','pdf-unavailable','pdf-glyph-unsupported','pdf-too-large','request-too-large']);
+const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','administrator-required','invalid-request','record-unavailable','record-changed','service-unavailable','rate-limited','pdf-unavailable','pdf-glyph-unsupported','pdf-layout-overflow','pdf-too-large','request-too-large']);
 function safeError(error) { return SAFE_CODES.has(error?.code) ? error.code : 'service-unavailable'; }
 function getConfig(env = process.env) {
   const origin = env.GROWELL_SYNC_ORIGIN || 'https://growell-book.vercel.app';
@@ -134,7 +134,10 @@ function createService(options={}) {
     const shape=requestShape(body),first=await snapshot(identity,shape);
     let buffer;
     try { buffer=await pdfFactory(first.projected,first.preview?{preview:true}:undefined); }
-    catch (error) { throw new D.BackupError(error?.code==='PDF_UNSUPPORTED_GLYPH'?'pdf-glyph-unsupported':'pdf-unavailable'); }
+    catch (error) {
+      if(error?.code==='PDF_LAYOUT_OVERFLOW')throw new D.BackupError('pdf-layout-overflow',422);
+      throw new D.BackupError(error?.code==='PDF_UNSUPPORTED_GLYPH'?'pdf-glyph-unsupported':'pdf-unavailable');
+    }
     if (!Buffer.isBuffer(buffer) || buffer.length<100 || buffer.subarray(0,5).toString()!=='%PDF-') throw new D.BackupError('pdf-unavailable');
     if (buffer.length>MAX_PDF_BYTES) throw new D.BackupError('pdf-too-large',413);
     // Recheck permission and the complete outgoing source after rendering. A

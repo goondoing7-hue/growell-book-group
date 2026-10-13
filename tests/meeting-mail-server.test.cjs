@@ -65,6 +65,7 @@ test('PDF preparation diagnostics reveal a fixed category only, preserving all s
     [Object.assign(new Error('PRIVATE PATH AND RECORD'),{code:'MODULE_NOT_FOUND'}),'pdf-module-missing'],
     [Object.assign(new Error('PRIVATE PATH AND RECORD'),{code:'ENOENT'}),'pdf-font-asset-missing'],
     [Object.assign(new Error('PRIVATE GLYPH AND RECORD'),{code:'PDF_UNSUPPORTED_GLYPH'}),'pdf-glyph-unsupported'],
+    [Object.assign(new Error('PRIVATE OVERFLOW AND RECORD'),{code:'PDF_LAYOUT_OVERFLOW'}),'pdf-layout-overflow'],
     [new TypeError('PRIVATE CONTENT'), 'pdf-content-invalid'],
     [new Error('SECRET PROVIDER'), 'pdf-render-unavailable']
   ]){

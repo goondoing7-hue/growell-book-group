@@ -131,7 +131,8 @@
         var messages={'authentication-required':'다시 로그인한 뒤 PDF를 저장해주세요.','membership-required':'이 모임 기록을 내려받을 권한이 없어요.',
           'record-unavailable':'모임 기록을 다시 연 뒤 PDF를 저장해주세요.','record-changed':'모임 기록이 변경됐어요. 다시 연 뒤 PDF를 저장해주세요.',
           'not-configured':'PDF 다운로드 준비가 아직 완료되지 않았어요.','invalid-request':'모임 기록 내용을 확인한 뒤 다시 저장해주세요.',
-          'pdf-glyph-unsupported':'PDF 글꼴에서 지원하지 않는 문자가 있어요. 원문은 그대로 보존돼 있어요.','rate-limited':'잠시 후 다시 PDF를 저장해주세요.'};
+          'pdf-glyph-unsupported':'PDF 글꼴에서 지원하지 않는 문자가 있어요. 원문은 그대로 보존돼 있어요.',
+          'pdf-layout-overflow':'5페이지 안에 담기에는 내용이 너무 많아요. 작성 내용은 그대로 보존되어 있어요.','rate-limited':'잠시 후 다시 PDF를 저장해주세요.'};
         throw new Error(messages[result&&result.error]||'PDF를 만들지 못했어요. 잠시 후 다시 저장해주세요.');
       }
       var type=response.headers&&response.headers.get('Content-Type')||'',length=Number(response.headers&&response.headers.get('Content-Length'));

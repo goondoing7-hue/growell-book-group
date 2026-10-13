@@ -3,13 +3,13 @@
 const D = require('./driveBackupDomain.cjs');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BOOKS = Object.freeze({emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'});
-const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','connection-required','invalid-request','service-unavailable','rate-limited','pdf-unavailable','record-changed','pdf-module-missing','pdf-font-asset-missing','pdf-glyph-unsupported','pdf-content-invalid','pdf-render-unavailable']);
+const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','connection-required','invalid-request','service-unavailable','rate-limited','pdf-unavailable','record-changed','pdf-module-missing','pdf-font-asset-missing','pdf-glyph-unsupported','pdf-layout-overflow','pdf-content-invalid','pdf-render-unavailable']);
 function safeError(error) { return SAFE_CODES.has(error?.code) ? error.code : 'service-unavailable'; }
 function pdfFailure(error) {
   // Fixed diagnostics only. No original text, paths, addresses or provider
   // messages may leave the authenticated worker route.
   const code=error?.code==='MODULE_NOT_FOUND'?'pdf-module-missing':error?.code==='ENOENT'?'pdf-font-asset-missing':
-    error?.code==='PDF_UNSUPPORTED_GLYPH'?'pdf-glyph-unsupported':error instanceof TypeError?'pdf-content-invalid':'pdf-render-unavailable';
+    error?.code==='PDF_UNSUPPORTED_GLYPH'?'pdf-glyph-unsupported':error?.code==='PDF_LAYOUT_OVERFLOW'?'pdf-layout-overflow':error instanceof TypeError?'pdf-content-invalid':'pdf-render-unavailable';
   return new D.BackupError(code,503);
 }
 
