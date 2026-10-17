@@ -1141,6 +1141,7 @@
 <script src="driveBackup.js"></script>
 <script src="meetingCalendar.js"></script>
 <script src="webPush.js"></script>
+<script src="webPushPrompt.js"></script>
 <script src="googleConnection.js"></script>
 <script src="readingHabit.js"></script>
 <script src="readingTimerDomain.js"></script>
@@ -1647,6 +1648,9 @@ var STATE = {
 var sharedPostsLoadState = 'loading';
 
 var SESSION = null; // {userId, name, keyB64}
+var memberPushPromptSession = null;
+var memberPushPromptManager = typeof GrowellWebPushPrompt!=='undefined' ? GrowellWebPushPrompt.create() : null;
+var memberPushPromptLifecycleBound = false;
 var CURRENT_KEY = null; // CryptoKey, resolved from SESSION.keyB64
 var CURRENT_KEY_OWNER = null;
 var CURRENT_KEY_MATERIAL = null;
@@ -1741,6 +1745,7 @@ function restoreMemberSession(){
       if(restored){
         var profile=mapProfileRow(row);STATE.users[profile.id]=profile;
         SESSION={userId:profile.id,name:profile.name,keyB64:restored.keyB64,authKind:restored.authKind==='oauth'?'oauth':'password'};
+        if(typeof markMemberPushPromptSession==='function')markMemberPushPromptSession();
         sharedPostsLoadState='idle';authRestoreState='idle';authRestoreRetryCount=0;oauthMessage='';
         if(location.hash==='#/login')history.replaceState(null,'','#/');
         // Individual record fetches have their own retry UI and must not log out
@@ -2299,6 +2304,7 @@ function finishSaveButton(opts){
   if(opts.button){ opts.button.disabled=false; opts.button.textContent=opts.originalLabel||'저장'; }
 }
 function clearMemberSession(){
+  if(typeof resetMemberPushPrompt==='function')resetMemberPushPrompt();
   if(SESSION&&typeof GrowellWebPush!=='undefined'&&typeof GrowellWebPush.detach==='function'){
     var pushSession=SESSION,pushEpoch=saveSessionEpoch,pushMember=STATE.users[pushSession.userId],pushAuthId=pushMember&&pushMember.authUserId;
     pushDetachPending=GrowellWebPush.detach({isCurrent:function(){return saveSessionEpoch===pushEpoch&&(!SESSION||SESSION===pushSession);},getAccessToken:function(){
@@ -2823,6 +2829,7 @@ function doLogin(id, pw, btn){
   }).then(function(keyB64){
     authGuard();
     SESSION = {userId:loggedInUser.id, name:loggedInUser.name, keyB64:keyB64};
+    if(typeof markMemberPushPromptSession==='function')markMemberPushPromptSession();
     try{ localStorage.setItem('growell_session', JSON.stringify(SESSION)); }catch(e){}
     return loadMemberData();
   }).then(function(loaded){
@@ -4745,6 +4752,7 @@ async function completeOAuthMember(name,password,confirmation,button){
     var keyB64=await GrowellOAuth.unlockVault(password,response.envelope,pending.authUserId);guard();
     var profile=mapProfileRow(response.profile);STATE.users[profile.id]=profile;
     SESSION={userId:profile.id,name:profile.name,keyB64:keyB64,authKind:'oauth'};
+    if(typeof markMemberPushPromptSession==='function')markMemberPushPromptSession();
     try{localStorage.setItem('growell_session',JSON.stringify(SESSION));}catch(e){}
     await loadMemberData();guard();
     oauthPending=null;oauthMessage='';oauthBusy=false;sharedPostsLoadState='idle';
@@ -7674,6 +7682,48 @@ function bookPageHtml(book, tab, postId){
   '</div>';
 }
 
+/* ---------------- member push invitation ----------------
+   Mark only sessions established by verified, approved login paths. The prompt
+   reads device status and never grants permission or enables delivery on its own. */
+function markMemberPushPromptSession(){
+  var member=SESSION&&STATE.users[SESSION.userId];
+  memberPushPromptSession=member&&member.approvalStatus==='approved'&&member.isDeleted===false&&typeof member.authUserId==='string'&&member.authUserId
+    ? {session:SESSION,epoch:saveSessionEpoch,authUserId:member.authUserId} : null;
+}
+function resetMemberPushPrompt(){
+  memberPushPromptSession=null;
+  if(memberPushPromptManager)memberPushPromptManager.reset();
+}
+function currentMemberPushPrompt(marker){
+  var member=marker&&SESSION&&STATE.users[SESSION.userId];
+  return !!(marker&&marker===memberPushPromptSession&&SESSION===marker.session&&saveSessionEpoch===marker.epoch&&member&&member.authUserId===marker.authUserId&&member.approvalStatus==='approved'&&member.isDeleted===false);
+}
+function canPresentMemberPushPrompt(marker){
+  if(!currentMemberPushPrompt(marker)||BOOTING||BOOT_FAILED||document.hidden||authRestoreState!=='idle'||oauthBusy||saving)return false;
+  var route=currentRoute();
+  if(['login','profile-edit','admin-users'].indexOf(route.view)>=0||anyComposerOpen()||habitFormOpenFor||editingAnnouncement)return false;
+  if(Object.keys(memberLoadState).some(function(key){return memberLoadState[key]==='loading';}))return false;
+  if(document.querySelector('dialog[open], [aria-modal="true"], [contenteditable="true"]'))return false;
+  var menu=document.getElementById('profile-dropdown');if(menu&&!menu.hidden)return false;
+  var focused=document.activeElement;
+  return !(focused&&typeof focused.matches==='function'&&focused.matches('input,textarea,select,[contenteditable="true"]'));
+}
+function maybePromptMemberForPush(){
+  var marker=memberPushPromptSession;
+  if(!memberPushPromptManager||!currentMemberPushPrompt(marker))return Promise.resolve(false);
+  return memberPushPromptManager.maybeShow({memberKey:marker.session.userId,isCurrent:function(){return currentMemberPushPrompt(marker);},
+    getAccessToken:function(){return habitSyncAccessToken(marker.session,marker.epoch);},
+    canPresent:function(){return canPresentMemberPushPrompt(marker);}}).catch(function(){return false;});
+}
+function bindMemberPushPromptLifecycle(){
+  if(memberPushPromptLifecycleBound)return;memberPushPromptLifecycleBound=true;
+  window.addEventListener('pageshow',maybePromptMemberForPush);
+  window.addEventListener('online',maybePromptMemberForPush);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)maybePromptMemberForPush();});
+  document.addEventListener('focusout',maybePromptMemberForPush);
+  document.addEventListener('close',maybePromptMemberForPush,true);
+}
+
 /* ---------------- master render ---------------- */
 function render(){
   if(typeof GrowellHabitCarousel!=='undefined'&&GrowellHabitCarousel.beforeRender(SESSION?SESSION.userId:'',location.href,render))return;
@@ -7731,6 +7781,8 @@ function render(){
   enhanceLinkPreviews();
   if(typeof bindMaterialVideos==='function')bindMaterialVideos(route);
   captureComposerDraft();
+  bindMemberPushPromptLifecycle();
+  maybePromptMemberForPush();
 }
 
 function restoreDraftIfAny(route){

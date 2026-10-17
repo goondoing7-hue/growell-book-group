@@ -3,7 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
-  'webPush.js', 'webPush.css',
+  'webPush.js', 'webPushPrompt.js', 'webPush.css',
   'connection-guide.html', 'connection-guide.css',
   'guides/growell-connection-guide.pdf',
   'insightRounds.js', 'insightRounds.css',
@@ -32,7 +32,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
-  'tests/web-push-ui.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs',
+  'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs',
   'tests/meeting-record-download.test.cjs',
   'tests/meeting-mail-server.test.cjs', 'tests/meeting-mail-sql.test.cjs', 'tests/meeting-record-pdf.test.cjs', 'tests/meeting-email-worker.test.cjs',
   'tests/google-connection-ui.test.cjs', 'tests/google-connection-server.test.cjs',
