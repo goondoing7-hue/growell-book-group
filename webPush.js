@@ -148,7 +148,7 @@
     }
     function test(){return run(function(){return testingRegistration(false).then(function(){guard();return client.request('test',{endpoint:subscription.endpoint});}).then(function(){state.notice='테스트 알림을 요청했어요. 보통 1분 안에 도착해요.';});});}
     function localTest(){return run(function(){return testingRegistration(true).then(function(reg){
-        return bounded(Promise.resolve().then(function(){guard();return reg.showNotification('GROWELL 기기 알림 확인',{body:'이 알림이 보이면 이 기기의 알림 표시가 작동하고 있어요.',tag:'growell-local-test-'+Date.now().toString(36)+'-'+(++localSequence).toString(36),icon:'/covers/growell-icon-192.png',badge:'/covers/growell-icon-192.png',data:{kind:'growell-push',type:'test'}});}),10000)
+        return bounded(Promise.resolve().then(function(){guard();return reg.showNotification('GROWELL 기기 알림 확인',{body:'이 알림이 보이면 이 기기의 알림 표시가 작동하고 있어요.',tag:'growell-local-test-'+Date.now().toString(36)+'-'+(++localSequence).toString(36),icon:'/covers/growell-icon-192.png',badge:'/covers/growell-notification-badge-96.png',data:{kind:'growell-push',type:'test'}});}),10000)
           .catch(function(error){if(error&&/^(session_changed|permission_denied)$/.test(error.code))throw error;throw fail('device_display_failed');});
       }).then(function(){guard();state.notice='이 기기에 알림 표시를 요청했어요. 화면 상단의 알림창을 내려 확인해주세요. 이 검사는 서버 전송과 별개예요.';});
     });}

@@ -23,7 +23,7 @@ const DEPLOY_FILES = Object.freeze([
   'covers/og-image-v2.jpg', 'covers/icon-16.png', 'covers/icon-32.png',
   'covers/icon-180.png', 'covers/icon-192.png', 'covers/icon-512.png',
   'covers/icon-maskable-192.png', 'covers/icon-maskable-512.png',
-  'covers/brand-book.svg', 'covers/growell-icon-32.png', 'covers/growell-icon-180.png',
+  'covers/brand-book.svg', 'covers/growell-notification-badge.svg', 'covers/growell-notification-badge-96.png', 'covers/growell-icon-32.png', 'covers/growell-icon-180.png',
   'covers/growell-icon-192.png', 'covers/growell-icon-512.png', 'covers/growell-maskable-192.png',
   'covers/growell-maskable-512.png', 'covers/favicon-v3.ico', 'covers/og-image-v3.jpg',
   'covers/og-image-v4.jpg', 'covers/og-image-v4.svg',

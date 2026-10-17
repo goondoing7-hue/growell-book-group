@@ -122,7 +122,7 @@
     return ensureRegistration().then(function(registration){
       if(!registration)return false;
       return registration.showNotification('카운트다운 종료!',{
-        body:'설정한 시간이 지났어요. 독서 시간은 계속 기록되고 있어요.',icon:'/covers/growell-icon-192.png',badge:'/covers/growell-icon-32.png',
+        body:'설정한 시간이 지났어요. 독서 시간은 계속 기록되고 있어요.',icon:'/covers/growell-icon-192.png',badge:'/covers/growell-notification-badge-96.png',
         tag:'growell-reading-'+id,renotify:false,vibrate:[140,80,140],data:{bookId:allowedBooks.indexOf(bookId)>=0?bookId:null}
       }).then(function(){return true;},function(){notificationError=true;return false;});
     }).catch(function(){notificationError=true;return false;});

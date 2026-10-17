@@ -14,7 +14,7 @@ function growellPush(value){
     if(typeof value.body!=='string'||!value.body.trim()||value.body.length>800)return null;
     title='오늘의 말씀';body=value.body.trim();
   }else{title='GROWELL 알림 연결';body='이 기기에서 GROWELL 알림을 받을 수 있어요.';}
-  return {title:title,options:{body:body,tag:'growell-'+tag,icon:'/covers/growell-icon-192.png',badge:'/covers/growell-icon-192.png',renotify:false,data:data}};
+  return {title:title,options:{body:body,tag:'growell-'+tag,icon:'/covers/growell-icon-192.png',badge:'/covers/growell-notification-badge-96.png',renotify:false,data:data}};
 }
 self.addEventListener('push',function(event){
   var payload;try{payload=growellPush(event.data&&event.data.json());}catch(error){return;}
