@@ -1,0 +1,119 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const S=require('../server/webPushService.cjs'),D=require('../server/driveBackupDomain.cjs');
+const Verse=require('../dailyVerseDomain.js'),VERSES=require('../dailyVerses.js');
+const AUTH='11111111-1111-4111-8111-111111111111',JOB='22222222-2222-4222-8222-222222222222',LEASE='33333333-3333-4333-8333-333333333333';
+const PROFILE={id:'fixture-member',auth_user_id:AUTH,is_deleted:false,approval_status:'approved'};
+const e=crypto.createECDH('prime256v1');e.generateKeys();
+const CONFIG=S.getConfig({SUPABASE_SERVICE_ROLE_KEY:'fixture-service-key',CRON_SECRET:'fixture-cron-secret',GROWELL_SYNC_KEY:Buffer.alloc(32,7).toString('base64'),GROWELL_WEB_PUSH_PUBLIC_KEY:e.getPublicKey().toString('base64url'),GROWELL_WEB_PUSH_PRIVATE_KEY:e.getPrivateKey().toString('base64url')});
+const SUB={endpoint:'https://fcm.googleapis.com/fcm/send/SYNTHETIC_ENDPOINT',expirationTime:null,keys:{p256dh:e.getPublicKey().toString('base64url'),auth:Buffer.alloc(16,1).toString('base64url')}};
+const NOW=Date.parse('2026-10-17T00:00:00Z');
+function fixture(options={}){
+  const state={profile:structuredClone(PROFILE),reads:[],writes:[],sends:[],stored:null,claims:[],snapshots:{},finishes:[]};Object.assign(state,options.state);
+  const store={
+    profile:async id=>{state.reads.push(id);return structuredClone(state.profile);},
+    configure:async(profile,operation,payload)=>{
+      state.writes.push({profile,operation,payload});
+      if(options.configureError)throw options.configureError;
+      if(operation==='connect')state.stored={...payload};
+      if(operation==='disconnect')state.stored=null;
+      return{connected:!!state.stored,newPosts:state.stored?.new_posts,dailyVerse:state.stored?.daily_verse,lastSentAt:null,lastError:null,subscription_cipher:'MUST NOT LEAK',owner_id:'MUST NOT LEAK'};
+    },tick:async()=>{state.reads.push('tick');},claim:async()=>state.claims,
+    workerAuthorized:async secret=>{state.reads.push('worker-auth');return secret==='v'.repeat(40);},
+    apply:async(job,operation,payload)=>{
+      if(['snapshot','prepare'].includes(operation)){state.reads.push(operation);if(options.guardFalse===operation)return{applied:false};return{...state.snapshots[job.id],...(operation==='prepare'?options.prepareChange:{})};}
+      state.finishes.push([operation,payload]);if(options.acceptedError&&operation==='accepted')throw new Error('PRIVATE DATABASE');return{applied:true};
+    }
+  };
+  const request=async(url,options,kind)=>{if(kind!=='auth'||options.headers.Authorization!=='Bearer fixture.jwt')throw new D.BackupError('authentication-required',401);return{id:AUTH};};
+  const provider={send:async(...args)=>{state.sends.push(args);if(options.sendError)throw options.sendError;return{accepted:true};}};
+  const service=S.createService({config:options.config||CONFIG,request,store,provider,now:()=>NOW});
+  return{state,store,service,handler:S.createHandler({service})};
+}
+function queue(f,kind='post',overrides={}){
+  const hash=S.fingerprint(SUB.endpoint);f.state.claims=[{id:JOB,lease_token:LEASE}];
+  f.state.snapshots[JOB]={applied:true,owner_id:PROFILE.id,auth_user_id:AUTH,endpoint_hash:hash,subscription_cipher:D.seal(SUB,CONFIG.key,S.context(PROFILE.id,AUTH,hash)),kind,post_id:'post-fixture',book_id:'emotion',verse_day:Verse.getCompact(VERSES,NOW).dateKey,expires_at:new Date(NOW+3600000).toISOString(),...overrides};
+}
+async function invoke(handler,options={}){
+  const headers={};let value;await handler({method:'POST',url:'/api/web-push',body:{action:'config'},headers:{authorization:'Bearer fixture.jwt',origin:CONFIG.origin,'content-type':'application/json'},...options},{setHeader:(k,v)=>{headers[k]=v;},set statusCode(v){headers.status=v;},end:v=>{value=v;}});return{headers,body:JSON.parse(value)};
+}
+test('config exposes public key only to an approved verified member, including safe disabled configuration',async()=>{
+  const result=await invoke(fixture().handler);assert.equal(result.headers.status,200);assert.deepEqual(result.body,{configured:true,publicKey:CONFIG.publicKey});assert.equal(JSON.stringify(result.body).includes(CONFIG.privateKey),false);assert.equal(result.headers['Cache-Control'],'no-store, private');
+  const off=await invoke(fixture({config:{...CONFIG,configured:false}}).handler);assert.deepEqual(off.body,{configured:false,publicKey:null});
+  for(const profile of [{...PROFILE,approval_status:'pending'},{...PROFILE,is_deleted:true},{...PROFILE,auth_user_id:JOB},null])assert.equal((await invoke(fixture({state:{profile}}).handler)).headers.status,403);
+  assert.equal((await invoke(fixture().handler,{headers:{authorization:'Bearer invalid',origin:CONFIG.origin,'content-type':'application/json'}})).headers.status,401);
+});
+test('subscribe encrypts full validated subscription with owner/auth/endpoint associated context',async()=>{
+  const f=fixture(),result=await invoke(f.handler,{body:{action:'subscribe',subscription:SUB,preferences:{posts:true,dailyVerse:false}}});
+  assert.equal(result.headers.status,200);assert.deepEqual(result.body.subscription.preferences,{posts:true,dailyVerse:false});
+  const saved=f.state.writes[0];assert.equal(saved.operation,'connect');assert.equal(saved.payload.fingerprint,D.hash(SUB.endpoint));assert.equal(saved.payload.new_posts,true);assert.equal(saved.payload.daily_verse,false);
+  assert.equal(JSON.stringify(saved.payload).includes(SUB.endpoint),false);assert.deepEqual(D.unseal(saved.payload.subscription_cipher,CONFIG.key,S.context(PROFILE.id,AUTH,saved.payload.fingerprint)),SUB);
+  assert.throws(()=>D.unseal(saved.payload.subscription_cipher,CONFIG.key,S.context('another-member',AUTH,saved.payload.fingerprint)));
+  assert.equal(JSON.stringify(result.body).includes('MUST NOT LEAK'),false);assert.equal(JSON.stringify(result.body).includes(SUB.endpoint),false);
+});
+test('status, preference update, test and disconnect are fenced by verified profile and hashed current device',async()=>{
+  const f=fixture();assert.deepEqual((await invoke(f.handler,{body:{action:'status'}})).body,{configured:true,subscription:null});
+  f.state.stored={new_posts:false,daily_verse:true};
+  for(const action of ['status','preferences','test','unsubscribe']){
+    const body={action,endpoint:SUB.endpoint,...(action==='preferences'?{preferences:{posts:false,dailyVerse:true}}:{})};
+    const response=await invoke(f.handler,{body});assert.equal(response.headers.status,200);
+    const last=f.state.writes.at(-1);assert.equal(last.profile.id,PROFILE.id);assert.equal(last.profile.auth_user_id,AUTH);assert.equal(last.payload.fingerprint,D.hash(SUB.endpoint));
+    if(action==='test')assert.deepEqual(response.body,{ok:true});
+  }
+  assert.equal(f.state.stored,null);
+});
+test('invalid origin/content-type/method/shape/endpoint cannot mutate a push device',async()=>{
+  const f=fixture();
+  assert.equal((await invoke(f.handler,{headers:{authorization:'Bearer fixture.jwt',origin:'https://attacker.example','content-type':'application/json'}})).headers.status,403);
+  assert.equal((await invoke(f.handler,{method:'GET'})).headers.status,405);
+  for(const body of [{action:'worker'},{action:'status',owner:PROFILE.id},{action:'subscribe',subscription:SUB,preferences:{posts:'true',dailyVerse:true}},{action:'subscribe',subscription:{...SUB,endpoint:'https://localhost/x'},preferences:{posts:true,dailyVerse:true}},{action:'preferences',endpoint:SUB.endpoint,preferences:{posts:true}},{action:'test',endpoint:'https://attacker.example/x'}])assert.notEqual((await invoke(f.handler,{body})).headers.status,200);
+  assert.equal((await invoke(f.handler,{body:'{'})).headers.status,400);assert.equal((await invoke(f.handler,{body:'x'.repeat(S.MAX_BODY_BYTES+1)})).headers.status,413);assert.equal(f.state.writes.length,0);
+});
+test('expired subscriptions and private API errors never leak credentials or invoke network delivery',async()=>{
+  const f=fixture();assert.equal((await invoke(f.handler,{body:{action:'subscribe',subscription:{...SUB,expirationTime:NOW-1},preferences:{posts:true,dailyVerse:true}}})).headers.status,400);assert.equal(f.state.writes.length,0);
+  const failure=await invoke(fixture({configureError:new Error('PRIVATE KEY AND ENDPOINT')}).handler,{body:{action:'status',endpoint:SUB.endpoint}});assert.deepEqual(failure.body,{error:'service-unavailable'});assert.equal(failure.headers.status,503);
+});
+test('worker requires a server cron bearer or verified Vault worker secret, never a member bearer',async()=>{
+  const f=fixture();for(const headers of [{authorization:'Bearer fixture.jwt'},{},{'x-growell-worker-secret':'invalid'}])assert.equal((await invoke(f.handler,{url:'/api/web-push?action=worker',headers})).headers.status,401);
+  assert.equal((await invoke(f.handler,{method:'GET',url:'/api/web-push?action=worker',headers:{authorization:'Bearer '+CONFIG.cronSecret}})).headers.status,200);
+  assert.equal((await invoke(f.handler,{url:'/api/web-push?action=worker',headers:{'x-growell-worker-secret':'v'.repeat(40)}})).headers.status,200);
+});
+test('Vault worker secret accepts exact SQL-compatible length bounds without returning the secret',async()=>{
+  const f=fixture(),checked=[];f.store.workerAuthorized=async secret=>{checked.push(secret.length);return true;};
+  for(const length of [31,32,200,201,256,257]){
+    const result=await invoke(f.handler,{url:'/api/web-push?action=worker',headers:{'x-growell-worker-secret':'s'.repeat(length)}});
+    assert.equal(result.headers.status,length>=32&&length<=256?200:401);
+    assert.equal(JSON.stringify(result.body).includes('s'.repeat(31)),false);
+  }
+  assert.deepEqual(checked,[32,200,201,256]);
+});
+test('new post delivery rechecks eligible lease immediately before network and contains no member content',async()=>{
+  const f=fixture();queue(f);assert.deepEqual(await f.service.run(),{processed:1,accepted:1});assert.deepEqual(f.state.reads.slice(-2),['snapshot','prepare']);assert.equal(f.state.sends.length,1);
+  const [subscription,payload,ttl]=f.state.sends[0];assert.deepEqual(subscription,SUB);assert.equal(payload.type,'post');assert.equal(payload.postId,'post-fixture');assert.equal(payload.bookId,'emotion');assert.equal(ttl,3600);assert.equal(payload.body.includes('새로운 나눔'),true);
+  assert.deepEqual(Object.keys(payload).sort(),['version','type','bookId','postId','tag','body'].sort());assert.deepEqual(f.state.finishes.map(x=>x[0]),['accepted']);
+});
+test('daily verse uses exact same short passage and Korean day as home, with no AI or original rewrite',async()=>{
+  const f=fixture();queue(f,'verse');await f.service.run();const current=Verse.getCompact(VERSES,NOW),payload=f.state.sends[0][1];assert.equal(payload.body,current.text+'\n'+current.reference);assert.equal(payload.tag,'growell-verse-'+current.dateKey);
+  const stale=fixture();queue(stale,'verse',{verse_day:'2000-01-01'});await stale.service.run();assert.equal(stale.state.sends.length,0);
+});
+test('withdrawn eligibility, changed device or invalid encrypted context prevents a network push',async()=>{
+  for(const options of [{guardFalse:'snapshot'},{guardFalse:'prepare'},{prepareChange:{owner_id:'different-owner'}},{prepareChange:{subscription_cipher:'modified'}}]){const f=fixture(options);queue(f);await f.service.run();assert.equal(f.state.sends.length,0);}
+  for(const overrides of [{subscription_cipher:'not-cipher'},{endpoint_hash:'0'.repeat(64)},{book_id:'private-book'},{expires_at:new Date(NOW-1).toISOString()}]){const f=fixture();queue(f,'post',overrides);await f.service.run();assert.equal(f.state.sends.length,0);}
+});
+test('provider outcomes use durable bounded retry, inactive-device or uncertain-delivery states',async()=>{
+  for(const [code,status,operation] of [['subscription-gone',410,'gone'],['push-rate-limited',429,'retry'],['push-unavailable',503,'retry'],['push-rejected',502,'uncertain'],['push-uncertain',503,'uncertain']]){
+    const f=fixture({sendError:new D.BackupError(code,status)});queue(f);await f.service.run();assert.equal(f.state.finishes[0][0],operation);assert.equal(JSON.stringify(f.state.finishes).includes(SUB.endpoint),false);
+    if(code==='push-rate-limited')assert.equal(f.state.finishes[0][1].error_code,'rate-limited');
+  }
+  const f=fixture({acceptedError:true});queue(f);await f.service.run();assert.deepEqual(f.state.finishes.map(row=>row[0]),['accepted','uncertain']);assert.equal(f.state.sends.length,1);
+});
+test('store passes authenticated ownership and opaque fields only to service-role RPCs',async()=>{
+  const calls=[],store=S.createStore(CONFIG,async(...args)=>{calls.push(args);return true;});
+  await store.configure(PROFILE,'disconnect',{fingerprint:D.hash(SUB.endpoint)});await store.tick(NOW);await store.claim(5);await store.apply({id:JOB,lease_token:LEASE},'accepted');
+  assert.equal(calls[0][0],CONFIG.database+'/rest/v1/rpc/growell_web_push_configure');assert.deepEqual(JSON.parse(calls[0][1].body),{p_owner:PROFILE.id,p_auth:AUTH,p_operation:'disconnect',p_payload:{fingerprint:D.hash(SUB.endpoint)}});assert.equal(calls[0][1].headers.Authorization,'Bearer '+CONFIG.serviceKey);
+});
+test('transport maps authentication, database limits and failures without copying provider bodies',async()=>{
+  for(const [status,raw,kind,code] of [[401,'{}','auth','authentication-required'],[400,'{"code":"54000","message":"PRIVATE"}','database','rate-limited'],[403,'{"code":"42501","message":"PRIVATE"}','database','membership-required'],[500,'{"message":"PRIVATE"}','database','service-unavailable']]){
+    const transport=S.createTransport(async()=>({ok:false,status,text:async()=>raw}));await assert.rejects(transport(CONFIG.database,{},kind),error=>error.code===code&&!JSON.stringify(error).includes('PRIVATE'));
+  }
+});

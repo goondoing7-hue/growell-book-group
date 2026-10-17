@@ -97,7 +97,7 @@ test('notification clicks open only allowlisted same-origin book routes and pres
   await h.click({bookId:'emotion',url:'https://evil.test/redirect'});
   assert.equal(h.opened[0],'https://growell-book.vercel.app/#/book/emotion/mine');assert.equal(navigations,0);
   await h.click({bookId:'../../evil',url:'https://evil.test/redirect'});assert.equal(h.opened[1],'https://growell-book.vercel.app/#/');
-  assert.deepEqual(Object.keys(h.events).sort(),['activate','install','notificationclick'],'no response cache, fetch interception or pretend background push');
+  assert.deepEqual(Object.keys(h.events).sort(),['activate','install','notificationclick','push'],'timer worker shares authenticated server push without response caching or fetch interception');
 });
 test('notification click focuses an exact existing reading page without opening or navigating it',async()=>{
   let focused=0;const h=workerHarness([{url:'https://growell-book.vercel.app/#/book/action/mine',focus(){focused++;return Promise.resolve();}}]);

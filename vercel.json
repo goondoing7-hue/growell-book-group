@@ -4,6 +4,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
+    "api/web-push.js": {
+      "maxDuration": 60,
+      "includeFiles": "{server/webPush*.cjs,server/driveBackupDomain.cjs,dailyVerseDomain.js,dailyVerses.js}"
+    },
     "api/meeting-record-pdf.js": {
       "maxDuration": 60,
       "includeFiles": "{server/*.cjs,server/fonts/**,meetingRecordsDomain.js}"

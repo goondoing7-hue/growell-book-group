@@ -1,11 +1,31 @@
 'use strict';
-// Notifications only: no fetch handler, response cache, background timer or push subscription.
+// Notifications only: no fetch handler or response cache; existing timer notifications share this worker.
 self.addEventListener('install',function(event){event.waitUntil(self.skipWaiting());});
 self.addEventListener('activate',function(event){event.waitUntil(self.clients.claim());});
+function growellPush(value){
+  if(!value||typeof value!=='object'||Array.isArray(value)||value.version!==1||['post','verse','test'].indexOf(value.type)<0)return null;
+  var tag=typeof value.tag==='string'&&/^[A-Za-z0-9:_-]{1,160}$/.test(value.tag)?value.tag:'';
+  if(!tag)return null;
+  var data={kind:'growell-push',type:value.type},title='GROWELL',body='';
+  if(value.type==='post'){
+    if(['emotion','thought','body','action'].indexOf(value.bookId)<0||typeof value.postId!=='string'||! /^[A-Za-z0-9_-]{1,100}$/.test(value.postId))return null;
+    data.bookId=value.bookId;data.postId=value.postId;title='새로운 나눔';body='새로운 나눔이 올라왔어요. GROWELL에서 확인해보세요.';
+  }else if(value.type==='verse'){
+    if(typeof value.body!=='string'||!value.body.trim()||value.body.length>800)return null;
+    title='오늘의 말씀';body=value.body.trim();
+  }else{title='GROWELL 알림 연결';body='이 기기에서 GROWELL 알림을 받을 수 있어요.';}
+  return {title:title,options:{body:body,tag:'growell-'+tag,icon:'/covers/growell-icon-192.png',badge:'/covers/growell-icon-192.png',renotify:false,data:data}};
+}
+self.addEventListener('push',function(event){
+  var payload;try{payload=growellPush(event.data&&event.data.json());}catch(error){return;}
+  if(!payload)return;
+  event.waitUntil(Promise.resolve().then(function(){return self.registration.showNotification(payload.title,payload.options);}).catch(function(){return null;}));
+});
 self.addEventListener('notificationclick',function(event){
   event.notification.close();
   var data=event.notification.data||{},allowed=['emotion','thought','body','action'];
   var route=allowed.indexOf(data.bookId)>=0?'#/book/'+data.bookId+'/mine':'#/';
+  if(data.kind==='growell-push')route=data.type==='post'&&allowed.indexOf(data.bookId)>=0&&typeof data.postId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.postId)?'#/book/'+data.bookId+'/share/post/'+data.postId:'#/';
   var destination=new URL('/'+route,self.location.origin).href;
   event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(function(windows){
     var existing=windows.find(function(client){

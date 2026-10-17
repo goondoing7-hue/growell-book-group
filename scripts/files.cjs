@@ -3,6 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
+  'webPush.js', 'webPush.css',
   'connection-guide.html', 'connection-guide.css',
   'guides/growell-connection-guide.pdf',
   'insightRounds.js', 'insightRounds.css',
@@ -31,6 +32,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/web-push-ui.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs',
   'tests/meeting-record-download.test.cjs',
   'tests/meeting-mail-server.test.cjs', 'tests/meeting-mail-sql.test.cjs', 'tests/meeting-record-pdf.test.cjs', 'tests/meeting-email-worker.test.cjs',
   'tests/google-connection-ui.test.cjs', 'tests/google-connection-server.test.cjs',
@@ -57,6 +59,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'api/web-push.js', 'server/webPushService.cjs', 'server/webPushProvider.cjs', 'server/web-push.sql', 'server/web-push-schedule.sql', 'server/WEB_PUSH_SETUP.md',
   'api/meeting-record-pdf.js', 'server/meetingRecordDownloadService.cjs',
   'api/meeting-record-mail.js', 'server/meetingMailService.cjs', 'server/meetingRecordPdf.cjs', 'server/meeting-record-email-worker.ts', 'server/meeting-mail.sql', 'server/meeting-mail-activate.sql', 'server/meeting-mail-schedule.sql', 'server/MEETING_MAIL_SETUP.md',
   'server/fonts/Pretendard-Regular.otf', 'server/fonts/Pretendard-Bold.otf', 'server/fonts/NotoEmoji.ttf', 'server/fonts/OFL.txt', 'server/fonts/NotoEmoji-OFL.txt', 'server/fonts/README.md',

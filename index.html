@@ -1103,6 +1103,7 @@
 <link rel="stylesheet" href="driveBackup.css">
 <link rel="stylesheet" href="meetingCalendar.css">
 <link rel="stylesheet" href="googleConnection.css">
+<link rel="stylesheet" href="webPush.css">
 <link rel="stylesheet" href="meetingRecordsPrint.css">
 <link rel="stylesheet" href="readingTimer.css">
 <link rel="stylesheet" href="profile.css">
@@ -1139,6 +1140,7 @@
 <script src="habitReminder.js"></script>
 <script src="driveBackup.js"></script>
 <script src="meetingCalendar.js"></script>
+<script src="webPush.js"></script>
 <script src="googleConnection.js"></script>
 <script src="readingHabit.js"></script>
 <script src="readingTimerDomain.js"></script>
@@ -2277,6 +2279,7 @@ var saving = false;
 var saveQueue = [];
 var activeSave = null;
 var saveSessionEpoch = 0;
+var pushDetachPending = Promise.resolve();
 var authFlowEpoch = 0;
 var authTransition = Promise.resolve();
 var memberLoadState = {privateEntries:'idle', habits:'idle', readingLogs:'idle', readingMeta:'idle'};
@@ -2296,6 +2299,16 @@ function finishSaveButton(opts){
   if(opts.button){ opts.button.disabled=false; opts.button.textContent=opts.originalLabel||'저장'; }
 }
 function clearMemberSession(){
+  if(SESSION&&typeof GrowellWebPush!=='undefined'&&typeof GrowellWebPush.detach==='function'){
+    var pushSession=SESSION,pushEpoch=saveSessionEpoch,pushMember=STATE.users[pushSession.userId],pushAuthId=pushMember&&pushMember.authUserId;
+    pushDetachPending=GrowellWebPush.detach({isCurrent:function(){return saveSessionEpoch===pushEpoch&&(!SESSION||SESSION===pushSession);},getAccessToken:function(){
+      return sb.auth.getSession().then(function(result){var auth=result&&result.data&&result.data.session;
+        if(saveSessionEpoch!==pushEpoch||SESSION&&SESSION!==pushSession||!pushAuthId||result.error||!auth||!auth.user||auth.user.id!==pushAuthId||!auth.access_token)throw new Error('session_changed');
+        return auth.access_token;
+      });
+    }}).catch(function(){return false;});
+  }
+  if(typeof GrowellWebPush!=='undefined')GrowellWebPush.reset();
   if(typeof cancelMemberSessionRestore==='function')cancelMemberSessionRestore();
   editingAnnouncement=false;
   announcementEditDraft=null;
@@ -2835,7 +2848,7 @@ function doLogout(){
   ++authFlowEpoch;
   var pendingSave = resetSaveSession();
   clearMemberSession();
-  authTransition = authTransition.catch(function(){}).then(function(){ return pendingSave; }).then(function(){ return sb.auth.signOut(); }).catch(function(){});
+  authTransition = authTransition.catch(function(){}).then(function(){ return pendingSave; }).then(function(){return pushDetachPending;}).then(function(){ return sb.auth.signOut(); }).catch(function(){});
   location.hash = '#/';
   render();
   return authTransition;

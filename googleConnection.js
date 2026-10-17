@@ -131,6 +131,7 @@
   }
   function close(restore){
     var view=active;if(!view)return;active=null;clearTimeout(view.timer);root.document.removeEventListener('visibilitychange',view.visibility);view.client.dispose();
+    if(view.push)view.push.destroy();
     if(view.node.open)view.node.close();view.node.remove();
     if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('google-connection');
     if(restore!==false&&view.options.restoreFocus)view.options.restoreFocus();
@@ -140,19 +141,21 @@
     if(!root.document||!Drive||!Calendar||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function'||!options.isCurrent())return;
     close(false);
     var node=root.document.createElement('dialog');node.className='google-connection-dialog';node.setAttribute('aria-labelledby','google-connection-title');
-    node.innerHTML='<header class="google-connection-head"><div><span>하나의 계정으로 함께</span><h2 id="google-connection-title">Google 연동</h2></div><button type="button" data-google-close aria-label="Google 연동 닫기">×</button></header>'+
+    node.innerHTML='<header class="google-connection-head"><div><span>계정 연결과 기기 알림을 한곳에서</span><h2 id="google-connection-title">연동</h2></div><button type="button" data-google-close aria-label="연동 닫기">×</button></header>'+
       '<div class="google-connection-body"><p class="google-connection-intro">내 Google 계정으로 기록을 백업하고, 모임 일정을 확인하며, 모임 기록 PDF를 이메일로 받아요.</p>'+
       '<p class="google-connection-summary" data-google-summary role="status" aria-live="polite">Google 연결 상태를 확인하고 있어요…</p><p class="google-connection-return" data-google-return hidden></p>'+
       '<p class="google-connection-account" data-google-account hidden></p><button type="button" class="google-connection-primary" data-google-connect hidden>Google 계정 연결</button>'+
       '<p class="google-connection-consent" data-google-consent hidden>Google에서 백업과 캘린더 권한을 함께 허용해주세요. 기존에 한 가지만 연결했다면 한 번 다시 연결하면 돼요.</p>'+
       '<div class="google-connection-cards">'+cardHtml('drive','Google Drive 백업','저장한 내 기록을 GROWELL 백업 폴더에 보관해요.','자동 백업')+cardHtml('calendar','모임 일정 · Google 캘린더','모임 날짜·시간·장소·읽을 범위를 내 기본 캘린더에 담아요.','모임 일정 자동 반영')+cardHtml('mail','모임 기록 PDF 이메일','운영자가 공개한 모임 기록을 연결한 Google 이메일로 받아요.','PDF 이메일 자동 발송')+'</div>'+
       '<section class="google-connection-reminder" data-google-reminder hidden><h3>삼성 리마인더 · 애플 미리 알림</h3><p>이 화면에서 이어서 연결할 수 있어요. 습관 알림은 Microsoft 계정을 한 번 더 연결하고 휴대폰에서 같은 계정의 GROWELL 목록을 설정해주세요.</p><button type="button" data-google-reminder-open>습관 알림 연결·관리</button></section>'+
-      '<button type="button" class="google-connection-refresh" data-google-refresh>상태 새로고침</button><p class="google-connection-pause">자동 백업·모임 일정·PDF 이메일은 각각 잠시 끌 수 있어요.</p>'+
+      '<section data-google-push></section>'+
+      '<button type="button" class="google-connection-refresh" data-google-refresh>Google 연결 상태 새로고침</button><p class="google-connection-pause">자동 백업·모임 일정·PDF 이메일은 각각 잠시 끌 수 있어요.</p>'+
       '<details class="google-connection-scope"><summary>백업·일정·PDF에 담기는 내용</summary><p>백업에는 서버에 저장한 내 기록·습관·자료·독서 아카이브가 담겨요. 작성 중인 초안과 외부 첨부파일 원본은 포함하지 않아요.</p><p>모임 일정에는 운영자가 저장한 날짜·시간·장소·읽을 범위와 안내가 담겨요. Google에서 고친 내용은 GROWELL에 반영되지 않아요.</p><p>이메일 PDF에는 운영자가 공개한 모임 기록과 같은 책·해당 회차에 회원이 공개한 통찰이 함께 담겨요. 나의 공간의 개인 기록과 공개하지 않은 글은 포함하지 않아요. 이메일을 연결해도 내 메일함을 읽거나 내 계정으로 메일을 보내는 권한은 요청하지 않아요.</p><p>개인 기록의 열쇠는 백업에 포함되지 않아요. <a href="#/profile/edit" data-google-recovery>프로필 수정에서 복구 파일을 따로 보관해주세요.</a></p></details></div>';
     root.document.body.appendChild(node);
     var view={node:node,options:options,entries:null,busy:false,timer:null,polls:0};
     function current(){return active===view&&options.isCurrent();}
     view.client=createClient({isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});active=view;
+    if(root.GrowellWebPush&&typeof root.GrowellWebPush.mount==='function')view.push=root.GrowellWebPush.mount(node.querySelector('[data-google-push]'),{isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});
     function q(selector){return node.querySelector(selector);}
     function controls(){
       var summary=summaryView(view.entries);node.setAttribute('aria-busy',String(view.busy));

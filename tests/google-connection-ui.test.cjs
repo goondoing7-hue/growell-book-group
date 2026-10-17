@@ -90,6 +90,7 @@ class Element {
   set innerHTML(html){this.html=html;this.nodes={};for(const [,tag,attributes] of html.matchAll(/<([a-z]+)\b([^>]*)>/g)){const attrs=[...attributes.matchAll(/\b(data-[a-z-]+)(?:="[^"]*")?/g)];if(!attrs.length)continue;const node=new Element(tag);node.hidden=/\bhidden\b/.test(attributes);for(const [,attr] of attrs)this.nodes['['+attr+']']=node;}}
   get innerHTML(){return this.html;}
   querySelector(selector){assert.ok(this.nodes[selector],'fixture selector '+selector);return this.nodes[selector];}
+  querySelectorAll(selectors){return selectors.split(',').map(selector=>this.querySelector(selector));}
   setAttribute(name,value){this.attributes[name]=value;}
   removeAttribute(name){delete this.attributes[name];if(name==='href')this.href='';}
   addEventListener(type,listener){(this.events[type]||=[]).push(listener);}
@@ -105,7 +106,8 @@ function uiHarness(extra={}){
   const root={document,URL,Promise,Date,setTimeout,clearTimeout,AbortController,GrowellDriveBackup:Drive,GrowellMeetingCalendar:Calendar,
     fetch:async(url,options)=>{calls.push({url,options});return response(url.endsWith('action=config')?{configured:true}:joint());},
     location:{origin,assign(url){navigation.push(url);}},addEventListener(){},GrowellPopupHistory:{open(id){history.push('open:'+id);},closed(id){history.push('close:'+id);}},...extra.root};
-  vm.createContext(root);vm.runInContext(fs.readFileSync(path.join(__dirname,'../googleConnection.js'),'utf8'),root);
+  vm.createContext(root);if(extra.webPush)vm.runInContext(fs.readFileSync(path.join(__dirname,'../webPush.js'),'utf8'),root);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../googleConnection.js'),'utf8'),root);
   const options={isCurrent:()=>current,getAccessToken:async()=> 'SYNTHETIC_MEMBER_TOKEN',...extra.options};root.GrowellGoogleConnection.open(options);
   return {root,calls,navigation,documentEvents,history,node:dialogs.at(-1),setCurrent:value=>{current=value;},q(selector){return this.node.querySelector(selector);},close(){root.GrowellGoogleConnection.close(false);}};
 }
@@ -208,4 +210,72 @@ test('closing the dialog aborts late loads, removes observers and restores focus
 test('details open only after disposing the unified dialog',async()=>{
   let opened=false;const box=uiHarness({options:{onCalendarDetails(){opened=true;assert.equal(box.node.removed,true);assert.equal(box.documentEvents.visibilitychange.length,0);}}});await flush();
   assert.equal(box.q('[data-google-drive-details]').hidden,true);assert.equal(box.q('[data-google-calendar-details]').hidden,false);box.q('[data-google-calendar-details]').onclick();assert.equal(opened,true);box.close();
+});
+
+function pushBrowser(){
+  const key=Buffer.concat([Buffer.from([4]),Buffer.alloc(64,9)]).toString('base64url');
+  const subscription={endpoint:'https://push.example.invalid/PRIVATE_DEVICE_ENDPOINT',toJSON(){return {endpoint:this.endpoint,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};},unsubscribe:async()=>true};
+  return {key,root:{isSecureContext:true,PushManager:function(){},Notification:{permission:'granted',requestPermission(){throw Error('must not prompt on opening');}},
+    atob:value=>Buffer.from(value,'base64').toString('binary'),navigator:{userAgent:'Windows',serviceWorker:{getRegistration:async()=>({pushManager:{getSubscription:async()=>subscription}})}}}};
+}
+
+test('push preferences remain usable while Google services are still loading',async()=>{
+  const fixture=pushBrowser(),google=deferred(),requests=[];let preferences={posts:false,dailyVerse:true};
+  const box=uiHarness({webPush:true,root:{...fixture.root,fetch:async(url,settings)=>{
+    requests.push({url,settings});if(url==='/api/web-push'){
+      const body=JSON.parse(settings.body);if(body.action==='config')return response({configured:true,publicKey:fixture.key});
+      if(body.action==='preferences'){preferences=body.preferences;return response({ok:true});}
+      return response({configured:true,subscription:{active:true,preferences}});
+    }
+    return url.endsWith('action=config')?response({configured:true}):google.promise;
+  }}});await flush();
+  const push=box.q('[data-google-push]'),q=selector=>push.querySelector(selector);
+  assert.match(box.node.html,/<h2 id="google-connection-title">연동<\/h2>/);
+  assert.equal(box.q('[data-google-drive-enabled]').disabled,true,'Google status is still loading');
+  assert.equal(q('[data-push-settings]').hidden,false);assert.equal(q('[data-push-posts]').disabled,false);
+  assert.equal(q('[data-push-posts]').checked,false);assert.equal(q('[data-push-verse]').checked,true);
+  q('[data-push-verse]').checked=false;q('[data-push-verse]').onchange();await flush();
+  assert.equal(q('[data-push-verse]').checked,false);assert.deepEqual(preferences,{posts:false,dailyVerse:false});
+  const write=requests.find(call=>call.url==='/api/web-push'&&JSON.parse(call.settings.body).action==='preferences');
+  assert.equal(write.settings.headers.Authorization,'Bearer SYNTHETIC_MEMBER_TOKEN');
+  google.resolve(response(joint()));await flush();assert.equal(box.q('[data-google-drive-enabled]').checked,true);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);box.close();
+});
+
+test('Google connection failures do not block independently authenticated push settings',async()=>{
+  const fixture=pushBrowser(),requests=[];
+  const box=uiHarness({webPush:true,root:{...fixture.root,fetch:async(url,settings)=>{
+    requests.push(url);if(url==='/api/web-push')return response(JSON.parse(settings.body).action==='config'?{configured:true,publicKey:fixture.key}:{configured:true,subscription:{active:true,preferences:{posts:true,dailyVerse:true}}});
+    throw Error('PRIVATE_GOOGLE_FAILURE');
+  }}});await flush();
+  assert.match(box.q('[data-google-summary]').textContent,/확인하지 못/);assert.equal(box.q('[data-google-drive-enabled]').disabled,true);
+  const push=box.q('[data-google-push]');assert.equal(push.querySelector('[data-push-settings]').hidden,false);assert.equal(push.querySelector('[data-push-test]').disabled,false);
+  assert.equal(requests.includes('/api/web-push'),true);assert.doesNotMatch(push.innerHTML+push.querySelector('[data-push-status]').textContent,/PRIVATE_GOOGLE_FAILURE|PRIVATE_DEVICE/);box.close();
+});
+
+test('closing connections destroys push requests and prevents late former-account state rendering',async()=>{
+  const fixture=pushBrowser(),answer=deferred();let signal;
+  const box=uiHarness({webPush:true,root:{...fixture.root,fetch:async(url,settings)=>{
+    if(url==='/api/web-push'){
+      if(JSON.parse(settings.body).action==='config')return response({configured:true,publicKey:fixture.key});
+      signal=settings.signal;return answer.promise;
+    }
+    return response(url.endsWith('action=config')?{configured:true}:joint());
+  }}});await flush();assert.ok(signal);const push=box.q('[data-google-push]'),before=push.querySelector('[data-push-status]').textContent;
+  box.q('[data-google-close]').onclick();assert.equal(signal.aborted,true);assert.equal(box.node.removed,true);
+  answer.resolve(response({configured:true,subscription:{active:true,preferences:{posts:true,dailyVerse:true}}}));await flush();
+  assert.equal(push.querySelector('[data-push-status]').textContent,before);assert.equal(push.querySelector('[data-push-settings]').hidden,true);box.close();
+});
+
+test('replacing the member invalidates the push adapter and closes all connection observers',async()=>{
+  const fixture=pushBrowser(),answer=deferred();let signal;
+  const box=uiHarness({webPush:true,root:{...fixture.root,fetch:async(url,settings)=>{
+    if(url==='/api/web-push'){
+      if(JSON.parse(settings.body).action==='config')return response({configured:true,publicKey:fixture.key});
+      signal=settings.signal;return answer.promise;
+    }
+    return response(url.endsWith('action=config')?{configured:true}:joint());
+  }}});await flush();assert.ok(signal);box.setCurrent(false);box.root.GrowellGoogleConnection.refresh();
+  assert.equal(signal.aborted,true);assert.equal(box.node.removed,true);assert.equal(box.documentEvents.visibilitychange.length,0);
+  answer.resolve(response({configured:true,subscription:{active:true,preferences:{posts:false,dailyVerse:false}}}));await flush();
+  assert.equal(box.q('[data-google-push]').querySelector('[data-push-settings]').hidden,true);box.close();
 });
