@@ -46,7 +46,9 @@ function createProvider(config,options={}) {
       const text=JSON.stringify(payload);
       if (!config.configured || Buffer.byteLength(text)>3000) throw new D.BackupError('push-unavailable');
       try {
-        const response=await send(clean,text,{vapidDetails:{subject:config.origin,publicKey:config.publicKey,privateKey:config.privateKey},TTL:Math.max(1,Math.min(3600,Math.floor(ttl))),urgency:'normal',timeout:6000});
+        // Every message follows an explicit device opt-in and is displayed by
+        // the service worker. Ask push services to deliver it while idle too.
+        const response=await send(clean,text,{vapidDetails:{subject:config.origin,publicKey:config.publicKey,privateKey:config.privateKey},TTL:Math.max(1,Math.min(3600,Math.floor(ttl))),urgency:'high',timeout:6000});
         if (!response || ![200,201,202,204].includes(response.statusCode)) throw Object.assign(new Error(),{statusCode:response?.statusCode});
         return {accepted:true};
       } catch(error) {

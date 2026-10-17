@@ -3,7 +3,7 @@
   if(typeof module==='object'&&module.exports)module.exports=api;else root.GrowellWebPush=api;
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
-  var epoch=0,views=new Set(),actions=['config','status','subscribe','preferences','unsubscribe','test'];
+  var epoch=0,views=new Set(),localSequence=0,actions=['config','status','subscribe','preferences','unsubscribe','test'];
   function fail(code){var error=new Error(code);error.code=code;return error;}
   function bounded(promise,delay){
     return new Promise(function(resolve,reject){var timer=root.setTimeout(function(){reject(fail('timeout'));},delay);
@@ -34,6 +34,8 @@
     if(code==='busy')return '알림 설정을 처리하고 있어요. 잠시 기다려주세요.';
     if(/^(rate_limited|too_many_requests)$/.test(code))return '잠시 기다린 뒤 다시 시도해주세요.';
     if(code==='timeout')return '응답이 늦어지고 있어요. 연결 상태를 새로고침해주세요.';
+    if(code==='device_display_failed')return '기기 알림을 표시하지 못했어요. 브라우저의 사이트 알림과 갤럭시 설정의 해당 브라우저·GROWELL 알림 허용을 확인해주세요.';
+    if(code==='worker_unavailable')return '이 기기의 알림 연결을 새로 확인해야 해요. 상태를 새로고침하거나 이 기기 알림을 껐다가 다시 연결해주세요.';
     return '알림 설정을 확인하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.';
   }
   function createClient(options){
@@ -59,18 +61,29 @@
   function subscriptionStatus(raw){
     if(!raw||typeof raw.configured!=='boolean')throw fail('unavailable');
     if(raw.subscription!=null&&(!raw.subscription||typeof raw.subscription.active!=='boolean'||!raw.subscription.preferences||typeof raw.subscription.preferences.posts!=='boolean'||typeof raw.subscription.preferences.dailyVerse!=='boolean'))throw fail('unavailable');
-    return {configured:raw.configured,subscribed:!!(raw.subscription&&raw.subscription.active),preferences:raw.subscription?{posts:raw.subscription.preferences.posts,dailyVerse:raw.subscription.preferences.dailyVerse}:{posts:true,dailyVerse:true}};
+    var stamp=raw.subscription&&typeof raw.subscription.lastSentAt==='string'?Date.parse(raw.subscription.lastSentAt):NaN;
+    return {configured:raw.configured,subscribed:!!(raw.subscription&&raw.subscription.active),lastSentAt:Number.isFinite(stamp)?new Date(stamp).toISOString():'',preferences:raw.subscription?{posts:raw.subscription.preferences.posts,dailyVerse:raw.subscription.preferences.dailyVerse}:{posts:true,dailyVerse:true}};
   }
   function createController(options){
     options=options||{};var ownEpoch=epoch,disposed=false,key='',subscription=null;
-    var state=Object.assign(support(),{configured:null,subscribed:false,preferences:{posts:true,dailyVerse:true},busy:false,loaded:false,errorCode:'',notice:''});
+    var state=Object.assign(support(),{configured:null,subscribed:false,preferences:{posts:true,dailyVerse:true},lastSentAt:'',busy:false,loaded:false,errorCode:'',notice:''});
     function current(){return !disposed&&epoch===ownEpoch&&options.isCurrent();}
     function guard(){if(!current())throw fail('session_changed');}
     var client=createClient({getAccessToken:options.getAccessToken,isCurrent:current,fetch:options.fetch||root.fetch.bind(root)});
     function emit(){if(current()&&options.onChange)options.onChange(snapshot());}
     function snapshot(){return Object.assign({},state,{preferences:Object.assign({},state.preferences)});}
     function device(){guard();return bounded(root.navigator.serviceWorker.getRegistration('/'),12000).then(function(reg){guard();return reg&&reg.pushManager?bounded(reg.pushManager.getSubscription(),12000):null;});}
-    function apply(raw){var parsed=subscriptionStatus(raw);state.configured=parsed.configured;state.subscribed=parsed.subscribed;state.preferences=parsed.preferences;}
+    function apply(raw){var parsed=subscriptionStatus(raw);state.configured=parsed.configured;state.subscribed=parsed.subscribed;state.preferences=parsed.preferences;state.lastSentAt=parsed.lastSentAt;}
+    function activated(reg){
+      // A still-active timer worker may predate push support. Await its replacement when one is installing/waiting.
+      return new Promise(function(resolve,reject){
+        var worker=reg.installing||reg.waiting||reg.active,finished=false,timer;
+        if(!worker){reject(fail('worker_unavailable'));return;}
+        function finish(error){if(finished)return;finished=true;root.clearTimeout(timer);if(worker.removeEventListener)worker.removeEventListener('statechange',ready);if(error)reject(error);else resolve(reg);}
+        function ready(){if(!current())finish(fail('session_changed'));else if(worker.state==='activated')finish();else if(worker.state==='redundant')finish(fail('worker_unavailable'));}
+        timer=root.setTimeout(function(){finish(fail('timeout'));},15000);if(worker.addEventListener)worker.addEventListener('statechange',ready);ready();
+      });
+    }
     function run(operation){
       if(!current())return Promise.reject(fail('session_changed'));if(state.busy)return Promise.resolve(false);
       state.busy=true;state.errorCode='';state.notice='';emit();
@@ -103,11 +116,7 @@
         guard();state.permission=answer;if(answer!=='granted')throw fail(answer==='denied'?'permission_denied':'permission_dismissed');
         return bounded(root.navigator.serviceWorker.register('/timer-alert-sw.js',{scope:'/',updateViaCache:'none'}),15000);
       }).then(function(reg){
-        guard();return bounded(reg.active?Promise.resolve(reg):new Promise(function(resolve,reject){
-          var worker=reg.installing||reg.waiting;if(!worker){reject(fail('unavailable'));return;}
-          function ready(){if(worker.state==='activated'){worker.removeEventListener('statechange',ready);resolve(reg);}else if(worker.state==='redundant'){worker.removeEventListener('statechange',ready);reject(fail('unavailable'));}}
-          worker.addEventListener('statechange',ready);ready();
-        }),15000);
+        guard();return (typeof reg.update==='function'?bounded(reg.update(),15000):Promise.resolve()).then(function(){guard();return activated(reg);});
       }).then(function(reg){guard();return bounded(reg.pushManager.getSubscription(),12000).then(function(existing){guard();return existing||bounded(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKey(key)}),15000);});})
         .then(function(value){guard();subscription=value;return client.request('subscribe',{subscription:value.toJSON(),preferences:Object.assign({},state.preferences)});})
         .then(function(){guard();return client.request('status',{endpoint:subscription.endpoint});}).then(function(raw){apply(raw);state.notice='이 기기에서 알림을 받을 수 있어요.';});});
@@ -118,11 +127,35 @@
       return client.request('preferences',{endpoint:subscription.endpoint,preferences:{posts:value.posts,dailyVerse:value.dailyVerse}})
         .then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(apply);
     });}
-    function test(){return run(function(){if(!state.subscribed||!subscription)throw fail('subscription_required');return client.request('test',{endpoint:subscription.endpoint}).then(function(){state.notice='테스트 알림을 요청했어요. 보통 1분 안에 도착해요.';});});}
+    function testingRegistration(local){
+      if(!state.subscribed||!subscription)throw fail('subscription_required');
+      if(support().permission!=='granted')throw fail('permission_denied');
+      function exact(reg){var base=root.location&&root.location.origin,scope,script;
+        try{scope=new URL(reg.scope);script=new URL(reg.active.scriptURL);}catch(error){throw fail('worker_unavailable');}
+        if(!base||scope.origin!==base||scope.pathname!=='/'||scope.search||scope.hash||script.origin!==base||script.pathname!=='/timer-alert-sw.js'||script.search||script.hash||reg.active.state!=='activated'||typeof reg.showNotification!=='function')throw fail('worker_unavailable');
+      }
+      return bounded(root.navigator.serviceWorker.getRegistration('/'),10000).then(function(reg){
+        guard();exact(reg);
+        // Refresh the public worker script even for devices connected before this release.
+        var updated=typeof reg.update==='function'?bounded(reg.update(),8000):Promise.resolve();
+        if(local)updated=updated.catch(function(){guard();return null;}); // Local display remains useful offline.
+        return updated.then(function(){guard();return activated(reg);}).then(function(){guard();exact(reg);return reg;});
+      }).then(function(reg){return bounded(reg.pushManager.getSubscription(),10000).then(function(value){
+          guard();if(!value||value.endpoint!==subscription.endpoint)throw fail('worker_unavailable');
+          if(support().permission!=='granted')throw fail('permission_denied');
+          return reg;
+        });});
+    }
+    function test(){return run(function(){return testingRegistration(false).then(function(){guard();return client.request('test',{endpoint:subscription.endpoint});}).then(function(){state.notice='테스트 알림을 요청했어요. 보통 1분 안에 도착해요.';});});}
+    function localTest(){return run(function(){return testingRegistration(true).then(function(reg){
+        return bounded(Promise.resolve().then(function(){guard();return reg.showNotification('GROWELL 기기 알림 확인',{body:'이 알림이 보이면 이 기기의 알림 표시가 작동하고 있어요.',tag:'growell-local-test-'+Date.now().toString(36)+'-'+(++localSequence).toString(36),icon:'/covers/growell-icon-192.png',badge:'/covers/growell-icon-192.png',data:{kind:'growell-push',type:'test'}});}),10000)
+          .catch(function(error){if(error&&/^(session_changed|permission_denied)$/.test(error.code))throw error;throw fail('device_display_failed');});
+      }).then(function(){guard();state.notice='이 기기에 알림 표시를 요청했어요. 화면 상단의 알림창을 내려 확인해주세요. 이 검사는 서버 전송과 별개예요.';});
+    });}
     function disable(){return run(function(){if(!subscription)throw fail('subscription_required');var target=subscription;
       return client.request('unsubscribe',{endpoint:target.endpoint}).then(function(){guard();state.subscribed=false;subscription=null;state.notice='이 기기의 GROWELL 푸시 알림을 껐어요.';return bounded(target.unsubscribe(),10000).catch(function(){return false;});});
     });}
-    return {refresh:refresh,enable:enable,preferences:preferences,test:test,disable:disable,snapshot:snapshot,destroy:function(){disposed=true;client.dispose();}};
+    return {refresh:refresh,enable:enable,preferences:preferences,test:test,localTest:localTest,disable:disable,snapshot:snapshot,destroy:function(){disposed=true;client.dispose();}};
   }
   function mount(container,options){
     if(!container||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function')return null;
@@ -131,7 +164,7 @@
       '<button type="button" class="web-push-primary" data-push-enable>이 기기에서 알림 받기</button>'+
       '<div data-push-settings hidden><label class="web-push-toggle"><span>새 나눔 알림<small>내가 쓴 글과 글 수정은 제외해요.</small></span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔 알림"></label>'+
       '<label class="web-push-toggle"><span>매일 오전 9시 말씀<small>한국 시간 오전 9시에 발송해요.</small></span><input type="checkbox" role="switch" data-push-verse aria-label="매일 오전 9시 말씀"></label>'+
-      '<button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button><button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
+      '<button type="button" class="web-push-secondary" data-push-local>기기 알림 표시 확인</button><button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button><p class="web-push-note" data-push-last>최근 서버 발송: 아직 없어요. 기기 수신 확인과는 달라요.</p><button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
       '<button type="button" class="web-push-text" data-push-refresh>상태 새로고침</button><p class="web-push-note">인터넷 연결·집중 모드·기기 설정에 따라 알림이 늦거나 표시되지 않을 수 있어요.</p>';
     function q(selector){return container.querySelector(selector);}
     var controller=createController({getAccessToken:options.getAccessToken,isCurrent:options.isCurrent,fetch:options.fetch,onChange:function(state){
@@ -141,9 +174,10 @@
       q('[data-push-install]').hidden=!state.iosNeedsInstall;q('[data-push-enable]').hidden=state.subscribed||!state.supported||state.iosNeedsInstall;
       q('[data-push-enable]').disabled=state.busy||!state.loaded||!state.configured||state.permission==='denied';
       q('[data-push-settings]').hidden=!state.subscribed;q('[data-push-posts]').checked=state.preferences.posts;q('[data-push-verse]').checked=state.preferences.dailyVerse;
-      container.setAttribute('aria-busy',String(state.busy));container.querySelectorAll('[data-push-posts],[data-push-verse],[data-push-test],[data-push-disable],[data-push-refresh]').forEach(function(control){control.disabled=state.busy;});
+      q('[data-push-last]').textContent='최근 서버 발송: '+(state.lastSentAt?new Date(state.lastSentAt).toLocaleString('ko-KR',{hour12:false}):'아직 없어요')+' · 기기 수신 확인과는 달라요.';
+      container.setAttribute('aria-busy',String(state.busy));container.querySelectorAll('[data-push-posts],[data-push-verse],[data-push-test],[data-push-local],[data-push-disable],[data-push-refresh]').forEach(function(control){control.disabled=state.busy;});
     }});
-    q('[data-push-enable]').onclick=controller.enable;q('[data-push-test]').onclick=controller.test;q('[data-push-disable]').onclick=controller.disable;q('[data-push-refresh]').onclick=controller.refresh;
+    q('[data-push-enable]').onclick=controller.enable;q('[data-push-test]').onclick=controller.test;q('[data-push-local]').onclick=controller.localTest;q('[data-push-disable]').onclick=controller.disable;q('[data-push-refresh]').onclick=controller.refresh;
     function change(){controller.preferences({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked});}
     q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;
     var view={refresh:controller.refresh,destroy:function(){controller.destroy();views.delete(view);}};views.add(view);controller.refresh();return view;

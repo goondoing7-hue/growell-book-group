@@ -36,3 +36,19 @@ test('account or epoch replacement prevents obtaining a prior member token for p
     await assert.rejects(pending,/session_changed/);if(change!=='auth')assert.equal(h.adapter().isCurrent(),false);h.remote.resolve(false);
   }
 });
+
+test('server notification payloads reach the actual worker display handler',async()=>{
+  const {payloadFor}=require('../server/webPushService.cjs');
+  const events={},displayed=[];
+  const context={URL,Promise,self:{addEventListener(name,fn){events[name]=fn;},registration:{showNotification(title,options){displayed.push({title,options});return Promise.resolve();}}}};
+  vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'../timer-alert-sw.js'),'utf8'),context);
+  const jobs=[{kind:'test'},{kind:'post',book_id:'emotion',post_id:'synthetic_post_1'},{kind:'verse',verse_day:'2026-10-17'}];
+  const now=Date.parse('2026-10-17T00:00:00Z'),id='12345678-1234-4123-8123-123456789abc';
+  for(const job of jobs){
+    const payload=payloadFor(job,now,id);let waiting;
+    events.push({data:{json:()=>payload},waitUntil(promise){waiting=promise;}});
+    assert.ok(waiting,'every legitimate server payload must register a notification task');await waiting;
+  }
+  assert.equal(displayed.length,3);assert.deepEqual(displayed.map(value=>value.title),['GROWELL 알림 연결','새로운 나눔','오늘의 말씀']);
+  for(const value of displayed){assert.match(value.options.tag,/^growell-[A-Za-z0-9:_-]+$/);assert.equal(value.options.data.kind,'growell-push');}
+});

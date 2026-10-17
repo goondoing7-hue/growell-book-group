@@ -92,6 +92,21 @@ test('new post delivery rechecks eligible lease immediately before network and c
   const [subscription,payload,ttl]=f.state.sends[0];assert.deepEqual(subscription,SUB);assert.equal(payload.type,'post');assert.equal(payload.postId,'post-fixture');assert.equal(payload.bookId,'emotion');assert.equal(ttl,3600);assert.equal(payload.body.includes('새로운 나눔'),true);
   assert.deepEqual(Object.keys(payload).sort(),['version','type','bookId','postId','tag','body'].sort());assert.deepEqual(f.state.finishes.map(x=>x[0]),['accepted']);
 });
+test('separate durable test jobs produce separate visible notification tags without source metadata',async()=>{
+  const otherJob='44444444-4444-4444-8444-444444444444',first=fixture(),second=fixture();queue(first,'test');queue(second,'test');
+  second.state.claims[0].id=otherJob;second.state.snapshots[otherJob]=second.state.snapshots[JOB];delete second.state.snapshots[JOB];
+  assert.deepEqual(await first.service.run(),{processed:1,accepted:1});assert.deepEqual(await second.service.run(),{processed:1,accepted:1});
+  const a=first.state.sends[0][1],b=second.state.sends[0][1];
+  assert.equal(a.tag,'growell-push-test-'+JOB);assert.equal(b.tag,'growell-push-test-'+otherJob);assert.notEqual(a.tag,b.tag);
+  assert.equal(a.body,b.body);assert.deepEqual(Object.keys(a).sort(),['version','type','tag','body'].sort());
+  for(const payload of [a,b]){const text=JSON.stringify(payload);assert.equal(text.includes(PROFILE.id),false);assert.equal(text.includes(AUTH),false);assert.equal(text.includes(SUB.endpoint),false);assert.equal(text.includes('post-fixture'),false);}
+  assert.throws(()=>S.payloadFor({kind:'test'},NOW),error=>error.code==='push-unavailable');
+  assert.throws(()=>S.payloadFor({kind:'test'},NOW,'https://attacker.example'),error=>error.code==='push-unavailable');
+});
+test('post and daily verse retain stable replacement tags regardless of a different job UUID',()=>{
+  const otherJob='44444444-4444-4444-8444-444444444444',day=Verse.getCompact(VERSES,NOW).dateKey;
+  for(const source of [{kind:'post',book_id:'emotion',post_id:'post-fixture'},{kind:'verse',verse_day:day}])assert.deepEqual(S.payloadFor(source,NOW,JOB),S.payloadFor(source,NOW,otherJob));
+});
 test('daily verse uses exact same short passage and Korean day as home, with no AI or original rewrite',async()=>{
   const f=fixture();queue(f,'verse');await f.service.run();const current=Verse.getCompact(VERSES,NOW),payload=f.state.sends[0][1];assert.equal(payload.body,current.text+'\n'+current.reference);assert.equal(payload.tag,'growell-verse-'+current.dateKey);
   const stale=fixture();queue(stale,'verse',{verse_day:'2000-01-01'});await stale.service.run();assert.equal(stale.state.sends.length,0);

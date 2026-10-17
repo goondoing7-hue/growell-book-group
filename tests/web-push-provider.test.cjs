@@ -14,13 +14,13 @@ test('subscription accepts genuine P-256/auth bytes only and rejects added secre
 test('VAPID config verifies a matching curve key pair',()=>{
   const pair=keys();assert.equal(P.validateVapid(pair.publicKey,pair.privateKey),true);assert.equal(P.validateVapid(pair.publicKey,keys().privateKey),false);assert.equal(P.validateVapid('PUBLIC','PRIVATE'),false);
 });
-test('provider awaits encrypted push acceptance and bounds TTL with fixed identity and no proxy',async()=>{
+test('visible opted-in push requests high urgency, awaits acceptance and bounds TTL without a proxy',async()=>{
   const pair=keys(),config={configured:true,origin:'https://growell-book.vercel.app',...pair},calls=[];
   let release;const blocked=new Promise(resolve=>{release=resolve;});
   const provider=P.createProvider(config,{sendNotification:async(...args)=>{calls.push(args);await blocked;return{statusCode:201,body:'PRIVATE PROVIDER'};}});
   let finished=false;const promise=provider.send(subscription(),{version:1,type:'test',body:'알림'},999999).then(result=>{finished=true;return result;});
   await new Promise(resolve=>setImmediate(resolve));assert.equal(finished,false);release();assert.deepEqual(await promise,{accepted:true});
-  assert.equal(calls.length,1);assert.equal(calls[0][2].TTL,3600);assert.equal(calls[0][2].timeout,6000);assert.equal(calls[0][2].vapidDetails.subject,config.origin);assert.equal(calls[0][2].proxy,undefined);
+  assert.equal(calls.length,1);assert.equal(calls[0][2].TTL,3600);assert.equal(calls[0][2].timeout,6000);assert.equal(calls[0][2].urgency,'high');assert.equal(calls[0][2].vapidDetails.subject,config.origin);assert.equal(calls[0][2].proxy,undefined);
 });
 test('provider maps errors to fixed categories without preserving endpoint, headers, or response',async()=>{
   const config={configured:true,origin:'https://growell-book.vercel.app',...keys()};

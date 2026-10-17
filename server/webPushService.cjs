@@ -60,7 +60,7 @@ function preferences(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==2||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean')throw new D.BackupError('invalid-request',400);
   return{new_posts:value.posts,daily_verse:value.dailyVerse};
 }
-function payloadFor(job,now){
+function payloadFor(job,now,jobId){
   if(job.kind==='post'){
     if(!BOOKS.has(job.book_id)||!ID.test(job.post_id||''))throw new D.BackupError('push-unavailable');
     return{version:1,type:'post',bookId:job.book_id,postId:job.post_id,tag:'growell-post-'+job.post_id,body:'새로운 나눔이 올라왔어요. GROWELL에서 확인해 보세요.'};
@@ -72,7 +72,10 @@ function payloadFor(job,now){
     if(Array.from(body).length>400)throw new D.BackupError('push-unavailable');
     return{version:1,type:'verse',tag:'growell-verse-'+verse.dateKey,body};
   }
-  if(job.kind==='test')return{version:1,type:'test',tag:'growell-push-test',body:'GROWELL 알림이 연결되었어요.'};
+  if(job.kind==='test'){
+    if(!UUID.test(jobId||''))throw new D.BackupError('push-unavailable');
+    return{version:1,type:'test',tag:'growell-push-test-'+jobId.toLowerCase(),body:'GROWELL 알림이 연결되었어요.'};
+  }
   throw new D.BackupError('push-unavailable');
 }
 function createService(options={}){
@@ -127,9 +130,9 @@ function createService(options={}){
         if(typeof first.owner_id!=='string'||!first.owner_id||!UUID.test(first.auth_user_id||'')||!/^[a-f0-9]{64}$/.test(first.endpoint_hash||''))throw new D.BackupError('subscription-invalid');
         let subscription;try{subscription=P.validateSubscription(D.unseal(first.subscription_cipher,config.key,context(first.owner_id,first.auth_user_id,first.endpoint_hash)));}catch(_){throw new D.BackupError('subscription-invalid');}
         if(fingerprint(subscription.endpoint)!==first.endpoint_hash||subscription.expirationTime!==null&&subscription.expirationTime<=now())throw new D.BackupError('subscription-invalid');
-        const outgoing=payloadFor(first,now());
+        const outgoing=payloadFor(first,now(),job.id);
         const latest=await store.apply(job,'prepare');if(latest?.applied!==true)continue;
-        if(first.subscription_cipher!==latest.subscription_cipher||first.endpoint_hash!==latest.endpoint_hash||first.owner_id!==latest.owner_id||first.auth_user_id!==latest.auth_user_id||JSON.stringify(payloadFor(latest,now()))!==JSON.stringify(outgoing))throw new D.BackupError('subscription-invalid');
+        if(first.subscription_cipher!==latest.subscription_cipher||first.endpoint_hash!==latest.endpoint_hash||first.owner_id!==latest.owner_id||first.auth_user_id!==latest.auth_user_id||JSON.stringify(payloadFor(latest,now(),job.id))!==JSON.stringify(outgoing))throw new D.BackupError('subscription-invalid');
         const expiry=Date.parse(latest.expires_at);if(!Number.isFinite(expiry)||expiry<=now())throw new D.BackupError('push-unavailable');
         prepared=true;
         await provider.send(subscription,outgoing,Math.ceil((expiry-now())/1000));

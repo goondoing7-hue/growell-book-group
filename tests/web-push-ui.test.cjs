@@ -8,12 +8,14 @@ const workerSource=fs.readFileSync(path.join(__dirname,'../timer-alert-sw.js'),'
 const key=Buffer.concat([Buffer.from([4]),Buffer.alloc(64,9)]).toString('base64url');
 const json=value=>JSON.parse(JSON.stringify(value));
 function harness(options={}){
-  const calls={prompts:0,registrations:[],requests:[],subscriptions:0,unsubscribe:0,tokens:0,changes:[]};
+  const calls={prompts:0,registrations:[],requests:[],subscriptions:0,unsubscribe:0,tokens:0,changes:[],localNotifications:[]};
   let current=true,backendActive=!!options.subscribed,prefs={posts:options.posts!==false,dailyVerse:options.dailyVerse!==false};
   const notification={permission:options.permission||'default',requestPermission(){calls.prompts++;notification.permission=options.answer||'granted';return Promise.resolve(notification.permission);}};
   const subscription={endpoint:'https://push.example.test/private-endpoint',expirationTime:null,toJSON(){return {endpoint:this.endpoint,expirationTime:null,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};},unsubscribe(){calls.unsubscribe++;activeSubscription=null;return options.unsubscribeError?Promise.reject(Error('device error')):Promise.resolve(true);}};
   let activeSubscription=options.subscribed||options.existing?subscription:null;
-  const registration={active:{state:'activated'},pushManager:{getSubscription(){return options.subscriptionDeferred||Promise.resolve(activeSubscription);},subscribe(settings){calls.subscriptions++;calls.subscribeSettings=settings;activeSubscription=subscription;return Promise.resolve(subscription);}}};
+  const registration={scope:'https://growell-book.vercel.app/',active:{state:'activated',scriptURL:'https://growell-book.vercel.app/timer-alert-sw.js'},
+    showNotification(title,settings){calls.localNotifications.push({title,settings});return options.localError?Promise.reject(Error('PRIVATE_DEVICE_FAILURE')):Promise.resolve();},
+    pushManager:{getSubscription(){return options.subscriptionDeferred||Promise.resolve(activeSubscription);},subscribe(settings){calls.subscriptions++;calls.subscribeSettings=settings;activeSubscription=subscription;return Promise.resolve(subscription);}}};
   async function fetch(url,settings){
     const body=JSON.parse(settings.body);calls.requests.push({url,settings,body});
     if(options.fetchDeferred&&body.action===options.fetchDeferredAction)return options.fetchDeferred;
@@ -21,7 +23,7 @@ function harness(options={}){
     if(options.failure===body.action)return {ok:false,status:503,json:async()=>({error:options.errorCode||'unavailable',detail:'PRIVATE_ERROR_DETAIL'})};
     let data;
     if(body.action==='config')data={configured:options.configured!==false,publicKey:options.badKey||key};
-    else if(body.action==='status')data={configured:true,subscription:backendActive?{active:true,preferences:prefs}:null};
+    else if(body.action==='status')data={configured:true,subscription:backendActive?{active:true,preferences:prefs,lastSentAt:options.lastSentAt}:null};
     else if(body.action==='subscribe'){backendActive=true;prefs=body.preferences;data={ok:true};}
     else if(body.action==='preferences'){prefs=body.preferences;data={ok:true};}
     else if(body.action==='unsubscribe'){backendActive=false;data={ok:true};}
@@ -31,7 +33,7 @@ function harness(options={}){
   const c={Promise,Date,Math,JSON,Array,Number,Object,Set,Uint8Array,AbortController,URL,
     setTimeout:options.fastTimers?(fn,delay)=>setTimeout(fn,Math.min(delay,10)):setTimeout,clearTimeout,
     atob:value=>Buffer.from(value,'base64').toString('binary'),isSecureContext:!options.insecure,Notification:options.unsupported?undefined:notification,PushManager:options.unsupported?undefined:function(){},
-    matchMedia:()=>({matches:!!options.standalone}),navigator:{userAgent:options.ios?'iPhone':'Windows',platform:options.ipad?'MacIntel':'Win32',maxTouchPoints:options.ipad?5:0,
+    location:{origin:'https://growell-book.vercel.app'},matchMedia:()=>({matches:!!options.standalone}),navigator:{userAgent:options.ios?'iPhone':'Windows',platform:options.ipad?'MacIntel':'Win32',maxTouchPoints:options.ipad?5:0,
       standalone:!!options.standalone,serviceWorker:{getRegistration(){calls.getRegistration=(calls.getRegistration||0)+1;return options.registrationDeferred||Promise.resolve(registration);},register(url,settings){calls.registrations.push({url,settings});return options.registerError?Promise.reject(Error('device registration')):Promise.resolve(registration);}}},fetch};
   vm.createContext(c);vm.runInContext(source,c);
   const api=c.GrowellWebPush,adapter={isCurrent:()=>current,getAccessToken:()=>{calls.tokens++;return Promise.resolve('PRIVATE_BEARER_TOKEN');},onChange:value=>calls.changes.push(json(value))};
@@ -98,6 +100,66 @@ test('safe server error categories produce connection, approval and retry guidan
   assert.match(h.api.message({code:'membership-required'}),/가입 승인/);assert.match(h.api.message({code:'rate-limited'}),/잠시 기다린/);
   assert.doesNotMatch(h.api.message({code:'<PRIVATE_DIAGNOSTIC>'}),/PRIVATE/);
 });
+test('local device display check uses no server request or permission prompt and always has a fresh safe tag',async()=>{
+  const h=harness({subscribed:true,permission:'granted',lastSentAt:'2026-10-17T01:23:45Z'});await h.controller.refresh();
+  const before=h.calls.requests.length;assert.equal(await h.controller.localTest(),true);assert.equal(await h.controller.localTest(),true);
+  assert.equal(h.calls.requests.length,before);assert.equal(h.calls.prompts,0);assert.equal(h.calls.localNotifications.length,2);
+  assert.notEqual(h.calls.localNotifications[0].settings.tag,h.calls.localNotifications[1].settings.tag);
+  assert.deepEqual(json(h.calls.localNotifications[0].settings.data),{kind:'growell-push',type:'test'});
+  assert.doesNotMatch(JSON.stringify(h.calls.localNotifications),/PRIVATE_|private-endpoint|push\.example/);
+  assert.match(h.controller.snapshot().notice,/표시를 요청.*알림창/);assert.doesNotMatch(h.controller.snapshot().notice,/수신 완료|표시 성공/);
+  assert.equal(h.controller.snapshot().lastSentAt,'2026-10-17T01:23:45.000Z');
+});
+test('a local notification API rejection gives device settings guidance without pretending delivery',async()=>{
+  const h=harness({subscribed:true,permission:'granted',localError:true});await h.controller.refresh();assert.equal(await h.controller.localTest(),false);
+  assert.equal(h.controller.snapshot().errorCode,'device_display_failed');assert.match(h.api.message({code:h.controller.snapshot().errorCode}),/브라우저.*갤럭시/);
+  assert.doesNotMatch(h.controller.snapshot().notice+h.api.message({code:h.controller.snapshot().errorCode}),/PRIVATE_DEVICE_FAILURE|수신 완료/);
+});
+test('local checks require current permission, exact worker scope/script and matching current subscription',async()=>{
+  for(const edit of [h=>{h.notification.permission='denied';},h=>{h.registration.scope='https://foreign.example/';},h=>{h.registration.active.scriptURL='https://growell-book.vercel.app/other-sw.js';},h=>{h.registration.active.state='activating';},h=>{h.registration.pushManager.getSubscription=async()=>({endpoint:'https://push.example.test/another-account'});}]){
+    const h=harness({subscribed:true,permission:'granted'});await h.controller.refresh();edit(h);assert.equal(await h.controller.localTest(),false);assert.equal(h.calls.localNotifications.length,0);assert.equal(h.calls.prompts,0);
+  }
+});
+test('malformed server timestamps are omitted and server acceptance is not labelled device receipt',async()=>{
+  const h=harness({subscribed:true,lastSentAt:'PRIVATE_NOT_A_DATE'});await h.controller.refresh();assert.equal(h.controller.snapshot().lastSentAt,'');
+  const parsed=h.api.subscriptionStatus({configured:true,subscription:{active:true,preferences:{posts:true,dailyVerse:true},lastSentAt:'2026-10-17T01:23:45Z'}});
+  assert.equal(parsed.lastSentAt,'2026-10-17T01:23:45.000Z');assert.equal('receivedAt' in parsed,false);
+});
+test('enabling waits for an installing replacement instead of accepting a still-active old timer worker',async()=>{
+  const h=harness({permission:'granted'});await h.controller.refresh();let listener,removed=0;
+  const replacement={state:'installing',addEventListener(name,fn){assert.equal(name,'statechange');listener=fn;},removeEventListener(name,fn){if(fn===listener)removed++;}};
+  h.registration.installing=replacement;const pending=h.controller.enable();await new Promise(setImmediate);
+  assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(r=>r.body.action==='subscribe'),false);
+  replacement.state='activated';h.registration.active=replacement;h.registration.installing=null;listener();
+  assert.equal(await pending,true);assert.equal(h.calls.subscriptions,1);assert.equal(removed,1);
+});
+test('a failed replacement activation cannot mark push connected and its state listener is cleaned up',async()=>{
+  const h=harness({permission:'granted',fastTimers:true});await h.controller.refresh();let removed=0;
+  h.registration.installing={state:'installing',addEventListener(){},removeEventListener(){removed++;}};
+  assert.equal(await h.controller.enable(),false);assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.calls.subscriptions,0);assert.equal(removed,1);
+});
+test('already connected device checks update and await the replacement before local display or server scheduling',async()=>{
+  for(const method of ['localTest','test']){
+    const h=harness({subscribed:true,permission:'granted'});await h.controller.refresh();let listener,updates=0;
+    const replacement={state:'installing',scriptURL:'https://growell-book.vercel.app/timer-alert-sw.js',addEventListener(name,fn){listener=fn;},removeEventListener(){}};
+    h.registration.update=async()=>{updates++;h.registration.installing=replacement;};
+    const before=h.calls.requests.length,pending=h.controller[method]();await new Promise(setImmediate);
+    assert.equal(updates,1);assert.equal(h.calls.localNotifications.length,0);assert.equal(h.calls.requests.length,before);
+    replacement.state='activated';h.registration.active=replacement;h.registration.installing=null;listener();assert.equal(await pending,true);
+    if(method==='localTest'){assert.equal(h.calls.localNotifications.length,1);assert.equal(h.calls.requests.length,before);}
+    else assert.equal(h.calls.requests.at(-1).body.action,'test');
+  }
+});
+test('local display diagnosis remains usable offline while server testing requires a successful worker update',async()=>{
+  const h=harness({subscribed:true,permission:'granted'});await h.controller.refresh();const before=h.calls.requests.length;
+  h.registration.update=async()=>{throw Error('offline');};assert.equal(await h.controller.localTest(),true);assert.equal(h.calls.localNotifications.length,1);
+  assert.equal(await h.controller.test(),false);assert.equal(h.calls.requests.length,before);assert.equal(h.calls.prompts,0);
+});
+test('changing the account during a local diagnosis prevents a notification on a later account device',async()=>{
+  const h=harness({subscribed:true,permission:'granted'});await h.controller.refresh();let finish;
+  h.registration.pushManager.getSubscription=()=>new Promise(resolve=>{finish=resolve;});const pending=h.controller.localTest();await new Promise(setImmediate);
+  h.endSession();finish(h.subscription);assert.equal(await pending,false);assert.equal(h.calls.localNotifications.length,0);
+});
 test('turning this device off deactivates server delivery before browser unsubscribe without touching user data',async()=>{
   const h=harness({subscribed:true,permission:'granted'});await h.controller.refresh();await h.controller.disable();
   assert.equal(h.calls.unsubscribe,1);assert.equal(h.controller.snapshot().subscribed,false);
@@ -133,12 +195,13 @@ test('a stalled session check and unavailable browser storage leave settings ret
   assert.equal(await h.api.detach(h.adapter),false);
 });
 test('the mounted settings expose only clear per-device controls and confirmed preferences',async()=>{
-  const h=harness({subscribed:true,permission:'granted',posts:false});const nodes=new Map();
+  const h=harness({subscribed:true,permission:'granted',posts:false,lastSentAt:'2026-10-17T01:23:45Z'});const nodes=new Map();
   const container={classList:{add(){}},setAttribute(){},set innerHTML(value){this.markup=value;for(const match of value.matchAll(/data-push-[a-z]+/g)){
     if(!nodes.has(match[0]))nodes.set(match[0],{hidden:false,disabled:false,checked:false,textContent:'',classList:{toggle(){}}});
   }},querySelector(selector){return nodes.get(selector.slice(1,-1));},querySelectorAll(selectors){return selectors.split(',').map(selector=>this.querySelector(selector));}};
   const view=h.api.mount(container,h.adapter);await new Promise(setImmediate);
   assert.match(container.markup,/이 기기에서 알림 받기/);assert.match(container.markup,/테스트 알림 보내기/);
+  assert.match(container.markup,/기기 알림 표시 확인/);assert.match(nodes.get('data-push-last').textContent,/최근 서버 발송:.*2026.*기기 수신 확인과는 달라요/);
   assert.match(container.markup,/새 나눔 알림/);assert.match(container.markup,/한국 시간 오전 9시/);
   assert.equal(nodes.get('data-push-enable').hidden,true);assert.equal(nodes.get('data-push-settings').hidden,false);
   assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
