@@ -145,7 +145,7 @@
     var seconds=Math.floor((timer.elapsedMs+(timer.running?Math.max(0,Date.now()-timer.startedAt):0))/1000),h=Math.floor(seconds/3600),m=Math.floor(seconds/60)%60,s=seconds%60;
     var elapsed=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
     return {data:{kind:'growell-reading-session',version:1,ownerKey:ownerKey,timerId:timer.id,bookId:timer.bookId,revision:revision,running:timer.running,note:!!options.note,phase:timer.phase},
-      title:'독서 타이머',body:({'emotion':'감정을 마주하면 길이 보인다','thought':'생각이 너무 많은 어른들을 위한 심리학','body':'몸이 나를 위로한다','action':'습관이 영성이다'}[timer.bookId])+'\n'+(options.note?'노트 작성 중 · 잠시 멈춤':timer.running?'읽는 중':'잠시 멈춤')+' · 누적 '+elapsed,timestamp:timer.running?timer.startedAt:timer.createdAt};
+      title:'독서 타이머',body:({'emotion':'감정을 마주하면 길이 보인다','thought':'생각이 너무 많은 어른들을 위한 심리학','body':'몸이 나를 위로한다','action':'습관이 영성이다'}[timer.bookId])+'\n읽은 시간 '+elapsed+(options.note||!timer.running?' · 잠시 멈춤':''),timestamp:timer.running?timer.startedAt:timer.createdAt};
   }
   function randomIdentity(prefix){
     try{var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);return prefix+Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join('');}catch(error){return null;}

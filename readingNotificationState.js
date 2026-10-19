@@ -62,13 +62,12 @@
       }else if(request.type==='action'){
         if(!matches(record,request.identity))return result(record,false,'stale');
         if(record.revoked||record.held||record.blocked||record.clock.phase!=='timer')return result(record,false,'blocked');
-        if(['pause','resume','finish','note'].indexOf(request.action)<0||request.action==='pause'&&!record.clock.running||request.action==='resume'&&record.clock.running)return result(record,false,'invalid');
+        if(['pause','resume','finish'].indexOf(request.action)<0||request.action==='pause'&&!record.clock.running||request.action==='resume'&&record.clock.running)return result(record,false,'invalid');
         if(record.journal.length>=4096||record.seq>=Number.MAX_SAFE_INTEGER)return result(record,false,'full');
         var next=copyClock(record.clock);
         if(request.action==='resume'){next.running=true;next.startedAt=now;}
         else{next.elapsedMs=Math.min(Number.MAX_SAFE_INTEGER,next.elapsedMs+(next.running?Math.max(0,now-next.startedAt):0));next.running=false;next.startedAt=null;if(request.action==='finish')next.phase='save';}
-        var wasRunning=record.clock.running;record.clock=next;record.seq++;var event={seq:record.seq,action:request.action,at:now,clock:copyClock(next)};
-        if(request.action==='note'){record.blocked='note';event.wasRunning=wasRunning;record.openIntent={at:now,action:'note',wasRunning:wasRunning};}
+        record.clock=next;record.seq++;var event={seq:record.seq,action:request.action,at:now,clock:copyClock(next)};
         record.journal.push(event);
       }else return result(record,false,'invalid');
     }

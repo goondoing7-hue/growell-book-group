@@ -55,3 +55,24 @@ test('an armed timer still settles and alerts once when its open-page countdown 
   assert.equal(h.c.readingTimer.goalReached,true);assert.equal(h.c.readingTimer.countdownNotified,true);assert.equal(notices,1);
   h.c.tickReadingTimer();if(h.c.readingNotificationTask)await h.c.readingNotificationTask;assert.equal(notices,1);
 });
+
+test('an old note clock committed before a lost acknowledgement migrates its exact checkpoint without losing time',async()=>{
+  const h=appHarness();await h.arm();const note=h.legacyNote(10000),saved=JSON.parse(h.values.get('timer:PRIVATE_MEMBER'));
+  saved.timer={...saved.timer,...note.clock};saved.notificationNoteChoice={wasRunning:true,at:10000};
+  saved.notification={generation:note.generation,throughSeq:note.seq,sourceRevision:Alerts.sessionSnapshot({timer:saved.timer,userId:'PRIVATE_MEMBER',generation:note.generation,note:true}).baseRevision};
+  const original=JSON.stringify(saved);h.values.set('timer:PRIVATE_MEMBER',original);h.restore();h.setNow(900000);h.options.failStorage=true;
+  assert.equal(await h.arm(),false);assert.equal(h.values.get('timer:PRIVATE_MEMBER'),original);assert.equal(h.record().journal.length,1);assert.equal(h.calls.acks,0,'a failed migration commit cannot acknowledge a pending clock');
+  h.options.failStorage=false;assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.elapsedMs,10000);assert.equal(h.c.readingTimer.running,false);assert.equal(h.record().journal.length,0);assert.equal(h.record().blocked,'');
+  const migrated=JSON.parse(h.values.get('timer:PRIVATE_MEMBER'));assert.equal(migrated.notificationNoteChoice,undefined);assert.deepEqual(migrated.parked,saved.parked);assert.equal(migrated.endPage,9);assert.equal(h.c.readingNoteReturn,null);assert.equal(h.calls.saves,0);
+  await h.arm();assert.equal(h.c.readingTimer.elapsedMs,10000,'acknowledgement and later reconciliation stay idempotent');
+});
+
+test('legacy chooser metadata cannot forgive an unrelated clock revision, different clock or mismatched historical click',async()=>{
+  for(const mismatch of ['revision','clock','click']){const h=appHarness();await h.arm();const note=h.legacyNote(10000),saved=JSON.parse(h.values.get('timer:PRIVATE_MEMBER'));
+    saved.timer={...saved.timer,...note.clock};saved.notificationNoteChoice={wasRunning:true,at:mismatch==='click'?9999:10000};
+    if(mismatch==='clock')saved.timer.elapsedMs=20000;
+    saved.notification={generation:note.generation,throughSeq:note.seq,sourceRevision:mismatch==='revision'?State.hash('unrelated-clock'):Alerts.sessionSnapshot({timer:saved.timer,userId:'PRIVATE_MEMBER',generation:note.generation,note:true}).baseRevision};
+    const original=JSON.stringify(saved);h.values.set('timer:PRIVATE_MEMBER',original);h.restore();h.setNow(900000);
+    assert.equal(await h.arm(),false);assert.equal(h.values.get('timer:PRIVATE_MEMBER'),original);assert.equal(h.record().journal.length,1);assert.equal(h.calls.acks,0);
+  }
+});

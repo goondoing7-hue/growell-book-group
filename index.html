@@ -2234,7 +2234,6 @@ var readingNotificationTask = null;
 var readingNotificationLease = null;
 var readingNotificationApply = false;
 var readingNotificationOpenedIntent = '';
-var readingNotificationNoteChoice = null;
 var worksheetOpenFor = {}; // activity key -> boolean, 활동지 각 항목이 펼쳐져 있는지 (키가 책마다 고유해서 flat object로 충분)
 var shareFeedFilter = {}; // bookId -> note type key ('all' or one of NOTE_TYPES)
 var matFeedFilter = {}; // bookId -> 자료실 카테고리 key ('all' or one of MATERIAL_CATS)
@@ -3746,13 +3745,13 @@ function readingTimerStorageKey(owner){return 'growell_reading_timer_v3:'+encode
 function previousReadingTimerStorageKey(owner){return 'growell_reading_timer_v2:'+encodeURIComponent(owner);}
 function legacyReadingTimerStorageKey(owner){return 'growell_reading_timer_v1:'+encodeURIComponent(owner);}
 function captureReadingTimerState(){
-  return {timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn,returnView:readingHomeReturn?'home':'mine',notification:readingNotificationCheckpoint,notificationArchiveBlocked:readingNotificationArchiveBlocked,notificationNoteChoice:readingNotificationNoteChoice};
+  return {timer:readingTimer,attempt:readingSaveAttempt,finishKind:readingFinishKind,endPage:readingEndPage,noteReturn:readingNoteReturn,returnView:readingHomeReturn?'home':'mine',notification:readingNotificationCheckpoint,notificationArchiveBlocked:readingNotificationArchiveBlocked};
 }
 function applyReadingTimerState(state){
   state=state||{};readingTimer=state.timer||null;readingSaveAttempt=state.attempt||null;
   readingSavePanelOpen=!!(readingTimer&&readingTimer.phase==='save');readingFinishKind=state.finishKind==='complete'?'complete':'finish';
   readingEndPage=state.endPage===undefined?null:state.endPage;readingNoteReturn=state.noteReturn||null;readingHomeReturn=state.returnView==='home';
-  readingNotificationCheckpoint=state.notification||null;readingNotificationArchiveBlocked=state.notificationArchiveBlocked===true;readingNotificationNoteChoice=state.notificationNoteChoice||null;
+  readingNotificationCheckpoint=state.notification||null;readingNotificationArchiveBlocked=state.notificationArchiveBlocked===true;
 }
 function restoreReadingTimerState(stored,owner,parked){
   var timer=GrowellReadingTimer.restore(stored&&stored.timer,owner,BOOKS.map(function(b){return b.id;}),Date.now());
@@ -3760,7 +3759,8 @@ function restoreReadingTimerState(stored,owner,parked){
   var book=bookById(timer.bookId),state={timer:timer,attempt:null,finishKind:stored.finishKind==='complete'?'complete':'finish',endPage:null,noteReturn:GrowellReadingTimer.restoreNoteHandoff(stored.noteReturn,timer),returnView:stored.returnView==='home'?'home':'mine'};
   if(stored.notification&&typeof stored.notification==='object'&&/^rn-[a-f0-9]{32}$/.test(stored.notification.generation||'')&&Number.isSafeInteger(stored.notification.throughSeq)&&stored.notification.throughSeq>=0&&/^t1-[a-f0-9]+-[a-f0-9]+$/.test(stored.notification.sourceRevision||''))state.notification={generation:stored.notification.generation,throughSeq:stored.notification.throughSeq,sourceRevision:stored.notification.sourceRevision,...(Number.isSafeInteger(stored.notification.logoutAt)&&stored.notification.logoutAt>=0?{logoutAt:stored.notification.logoutAt}:{})};
   if(stored.notificationArchiveBlocked===true)state.notificationArchiveBlocked=true;
-  if(stored.notificationNoteChoice&&typeof stored.notificationNoteChoice.wasRunning==='boolean'&&Number.isSafeInteger(stored.notificationNoteChoice.at)&&stored.notificationNoteChoice.at>=0&&timer.phase==='timer'&&!timer.running)state.notificationNoteChoice={wasRunning:stored.notificationNoteChoice.wasRunning,at:stored.notificationNoteChoice.at};
+  // Retire only the old notification note chooser. Its paused clock and any
+  // already-open app note handoff above remain authoritative.
   if(parked&&stored.noteReturn&&!state.noteReturn)return null;
   if(stored.endPage!==null&&stored.endPage!==undefined){
     if(GrowellReadingTimer.validatePages(timer.startPage,stored.endPage,book.totalPages).ok)state.endPage=Number(stored.endPage);
@@ -3821,7 +3821,7 @@ function commitReadingTimerState(next,parked){
   var before=captureReadingTimerState(),oldParked=readingParkedSessions,owner=SESSION&&SESSION.userId,snapshot=readingTimerStorageSnapshot;
   applyReadingTimerState(next);if(parked)readingParkedSessions=parked;
   if(readingNotificationGuard&&!readingNotificationApply&&typeof GrowellTimerAlerts!=='undefined'&&GrowellTimerAlerts.sessionSnapshot){
-    function checkpoint(state){if(!state||!state.timer||!state.notification)return;var value=GrowellTimerAlerts.sessionSnapshot({timer:state.timer,userId:owner,generation:state.notification.generation,note:!!state.noteReturn||!!state.notificationNoteChoice,blocked:state.notificationArchiveBlocked?'archive':''});if(value)state.notification=Object.assign({},state.notification,{sourceRevision:value.baseRevision});}
+    function checkpoint(state){if(!state||!state.timer||!state.notification)return;var value=GrowellTimerAlerts.sessionSnapshot({timer:state.timer,userId:owner,generation:state.notification.generation,note:!!state.noteReturn,blocked:state.notificationArchiveBlocked?'archive':''});if(value)state.notification=Object.assign({},state.notification,{sourceRevision:value.baseRevision});}
     var active=captureReadingTimerState();checkpoint(active);readingNotificationCheckpoint=active.notification;readingParkedSessions=Object.assign({},readingParkedSessions);Object.keys(readingParkedSessions).forEach(function(key){readingParkedSessions[key]=Object.assign({},readingParkedSessions[key]);checkpoint(readingParkedSessions[key]);});
   }
   if(persistReadingTimer())return true;
@@ -3938,7 +3938,7 @@ function pauseReadingBeforeLogout(){
   }
   readingTimerRestoreOwner=null;readingSaveAttempt=null;readingSaveBusy=false;readingSaveError=false;readingCountdownOpen=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;readingHomeDialogFor=null;
   readingParkedSessions={};
-  readingNotificationDialogRoute=null;readingNotificationLast='';readingNotificationCheckpoint=null;readingNotificationArchiveBlocked=false;readingNotificationNoteChoice=null;
+  readingNotificationDialogRoute=null;readingNotificationLast='';readingNotificationCheckpoint=null;readingNotificationArchiveBlocked=false;
   if(typeof GrowellTimerAlerts!=='undefined'&&GrowellTimerAlerts.closeSession)GrowellTimerAlerts.closeSession(notification,true);
   closeReadingHomeDialog();closeReadingCountdownNotice();
 }
@@ -4045,7 +4045,7 @@ function readingNotificationView(){
   if(!generation)generation=GrowellTimerAlerts.newGeneration();if(!generation)return null;
   var source=readingTimer;
   try{var saved=JSON.parse(readingTimerStorageSnapshot||'null');if(saved&&saved.timer&&saved.timer.id===readingTimer.id&&saved.timer.userId===SESSION.userId)source=saved.timer;}catch(error){}
-  var snapshot=GrowellTimerAlerts.sessionSnapshot({timer:source,userId:SESSION.userId,generation:generation,note:!!readingNoteReturn||!!readingNotificationNoteChoice,blocked:readingNotificationArchiveBlocked?'archive':''});
+  var snapshot=GrowellTimerAlerts.sessionSnapshot({timer:source,userId:SESSION.userId,generation:generation,note:!!readingNoteReturn,blocked:readingNotificationArchiveBlocked?'archive':''});
   return snapshot?{snapshot:snapshot,data:snapshot}:null;
 }
 function readingNotificationSessionCurrent(session,epoch,timerId){
@@ -4054,10 +4054,22 @@ function readingNotificationSessionCurrent(session,epoch,timerId){
 }
 function readingNotificationAvailable(){if(typeof GrowellTimerAlerts==='undefined'||typeof GrowellTimerAlerts.sessionState!=='function')return false;var status=GrowellTimerAlerts.notificationStatus();return status.supported&&(status.permission==='granted'||!!readingNotificationCheckpoint);}
 function readingNotificationRequest(request){return GrowellTimerAlerts.sessionState(request);}
+function readingNotificationLegacyCheckpoint(state,checkpoint){
+  if(!checkpoint||checkpoint.generation!==state.generation||readingNoteReturn||readingNotificationArchiveBlocked||readingTimer.running||readingTimer.phase!=='timer')return false;
+  try{
+    var stored=JSON.parse(readingTimerStorageSnapshot||'null'),choice=stored&&stored.notificationNoteChoice,previous=stored&&stored.notification;
+    if(!choice||typeof choice.wasRunning!=='boolean'||!Number.isSafeInteger(choice.at)||choice.at<0||!previous||previous.generation!==checkpoint.generation||previous.throughSeq!==checkpoint.throughSeq||previous.sourceRevision!==checkpoint.sourceRevision)return false;
+    var event=state.journal.find(function(item){return item.seq===checkpoint.throughSeq&&item.action==='note'&&item.at===choice.at&&item.wasRunning===choice.wasRunning;});
+    if(!event)return false;
+    var legacy=GrowellTimerAlerts.sessionSnapshot({timer:readingTimer,userId:SESSION.userId,generation:state.generation,note:true});
+    return !!legacy&&legacy.baseRevision===checkpoint.sourceRevision&&['elapsedMs','startedAt','running','phase'].every(function(key){return legacy.clock[key]===event.clock[key];});
+  }catch(error){return false;}
+}
 function readingNotificationApplyClock(state){
   var view=readingNotificationView(),checkpoint=readingNotificationCheckpoint,api=GrowellReadingNotificationState;
   if(!view||!api.valid(state)||state.ownerKey!==view.data.ownerKey||state.timerId!==readingTimer.id||state.bookId!==readingTimer.bookId||readingSaveBusy||readingSaveAttempt)return false;
-  var ownCheckpoint=checkpoint&&checkpoint.generation===state.generation&&checkpoint.sourceRevision===view.snapshot.baseRevision;
+  var legacyCheckpoint=readingNotificationLegacyCheckpoint(state,checkpoint);
+  var ownCheckpoint=checkpoint&&checkpoint.generation===state.generation&&(checkpoint.sourceRevision===view.snapshot.baseRevision||legacyCheckpoint);
   if(state.baseRevision!==view.snapshot.baseRevision&&!ownCheckpoint)return false;
   var through=ownCheckpoint?checkpoint.throughSeq:state.ackSeq;
   if(through>state.seq)return false;
@@ -4066,13 +4078,12 @@ function readingNotificationApplyClock(state){
     var next=captureReadingTimerState();next.timer=Object.assign({},readingTimer,state.clock);
     if(next.timer.targetMs!==null&&next.timer.elapsedMs<next.timer.targetMs){next.timer.goalReached=false;next.timer.countdownNotified=false;next.timer.countdownAcknowledged=false;}
     next.timer=GrowellReadingTimer.settle(next.timer,Date.now());if(!next.timer)return false;
-    if(state.openIntent&&state.openIntent.action==='note'&&typeof state.openIntent.wasRunning==='boolean')next.notificationNoteChoice={wasRunning:state.openIntent.wasRunning,at:state.openIntent.at};
-    var snapshot=GrowellTimerAlerts.sessionSnapshot({timer:next.timer,userId:SESSION.userId,generation:state.generation,note:!!next.noteReturn||!!next.notificationNoteChoice,blocked:next.notificationArchiveBlocked?'archive':''});
+    var snapshot=GrowellTimerAlerts.sessionSnapshot({timer:next.timer,userId:SESSION.userId,generation:state.generation,note:!!next.noteReturn,blocked:next.notificationArchiveBlocked?'archive':''});
     next.notification={generation:state.generation,throughSeq:state.seq,sourceRevision:snapshot.baseRevision};
     readingNotificationGuard=true;readingNotificationApply=true;var saved;
     try{saved=commitReadingTimerState(next);}finally{readingNotificationApply=false;readingNotificationGuard=false;}
     if(!saved)return false;
-  }else if(!checkpoint||checkpoint.generation!==state.generation){
+  }else if(!checkpoint||checkpoint.generation!==state.generation||legacyCheckpoint){
     var same=captureReadingTimerState();same.notification={generation:state.generation,throughSeq:state.seq,sourceRevision:view.snapshot.baseRevision};
     readingNotificationGuard=true;try{if(!commitReadingTimerState(same))return false;}finally{readingNotificationGuard=false;}
   }
@@ -4154,7 +4165,7 @@ function withReadingNotificationMutation(callback){
     if(published)readingNotificationLease=null;
     var intent=ready.result&&ready.result.state&&ready.result.state.openIntent,identity=ready.result&&ready.result.state;
     if(published&&intent&&Number.isSafeInteger(intent.at)&&Date.now()-intent.at>=0&&Date.now()-intent.at<300000&&readingNotificationSessionCurrent(session,epoch,identity.timerId)){
-      var intentKey=identity.generation+':'+intent.at;if(readingNotificationOpenedIntent!==intentKey){readingNotificationOpenedIntent=intentKey;if(readingNoteReturn){var editor=document.getElementById('note-editor');if(editor&&editor.focus)editor.focus();}else{openReadingNotificationDialog();if(intent.action==='note'){var choice=document.getElementById('reading-note-dialog');if(choice&&!choice.open){choice.showModal();if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('reading-note',{close:closeReadingNoteDialog});}}}}
+      var intentKey=identity.generation+':'+intent.at;if(readingNotificationOpenedIntent!==intentKey){readingNotificationOpenedIntent=intentKey;if(readingNoteReturn){var editor=document.getElementById('note-editor');if(editor&&editor.focus)editor.focus();}else openReadingNotificationDialog();}
       await readingNotificationRequest({type:'open-ack',identity:identity,at:intent.at});
     }
     return published?output:false;
@@ -4191,12 +4202,10 @@ function readingCountdownRingHtml(){
 function readingNoteDialogHtml(){
   return '<dialog class="reading-note-dialog" id="reading-note-dialog" aria-labelledby="reading-note-title"><div class="reading-note-dialog-head"><h3 id="reading-note-title">어디에 기록할까요?</h3><button class="icon-btn" id="btn-reading-note-close" type="button" aria-label="기록할 공간 선택 닫기">'+svgIcon(I_CLOSE)+'</button></div><p>작성하는 동안 타이머는 잠시 멈춰요.<br>저장하면 읽던 타이머로 돌아와요.</p><div class="reading-note-destinations"><button type="button" data-reading-destination="share">'+svgIcon(I_EDIT)+'<span><strong>나눔 공간</strong><small>모임원과 함께 나누는 이야기</small></span></button><button type="button" data-reading-destination="mine">'+svgIcon(I_LOCK)+'<span><strong>나의 공간</strong><small>나에게만 보이는 개인 기록</small></span></button></div></dialog>';
 }
-function closeReadingNoteDialog(keepChoice){
-  if(keepChoice!==true&&readingNotificationNoteChoice&&!readingNotificationGuard)return withReadingNotificationMutation(function(){return closeReadingNoteDialog();});
+function closeReadingNoteDialog(){
   var dialog=document.getElementById('reading-note-dialog');
   if(dialog&&dialog.open)dialog.close();
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-note');
-  if(keepChoice!==true&&readingNotificationNoteChoice&&readingTimer){var next=captureReadingTimerState();if(readingNotificationNoteChoice.wasRunning){if(!pauseArchiveReadingBeforeSharedStart())return;next.timer=GrowellReadingTimer.resume(readingTimer,Date.now());}next.notificationNoteChoice=null;if(commitReadingTimerState(next))render();}
 }
 function openReadingNote(type){
   if(!readingNotificationGuard)return withReadingNotificationMutation(function(){return openReadingNote(type);});
@@ -4206,7 +4215,7 @@ function openReadingNote(type){
   if(type==='mine' && memberLoadState.privateEntries!=='ready'){showToast('개인 기록을 먼저 불러온 뒤 다시 열어주세요.',true);return;}
   var handoff=GrowellReadingTimer.beginNote(readingTimer,type,Date.now());
   if(!handoff){syncReadingTimer();render();return;}
-  var next=captureReadingTimerState();next.timer=handoff.timer;next.noteReturn=handoff.handoff;if(readingNotificationNoteChoice)next.noteReturn.wasRunning=readingNotificationNoteChoice.wasRunning;next.notificationNoteChoice=null;
+  var next=captureReadingTimerState();next.timer=handoff.timer;next.noteReturn=handoff.handoff;
   if(!commitReadingTimerState(next)){showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();return;}
   readingCountdownOpen=false;
   var opened=false;

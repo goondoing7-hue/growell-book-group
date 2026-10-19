@@ -27,10 +27,12 @@ test('ongoing reading notification uses one tag, safe generic content and explic
   assert.equal(first.settings.tag,'growell-reading-session');assert.equal(first.settings.requireInteraction,true);assert.equal(first.settings.silent,true);assert.equal(first.settings.renotify,false);
   assert.deepEqual(clone(first.settings.actions),[{action:'pause',title:'일시정지'},{action:'finish',title:'끝내기'}]);
   assert.equal(first.settings.icon,'/covers/notification-emotion.png');assert.equal(first.settings.image,undefined);
+  assert.match(first.settings.body,/읽은 시간/);assert.doesNotMatch(first.settings.body,/누적|노트/);
   assert.doesNotMatch(JSON.stringify(first),/PRIVATE_MEMBER|startPage|access_token|keyB64/);assert.match(first.settings.badge,/notification-badge-96/);
   await h.api.showSession(view,()=>true);assert.equal(h.calls.notifications.length,1,'rerenders do not recreate the same notification');
   const paused=Domain.pause(raw,Date.now()),next=h.api.sessionView({timer:paused,userId:raw.userId});await h.api.showSession(next,()=>true);
   assert.equal(h.calls.notifications[1].settings.tag,first.settings.tag);assert.equal(h.calls.notifications[1].settings.actions[0].action,'resume');assert.equal(h.calls.prompts,0);
+  assert.match(h.calls.notifications[1].settings.body,/잠시 멈춤$/);
 });
 test('default/denied permissions never auto-prompt; note writing offers only a safe return action and action limits are respected',async()=>{
   for(const permission of ['default','denied']){const h=notificationHarness({permission}),raw=timer();assert.equal(await h.api.showSession(h.api.sessionView({timer:raw,userId:raw.userId}),()=>true),false);assert.equal(h.calls.prompts,0);assert.equal(h.calls.notifications.length,0);}
@@ -100,7 +102,15 @@ function appHarness(options={}){
   restore();
   function currentRecord(){const view=c.readingNotificationView();return view&&records.get(view.data.ownerKey+':'+view.data.timerId);}
   function action(kind,at){clock=at;const old=currentRecord();assert.ok(old,'timer must be armed');const changed=State.transition(old,{type:'action',identity:State.head(old),action:kind},at);assert.equal(changed.result.ok,true,changed.result.code);records.set(old.ownerKey+':'+old.timerId,clone(changed.record));active=State.head(changed.record);return changed.record;}
-  return {c,calls,draft,values,records,options,restore,action,record:currentRecord,get active(){return active;},setNow:n=>{clock=n;},arm:()=>c.withReadingNotificationMutation(null)};
+  // Frozen version-2 data produced before notification note actions were
+  // removed. New production transitions must never create these events.
+  function legacyNote(at){clock=at;const old=currentRecord(),record=clone(old),wasRunning=old.clock.running;
+    record.clock={...old.clock,elapsedMs:old.clock.elapsedMs+(wasRunning?at-old.clock.startedAt:0),startedAt:null,running:false};record.blocked='note';record.seq++;
+    record.journal.push({seq:record.seq,action:'note',at,wasRunning,clock:clone(record.clock)});record.openIntent={at,action:'note',wasRunning};
+    record.revision=State.hash(JSON.stringify([record.ownerKey,record.timerId,record.bookId,record.generation,record.seq,record.clock,record.blocked,record.revoked,record.held,record.heldAt||0]));
+    assert.equal(State.valid(record),true,'historical note data stays readable');records.set(record.ownerKey+':'+record.timerId,record);active=State.head(record);return record;
+  }
+  return {c,calls,draft,values,records,options,restore,action,legacyNote,record:currentRecord,get active(){return active;},setNow:n=>{clock=n;},arm:()=>c.withReadingNotificationMutation(null)};
 }
 
 test('background clock is reconciled once into v3 while parked books, original draft and page choices are preserved',async()=>{
@@ -175,18 +185,41 @@ test('explicit notification save intent opens the actual save popup over the cur
   assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.phase,'save');assert.equal(h.c.readingHomeDialogFor,h.c.readingTimer.id);assert.equal(h.c.readingNotificationDialogRoute,'#/book/emotion/share');assert.equal(h.c.location.hash,'#/book/emotion/share');assert.equal(h.record().openIntent,undefined);assert.equal(h.calls.saves,0);
 });
 
-test('notification note intent pauses at the click, preserves original running state and excludes choice and writing time',async()=>{
-  for(const wasRunning of [true,false]){const h=appHarness();await h.arm();if(!wasRunning){h.action('pause',6000);await h.arm();}const originalDraft=clone(h.draft);h.action('note',10000);h.setNow(100000);
-    assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.running,false);assert.equal(h.c.readingNotificationNoteChoice.wasRunning,wasRunning);assert.equal(h.c.readingTimer.elapsedMs,wasRunning?10000:6000);
+test('new notification note commands are rejected without changing a clock, journal or open intent',async()=>{
+  const h=appHarness();await h.arm();const before=clone(h.record());
+  const result=State.transition(before,{type:'action',identity:State.head(before),action:'note'},10000);
+  assert.equal(result.result.ok,false);assert.equal(result.result.code,'invalid');assert.deepEqual(result.record,before);assert.equal(result.record.openIntent,undefined);
+});
+
+test('an ordinary notification open only shows the timer and never starts a note or pauses ongoing reading',async()=>{
+  const h=appHarness();await h.arm();const old=h.record(),opened=State.transition(old,{type:'open-intent',identity:State.head(old),action:'open'},10000);assert.equal(opened.result.ok,true);
+  h.records.set(old.ownerKey+':'+old.timerId,opened.record);let notePopups=0;h.c.document.getElementById=id=>id==='reading-note-dialog'?{open:false,showModal(){notePopups++;}}:null;h.setNow(100000);
+  assert.equal(await h.arm(),true);assert.equal(h.c.readingHomeDialogFor,h.c.readingTimer.id);assert.equal(h.c.readingTimer.running,true);assert.equal(Domain.elapsed(h.c.readingTimer,100000),100000);
+  assert.equal(notePopups,0);assert.equal(h.c.readingNoteReturn,null);assert.equal(h.record().seq,0);assert.equal(h.record().openIntent,undefined);assert.equal(h.calls.saves,0);
+});
+
+test('an unacknowledged historical note click preserves its paused clock but now opens only the timer',async()=>{
+  for(const wasRunning of [true,false]){const h=appHarness();await h.arm();if(!wasRunning){h.action('pause',6000);await h.arm();}const originalDraft=clone(h.draft);h.legacyNote(10000);h.setNow(100000);
+    let notePopups=0;h.c.document.getElementById=id=>id==='reading-note-dialog'?{open:false,showModal(){notePopups++;}}:null;
+    assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.running,false);assert.equal(h.c.readingTimer.elapsedMs,wasRunning?10000:6000);
+    assert.equal(h.record().blocked,'');assert.equal(h.record().journal.length,0);assert.equal(h.record().openIntent,undefined);assert.equal(h.c.readingHomeDialogFor,h.c.readingTimer.id);assert.equal(notePopups,0);
+    assert.equal(h.c.readingNoteReturn,null);assert.deepEqual(h.draft,originalDraft);assert.equal(h.calls.saves,0);
+    h.action('resume',200000);h.action('pause',203000);assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.elapsedMs,(wasRunning?10000:6000)+3000,'legacy note state cannot block later explicit timer controls');
+  }
+});
+
+test('notes explicitly opened inside the app retain their original running handoff and exclude writing time',async()=>{
+  for(const wasRunning of [true,false]){const h=appHarness();await h.arm();if(!wasRunning){h.action('pause',6000);await h.arm();}h.setNow(10000);const originalDraft=clone(h.draft);
     h.c.memberLoadState={privateEntries:'ready'};h.c.openComposerWithDraft=(type,book,id,opened)=>{opened(null);return Promise.resolve();};
     vm.runInContext(section('function readingNoteDialogHtml(){','function tickReadingTimer(){'),h.c);
-    await h.c.openReadingNote('mine');assert.equal(h.c.readingNoteReturn.wasRunning,wasRunning);assert.equal(h.c.readingNotificationNoteChoice,null);assert.equal(h.c.readingTimer.running,false);
+    await h.c.openReadingNote('mine');assert.equal(h.c.readingNoteReturn.wasRunning,wasRunning);assert.equal(h.c.readingTimer.running,false);assert.equal(h.record().blocked,'note');
     h.setNow(300000);assert.equal(h.c.completeReadingNote('mine','emotion'),true);assert.equal(h.c.readingTimer.running,wasRunning);assert.equal(Domain.elapsed(h.c.readingTimer,300000),wasRunning?10000:6000);assert.deepEqual(h.draft,originalDraft);
   }
 });
 
-test('closing notification note-choice resumes only a previously running timer without counting the selection interval',async()=>{
-  const h=appHarness();await h.arm();h.action('note',10000);h.setNow(100000);await h.arm();
-  vm.runInContext(section('function closeReadingNoteDialog(','function openReadingNote('),h.c);
-  await h.c.closeReadingNoteDialog();assert.equal(h.c.readingNotificationNoteChoice,null);assert.equal(h.c.readingTimer.running,true);assert.equal(Domain.elapsed(h.c.readingTimer,100000),10000);assert.equal(h.record().blocked,'');
+test('restoring an obsolete notification chooser keeps paused time, pages and real app handoff without reopening a chooser',async()=>{
+  const h=appHarness(),paused=Domain.pause(h.c.readingTimer,10000),stored={timer:paused,endPage:9,notificationNoteChoice:{wasRunning:true,at:10000},noteReturn:null};
+  const before=clone(stored),restored=h.c.restoreReadingTimerState(stored,'PRIVATE_MEMBER',false);assert.equal(restored.timer.elapsedMs,10000);assert.equal(restored.timer.running,false);assert.equal(restored.endPage,9);assert.equal(restored.notificationNoteChoice,undefined);assert.deepEqual(stored,before);
+  const writing=Domain.beginNote(h.c.readingTimer,'mine',10000);stored.timer=writing.timer;stored.noteReturn=writing.handoff;
+  const app=h.c.restoreReadingTimerState(stored,'PRIVATE_MEMBER',false);assert.deepEqual(clone(app.noteReturn),writing.handoff);assert.equal(app.timer.elapsedMs,10000);
 });

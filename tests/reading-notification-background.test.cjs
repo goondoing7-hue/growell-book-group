@@ -114,7 +114,7 @@ test('a closed page can pause, resume and finish entirely in the worker while sa
   assert.deepEqual(current.state.journal.map(event=>[event.seq,event.action,event.at]),[[1,'pause',10000],[2,'resume',50000],[3,'finish',55000]]);
   assert.deepEqual(h.shown.at(-1).settings.actions,[{action:'save',title:'기록 저장'}]);
   assert.equal(h.opened.length,0,'control buttons must not focus or open the app');
-  assert.equal(h.closed,3);assert.equal(h.shown.every(item=>item.settings.tag==='growell-reading-session'),true);
+  assert.equal(h.closed,0,'pause, resume and finish replace the same notification without closing it first');assert.equal(h.shown.every(item=>item.settings.tag==='growell-reading-session'&&item.settings.silent&&item.settings.renotify===false),true);
   assert.doesNotMatch(JSON.stringify(h.database.dump()),/PRIVATE_MEMBER|startPage|readingLogs|keyB64|access_token/);
 });
 
@@ -266,54 +266,64 @@ test('every timer notification uses the fixed public book title and cover withou
   }
 });
 
-test('three-action devices offer a note button while two-action and zero-action devices keep the body note gesture',async()=>{
+test('all action limits keep only pause or resume plus finish, and the body opens the timer without a note action',async()=>{
   for(const maximum of [0,1,2,3,5]){
     const h=workerHarness({maxActions:maximum});await arm(h);
-    const expected=[{action:'pause',title:'일시정지'},{action:'finish',title:'끝내기'},...(maximum>=3?[{action:'note',title:'기록하기'}]:[])].slice(0,maximum);
-    assert.deepEqual(h.shown.at(-1).settings.actions,expected);assert.equal(notification(h).defaultAction,'note');
+    const expected=[{action:'pause',title:'일시정지'},{action:'finish',title:'끝내기'}].slice(0,maximum);
+    assert.deepEqual(h.shown.at(-1).settings.actions,expected);assert.equal(notification(h).defaultAction,'open');
     if(maximum){await h.click(notification(h),'pause');assert.equal(h.shown.at(-1).settings.actions[0].title,'시작');}
   }
 });
 
-test('native note buttons and notification body taps durably pause at the click and remember whether reading was running',async()=>{
-  for(const [maximum,action] of [[3,'note'],[2,''],[0,'']])for(const wasRunning of [true,false]){
+test('notification body taps open the timer without pausing, creating a note or changing any unacknowledged clock',async()=>{
+  for(const maximum of [3,2,0])for(const wasRunning of [true,false]){
     const h=workerHarness({maxActions:maximum}),armed=await arm(h,snapshot(wasRunning?{}:{clock:{elapsedMs:4000,startedAt:null,running:false,phase:'timer'}}));
-    const clicking=h.click(notification(h),action);h.setNow(90000);await clicking;
-    const current=await read(h,armed.head);assert.equal(current.state.clock.elapsedMs,wasRunning?9000:4000);assert.equal(current.state.clock.running,false);assert.equal(current.state.blocked,'note');
-    assert.deepEqual(current.state.journal.map(event=>[event.action,event.at,event.wasRunning]),[['note',10000,wasRunning]]);
-    assert.deepEqual(current.state.openIntent,{at:10000,action:'note',wasRunning});assert.equal(notification(h).defaultAction,'open');
-    assert.deepEqual(h.opened,['https://growell-book.vercel.app/#/book/emotion/mine']);assert.equal(h.closed,1);
-    await h.click(notification(h),'resume');assert.equal((await read(h,armed.head)).state.seq,1,'writing and choosing a destination cannot restart from the notification');
+    const clicking=h.click(notification(h),'');h.setNow(90000);await clicking;
+    const current=await read(h,armed.head);assert.deepEqual(current.state.clock,armed.state.clock);assert.equal(current.state.blocked,'');assert.equal(current.state.seq,0);assert.deepEqual(current.state.journal,[]);
+    assert.deepEqual(current.state.openIntent,{at:10000,action:'open'});assert.equal(notification(h).defaultAction,'open');
+    assert.deepEqual(h.opened,['https://growell-book.vercel.app/#/book/emotion/mine']);assert.equal(h.closed,0);assert.equal(h.shown.length,1);
   }
 });
 
-test('a restarted worker preserves the note handoff until its clock is committed and its exact open intent is acknowledged',async()=>{
+test('a restarted worker preserves a timer-open intent until its exact acknowledgement without creating a journal event',async()=>{
   const database=databaseHarness(),h=workerHarness({database}),armed=await arm(h);await h.click(notification(h),'');
   const restarted=workerHarness({database,now:20000});let current=await read(restarted,armed.head);
-  assert.equal(current.state.journal[0].wasRunning,true);assert.equal(current.state.openIntent.action,'note');
-  const pending=await request(restarted,{type:'arm',snapshot:snapshot(),expected:current.head,expectedActive:current.active});assert.equal(pending.code,'pending');
-  current=await request(restarted,{type:'ack',identity:current.head,throughSeq:1,committedRevision:State.hash('note-clock-committed')});
-  assert.equal(current.state.journal.length,0);assert.deepEqual(current.state.openIntent,{at:10000,action:'note',wasRunning:true});
+  assert.equal(current.state.journal.length,0);assert.deepEqual(current.state.clock,armed.state.clock);assert.deepEqual(current.state.openIntent,{at:10000,action:'open'});
   const wrong=await request(restarted,{type:'open-ack',identity:current.head,at:9999});assert.deepEqual(wrong.state.openIntent,current.state.openIntent);
-  const ack=await request(restarted,{type:'open-ack',identity:current.head,at:10000});assert.equal(ack.ok,true);assert.equal(ack.state.openIntent,undefined);assert.equal(ack.state.blocked,'note');assert.equal(ack.state.clock.elapsedMs,9000);
+  const ack=await request(restarted,{type:'open-ack',identity:current.head,at:10000});assert.equal(ack.ok,true);assert.equal(ack.state.openIntent,undefined);assert.equal(ack.state.blocked,'');assert.deepEqual(ack.state.clock,armed.state.clock);
   assert.equal(restarted.opened.length,0,'reading or acknowledging the journal alone never opens the app');
 });
 
-test('a failed note transaction never opens the app while a later display failure cannot discard a committed note',async()=>{
+test('a failed timer-open transaction never opens the app and retry preserves the original running clock',async()=>{
   const h=workerHarness(),armed=await arm(h),data=notification(h),before=h.database.dump();
   h.database.failNextTransaction();await h.click(data,'');assert.deepEqual(h.database.dump(),before);assert.equal(h.opened.length,0);assert.equal(h.closed,0);
-  h.c.registration.showNotification=async()=>{throw new Error('synthetic rendering unavailable');};
-  await h.click(data,'');const current=await read(h,armed.head);assert.equal(current.state.journal[0].action,'note');assert.equal(current.state.clock.elapsedMs,9000);assert.equal(current.state.openIntent.wasRunning,true);assert.equal(h.opened.length,1);
-  await h.click(data,'note');assert.equal((await read(h,armed.head)).state.seq,1,'a stale body tap cannot create another note or another app window');assert.equal(h.opened.length,1);
+  await h.click(data,'');const current=await read(h,armed.head);assert.deepEqual(current.state.clock,armed.state.clock);assert.deepEqual(current.state.journal,[]);assert.equal(current.state.openIntent.action,'open');assert.equal(h.opened.length,1);assert.equal(h.shown.length,1);
 });
 
-test('note opens an existing app with its newly committed head and never navigates away from an existing draft',async()=>{
+test('body taps focus an existing app with the same timer head and never navigate away from an existing draft',async()=>{
   const notices=[];let focused=0;
   const existing={url:'https://growell-book.vercel.app/#/book/thought/share',postMessage:value=>notices.push(clone(value)),focus:async()=>{focused++;}};
   const h=workerHarness({windows:[existing]}),armed=await arm(h);await h.click(notification(h),'');
-  const current=await read(h,armed.head),opened=notices.find(item=>item.type==='growell-reading-open');assert.ok(opened);assert.deepEqual(opened.identity,State.head(current.state));assert.equal(opened.identity.seq,1);
+  const current=await read(h,armed.head),opened=notices.find(item=>item.type==='growell-reading-open');assert.ok(opened);assert.deepEqual(State.head(opened.identity),State.head(current.state));assert.equal(opened.identity.seq,0);
   assert.equal(focused,1);assert.equal(h.opened.length,0);assert.equal(existing.url,'https://growell-book.vercel.app/#/book/thought/share');
-  assert.equal(notices.some(item=>item.type==='growell-reading-changed'),true);
+  assert.equal(notices.some(item=>item.type==='growell-reading-changed'),false);
+});
+
+test('old notification note buttons and default gestures safely open the timer, while a stale revision cannot open anything',async()=>{
+  for(const action of ['', 'note']){
+    const h=workerHarness(),armed=await arm(h),old={...notification(h),defaultAction:'note'};await h.click(old,action);
+    let current=await read(h,armed.head);assert.deepEqual(current.state.clock,armed.state.clock);assert.equal(current.state.seq,0);assert.deepEqual(current.state.journal,[]);assert.equal(current.state.openIntent.action,'open');assert.equal(h.opened.length,1);
+    await h.click(notification(h),'pause');const count=h.opened.length;await h.click(old,action);current=await read(h,armed.head);assert.equal(current.state.seq,1);assert.equal(h.opened.length,count);assert.equal(current.state.journal[0].action,'pause');
+  }
+});
+
+test('the body reports only this reading session and keeps the paused label last without promising background ticking',async()=>{
+  for(const blocked of ['', 'note','archive','save']){
+    const running=blocked==='',h=workerHarness(),armed=await arm(h,snapshot({blocked,clock:{elapsedMs:4000,startedAt:running?1000:null,running,phase:blocked==='save'?'save':'timer'}}));
+    const text=h.shown.at(-1).settings.body;assert.match(text,new RegExp('읽은 시간 00:00:'+(running?'13':'04')));assert.doesNotMatch(text,/누적|노트|본문|갱신/);
+    if(!running&&blocked!=='save')assert.match(text,/잠시 멈춤$/);if(blocked==='save')assert.match(text,/기록 저장 대기$/);
+    h.setNow(90000);assert.equal(h.shown.length,1,'no per-second notification reissue is scheduled');assert.deepEqual((await read(h,armed.head)).state.clock,armed.state.clock);
+  }
 });
 
 test('save body taps create only a save intent and page messages cannot forge native actions or open intents',async()=>{

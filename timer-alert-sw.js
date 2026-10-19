@@ -66,10 +66,10 @@ function readingDisplay(record){
   if(record.clock.phase==='save')actions=[{action:'save',title:'기록 저장'}];
   else if(record.blocked||record.held)actions=[{action:'open',title:record.blocked==='archive'?'앱에서 계속 읽기':'타이머 보기'}];
   else actions=[{action:record.clock.running?'pause':'resume',title:record.clock.running?'일시정지':'시작'},{action:'finish',title:'끝내기'}];
-  var maximum=typeof Notification!=='undefined'?Notification.maxActions:undefined;if(maximum>=3&&!record.blocked&&!record.held&&record.clock.phase==='timer')actions.push({action:'note',title:'기록하기'});if(typeof maximum==='number'&&Number.isFinite(maximum))actions=actions.slice(0,Math.max(0,maximum));
-  var data=api.head(record);data.kind='growell-reading-session';data.version=2;data.defaultAction=record.clock.phase==='save'?'save':record.blocked||record.held?'open':'note';
-  var label=record.clock.phase==='save'?'독서 종료 · 기록 저장 대기':record.blocked==='note'?'노트 작성 중 · 잠시 멈춤':record.blocked==='archive'?'다른 책 읽는 중 · 잠시 멈춤':record.clock.running?'읽는 중':'잠시 멈춤';
-  return Promise.resolve(self.registration.showNotification('독서 타이머',{body:api.book(record.bookId).title+'\n'+label+' · 누적 '+elapsed+(!record.blocked&&!record.held&&record.clock.phase==='timer'?'\n노트 쓰기는 알림 본문을 눌러주세요.':''),tag:'growell-reading-session',icon:api.book(record.bookId).notificationIcon,badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:record.clock.startedAt===null?Date.now():record.clock.startedAt,actions:actions,data:data})).then(function(){return true;}).catch(function(){return false;});
+  var maximum=typeof Notification!=='undefined'?Notification.maxActions:undefined;if(typeof maximum==='number'&&Number.isFinite(maximum))actions=actions.slice(0,Math.max(0,maximum));
+  var data=api.head(record);data.kind='growell-reading-session';data.version=2;data.defaultAction=record.clock.phase==='save'?'save':'open';
+  var label=record.clock.phase==='save'?' · 기록 저장 대기':record.clock.running?'':' · 잠시 멈춤';
+  return Promise.resolve(self.registration.showNotification('독서 타이머',{body:api.book(record.bookId).title+'\n읽은 시간 '+elapsed+label,tag:'growell-reading-session',icon:api.book(record.bookId).notificationIcon,badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:record.clock.startedAt===null?Date.now():record.clock.startedAt,actions:actions,data:data})).then(function(){return true;}).catch(function(){return false;});
 }
 self.addEventListener('message',function(event){
   var message=event.data,port=event.ports&&event.ports[0];if(!message||message.type!=='growell-reading-state'||!port||!event.source||!readingWindow(event.source)||!message.request||['read','arm','hold','ack','revoke','open-ack'].indexOf(message.request.type)<0)return;
@@ -83,11 +83,11 @@ function readingOpen(data){
   return self.clients.matchAll({type:'window',includeUncontrolled:true}).then(function(windows){var existing=windows.find(readingWindow);if(existing){try{existing.postMessage({type:'growell-reading-open',identity:data});}catch(error){}if(typeof existing.focus==='function')return existing.focus();}return self.clients.openWindow(destination);});
 }
 function readingClick(event,data){
-  var clickedAt=Date.now(),api=readingState(),action=event.action||data.defaultAction||'open';if(!api||!api.identity(data)||data.version!==2||['pause','resume','finish','note','open','save'].indexOf(action)<0)return Promise.resolve(null);
+  var clickedAt=Date.now(),api=readingState(),action=event.action||(data.defaultAction==='save'?'save':'open');if(action==='note')action='open';if(!api||!api.identity(data)||data.version!==2||['pause','resume','finish','open','save'].indexOf(action)<0)return Promise.resolve(null);
   if(action==='open'||action==='save')return readingOperation({type:'open-intent',identity:data,action:action},clickedAt).then(function(result){if(!result.ok||!api.valid(result.state)||!result.active||!api.matches(result.active,data)||result.state.revoked)return null;return readingOpen(data);});
   return readingOperation({type:'action',identity:data,action:action},clickedAt).then(function(result){
     if(!result.ok)return null;
-    event.notification.close();return readingDisplay(result.state).then(function(){if(action==='note')return readingOpen(api.head(result.state));}).then(function(){return self.clients.matchAll({type:'window',includeUncontrolled:true});}).then(function(windows){windows.filter(readingWindow).forEach(function(client){try{client.postMessage({type:'growell-reading-changed',identity:api.head(result.state)});}catch(error){}});});
+    return readingDisplay(result.state).then(function(){return self.clients.matchAll({type:'window',includeUncontrolled:true});}).then(function(windows){windows.filter(readingWindow).forEach(function(client){try{client.postMessage({type:'growell-reading-changed',identity:api.head(result.state)});}catch(error){}});});
   }).catch(function(){return null;});
 }
 self.addEventListener('notificationclick',function(event){
