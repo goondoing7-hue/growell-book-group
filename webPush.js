@@ -160,10 +160,10 @@
   }
   function mount(container,options){
     if(!container||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function')return null;
-    container.classList.add('web-push-section');container.innerHTML='<h3>푸시 알림</h3><p class="web-push-intro">GROWELL을 열지 않아도 새 나눔과 오늘의 말씀을 받아요. 알림을 받을 기기마다 한 번씩 허용해주세요.</p>'+
+    container.classList.add('web-push-section');container.innerHTML='<h3>푸시 알림</h3><p class="web-push-intro">GROWELL을 열지 않아도 새 나눔·자료와 오늘의 말씀을 받아요. 알림을 받을 기기마다 한 번씩 허용해주세요.</p>'+
       '<p data-push-status class="web-push-status" role="status" aria-live="polite">알림 상태를 확인하고 있어요…</p><p data-push-install class="web-push-note" hidden>아이폰·아이패드는 Safari에서 GROWELL을 홈 화면에 추가한 뒤, 홈 화면 아이콘으로 열어 알림을 허용해주세요. iOS·iPadOS 16.4 이상이 필요해요.</p>'+
       '<button type="button" class="web-push-primary" data-push-enable>이 기기에서 알림 받기</button>'+
-      '<div data-push-settings hidden><label class="web-push-toggle"><span>새 나눔 알림<small>내가 쓴 글과 글 수정은 제외해요.</small></span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔 알림"></label>'+
+      '<div data-push-settings hidden><label class="web-push-toggle"><span>새 나눔·자료 알림<small>나눔과 자료실의 새 글을 받아요. 내가 쓴 글과 글 수정은 제외해요.</small></span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔·자료 알림"></label>'+
       '<label class="web-push-toggle"><span>매일 오전 9시 말씀<small>한국 시간 오전 9시에 발송해요.</small></span><input type="checkbox" role="switch" data-push-verse aria-label="매일 오전 9시 말씀"></label>'+
       '<button type="button" class="web-push-secondary" data-push-local>기기 알림 표시 확인</button><button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button><button type="button" class="web-push-secondary" data-push-delayed>1분 뒤 알림 확인</button><p class="web-push-note" data-push-last>최근 서버 발송: 아직 없어요. 기기 수신 확인과는 달라요.</p><button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
       '<button type="button" class="web-push-text" data-push-refresh>상태 새로고침</button><p class="web-push-note">인터넷 연결·집중 모드·기기 설정에 따라 알림이 늦거나 표시되지 않을 수 있어요.</p>';

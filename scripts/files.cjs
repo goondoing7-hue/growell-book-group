@@ -24,6 +24,7 @@ const DEPLOY_FILES = Object.freeze([
   'index.html', 'privacy.html', 'guide.html', 'guide-pc.html', 'guideRouting.js', 'covers/guide-og.png', 'covers/guide-og.svg', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
   'habitDomain.js', 'habitDayClock.js', 'habitSuggestions.js', 'habitGuide.js', 'habitGuide.css', 'habitOverview.css', 'habitCarousel.js', 'habitCarousel.css', 'readingHabit.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
+  'covers/notification-action.png', 'covers/notification-body.png', 'covers/notification-emotion.png', 'covers/notification-thought.png',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
   'covers/og-image-v2.jpg', 'covers/icon-16.png', 'covers/icon-32.png',
   'covers/icon-180.png', 'covers/icon-192.png', 'covers/icon-512.png',
@@ -40,7 +41,7 @@ const TEST_FILES = Object.freeze([
   'tests/book-photo-ocr.test.cjs', 'tests/book-photo-ocr-assets.test.cjs', 'tests/reading-notification.test.cjs', 'tests/save-diagnostics.test.cjs',
   'tests/photo-editor.test.cjs', 'tests/photo-editor-text.test.cjs', 'tests/photo-sources.test.cjs', 'tests/photo-editor-integration.test.cjs', 'tests/archive-photo-tools.test.cjs', 'tests/reading-notification-background.test.cjs', 'tests/reading-notification-reconciliation.test.cjs',
   'tests/auth-profile-diagnostics.test.cjs',
-  'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs',
+  'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs', 'tests/web-push-materials-sql.test.cjs', 'tests/web-push-materials-integration.test.cjs',
   'tests/meeting-record-download.test.cjs',
   'tests/meeting-mail-server.test.cjs', 'tests/meeting-mail-sql.test.cjs', 'tests/meeting-record-pdf.test.cjs', 'tests/meeting-email-worker.test.cjs',
   'tests/google-connection-ui.test.cjs', 'tests/google-connection-server.test.cjs',
@@ -67,7 +68,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
-  'api/web-push.js', 'server/webPushService.cjs', 'server/webPushProvider.cjs', 'server/web-push.sql', 'server/web-push-schedule.sql', 'server/WEB_PUSH_SETUP.md',
+  'api/web-push.js', 'server/webPushService.cjs', 'server/webPushProvider.cjs', 'server/web-push.sql', 'server/web-push-schedule.sql', 'server/web-push-materials.sql', 'server/web-push-materials-verification.sql', 'server/WEB_PUSH_SETUP.md',
   'api/meeting-record-pdf.js', 'server/meetingRecordDownloadService.cjs',
   'api/meeting-record-mail.js', 'server/meetingMailService.cjs', 'server/meetingRecordPdf.cjs', 'server/meeting-record-email-worker.ts', 'server/meeting-mail.sql', 'server/meeting-mail-activate.sql', 'server/meeting-mail-schedule.sql', 'server/MEETING_MAIL_SETUP.md',
   'server/fonts/Pretendard-Regular.otf', 'server/fonts/Pretendard-Bold.otf', 'server/fonts/NotoEmoji.ttf', 'server/fonts/OFL.txt', 'server/fonts/NotoEmoji-OFL.txt', 'server/fonts/README.md',

@@ -116,6 +116,32 @@ test('new post delivery rechecks eligible lease immediately before network and c
   const [subscription,payload,ttl]=f.state.sends[0];assert.deepEqual(subscription,SUB);assert.equal(payload.type,'post');assert.equal(payload.postId,'post-fixture');assert.equal(payload.bookId,'emotion');assert.equal(ttl,3600);assert.equal(payload.body.includes('새로운 나눔'),true);
   assert.deepEqual(Object.keys(payload).sort(),['version','type','bookId','postId','tag','body'].sort());assert.deepEqual(f.state.finishes.map(x=>x[0]),['accepted']);
 });
+
+test('new materials pass the same durable lease guards and expose only the public book and opaque material ID',async()=>{
+  const f=fixture();queue(f,'material',{post_id:null,material_id:'mn_fixture_material',book_id:'thought',title:'PRIVATE_MEMBER_TITLE',body:'PRIVATE_MEMBER_BODY',user_name:'PRIVATE_MEMBER_NAME'});
+  assert.deepEqual(await f.service.run(),{queued:0,claimed:1,processed:1,accepted:1,deferred:0});assert.deepEqual(f.state.reads.slice(-2),['snapshot','prepare']);assert.equal(f.state.sends.length,1);
+  const [subscription,payload,ttl]=f.state.sends[0];assert.deepEqual(subscription,SUB);assert.equal(ttl,3600);
+  assert.deepEqual(payload,{version:1,type:'material',bookId:'thought',materialId:'mn_fixture_material',tag:'growell-material-mn_fixture_material',body:'『생각이 너무 많은 어른들을 위한 심리학』 자료실에 새 자료가 올라왔어요.'});
+  assert.deepEqual(Object.keys(payload).sort(),['version','type','bookId','materialId','tag','body'].sort());assert.deepEqual(f.state.finishes.map(row=>row[0]),['accepted']);
+  const output=JSON.stringify(payload);for(const value of ['PRIVATE_MEMBER_TITLE','PRIVATE_MEMBER_BODY','PRIVATE_MEMBER_NAME',PROFILE.id,AUTH,SUB.endpoint,SUB.keys.auth])assert.equal(output.includes(value),false);
+});
+
+test('deleted or withdrawn materials and changed source identity are rejected before a provider request',async()=>{
+  for(const options of [{guardFalse:'snapshot'},{guardFalse:'prepare'},{prepareChange:{material_id:'mn_different_source'}},{prepareChange:{book_id:'body'}},{prepareChange:{kind:'post',post_id:'different-post'}}]){
+    const f=fixture(options);queue(f,'material',{material_id:'mn_fixture_material',post_id:null});await f.service.run();assert.equal(f.state.sends.length,0);
+  }
+  for(const material_id of [null,undefined,123,{},[],true,'','../elsewhere','id?route=elsewhere','id/elsewhere','x'.repeat(101)]){
+    const f=fixture();queue(f,'material',{material_id,post_id:null});await f.service.run();assert.equal(f.state.sends.length,0);
+  }
+  const wrongBook=fixture();queue(wrongBook,'material',{material_id:'mn_fixture_material',book_id:'private-book'});await wrongBook.service.run();assert.equal(wrongBook.state.sends.length,0);
+});
+
+test('material replacement tags remain stable across retries and cannot collide with a post sharing the same ID',()=>{
+  const source={kind:'material',material_id:'shared_fixture_id',book_id:'emotion'},otherJob='44444444-4444-4444-8444-444444444444';
+  const payload=S.payloadFor(source,NOW,JOB);assert.deepEqual(payload,S.payloadFor(source,NOW,otherJob));
+  assert.notEqual(payload.tag,S.payloadFor({kind:'post',post_id:source.material_id,book_id:'emotion'},NOW,JOB).tag);
+  for(const material_id of ['m','a'.repeat(100),'mn_MIXED-Case_123'])assert.equal(S.payloadFor({...source,material_id},NOW,JOB).materialId,material_id);
+});
 test('separate durable test jobs produce separate visible notification tags without source metadata',async()=>{
   const otherJob='44444444-4444-4444-8444-444444444444',first=fixture(),second=fixture();queue(first,'test');queue(second,'test');
   second.state.claims[0].id=otherJob;second.state.snapshots[otherJob]=second.state.snapshots[JOB];delete second.state.snapshots[JOB];

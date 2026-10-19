@@ -6,6 +6,7 @@ const Verse=require('../dailyVerseDomain.js');
 const VERSES=require('../dailyVerses.js');
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BOOKS=new Set(['emotion','thought','body','action']);
+const BOOK_TITLES=Object.freeze({emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'});
 const ID=/^[A-Za-z0-9_-]{1,100}$/;
 const MAX_BODY_BYTES=12000;
 const SAFE_CODES=new Set(['not-configured','authentication-required','membership-required','same-origin-required','invalid-request','subscription-invalid','connection-required','service-unavailable','rate-limited','push-unavailable','subscription-gone','push-rate-limited','push-rejected','push-uncertain']);
@@ -64,6 +65,10 @@ function payloadFor(job,now,jobId){
   if(job.kind==='post'){
     if(!BOOKS.has(job.book_id)||!ID.test(job.post_id||''))throw new D.BackupError('push-unavailable');
     return{version:1,type:'post',bookId:job.book_id,postId:job.post_id,tag:'growell-post-'+job.post_id,body:'새로운 나눔이 올라왔어요. GROWELL에서 확인해 보세요.'};
+  }
+  if(job.kind==='material'){
+    if(!BOOKS.has(job.book_id)||typeof job.material_id!=='string'||!ID.test(job.material_id))throw new D.BackupError('push-unavailable');
+    return{version:1,type:'material',bookId:job.book_id,materialId:job.material_id,tag:'growell-material-'+job.material_id,body:'『'+BOOK_TITLES[job.book_id]+'』 자료실에 새 자료가 올라왔어요.'};
   }
   if(job.kind==='verse'){
     const verse=Verse.getCompact(VERSES,now);

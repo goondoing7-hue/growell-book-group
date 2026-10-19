@@ -254,7 +254,12 @@ test('every timer notification uses the fixed public book title and cover withou
   const books={emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'};
   for(const [bookId,title] of Object.entries(books)){
     const h=workerHarness();await arm(h,snapshot({bookId,title:'PRIVATE_DRAFT_TITLE',icon:'https://untrusted.example/private-photo'}));
-    const item=h.shown.at(-1);assert.equal(item.title,'독서 타이머');assert.equal(item.settings.body.split('\n')[0],title);assert.equal(item.settings.icon,'/covers/'+bookId+'.jpg');
+    const item=h.shown.at(-1);assert.equal(item.title,'독서 타이머');assert.equal(item.settings.body.split('\n')[0],title);assert.equal(item.settings.icon,'/covers/notification-'+bookId+'.png');
+    assert.equal(State.book(bookId).cover,'/covers/'+bookId+'.jpg','the original full-size book cover remains available to the app');assert.equal(item.settings.image,undefined,'the ongoing timer does not add a large expanded image');
+    const asset=fs.readFileSync(path.join(__dirname,'..',item.settings.icon.slice(1)));
+    assert.equal(asset.subarray(0,8).toString('hex'),'89504e470d0a1a0a');assert.equal(asset.readUInt32BE(16),512);assert.equal(asset.readUInt32BE(20),512);assert.equal(asset[24],8);assert.equal(asset[25],6,'notification padding uses an alpha channel');
+    const chunks=[];for(let offset=8;offset+12<=asset.length;){const length=asset.readUInt32BE(offset);assert.ok(offset+length+12<=asset.length);if(asset.toString('ascii',offset+4,offset+8)==='IDAT')chunks.push(asset.subarray(offset+8,offset+8+length));offset+=length+12;}
+    const firstRow=require('node:zlib').inflateSync(Buffer.concat(chunks));assert.equal(firstRow[4],0,'the outer corner stays transparent instead of enlarging or cropping the book');
     assert.equal(item.settings.actions[0].title,'일시정지');assert.equal(item.settings.requireInteraction,true);assert.equal(item.settings.silent,true);
     assert.doesNotMatch(JSON.stringify(item),/PRIVATE_DRAFT_TITLE|untrusted|PRIVATE_MEMBER|페이지|access_token/);
     assert.doesNotMatch(item.settings.body,/갱신|업데이트|시간.*다시/);

@@ -22,7 +22,7 @@ describe('Opt-in web push SQL preserves authored content and fences every recipi
         is_private boolean default false,visibility text default 'public',is_deleted boolean default false,deleted_at timestamptz);
       create table public.private_entries(id text primary key,user_id text,data text);
       create table public.habits(id text primary key,user_id text,data text);
-      create table public.material_notes(id text primary key,user_id text,html text);
+      create table public.material_notes(id text primary key,user_id text,html text,book_id text);
       create schema vault;create table vault.decrypted_secrets(name text,decrypted_secret text);
       insert into vault.decrypted_secrets values('growell_habit_sync_worker_secret','synthetic-worker-secret-not-an-operating-credential');`);
     await db.exec(sql);
@@ -45,7 +45,7 @@ describe('Opt-in web push SQL preserves authored content and fences every recipi
   async function dataSnapshot(){const result={};for(const table of ['profiles','posts','private_entries','habits','material_notes'])result[table]=(await db.query('select * from '+table+' order by id')).rows;return result;}
 
   test('installation and repeat installation never enroll, backfill or edit any authored content',async()=>{
-    await post();await db.exec("insert into private_entries values('e','owner','ENCRYPTED PRIVATE CONTENT');insert into habits values('h','owner','FULL HABIT CHECK HISTORY');insert into material_notes values('m','owner','FULL MATERIAL BODY');");
+    await post();await db.exec("insert into private_entries values('e','owner','ENCRYPTED PRIVATE CONTENT');insert into habits values('h','owner','FULL HABIT CHECK HISTORY');insert into material_notes(id,user_id,html) values('m','owner','FULL MATERIAL BODY');");
     const before=await dataSnapshot();await db.exec(sql);assert.deepEqual(await dataSnapshot(),before);assert.deepEqual(await jobs(),[]);
     await config();assert.deepEqual(await jobs(),[],'connecting does not backfill old posts');
   });
@@ -198,7 +198,7 @@ describe('Opt-in web push SQL preserves authored content and fences every recipi
     await post('current-gone');work=(await claim())[0];await apply(work,'prepare');await apply(work,'gone');assert.equal((await config('status')).connected,false);
   });
   test('every delivery transition preserves original posts, private entries, habits and resources byte-for-byte',async()=>{
-    await config();await post();await db.exec("insert into private_entries values('e','owner','PRIVATE ENCRYPTED ORIGINAL');insert into habits values('h','owner','HISTORY ORIGINAL');insert into material_notes values('m','owner','MATERIAL ORIGINAL');");
+    await config();await post();await db.exec("insert into private_entries values('e','owner','PRIVATE ENCRYPTED ORIGINAL');insert into habits values('h','owner','HISTORY ORIGINAL');insert into material_notes(id,user_id,html) values('m','owner','MATERIAL ORIGINAL');");
     const before=await dataSnapshot(),work=(await claim())[0];await apply(work,'snapshot');await apply(work,'prepare');await apply(work,'accepted');await config('disconnect');assert.deepEqual(await dataSnapshot(),before);
   });
   test('worker authorization fails closed for absent or duplicate Vault definitions',async()=>{

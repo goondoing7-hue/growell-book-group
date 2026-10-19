@@ -1,11 +1,11 @@
--- Additive, opt-in web push. Existing posts and private entries are never changed.
--- No legacy posts are backfilled and no endpoint or post body enters a job.
+-- Additive, opt-in web push. Existing posts, resources and private entries are never changed.
+-- No legacy posts/resources are backfilled and no endpoint, title or body enters a job.
 begin;
 do $guard$
 begin
   if to_regclass('public.posts') is null or to_regclass('public.profiles') is null
-    or to_regclass('public.book_locks') is null then
-    raise exception 'Apply existing profiles, posts and book locks first';
+    or to_regclass('public.material_notes') is null or to_regclass('public.book_locks') is null then
+    raise exception 'Apply existing profiles, posts, resources and book locks first';
   end if;
 end
 $guard$;
@@ -32,9 +32,10 @@ create table if not exists public.growell_web_push_jobs (
   owner_id text not null,
   auth_user_id uuid not null,
   generation uuid not null,
-  kind text not null check(kind in ('post','verse','test')),
+  kind text not null check(kind in ('post','material','verse','test')),
   source_key text not null,
   post_id text,
+  material_id text,
   book_id text,
   verse_day date,
   status text not null default 'pending' check(status in ('pending','claimed','sending','sent','cancelled','review')),
@@ -48,6 +49,9 @@ create table if not exists public.growell_web_push_jobs (
   created_at timestamptz not null default clock_timestamp(),
   unique(subscription_id,kind,source_key)
 );
+alter table public.growell_web_push_jobs add column if not exists material_id text;
+alter table public.growell_web_push_jobs drop constraint if exists growell_web_push_jobs_kind_check;
+alter table public.growell_web_push_jobs add constraint growell_web_push_jobs_kind_check check(kind in ('post','material','verse','test'));
 alter table public.growell_web_push_subscriptions enable row level security;
 alter table public.growell_web_push_jobs enable row level security;
 revoke all on public.growell_web_push_subscriptions,public.growell_web_push_jobs from public,anon,authenticated;
@@ -69,7 +73,14 @@ as $function$
           and coalesce(to_jsonb(p)->>'is_deleted','false')='false' and to_jsonb(p)->>'deleted_at' is null
           and coalesce(to_jsonb(p)->>'is_private','false')='false' and coalesce(to_jsonb(p)->>'visibility','public')='public'
           and p.book_id is not null and (recipient.is_admin=true
-            or not coalesce((select b.locked from public.book_locks b where b.book_id=p.book_id),p.book_id<>'emotion'))))));
+            or not coalesce((select b.locked from public.book_locks b where b.book_id=p.book_id),p.book_id<>'emotion'))))
+        or (p_kind='material' and s.new_posts and exists(
+          select 1 from public.material_notes m join public.profiles author on author.id=m.user_id
+          where m.id=p_post and m.user_id<>s.owner_id and author.approval_status='approved' and author.is_deleted=false
+            and coalesce(to_jsonb(m)->>'is_deleted','false')='false' and to_jsonb(m)->>'deleted_at' is null
+            and coalesce(to_jsonb(m)->>'is_private','false')='false' and coalesce(to_jsonb(m)->>'visibility','public')='public'
+            and m.book_id is not null and (recipient.is_admin=true
+              or not coalesce((select b.locked from public.book_locks b where b.book_id=m.book_id),m.book_id<>'emotion'))))));
 $function$;
 
 create or replace function public.growell_web_push_configure(p_owner text,p_auth uuid,p_operation text,p_payload jsonb default '{}'::jsonb)
@@ -158,6 +169,20 @@ $function$;
 drop trigger if exists growell_web_push_new_post on public.posts;
 create trigger growell_web_push_new_post after insert on public.posts for each row execute function public.growell_web_push_capture();
 
+create or replace function public.growell_web_push_capture_material()
+returns trigger language plpgsql security definer set search_path=''
+as $function$
+begin
+  insert into public.growell_web_push_jobs(subscription_id,owner_id,auth_user_id,generation,kind,source_key,material_id,book_id,expires_at)
+    select s.id,s.owner_id,s.auth_user_id,s.generation,'material',new.id,new.id,new.book_id,clock_timestamp()+interval '1 day'
+    from public.growell_web_push_subscriptions s where public.growell_web_push_eligible(s.id,'material',new.id,s.generation)
+    on conflict(subscription_id,kind,source_key) do nothing;
+  return new;
+end
+$function$;
+drop trigger if exists growell_web_push_new_material on public.material_notes;
+create trigger growell_web_push_new_material after insert on public.material_notes for each row execute function public.growell_web_push_capture_material();
+
 create or replace function public.growell_web_push_tick(p_now timestamptz default clock_timestamp())
 returns jsonb language plpgsql security definer set search_path=''
 as $function$
@@ -193,8 +218,9 @@ begin
       and (j.status='pending' or (j.status='claimed' and j.lease_until<clock_timestamp()))
     order by j.available_at,j.created_at,j.id for update skip locked limit p_limit
   loop
-    if not public.growell_web_push_eligible(job.subscription_id,job.kind,job.post_id,job.generation)
+    if not public.growell_web_push_eligible(job.subscription_id,job.kind,case when job.kind='material' then job.material_id else job.post_id end,job.generation)
       or not exists(select 1 from public.growell_web_push_subscriptions s where s.id=job.subscription_id and s.owner_id=job.owner_id and s.auth_user_id=job.auth_user_id)
+      or (job.kind='material' and not exists(select 1 from public.material_notes m where m.id=job.material_id and m.book_id=job.book_id))
       or (job.kind='verse' and job.verse_day<>(clock_timestamp() at time zone 'Asia/Seoul')::date) then
       update public.growell_web_push_jobs set status='cancelled',last_error='not-eligible' where id=job.id;
       continue;
@@ -202,7 +228,7 @@ begin
     update public.growell_web_push_jobs set status='claimed',lease_token=gen_random_uuid(),lease_until=clock_timestamp()+interval '2 minutes',attempts=attempts+1
       where id=job.id returning * into job;
     result:=result||jsonb_build_array(jsonb_build_object('id',job.id,'lease_token',job.lease_token,'kind',job.kind,
-      'post_id',job.post_id,'book_id',job.book_id,'verse_day',job.verse_day,'attempts',job.attempts));
+      'post_id',job.post_id,'material_id',job.material_id,'book_id',job.book_id,'verse_day',job.verse_day,'attempts',job.attempts));
   end loop;
   return result;
 end
@@ -243,14 +269,15 @@ begin
   if device.owner_id is distinct from job.owner_id or device.auth_user_id is distinct from job.auth_user_id
     or job.expires_at<=clock_timestamp()
     or (job.kind='post' and not exists(select 1 from public.posts p where p.id=job.post_id and p.book_id=job.book_id))
+    or (job.kind='material' and not exists(select 1 from public.material_notes m where m.id=job.material_id and m.book_id=job.book_id))
     or (job.kind='verse' and job.verse_day<>(clock_timestamp() at time zone 'Asia/Seoul')::date)
-    or not public.growell_web_push_eligible(job.subscription_id,job.kind,job.post_id,job.generation) then
+    or not public.growell_web_push_eligible(job.subscription_id,job.kind,case when job.kind='material' then job.material_id else job.post_id end,job.generation) then
     update public.growell_web_push_jobs set status='cancelled',last_error='not-eligible',lease_until=null where id=p_job;
     return jsonb_build_object('applied',false);
   end if;
   if p_operation='prepare' then update public.growell_web_push_jobs set status='sending',lease_until=clock_timestamp()+interval '2 minutes' where id=p_job;end if;
   return jsonb_build_object('applied',true,'subscription_cipher',device.subscription_cipher,'owner_id',device.owner_id,
-    'auth_user_id',device.auth_user_id,'endpoint_hash',device.fingerprint,'kind',job.kind,'post_id',job.post_id,'book_id',job.book_id,'verse_day',job.verse_day,'expires_at',job.expires_at);
+    'auth_user_id',device.auth_user_id,'endpoint_hash',device.fingerprint,'kind',job.kind,'post_id',job.post_id,'material_id',job.material_id,'book_id',job.book_id,'verse_day',job.verse_day,'expires_at',job.expires_at);
 end
 $function$;
 
@@ -267,6 +294,7 @@ end
 $function$;
 revoke all on function public.growell_web_push_eligible(uuid,text,text,uuid) from public,anon,authenticated;
 revoke all on function public.growell_web_push_capture() from public,anon,authenticated;
+revoke all on function public.growell_web_push_capture_material() from public,anon,authenticated;
 revoke all on function public.growell_web_push_configure(text,uuid,text,jsonb) from public,anon,authenticated;
 revoke all on function public.growell_web_push_tick(timestamptz) from public,anon,authenticated;
 revoke all on function public.growell_web_push_claim(integer) from public,anon,authenticated;

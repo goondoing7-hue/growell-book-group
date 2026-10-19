@@ -3,13 +3,17 @@
 self.addEventListener('install',function(event){event.waitUntil(self.skipWaiting());});
 self.addEventListener('activate',function(event){event.waitUntil(self.clients.claim());});
 function growellPush(value){
-  if(!value||typeof value!=='object'||Array.isArray(value)||value.version!==1||['post','verse','test'].indexOf(value.type)<0)return null;
+  if(!value||typeof value!=='object'||Array.isArray(value)||value.version!==1||['post','material','verse','test'].indexOf(value.type)<0)return null;
   var tag=typeof value.tag==='string'&&/^[A-Za-z0-9:_-]{1,160}$/.test(value.tag)?value.tag:'';
   if(!tag)return null;
   var data={kind:'growell-push',type:value.type},title='GROWELL',body='';
   if(value.type==='post'){
     if(['emotion','thought','body','action'].indexOf(value.bookId)<0||typeof value.postId!=='string'||! /^[A-Za-z0-9_-]{1,100}$/.test(value.postId))return null;
     data.bookId=value.bookId;data.postId=value.postId;title='새로운 나눔';body='새로운 나눔이 올라왔어요. GROWELL에서 확인해보세요.';
+  }else if(value.type==='material'){
+    var books={emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'};
+    if(['emotion','thought','body','action'].indexOf(value.bookId)<0||typeof value.materialId!=='string'||! /^[A-Za-z0-9_-]{1,100}$/.test(value.materialId))return null;
+    data.bookId=value.bookId;data.materialId=value.materialId;title='GROWELL 새 자료';body='『'+books[value.bookId]+'』 자료실에 새 자료가 올라왔어요.';
   }else if(value.type==='verse'){
     if(typeof value.body!=='string'||!value.body.trim()||value.body.length>800)return null;
     title='오늘의 말씀';body=value.body.trim();
@@ -65,7 +69,7 @@ function readingDisplay(record){
   var maximum=typeof Notification!=='undefined'?Notification.maxActions:undefined;if(maximum>=3&&!record.blocked&&!record.held&&record.clock.phase==='timer')actions.push({action:'note',title:'기록하기'});if(typeof maximum==='number'&&Number.isFinite(maximum))actions=actions.slice(0,Math.max(0,maximum));
   var data=api.head(record);data.kind='growell-reading-session';data.version=2;data.defaultAction=record.clock.phase==='save'?'save':record.blocked||record.held?'open':'note';
   var label=record.clock.phase==='save'?'독서 종료 · 기록 저장 대기':record.blocked==='note'?'노트 작성 중 · 잠시 멈춤':record.blocked==='archive'?'다른 책 읽는 중 · 잠시 멈춤':record.clock.running?'읽는 중':'잠시 멈춤';
-  return Promise.resolve(self.registration.showNotification('독서 타이머',{body:api.book(record.bookId).title+'\n'+label+' · 누적 '+elapsed+(!record.blocked&&!record.held&&record.clock.phase==='timer'?'\n노트 쓰기는 알림 본문을 눌러주세요.':''),tag:'growell-reading-session',icon:api.book(record.bookId).cover,badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:record.clock.startedAt===null?Date.now():record.clock.startedAt,actions:actions,data:data})).then(function(){return true;}).catch(function(){return false;});
+  return Promise.resolve(self.registration.showNotification('독서 타이머',{body:api.book(record.bookId).title+'\n'+label+' · 누적 '+elapsed+(!record.blocked&&!record.held&&record.clock.phase==='timer'?'\n노트 쓰기는 알림 본문을 눌러주세요.':''),tag:'growell-reading-session',icon:api.book(record.bookId).notificationIcon,badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:record.clock.startedAt===null?Date.now():record.clock.startedAt,actions:actions,data:data})).then(function(){return true;}).catch(function(){return false;});
 }
 self.addEventListener('message',function(event){
   var message=event.data,port=event.ports&&event.ports[0];if(!message||message.type!=='growell-reading-state'||!port||!event.source||!readingWindow(event.source)||!message.request||['read','arm','hold','ack','revoke','open-ack'].indexOf(message.request.type)<0)return;
@@ -91,7 +95,11 @@ self.addEventListener('notificationclick',function(event){
   if(data.kind==='growell-reading-session'){event.waitUntil(readingClick(event,data));return;}
   event.notification.close();
   var route=allowed.indexOf(data.bookId)>=0?'#/book/'+data.bookId+'/mine':'#/';
-  if(data.kind==='growell-push')route=data.type==='post'&&allowed.indexOf(data.bookId)>=0&&typeof data.postId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.postId)?'#/book/'+data.bookId+'/share/post/'+data.postId:'#/';
+  if(data.kind==='growell-push'){
+    route='#/';
+    if(data.type==='post'&&allowed.indexOf(data.bookId)>=0&&typeof data.postId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.postId))route='#/book/'+data.bookId+'/share/post/'+data.postId;
+    else if(data.type==='material'&&allowed.indexOf(data.bookId)>=0&&typeof data.materialId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.materialId))route='#/book/'+data.bookId+'/materials/post/'+data.materialId;
+  }
   var destination=new URL('/'+route,self.location.origin).href;
   event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(function(windows){
     var existing=windows.find(function(client){

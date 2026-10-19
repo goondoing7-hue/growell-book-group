@@ -214,7 +214,7 @@ test('the mounted settings expose only clear per-device controls and confirmed p
   const view=h.api.mount(container,h.adapter);await new Promise(setImmediate);
   assert.match(container.markup,/이 기기에서 알림 받기/);assert.match(container.markup,/테스트 알림 보내기/);
   assert.match(container.markup,/기기 알림 표시 확인/);assert.match(nodes.get('data-push-last').textContent,/최근 서버 발송:.*2026.*기기 수신 확인과는 달라요/);
-  assert.match(container.markup,/새 나눔 알림/);assert.match(container.markup,/한국 시간 오전 9시/);
+  assert.match(container.markup,/새 나눔·자료 알림/);assert.match(container.markup,/나눔과 자료실의 새 글/);assert.match(container.markup,/한국 시간 오전 9시/);
   assert.equal(nodes.get('data-push-enable').hidden,true);assert.equal(nodes.get('data-push-settings').hidden,false);
   assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
   assert.doesNotMatch(container.markup+JSON.stringify([...nodes.values()]),/PRIVATE_|private-endpoint|push\.example/);
