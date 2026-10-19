@@ -25,6 +25,7 @@ const DEPLOY_FILES = Object.freeze([
   'habitDomain.js', 'habitDayClock.js', 'habitSuggestions.js', 'habitGuide.js', 'habitGuide.css', 'habitOverview.css', 'habitCarousel.js', 'habitCarousel.css', 'readingHabit.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
   'covers/action.jpg', 'covers/body.jpg', 'covers/emotion.jpg', 'covers/thought.jpg',
   'covers/notification-action.png', 'covers/notification-body.png', 'covers/notification-emotion.png', 'covers/notification-thought.png',
+  'covers/notification-expanded-action.png', 'covers/notification-expanded-body.png', 'covers/notification-expanded-emotion.png', 'covers/notification-expanded-thought.png',
   'covers/favicon.ico', 'covers/logo.webp', 'covers/mascot-icon.png',
   'covers/og-image-v2.jpg', 'covers/icon-16.png', 'covers/icon-32.png',
   'covers/icon-180.png', 'covers/icon-192.png', 'covers/icon-512.png',

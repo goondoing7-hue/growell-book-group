@@ -23,12 +23,13 @@ function notificationHarness(options={}){
 }
 test('ongoing reading notification uses one tag, safe generic content and explicit pause/resume plus finish actions',async()=>{
   const h=notificationHarness(),raw=timer(Date.now()),view=h.api.sessionView({timer:raw,userId:raw.userId});
+  view.image='https://untrusted.example/private-expanded-photo';view.icon='https://untrusted.example/private-photo';
   assert.equal(await h.api.showSession(view,()=>true),true);const first=h.calls.notifications[0];
   assert.equal(first.settings.tag,'growell-reading-session');assert.equal(first.settings.requireInteraction,true);assert.equal(first.settings.silent,true);assert.equal(first.settings.renotify,false);
   assert.deepEqual(clone(first.settings.actions),[{action:'pause',title:'일시정지'},{action:'finish',title:'끝내기'}]);
-  assert.equal(first.settings.icon,'/covers/notification-emotion.png');assert.equal(first.settings.image,undefined);
+  assert.equal(first.settings.icon,'/covers/notification-emotion.png');assert.equal(first.settings.image,'/covers/notification-expanded-emotion.png');
   assert.match(first.settings.body,/읽은 시간/);assert.doesNotMatch(first.settings.body,/누적|노트/);
-  assert.doesNotMatch(JSON.stringify(first),/PRIVATE_MEMBER|startPage|access_token|keyB64/);assert.match(first.settings.badge,/notification-badge-96/);
+  assert.doesNotMatch(JSON.stringify(first),/PRIVATE_MEMBER|startPage|access_token|keyB64|untrusted|private-expanded-photo/);assert.match(first.settings.badge,/notification-badge-96/);
   await h.api.showSession(view,()=>true);assert.equal(h.calls.notifications.length,1,'rerenders do not recreate the same notification');
   const paused=Domain.pause(raw,Date.now()),next=h.api.sessionView({timer:paused,userId:raw.userId});await h.api.showSession(next,()=>true);
   assert.equal(h.calls.notifications[1].settings.tag,first.settings.tag);assert.equal(h.calls.notifications[1].settings.actions[0].action,'resume');assert.equal(h.calls.prompts,0);

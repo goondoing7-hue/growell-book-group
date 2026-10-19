@@ -69,7 +69,7 @@ function readingDisplay(record){
   var maximum=typeof Notification!=='undefined'?Notification.maxActions:undefined;if(typeof maximum==='number'&&Number.isFinite(maximum))actions=actions.slice(0,Math.max(0,maximum));
   var data=api.head(record);data.kind='growell-reading-session';data.version=2;data.defaultAction=record.clock.phase==='save'?'save':'open';
   var label=record.clock.phase==='save'?' · 기록 저장 대기':record.clock.running?'':' · 잠시 멈춤';
-  return Promise.resolve(self.registration.showNotification('독서 타이머',{body:api.book(record.bookId).title+'\n읽은 시간 '+elapsed+label,tag:'growell-reading-session',icon:api.book(record.bookId).notificationIcon,badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:record.clock.startedAt===null?Date.now():record.clock.startedAt,actions:actions,data:data})).then(function(){return true;}).catch(function(){return false;});
+  return Promise.resolve(self.registration.showNotification('독서 타이머',{body:api.book(record.bookId).title+'\n읽은 시간 '+elapsed+label,tag:'growell-reading-session',icon:api.book(record.bookId).notificationIcon,image:api.book(record.bookId).notificationImage,badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:record.clock.startedAt===null?Date.now():record.clock.startedAt,actions:actions,data:data})).then(function(){return true;}).catch(function(){return false;});
 }
 self.addEventListener('message',function(event){
   var message=event.data,port=event.ports&&event.ports[0];if(!message||message.type!=='growell-reading-state'||!port||!event.source||!readingWindow(event.source)||!message.request||['read','arm','hold','ack','revoke','open-ack'].indexOf(message.request.type)<0)return;
