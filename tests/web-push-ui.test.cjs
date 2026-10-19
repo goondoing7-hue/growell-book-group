@@ -100,6 +100,18 @@ test('safe server error categories produce connection, approval and retry guidan
   assert.match(h.api.message({code:'membership-required'}),/가입 승인/);assert.match(h.api.message({code:'rate-limited'}),/잠시 기다린/);
   assert.doesNotMatch(h.api.message({code:'<PRIVATE_DIAGNOSTIC>'}),/PRIVATE/);
 });
+test('delayed device testing requests a 60 second server schedule without changing subscriptions or preferences',async()=>{
+  const h=harness({subscribed:true,permission:'granted'});await h.controller.refresh();const before=h.calls.requests.length;
+  assert.equal(h.calls.requests.some(r=>r.body.action==='test'),false);assert.equal(await h.controller.testDelayed(),true);
+  const requested=h.calls.requests.slice(before);assert.equal(requested.length,1);assert.equal(requested[0].body.action,'test');assert.equal(requested[0].body.delaySeconds,60);assert.equal(requested[0].body.endpoint,h.subscription.endpoint);
+  assert.deepEqual(Object.keys(requested[0].body).sort(),['action','delaySeconds','endpoint']);assert.match(h.controller.snapshot().notice,/화면을 닫고.*잠근 뒤/);assert.match(h.controller.snapshot().notice,/예약/);assert.doesNotMatch(h.controller.snapshot().notice,/수신 완료/);
+  assert.deepEqual(json(h.controller.snapshot().preferences),{posts:true,dailyVerse:true});assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscriptions,0);
+  await h.controller.test();assert.equal('delaySeconds' in h.calls.requests.at(-1).body,false,'the existing immediate test stays immediate');
+});
+test('delayed testing requires this device connection and retains safe errors when scheduling fails',async()=>{
+  const missing=harness();await missing.controller.refresh();assert.equal(await missing.controller.testDelayed(),false);assert.equal(missing.calls.requests.some(r=>r.body.action==='test'),false);
+  const failed=harness({subscribed:true,permission:'granted',failure:'test',errorCode:'rate-limited'});await failed.controller.refresh();assert.equal(await failed.controller.testDelayed(),false);assert.equal(failed.controller.snapshot().notice,'');assert.equal(failed.controller.snapshot().errorCode,'rate-limited');
+});
 test('local device display check uses no server request or permission prompt and always has a fresh safe tag',async()=>{
   const h=harness({subscribed:true,permission:'granted',lastSentAt:'2026-10-17T01:23:45Z'});await h.controller.refresh();
   const before=h.calls.requests.length;assert.equal(await h.controller.localTest(),true);assert.equal(await h.controller.localTest(),true);

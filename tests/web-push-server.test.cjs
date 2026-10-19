@@ -18,7 +18,7 @@ function fixture(options={}){
       if(operation==='connect')state.stored={...payload};
       if(operation==='disconnect')state.stored=null;
       return{connected:!!state.stored,newPosts:state.stored?.new_posts,dailyVerse:state.stored?.daily_verse,lastSentAt:null,lastError:null,subscription_cipher:'MUST NOT LEAK',owner_id:'MUST NOT LEAK'};
-    },tick:async()=>{state.reads.push('tick');},claim:async()=>state.claims,
+    },tick:async()=>{state.reads.push('tick');return{queued:state.queued||0};},claim:async()=>state.claims,
     workerAuthorized:async secret=>{state.reads.push('worker-auth');return secret==='v'.repeat(40);},
     apply:async(job,operation,payload)=>{
       if(['snapshot','prepare'].includes(operation)){state.reads.push(operation);if(options.guardFalse===operation)return{applied:false};return{...state.snapshots[job.id],...(operation==='prepare'?options.prepareChange:{})};}
@@ -27,7 +27,7 @@ function fixture(options={}){
   };
   const request=async(url,options,kind)=>{if(kind!=='auth'||options.headers.Authorization!=='Bearer fixture.jwt')throw new D.BackupError('authentication-required',401);return{id:AUTH};};
   const provider={send:async(...args)=>{state.sends.push(args);if(options.sendError)throw options.sendError;return{accepted:true};}};
-  const service=S.createService({config:options.config||CONFIG,request,store,provider,now:()=>NOW});
+  const service=S.createService({config:options.config||CONFIG,request,store,provider,now:options.now||(()=>NOW)});
   return{state,store,service,handler:S.createHandler({service})};
 }
 function queue(f,kind='post',overrides={}){
@@ -62,6 +62,30 @@ test('status, preference update, test and disconnect are fenced by verified prof
   }
   assert.equal(f.state.stored,null);
 });
+
+test('one-minute background test is queued for the verified device without sending from the member request',async()=>{
+  const f=fixture();f.state.stored={new_posts:true,daily_verse:true};
+  const response=await invoke(f.handler,{body:{action:'test',endpoint:SUB.endpoint,delaySeconds:60}});
+  assert.equal(response.headers.status,200);assert.deepEqual(response.body,{ok:true});
+  assert.deepEqual(f.state.writes.at(-1),{profile:PROFILE,operation:'test',payload:{fingerprint:D.hash(SUB.endpoint),delay_seconds:60}});
+  assert.equal(f.state.sends.length,0,'only the server worker may deliver queued tests');
+  assert.equal(JSON.stringify(response.body).includes(SUB.endpoint),false);
+  const immediate=fixture();immediate.state.stored={};
+  assert.equal((await invoke(immediate.handler,{body:{action:'test',endpoint:SUB.endpoint}})).headers.status,200);
+  assert.deepEqual(immediate.state.writes.at(-1).payload,{fingerprint:D.hash(SUB.endpoint)});
+});
+
+test('test delay accepts only the explicit sixty-second option and preserves authentication and cooldown checks',async()=>{
+  const f=fixture();for(const delaySeconds of [0,1,59,61,-60,600,60.1,'60',null,true,{},[]]){
+    assert.equal((await invoke(f.handler,{body:{action:'test',endpoint:SUB.endpoint,delaySeconds}})).headers.status,400);
+  }
+  for(const action of ['config','status','preferences','unsubscribe','subscribe'])assert.equal((await invoke(f.handler,{body:{action,endpoint:SUB.endpoint,delaySeconds:60}})).headers.status,400);
+  assert.equal(f.state.writes.length,0);
+  assert.equal((await invoke(f.handler,{body:{action:'test',endpoint:SUB.endpoint,delaySeconds:60},headers:{origin:CONFIG.origin,'content-type':'application/json'}})).headers.status,401);
+  const limited=fixture({configureError:new D.BackupError('rate-limited',429)});
+  assert.deepEqual((await invoke(limited.handler,{body:{action:'test',endpoint:SUB.endpoint,delaySeconds:60}})).body,{error:'rate-limited'});
+  assert.equal(limited.state.sends.length,0);
+});
 test('invalid origin/content-type/method/shape/endpoint cannot mutate a push device',async()=>{
   const f=fixture();
   assert.equal((await invoke(f.handler,{headers:{authorization:'Bearer fixture.jwt',origin:'https://attacker.example','content-type':'application/json'}})).headers.status,403);
@@ -88,14 +112,14 @@ test('Vault worker secret accepts exact SQL-compatible length bounds without ret
   assert.deepEqual(checked,[32,200,201,256]);
 });
 test('new post delivery rechecks eligible lease immediately before network and contains no member content',async()=>{
-  const f=fixture();queue(f);assert.deepEqual(await f.service.run(),{processed:1,accepted:1});assert.deepEqual(f.state.reads.slice(-2),['snapshot','prepare']);assert.equal(f.state.sends.length,1);
+  const f=fixture();queue(f);assert.deepEqual(await f.service.run(),{queued:0,claimed:1,processed:1,accepted:1,deferred:0});assert.deepEqual(f.state.reads.slice(-2),['snapshot','prepare']);assert.equal(f.state.sends.length,1);
   const [subscription,payload,ttl]=f.state.sends[0];assert.deepEqual(subscription,SUB);assert.equal(payload.type,'post');assert.equal(payload.postId,'post-fixture');assert.equal(payload.bookId,'emotion');assert.equal(ttl,3600);assert.equal(payload.body.includes('새로운 나눔'),true);
   assert.deepEqual(Object.keys(payload).sort(),['version','type','bookId','postId','tag','body'].sort());assert.deepEqual(f.state.finishes.map(x=>x[0]),['accepted']);
 });
 test('separate durable test jobs produce separate visible notification tags without source metadata',async()=>{
   const otherJob='44444444-4444-4444-8444-444444444444',first=fixture(),second=fixture();queue(first,'test');queue(second,'test');
   second.state.claims[0].id=otherJob;second.state.snapshots[otherJob]=second.state.snapshots[JOB];delete second.state.snapshots[JOB];
-  assert.deepEqual(await first.service.run(),{processed:1,accepted:1});assert.deepEqual(await second.service.run(),{processed:1,accepted:1});
+  assert.deepEqual(await first.service.run(),{queued:0,claimed:1,processed:1,accepted:1,deferred:0});assert.deepEqual(await second.service.run(),{queued:0,claimed:1,processed:1,accepted:1,deferred:0});
   const a=first.state.sends[0][1],b=second.state.sends[0][1];
   assert.equal(a.tag,'growell-push-test-'+JOB);assert.equal(b.tag,'growell-push-test-'+otherJob);assert.notEqual(a.tag,b.tag);
   assert.equal(a.body,b.body);assert.deepEqual(Object.keys(a).sort(),['version','type','tag','body'].sort());
@@ -110,6 +134,32 @@ test('post and daily verse retain stable replacement tags regardless of a differ
 test('daily verse uses exact same short passage and Korean day as home, with no AI or original rewrite',async()=>{
   const f=fixture();queue(f,'verse');await f.service.run();const current=Verse.getCompact(VERSES,NOW),payload=f.state.sends[0][1];assert.equal(payload.body,current.text+'\n'+current.reference);assert.equal(payload.tag,'growell-verse-'+current.dateKey);
   const stale=fixture();queue(stale,'verse',{verse_day:'2000-01-01'});await stale.service.run();assert.equal(stale.state.sends.length,0);
+});
+test('morning worker runs independently of an open browser and returns only aggregate queue diagnostics',async()=>{
+  const f=fixture();queue(f,'verse');f.state.queued=1;
+  const result=await invoke(f.handler,{method:'GET',url:'/api/web-push?action=worker',headers:{authorization:'Bearer '+CONFIG.cronSecret}});
+  assert.equal(result.headers.status,200);assert.deepEqual(result.body,{queued:1,claimed:1,processed:1,accepted:1,deferred:0});
+  assert.equal(f.state.sends.length,1);assert.equal(f.state.sends[0][1].type,'verse');
+  const text=JSON.stringify(result.body);for(const sensitive of [PROFILE.id,AUTH,SUB.endpoint,SUB.keys.auth,SUB.keys.p256dh])assert.equal(text.includes(sensitive),false);
+});
+test('October 19 and following Korean mornings reach the actual service worker without a page or date-list filter',async()=>{
+  const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path'),events={},displayed=[];
+  const context={Promise,self:{addEventListener:(name,fn)=>{events[name]=fn;},registration:{showNotification:(title,options)=>{displayed.push({title,options});return Promise.resolve();}}}};
+  vm.createContext(context);vm.runInContext(fs.readFileSync(path.join(__dirname,'../timer-alert-sw.js'),'utf8'),context);
+  for(const day of ['2026-10-19','2026-10-20']){
+    const morning=Date.parse(day+'T09:00:01+09:00'),current=Verse.getCompact(VERSES,morning),payload=S.payloadFor({kind:'verse',verse_day:day},morning);
+    let completion;events.push({data:{json:()=>payload},waitUntil:value=>{completion=value;}});assert.ok(completion);await completion;
+    const output=displayed.at(-1);assert.equal(output.title,'오늘의 말씀');assert.equal(output.options.body,current.text+'\n'+current.reference);
+    assert.equal(output.options.tag,'growell-growell-verse-'+day);assert.equal(output.options.data.type,'verse');
+  }
+  assert.equal(displayed.length,2);assert.notEqual(displayed[0].options.tag,displayed[1].options.tag,'a previous day notification cannot silently replace a different day');
+});
+test('queue diagnostics distinguish deadline deferral from an empty morning queue',async()=>{
+  let time=NOW;const f=fixture({now:()=>time});queue(f,'verse');
+  f.store.tick=async()=>{time+=13000;return{queued:1};};
+  assert.deepEqual(await f.service.run(),{queued:1,claimed:1,processed:0,accepted:0,deferred:1});assert.equal(f.state.sends.length,0);
+  const empty=fixture();assert.deepEqual(await empty.service.run(),{queued:0,claimed:0,processed:0,accepted:0,deferred:0});
+  const invalid=fixture();invalid.store.tick=async()=>({queued:'PRIVATE RESPONSE'});await assert.rejects(invalid.service.run(),error=>error.code==='service-unavailable');
 });
 test('withdrawn eligibility, changed device or invalid encrypted context prevents a network push',async()=>{
   for(const options of [{guardFalse:'snapshot'},{guardFalse:'prepare'},{prepareChange:{owner_id:'different-owner'}},{prepareChange:{subscription_cipher:'modified'}}]){const f=fixture(options);queue(f);await f.service.run();assert.equal(f.state.sends.length,0);}

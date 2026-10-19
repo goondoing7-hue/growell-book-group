@@ -91,8 +91,9 @@ function createService(options={}){
     return profile;
   }
   async function member(profile,body){
-    const fields={config:['action'],status:['action','endpoint'],subscribe:['action','subscription','preferences'],preferences:['action','endpoint','preferences'],unsubscribe:['action','endpoint'],test:['action','endpoint']}[body.action];
+    const fields={config:['action'],status:['action','endpoint'],subscribe:['action','subscription','preferences'],preferences:['action','endpoint','preferences'],unsubscribe:['action','endpoint'],test:['action','endpoint','delaySeconds']}[body.action];
     if(!fields||Object.keys(body).some(key=>!fields.includes(key)))throw new D.BackupError('invalid-request',400);
+    if(body.action==='test'&&Object.hasOwn(body,'delaySeconds')&&body.delaySeconds!==60)throw new D.BackupError('invalid-request',400);
     if(body.action==='config')return{configured:config.configured,publicKey:config.configured?config.publicKey:null};
     requireConfigured();
     if(body.action==='subscribe'){
@@ -103,7 +104,7 @@ function createService(options={}){
     }
     if(body.action==='status'&&body.endpoint===undefined)return{configured:true,subscription:null};
     const hash=fingerprint(body.endpoint),operation={status:'status',preferences:'settings',unsubscribe:'disconnect',test:'test'}[body.action];
-    const result=await store.configure(profile,operation,{fingerprint:hash,...(body.action==='preferences'?preferences(body.preferences):{})});
+    const result=await store.configure(profile,operation,{fingerprint:hash,...(body.action==='preferences'?preferences(body.preferences):{}),...(body.action==='test'&&body.delaySeconds===60?{delay_seconds:60}:{})});
     if(body.action==='test')return{ok:result?.connected===true};
     return statusResult(config,result);
   }
@@ -117,12 +118,14 @@ function createService(options={}){
   }
   async function run(){
     requireConfigured();const deadline=now()+44000;
-    await store.tick(now());const claims=await store.claim(5);if(!Array.isArray(claims)||claims.length>5)throw new D.BackupError('service-unavailable');
-    let processed=0,accepted=0;
-    for(const job of claims){
+    const tick=await store.tick(now());if(!Number.isSafeInteger(tick?.queued)||tick.queued<0)throw new D.BackupError('service-unavailable');
+    const claims=await store.claim(5);if(!Array.isArray(claims)||claims.length>5)throw new D.BackupError('service-unavailable');
+    let processed=0,accepted=0,deferred=0;
+    for(let index=0;index<claims.length;index++){
+      const job=claims[index];
       // A job can spend seven seconds per database guard/finish and six at
       // the provider. Reserve cleanup time before starting another lease.
-      if(now()>deadline-32000)break;
+      if(now()>deadline-32000){deferred=claims.length-index;break;}
       if(!UUID.test(job?.id||'')||!UUID.test(job?.lease_token||''))continue;
       let prepared=false,sent=false;
       try{
@@ -146,7 +149,9 @@ function createService(options={}){
       }
       processed++;
     }
-    return{processed,accepted};
+    // Aggregate worker diagnostics only; never include identities, endpoints,
+    // ciphertext, source content or provider response bodies.
+    return{queued:tick.queued,claimed:claims.length,processed,accepted,deferred};
   }
   return{config,store,authenticate,member,authorizeWorker,run};
 }

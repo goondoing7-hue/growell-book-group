@@ -112,6 +112,31 @@ describe('Opt-in web push SQL preserves authored content and fences every recipi
     assert.equal((await apply(testJob,'snapshot')).post_id,null);assert.equal((await apply(testJob,'prepare')).applied,true);assert.deepEqual(await apply(testJob,'accepted'),{applied:true});assert.deepEqual(await claim(),[]);
     await config('connect',{new_posts:true,daily_verse:true});await assert.rejects(config('test'),codeIs('54000'),'reconnect cannot bypass cooldown');
   });
+  test('a one-minute background test stays durable but cannot be claimed until its server due time',async()=>{
+    await config();const original=await dataSnapshot();
+    await config('test',{delay_seconds:60});const queued=(await jobs())[0];
+    assert.equal(queued.kind,'test');assert.equal(queued.status,'pending');
+    const requested=(await db.query('select last_test_at from growell_web_push_subscriptions')).rows[0].last_test_at;
+    assert.equal(new Date(queued.available_at)-new Date(requested),60000);
+    assert.equal(new Date(queued.expires_at)-new Date(queued.available_at),300000);
+    assert.deepEqual(await claim(),[],'a browser timer is neither consulted nor required');
+    await assert.rejects(config('test'),codeIs('54000'),'delayed and immediate tests share the same cooldown');
+    await db.exec("update growell_web_push_jobs set available_at=clock_timestamp()-interval '1 second'");
+    const work=(await claim())[0];assert.equal(work.kind,'test');assert.equal((await apply(work,'prepare')).applied,true);
+    assert.deepEqual(await apply(work,'accepted'),{applied:true});assert.deepEqual(await claim(),[]);
+    assert.deepEqual(await dataSnapshot(),original,'queueing and delivery never rewrite authored data');
+  });
+  test('only test requests accept numeric zero or sixty seconds, and delayed jobs retain owner and eligibility fences',async()=>{
+    await config();for(const delay_seconds of [1,59,61,-60,600,0.5,'60',null,true,{},[]])await assert.rejects(config('test',{delay_seconds}),codeIs('22023'));
+    for(const operation of ['connect','settings','disconnect','status'])await assert.rejects(config(operation,{delay_seconds:60}),codeIs('22023'));
+    assert.deepEqual(await jobs(),[]);
+    await assert.rejects(config('test',{delay_seconds:60},'other',OTHER),codeIs('42501'));
+    await config('test',{delay_seconds:60});await config('disconnect');
+    await db.exec("update growell_web_push_jobs set available_at=clock_timestamp()-interval '1 second'");
+    assert.deepEqual(await claim(),[]);assert.equal((await jobs())[0].status,'cancelled');
+    await config();await db.exec("update growell_web_push_subscriptions set last_test_at=clock_timestamp()-interval '1 minute';truncate growell_web_push_jobs");
+    await config('test',{delay_seconds:0});assert.equal((await claim())[0].kind,'test');
+  });
   test('the Korean-day verse window queues once per device and never catches up after the window',async()=>{
     await config();const day=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text as day")).rows[0].day;
     assert.equal((await rpc('tick',[day+'T08:59:59+09:00'])).queued,0);assert.equal((await rpc('tick',[day+'T09:00:00+09:00'])).queued,1);
@@ -119,6 +144,30 @@ describe('Opt-in web push SQL preserves authored content and fences every recipi
     const queued=(await jobs())[0];assert.equal(queued.source_key,day);assert.equal(new Date(queued.verse_day).toISOString(),day+'T00:00:00.000Z');
     assert.equal(new Date(queued.expires_at).toISOString(),new Date(day+'T10:00:00+09:00').toISOString());
     await config('settings',{daily_verse:false});assert.equal((await rpc('tick',['2099-10-17T09:00:00+09:00'])).queued,0);
+  });
+  test('database-only morning cron survives a failing HTTP dispatcher and reinstallation never duplicates either schedule',async()=>{
+    await config();const original=await dataSnapshot();
+    await db.exec(`create schema if not exists cron;create table if not exists cron.synthetic_jobs(name text primary key,schedule text,command text);
+      create or replace function cron.schedule(text,text,text) returns bigint language plpgsql as $stub$ begin
+        insert into cron.synthetic_jobs values($1,$2,$3) on conflict(name) do update set schedule=excluded.schedule,command=excluded.command;return 1;end $stub$;
+      create schema if not exists net;
+      create or replace function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) returns bigint language plpgsql as $stub$ begin
+        raise exception 'Synthetic dispatcher unavailable' using errcode='08006';end $stub$;`);
+    // PGlite has no pg_cron/pg_net background processes. Register the exact
+    // production commands against synthetic schedule/dispatcher adapters.
+    const install=schedule.replace(/^create extension if not exists (?:pg_cron|pg_net)[^;]*;\r?$/gm,'');
+    await db.exec(install);await db.exec(install);
+    const registered=(await db.query('select * from cron.synthetic_jobs order by name')).rows;
+    assert.equal(registered.length,2);assert.equal(registered.every(row=>row.schedule==='* * * * *'),true);
+    const morning=registered.find(row=>row.name==='growell-daily-verse-queue'),delivery=registered.find(row=>row.name==='growell-web-push');
+    assert.match(morning.command,/select public\.growell_web_push_tick\(\);/);assert.doesNotMatch(morning.command,/http_post|vault|secret/i);
+    const day=(await db.query("select (clock_timestamp() at time zone 'Asia/Seoul')::date::text as day")).rows[0].day;
+    const atNine=morning.command.replace('growell_web_push_tick()','growell_web_push_tick(\''+day+'T09:00:00+09:00\')');
+    await db.exec(atNine);assert.equal((await jobs()).length,1);
+    await assert.rejects(db.exec(delivery.command),codeIs('08006'));
+    assert.equal((await jobs()).length,1);assert.equal((await jobs())[0].status,'pending');
+    await db.exec(atNine);assert.equal((await jobs()).length,1,'independent cron and HTTP worker share the same per-day uniqueness');
+    assert.deepEqual(await dataSnapshot(),original);
   });
   test('yesterday verses and expired new-post jobs are cancelled before provider delivery',async()=>{
     await config();await rpc('tick',['2000-01-01T09:00:00+09:00']);await post();await db.exec("update growell_web_push_jobs set available_at=clock_timestamp()-interval '1 hour',expires_at=clock_timestamp()-interval '1 second'");

@@ -147,6 +147,7 @@
         });});
     }
     function test(){return run(function(){return testingRegistration(false).then(function(){guard();return client.request('test',{endpoint:subscription.endpoint});}).then(function(){state.notice='테스트 알림을 요청했어요. 보통 1분 안에 도착해요.';});});}
+    function testDelayed(){return run(function(){return testingRegistration(false).then(function(){guard();return client.request('test',{endpoint:subscription.endpoint,delaySeconds:60});}).then(function(){state.notice='약 1분 뒤 알림을 예약했어요. 화면을 닫고 휴대폰을 잠근 뒤 확인해주세요. 예약 실행에 따라 조금 늦을 수 있어요.';});});}
     function localTest(){return run(function(){return testingRegistration(true).then(function(reg){
         return bounded(Promise.resolve().then(function(){guard();return reg.showNotification('GROWELL 기기 알림 확인',{body:'이 알림이 보이면 이 기기의 알림 표시가 작동하고 있어요.',tag:'growell-local-test-'+Date.now().toString(36)+'-'+(++localSequence).toString(36),icon:'/covers/growell-icon-192.png',badge:'/covers/growell-notification-badge-96.png',data:{kind:'growell-push',type:'test'}});}),10000)
           .catch(function(error){if(error&&/^(session_changed|permission_denied)$/.test(error.code))throw error;throw fail('device_display_failed');});
@@ -155,7 +156,7 @@
     function disable(){return run(function(){if(!subscription)throw fail('subscription_required');var target=subscription;
       return client.request('unsubscribe',{endpoint:target.endpoint}).then(function(){guard();state.subscribed=false;subscription=null;state.notice='이 기기의 GROWELL 푸시 알림을 껐어요.';return bounded(target.unsubscribe(),10000).catch(function(){return false;});});
     });}
-    return {refresh:refresh,enable:enable,preferences:preferences,test:test,localTest:localTest,disable:disable,snapshot:snapshot,destroy:function(){disposed=true;client.dispose();}};
+    return {refresh:refresh,enable:enable,preferences:preferences,test:test,testDelayed:testDelayed,localTest:localTest,disable:disable,snapshot:snapshot,destroy:function(){disposed=true;client.dispose();}};
   }
   function mount(container,options){
     if(!container||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function')return null;
@@ -164,7 +165,7 @@
       '<button type="button" class="web-push-primary" data-push-enable>이 기기에서 알림 받기</button>'+
       '<div data-push-settings hidden><label class="web-push-toggle"><span>새 나눔 알림<small>내가 쓴 글과 글 수정은 제외해요.</small></span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔 알림"></label>'+
       '<label class="web-push-toggle"><span>매일 오전 9시 말씀<small>한국 시간 오전 9시에 발송해요.</small></span><input type="checkbox" role="switch" data-push-verse aria-label="매일 오전 9시 말씀"></label>'+
-      '<button type="button" class="web-push-secondary" data-push-local>기기 알림 표시 확인</button><button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button><p class="web-push-note" data-push-last>최근 서버 발송: 아직 없어요. 기기 수신 확인과는 달라요.</p><button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
+      '<button type="button" class="web-push-secondary" data-push-local>기기 알림 표시 확인</button><button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button><button type="button" class="web-push-secondary" data-push-delayed>1분 뒤 알림 확인</button><p class="web-push-note" data-push-last>최근 서버 발송: 아직 없어요. 기기 수신 확인과는 달라요.</p><button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
       '<button type="button" class="web-push-text" data-push-refresh>상태 새로고침</button><p class="web-push-note">인터넷 연결·집중 모드·기기 설정에 따라 알림이 늦거나 표시되지 않을 수 있어요.</p>';
     function q(selector){return container.querySelector(selector);}
     var controller=createController({getAccessToken:options.getAccessToken,isCurrent:options.isCurrent,fetch:options.fetch,onChange:function(state){
@@ -175,9 +176,9 @@
       q('[data-push-enable]').disabled=state.busy||!state.loaded||!state.configured||state.permission==='denied';
       q('[data-push-settings]').hidden=!state.subscribed;q('[data-push-posts]').checked=state.preferences.posts;q('[data-push-verse]').checked=state.preferences.dailyVerse;
       q('[data-push-last]').textContent='최근 서버 발송: '+(state.lastSentAt?new Date(state.lastSentAt).toLocaleString('ko-KR',{hour12:false}):'아직 없어요')+' · 기기 수신 확인과는 달라요.';
-      container.setAttribute('aria-busy',String(state.busy));container.querySelectorAll('[data-push-posts],[data-push-verse],[data-push-test],[data-push-local],[data-push-disable],[data-push-refresh]').forEach(function(control){control.disabled=state.busy;});
+      container.setAttribute('aria-busy',String(state.busy));container.querySelectorAll('[data-push-posts],[data-push-verse],[data-push-test],[data-push-local],[data-push-delayed],[data-push-disable],[data-push-refresh]').forEach(function(control){control.disabled=state.busy;});
     }});
-    q('[data-push-enable]').onclick=controller.enable;q('[data-push-test]').onclick=controller.test;q('[data-push-local]').onclick=controller.localTest;q('[data-push-disable]').onclick=controller.disable;q('[data-push-refresh]').onclick=controller.refresh;
+    q('[data-push-enable]').onclick=controller.enable;q('[data-push-test]').onclick=controller.test;q('[data-push-local]').onclick=controller.localTest;q('[data-push-delayed]').onclick=controller.testDelayed;q('[data-push-disable]').onclick=controller.disable;q('[data-push-refresh]').onclick=controller.refresh;
     function change(){controller.preferences({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked});}
     q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;
     var view={refresh:controller.refresh,destroy:function(){controller.destroy();views.delete(view);}};views.add(view);controller.refresh();return view;

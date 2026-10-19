@@ -18,6 +18,7 @@ const escSource=source.slice(source.indexOf('function esc(s){'),source.indexOf('
 const habitValueBadgeSource=source.slice(source.indexOf('function habitValueInfo('),source.indexOf('function habitValueFiltersHtml('));
 const timerSource=source.slice(source.indexOf('function readingTimerElapsedMs(){'),source.indexOf('function activeReadingStripHtml('));
 const closeNoteSource=source.slice(source.indexOf('function closeReadingNoteDialog(){'),source.indexOf('function openReadingNote('));
+const timerNotificationSource=source.slice(source.indexOf('function readingSessionNotificationSettingsHtml(){'),source.indexOf('function readingCountdownRingHtml(){'));
 const timerEventsSource=source.slice(source.indexOf('function bindReadingTimerEvents(){'),source.indexOf('function submitWorksheet('));
 const cardDateSource=source.slice(source.indexOf('function fmtPostDate('),source.indexOf('function initials('));
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
@@ -57,6 +58,7 @@ function harness(){
     readingTimerStorageOwner:null,readingTimerStorageSnapshot:null,readingTimerStorageWritable:true,
     readingSaveBusy:false,readingSaveError:false,readingFinishKind:'finish',readingTimerIntervalId:null,
     readingNoteReturn:null,readingHomeReturn:false,readingHomeDialogFor:null,readingHomeDialogPosition:null,
+    readingNotificationDialogRoute:null,readingNotificationBusy:false,readingNotificationPending:null,readingNotificationBound:false,readingNotificationLast:'',
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     setInterval:()=>1,clearInterval:()=>{},tickReadingTimer:()=>{},uid:prefix=>prefix+'-ui-test',showToast:(...args)=>toasts.push(args),
     mineComposerOpenFor:null,mineEditingId:'old-edit',mineEditingPayload:{title:'old edit'},
@@ -88,7 +90,7 @@ function harness(){
     totalReadSeconds:bookId=>c.myReadingLogs(bookId).reduce((sum,log)=>sum+log.seconds,0),
     svgIcon:()=>'',avatarHtml:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,announcementSaveBusy:false,announcementEditDraft:null,
     loginGateHtml:message=>message,sharePostCardHtml:()=>'<article>shared</article>'};
-  vm.createContext(c);vm.runInContext(escSource+habitValueBadgeSource+authorSource+timerSource+closeNoteSource+timerEventsSource+announcementSource+homeSource,c);
+  vm.createContext(c);vm.runInContext(escSource+habitValueBadgeSource+authorSource+timerSource+closeNoteSource+timerNotificationSource+timerEventsSource+announcementSource+homeSource,c);
   return {c,controls,queued,opened,renders,createdElements,toasts,storage};
 }
 

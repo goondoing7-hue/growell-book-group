@@ -1,0 +1,57 @@
+GROWELL self-hosted OCR assets
+=============================
+
+These files are unchanged distribution assets from the exact npm versions
+recorded in manifest.json. Images and recognized text are processed by the
+browser worker. The application must supply every local path below; the upstream
+default CDN paths are not used by this integration.
+
+Tesseract.js 7.0.0 / Tesseract.js-core 7.0.0
+  https://github.com/naptha/tesseract.js
+  https://github.com/naptha/tesseract.js-core
+  License: Apache-2.0. Full licenses are in licenses/.
+  The original distribution's bundled JavaScript license comments are preserved
+  in tesseract.min.js.LICENSE.txt and worker.min.js.LICENSE.txt.
+
+Korean and English models
+  @tesseract.js-data/kor 1.0.0 / @tesseract.js-data/eng 1.0.0
+  Only 4.0.0_best_int/*.traineddata.gz is included, renamed into lang/.
+  https://github.com/naptha/tessdata
+  https://github.com/tesseract-ocr/tessdata_best
+  The npm packaging metadata declares MIT, while the upstream trained-data
+  repository distributes its models under Apache-2.0. Its full Apache license
+  is retained in licenses/tessdata-APACHE-2.0.txt. Package wrapper code is not
+  included in this asset directory.
+
+Bundled browser dependencies
+  regenerator-runtime, zlibjs, wasm-feature-detect, bmp-js, is-url, idb-keyval,
+  base64-js, buffer, and ieee754. Their full license texts are in licenses/.
+  Browser bundle comments also identify their copyright holders.
+
+Compiled core dependencies
+  Tesseract, Leptonica, libjpeg, giflib, libpng, libtiff, libwebp, openlibm,
+  and zlib. Their original licenses, copyright notices, patent grant where
+  provided, and licensing README files are retained in licenses/.
+  Source commits and public license URLs are recorded in manifest.json.
+
+Runtime paths and supported engine mode
+  script:     /vendor/tesseract/tesseract.min.js
+  workerPath: /vendor/tesseract/worker.min.js
+  corePath:   /vendor/tesseract/core
+  langPath:   /vendor/tesseract/lang
+  createWorker(['kor', 'eng'], 1, {
+    workerPath, corePath, langPath,
+    workerBlobURL: false, gzip: true, legacyCore: false, legacyLang: false
+  })
+
+OEM 1 (LSTM only) is required. Tesseract.js selects one of the three supplied
+core variants: base, SIMD, or relaxed SIMD. Each *.wasm.js contains its own
+WebAssembly binary; separate *.wasm and ordinary *.js files would be redundant.
+The embedded binaries were checked against the original npm .wasm binaries.
+Legacy engine variants, legacy model data, and source maps are not distributed.
+The engine, worker, selected core, and language files are loaded only when OCR
+is requested. Browser caching of language assets does not store user images.
+
+Integrity
+  manifest.json lists byte sizes and SHA-256 digests for every asset and notice
+  except the manifest itself. Exact npm tarball integrity values are preserved.

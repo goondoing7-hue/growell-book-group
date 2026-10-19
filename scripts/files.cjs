@@ -3,6 +3,11 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
+  'photoEditor.js', 'photoEditor.css', 'bookPhotoOcr.js', 'bookPhotoOcr.css', 'vendor/tesseract/manifest.json',
+  ...require('../vendor/tesseract/manifest.json').files.map(function(file){
+    if(!file || typeof file.path!=='string' || !/^[A-Za-z0-9][A-Za-z0-9_./-]*$/.test(file.path) || file.path.split('/').some(function(part){return !part || part==='.' || part==='..';})) throw new Error('Invalid OCR asset path');
+    return 'vendor/tesseract/'+file.path;
+  }),
   'webPush.js', 'webPushPrompt.js', 'webPush.css',
   'connection-guide.html', 'connection-guide.css',
   'guides/growell-connection-guide.pdf',
@@ -32,6 +37,8 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/book-photo-ocr.test.cjs', 'tests/book-photo-ocr-assets.test.cjs', 'tests/reading-notification.test.cjs', 'tests/save-diagnostics.test.cjs',
+  'tests/photo-editor.test.cjs', 'tests/photo-editor-integration.test.cjs',
   'tests/auth-profile-diagnostics.test.cjs',
   'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs',
   'tests/meeting-record-download.test.cjs',

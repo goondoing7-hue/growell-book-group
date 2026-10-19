@@ -10,6 +10,12 @@ begin
     and char_length(decrypted_secret) between 32 and 256)<>1 then raise exception 'Existing unique worker secret required';end if;
 end
 $guard$;
+-- Keep the morning queue durable even when the HTTP worker is temporarily
+-- unavailable. This is a separate cron transaction from provider delivery;
+-- the database function itself enforces the Korean-time morning window.
+select cron.schedule('growell-daily-verse-queue','* * * * *',$queue$
+  select public.growell_web_push_tick();
+$queue$);
 select cron.schedule('growell-web-push','* * * * *',$job$
   select net.http_post(
     url:='https://growell-book.vercel.app/api/web-push?action=worker',

@@ -1111,6 +1111,8 @@
 <link rel="stylesheet" href="navigation.css">
 <link rel="stylesheet" href="materialsVideo.css">
 <link rel="stylesheet" href="materialTranscript.css">
+<link rel="stylesheet" href="photoEditor.css">
+<link rel="stylesheet" href="bookPhotoOcr.css">
 <script src="popupHistory.js"></script>
 <script src="profile.js"></script>
 <script src="passwordHint.js"></script>
@@ -1131,6 +1133,8 @@
 <script src="meetingRecords.js"></script>
 <script src="materialsMedia.js"></script>
 <script src="materialTranscript.js"></script>
+<script src="photoEditor.js"></script>
+<script src="bookPhotoOcr.js"></script>
 <script src="materialsVideo.js"></script>
 <script src="habitDomain.js"></script>
 <script src="habitDayClock.js"></script>
@@ -2214,6 +2218,11 @@ var readingNoteReturn = null; // Only timer identity and destination; note conte
 var readingHomeReturn = false; // Restored with this member's timer; note saves return to the home popup.
 var readingHomeDialogFor = null; // Transient open state, keyed by timer ID. Closing does not stop the timer.
 var readingHomeDialogPosition = null;
+var readingNotificationDialogRoute = null;
+var readingNotificationBusy = false;
+var readingNotificationPending = null;
+var readingNotificationBound = false;
+var readingNotificationLast = '';
 var worksheetOpenFor = {}; // activity key -> boolean, 활동지 각 항목이 펼쳐져 있는지 (키가 책마다 고유해서 flat object로 충분)
 var shareFeedFilter = {}; // bookId -> note type key ('all' or one of NOTE_TYPES)
 var matFeedFilter = {}; // bookId -> 자료실 카테고리 key ('all' or one of MATERIAL_CATS)
@@ -2444,7 +2453,7 @@ function diffDict(prevDict, nextDict){
 /* payload.photo.dataUrl이 아직 base64(data:...)면 Storage에 올리고 공개 URL로 바꿔치기한다.
    이미 URL(수정 화면에서 사진을 안 바꾼 경우)이면 그대로 둔다 — 렌더 코드는 이 자리가
    base64든 URL이든 <img src="...">로 똑같이 쓰므로 신경 쓸 필요가 없다. */
-function uploadPhotoIfNeeded(bucket, ownerId, id, photo){
+function uploadPhotoIfNeeded(bucket, ownerId, id, photo, recordTable){
   if(!photo || !photo.dataUrl || !/^data:/.test(photo.dataUrl)) return Promise.resolve(photo);
   var commaIdx = photo.dataUrl.indexOf(',');
   var meta = photo.dataUrl.slice(0, commaIdx);
@@ -2456,11 +2465,31 @@ function uploadPhotoIfNeeded(bucket, ownerId, id, photo){
   var bytes = new Uint8Array(bin.length);
   for(var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
   var path = ownerId+'/'+id+'-'+Date.now()+'.'+ext;
-  return sb.storage.from(bucket).upload(path, bytes, {contentType:mime, upsert:true}).then(function(res){
+  return checkedRecordSaveRequest(sb.storage.from(bucket).upload(path, bytes, {contentType:mime, upsert:true}),recordTable,'upload').then(function(res){
     if(res.error) throw res.error;
     var pub = sb.storage.from(bucket).getPublicUrl(path);
     return {dataUrl: pub.data.publicUrl, mimeType: mime};
   });
+}
+
+function reportRecordSaveFailure(table,operation,error,status){
+  // Fixed diagnostic metadata only. Error text, row values, IDs, paths, query
+  // details and authentication material must never enter this diagnostic.
+  if(['posts','private_entries','reading_logs','reading_meta'].indexOf(table)<0
+    || ['insert','update','upsert','select','upload'].indexOf(operation)<0)return;
+  try{
+    var value=error&&error.code;
+    var code=typeof value==='string'&&/^(?:PGRST[0-9]{3}|[0-9A-Z]{5})$/.test(value)?value:null;
+    var candidate=typeof status==='number'?status:error&&error.status;
+    var safeStatus=typeof candidate==='number'&&Number.isInteger(candidate)&&candidate>=400&&candidate<=599?candidate:null;
+    if(typeof console!=='undefined'&&typeof console.warn==='function')console.warn('growell: record-save',JSON.stringify({table:table,operation:operation,code:code,status:safeStatus}));
+  }catch(diagnosticError){/* Reporting must not change save, retry or recovery. */}
+}
+function checkedRecordSaveRequest(request,table,operation){
+  return Promise.resolve(request).then(function(result){
+    if(result&&result.error){reportRecordSaveFailure(table,operation,result.error,result.status);throw result.error;}
+    return result;
+  },function(error){reportRecordSaveFailure(table,operation,error,null);throw error;});
 }
 
 function saveState(mutateFn, opts){
@@ -2505,15 +2534,16 @@ function matchingReadingLog(actual,expected){
 function insertReadingLogOnce(row,guard){
   return Promise.resolve().then(function(){
     guard();
-    return sb.from('reading_logs').insert(row);
+    return checkedRecordSaveRequest(sb.from('reading_logs').insert(row),'reading_logs','insert');
   }).then(function(result){
     if(!result || result.error) throw result && result.error || new Error('reading-log-insert-failed');
   }).catch(function(insertError){
     guard();
     return sb.from('reading_logs').select('*').eq('id',row.id).eq('user_id',row.user_id).maybeSingle().then(function(result){
+      if(result&&result.error)reportRecordSaveFailure('reading_logs','select',result.error,result.status);
       guard();
       if(!result || result.error || !matchingReadingLog(result.data,row)) throw insertError;
-    });
+    },function(error){reportRecordSaveFailure('reading_logs','select',error,null);throw error;});
   });
 }
 function readingAuthError(err){
@@ -2597,7 +2627,7 @@ function performSave(job){
              그대로 써서 모든 사진 첨부가 RLS에 막혀 조용히 실패했었다(사진 없이도 글쓰기 자체는
              되니 눈치채기 어려웠음). */
           var ownerAuthId = (STATE.users[row.userId] && STATE.users[row.userId].authUserId) || row.userId;
-          return uploadPhotoIfNeeded(spec.bucket, ownerAuthId, id, row[spec.photoField]).then(function(photo){
+          return uploadPhotoIfNeeded(spec.bucket, ownerAuthId, id, row[spec.photoField],spec.table).then(function(photo){
             row[spec.photoField] = photo;
           });
         }
@@ -2606,7 +2636,7 @@ function performSave(job){
         if(isNew){
           if(spec.noInsert) return;
           if(key==='readingLogs') return insertReadingLogOnce(spec.toRow(row),guard);
-          return sb.from(spec.table).insert(spec.toRow(row)).then(function(res){ if(res.error) throw res.error; });
+          return checkedRecordSaveRequest(sb.from(spec.table).insert(spec.toRow(row)),spec.table,'insert').then(function(res){ if(res.error) throw res.error; });
         }
         if(spec.noUpdate) return;
         var patch = spec.toRow(row);
@@ -2614,12 +2644,12 @@ function performSave(job){
         if(comparePrivate){
           var expectedIV = (opts.expectedPrivateIVs||{})[id] || (previous.privateEntries[id]||{}).iv;
           if(!expectedIV) throw new Error('private-record-conflict');
-          return sb.from(spec.table).update(patch).eq('id',id).eq('iv',expectedIV).select('id').maybeSingle().then(function(res){
+          return checkedRecordSaveRequest(sb.from(spec.table).update(patch).eq('id',id).eq('iv',expectedIV).select('id').maybeSingle(),spec.table,'update').then(function(res){
             if(res.error) throw res.error;
             if(!res.data || res.data.id!==id) throw new Error('private-record-conflict');
           });
         }
-        return sb.from(spec.table).update(patch).eq('id', id).then(function(res){ if(res.error) throw res.error; });
+        return checkedRecordSaveRequest(sb.from(spec.table).update(patch).eq('id', id),spec.table,'update').then(function(res){ if(res.error) throw res.error; });
       });
     });
     d.removed.forEach(function(id){
@@ -2638,10 +2668,10 @@ function performSave(job){
       var m = next.readingMeta[key];
       work = work.then(function(){
         guard();
-        return sb.from('reading_meta').upsert(
+        return checkedRecordSaveRequest(sb.from('reading_meta').upsert(
           {book_id:m.bookId, user_id:m.userId, current_page:m.currentPage||0, updated_at:m.updatedAt},
           {onConflict:'book_id,user_id'}
-        ).then(function(res){ if(res.error) throw res.error; });
+        ),'reading_meta','upsert').then(function(res){ if(res.error) throw res.error; });
       });
     });
   })();
@@ -3877,10 +3907,13 @@ function pauseReadingBeforeLogout(){
   if(SESSION && readingTimer && readingTimer.userId===SESSION.userId){readingTimer=GrowellReadingTimer.pause(readingTimer,Date.now());persistReadingTimer();}
   readingTimerRestoreOwner=null;readingSaveAttempt=null;readingSaveBusy=false;readingSaveError=false;readingCountdownOpen=false;readingEndPage=null;readingNoteReturn=null;readingHomeReturn=false;readingHomeDialogFor=null;
   readingParkedSessions={};
+  readingNotificationDialogRoute=null;readingNotificationLast='';
+  if(typeof GrowellTimerAlerts!=='undefined'&&GrowellTimerAlerts.closeSession)GrowellTimerAlerts.closeSession(readingNotificationView());
   closeReadingHomeDialog();closeReadingCountdownNotice();
 }
 function isReadingHomeRoute(){return !location.hash || location.hash==='#' || location.hash==='#/';}
 function isReadingTimerDialogRoute(route){
+  if(readingNotificationDialogRoute!==null&&readingNotificationDialogRoute===(location.hash||'#/'))return true;
   return readingHomeReturn?route.view==='home':!!(readingTimer&&route.view==='book'&&route.bookId===readingTimer.bookId&&(route.tab||'mine')==='mine');
 }
 function readingHomeDialogHtml(route){
@@ -3889,10 +3922,10 @@ function readingHomeDialogHtml(route){
   }
   var book=bookById(readingTimer.bookId);
   if(!book || isBookLocked(book)){readingHomeDialogFor=null;return '';}
-  return '<dialog class="reading-home-dialog" id="reading-home-dialog" data-reading-key="'+esc(readingTimer.id+':'+readingTimer.phase)+'" aria-labelledby="reading-home-title"><div class="reading-home-dialog-heading"><h2 id="reading-home-title">'+(readingSavePanelOpen?'읽은 기록 저장':'독서 타이머')+'</h2><button type="button" class="icon-btn" data-reading-home-close aria-label="타이머 닫고 '+(readingHomeReturn?'홈':'나의 공간')+'으로 돌아가기">'+svgIcon(I_CLOSE)+'</button></div>'+readingCardHtml(book,true)+'</dialog>';
+  return '<dialog class="reading-home-dialog" id="reading-home-dialog" data-reading-key="'+esc(readingTimer.id+':'+readingTimer.phase)+'" aria-labelledby="reading-home-title"><div class="reading-home-dialog-heading"><h2 id="reading-home-title">'+(readingSavePanelOpen?'읽은 기록 저장':'독서 타이머')+'</h2><button type="button" class="icon-btn" data-reading-home-close aria-label="타이머 닫고 '+(readingNotificationDialogRoute!==null?'현재 화면':readingHomeReturn?'홈':'나의 공간')+'으로 돌아가기">'+svgIcon(I_CLOSE)+'</button></div>'+readingCardHtml(book,true)+'</dialog>';
 }
 function closeReadingHomeDialog(){
-  readingHomeDialogFor=null;readingHomeDialogPosition=null;
+  readingHomeDialogFor=null;readingHomeDialogPosition=null;readingNotificationDialogRoute=null;
   var dialog=document.getElementById('reading-home-dialog');
   if(dialog && dialog.open && dialog.close)dialog.close();
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('reading-home');
@@ -3923,6 +3956,7 @@ function startReading(bookId){
   if(readingSaveBusy){showToast('읽은 기록을 저장한 뒤 다른 책을 시작해주세요.',true);return;}
   if(!readingTimerStorageWritable){showToast('보관된 독서 기록을 확인하지 못했어요. 새로고침 후 다시 시도해주세요.',true);return;}
   prepareReadingTimerAlerts();
+  readingNotificationDialogRoute=null;
   var fromHome=isReadingHomeRoute();
   if(readingTimer&&readingTimer.bookId===bookId){
     readingHomeReturn=fromHome;
@@ -3971,6 +4005,73 @@ function readingCountdownHtml(){
 function readingNotificationSettingsHtml(){
   var status=typeof GrowellTimerAlerts==='undefined'?{supported:false,permission:'unsupported',enabled:false,label:'이 브라우저에서는 휴대폰 알림을 지원하지 않아요.'}:GrowellTimerAlerts.notificationStatus();
   return '<div class="reading-notifications"><button class="btn btn-sm" id="btn-reading-notifications" type="button"'+(!status.supported||status.permission==='denied'||status.enabled?' disabled':'')+'>'+(status.enabled?'휴대폰 알림 켜짐':'휴대폰 알림 켜기')+'</button><p id="reading-notification-status" role="status">'+esc(status.label)+'</p><small>기기 설정에 따라 소리·진동이 달라질 수 있어요. 앱을 완전히 닫으면 종료 알림이 늦거나 오지 않을 수 있어요.</small></div>';
+}
+function readingSessionNotificationSettingsHtml(){
+  var status=typeof GrowellTimerAlerts==='undefined'?{supported:false,permission:'unsupported'}:GrowellTimerAlerts.notificationStatus();
+  return '<div class="reading-notifications reading-session-notifications"><button class="btn btn-sm" id="btn-reading-session-notifications" type="button"'+(!status.supported||status.permission==='denied'?' disabled':'')+'>알림창에 타이머 표시</button><p id="reading-session-notification-status" role="status">'+(status.permission==='denied'?'브라우저 설정에서 알림을 허용해주세요.':'알림에서 멈춤·시작·끝내기를 사용할 수 있어요.')+'</p><small>브라우저에 따라 버튼과 유지 방식이 달라요. 알림은 지울 수 있으며, 앱이 닫히면 시간이 실시간으로 바뀌지는 않아요.</small></div>';
+}
+function readingNotificationView(){
+  if(!SESSION||!readingTimer||readingTimer.userId!==SESSION.userId||typeof GrowellTimerAlerts==='undefined'||!GrowellTimerAlerts.sessionView)return null;
+  return GrowellTimerAlerts.sessionView({timer:readingTimer,userId:SESSION.userId,note:!!readingNoteReturn});
+}
+function readingNotificationSessionCurrent(session,epoch,timerId){
+  return !!(SESSION===session&&saveSessionEpoch===epoch&&readingTimer&&readingTimer.userId===session.userId&&readingTimer.id===timerId&&
+    (typeof currentMemberPushPrompt!=='function'||currentMemberPushPrompt(memberPushPromptSession)));
+}
+function syncReadingSessionNotification(){
+  var view=readingNotificationView();
+  if(!view||view.data.phase==='save'){
+    if(readingNotificationLast&&typeof GrowellTimerAlerts!=='undefined'&&GrowellTimerAlerts.closeSession)GrowellTimerAlerts.closeSession(view);readingNotificationLast='';return;
+  }
+  var session=SESSION,epoch=saveSessionEpoch,id=readingTimer.id;
+  if(!readingNotificationSessionCurrent(session,epoch,id)||view.data.revision===readingNotificationLast)return;
+  var force=readingNotificationLast==='';readingNotificationLast=view.data.revision;
+  GrowellTimerAlerts.showSession(view,function(){var current=readingNotificationView();return readingNotificationSessionCurrent(session,epoch,id)&&current&&current.data.revision===view.data.revision;},force);
+}
+function openReadingNotificationDialog(){
+  readingNotificationDialogRoute=location.hash||'#/';readingHomeDialogFor=readingTimer.id;render();
+}
+function applyReadingNotificationCommand(command,identity){
+  if(!command||!identity||['pause','resume','finish','open'].indexOf(command.action)<0||command.kind!=='growell-reading-session'||command.version!==1||!Number.isSafeInteger(command.createdAt)||!Number.isSafeInteger(command.expiresAt)||command.createdAt>Date.now()+60000||command.expiresAt<=Date.now()||command.expiresAt-command.createdAt!==300000)return false;
+  refreshReadingTimerFromStorage();var view=readingNotificationView();
+  if(!view||readingSaveBusy||readingSaveAttempt||view.data.phase!=='timer')return false;
+  for(var i=0,fields=['ownerKey','timerId','bookId','revision'];i<fields.length;i++)if(command[fields[i]]!==view.data[fields[i]]||identity[fields[i]]!==view.data[fields[i]])return false;
+  var book=bookById(readingTimer.bookId);if(!book||isBookLocked(book))return false;
+  readingNotificationLast='';
+  if(readingNoteReturn){returnToReadingTimer();return !readingNoteReturn;}
+  if(command.action==='open'){openReadingNotificationDialog();return true;}
+  if(command.action==='resume'&&readingTimer.running||command.action==='pause'&&!readingTimer.running)return false;
+  if(command.action==='resume'&&!pauseArchiveReadingBeforeSharedStart())return false;
+  var next=captureReadingTimerState();
+  next.timer=command.action==='resume'?GrowellReadingTimer.resume(readingTimer,Date.now()):GrowellReadingTimer.pause(readingTimer,Date.now());
+  if(command.action==='finish')next.timer.phase='save';
+  if(!commitReadingTimerState(next)){showToast('읽은 시간을 보관하지 못했어요. 앱에서 다시 확인해주세요.',true);render();return false;}
+  if(command.action==='finish'){readingCountdownOpen=false;openReadingNotificationDialog();}
+  else render();return true;
+}
+function consumeReadingSessionNotificationAction(){
+  if(readingNotificationBusy)return readingNotificationPending||Promise.resolve(false);
+  refreshReadingTimerFromStorage();
+  var view=readingNotificationView();if(!view||view.data.phase!=='timer'||!readingDataReady()||readingSaveBusy||!GrowellTimerAlerts.claimSessionAction)return Promise.resolve(false);
+  var session=SESSION,epoch=saveSessionEpoch,id=readingTimer.id;
+  if(!readingNotificationSessionCurrent(session,epoch,id))return Promise.resolve(false);
+  readingNotificationBusy=true;
+  readingNotificationPending=GrowellTimerAlerts.claimSessionAction(view).then(function(command){
+    if(!readingNotificationSessionCurrent(session,epoch,id))return false;
+    return applyReadingNotificationCommand(command,view.data);
+  }).catch(function(){return false;}).finally(function(){readingNotificationBusy=false;readingNotificationPending=null;syncReadingSessionNotification();});
+  return readingNotificationPending;
+}
+function bindReadingSessionNotifications(){
+  if(!readingNotificationBound&&typeof navigator!=='undefined'&&navigator.serviceWorker){
+    readingNotificationBound=true;
+    navigator.serviceWorker.addEventListener('message',function(event){
+      if(!event.data||event.data.type!=='growell-reading-pending')return;
+      try{var source=new URL(event.source.scriptURL);if(source.origin!==location.origin||source.pathname!=='/timer-alert-sw.js'||source.search||source.hash)return;}catch(error){return;}
+      var port=event.ports&&event.ports[0];consumeReadingSessionNotificationAction().then(function(accepted){if(port)port.postMessage({accepted:accepted===true});});
+    });
+  }
+  syncReadingSessionNotification();consumeReadingSessionNotificationAction();
 }
 function readingCountdownRingHtml(){
   var ratio=GrowellReadingTimer.countdownRatio(readingTimer,Date.now());
@@ -4036,6 +4137,7 @@ function tickReadingTimer(){
   if(!readingTimer || !SESSION) return;
   var running=readingTimer.running;syncReadingTimer();
   if(!readingTimer)return;
+  syncReadingSessionNotification();
   if(running && !readingTimer.running){render();return;}
   document.querySelectorAll('[data-reading-elapsed]').forEach(function(el){el.textContent=fmtElapsed(readingTimerElapsedMs());});
   document.querySelectorAll('[data-reading-remaining]').forEach(function(el){el.textContent=fmtElapsed(GrowellReadingTimer.remaining(readingTimer,Date.now()));});
@@ -4100,6 +4202,13 @@ function bindReadingTimerEvents(){
       button.textContent=current.enabled?'휴대폰 알림 켜짐':'휴대폰 알림 켜기';button.disabled=!current.supported||current.permission==='denied'||current.enabled;
     }).catch(function(){var label=document.getElementById('reading-notification-status');if(label)label.textContent='알림 설정을 완료하지 못했어요. 브라우저 설정을 확인해주세요.';button.disabled=GrowellTimerAlerts.notificationStatus().permission==='denied';});
   });
+  on('btn-reading-session-notifications',function(){
+    if(typeof GrowellTimerAlerts==='undefined')return;
+    var status=GrowellTimerAlerts.notificationStatus();if(!status.supported||status.permission==='denied')return;
+    // This direct call preserves the notification permission gesture.
+    var enabled=GrowellTimerAlerts.enableNotifications();
+    Promise.resolve(enabled).then(function(result){readingNotificationLast='';syncReadingSessionNotification();var label=document.getElementById('reading-session-notification-status');if(label)label.textContent=result&&result.enabled?'알림 표시를 요청했어요. 휴대폰 알림창을 확인해주세요.':result&&result.label||'알림을 허용한 뒤 다시 시도해주세요.';});
+  });
   app.querySelectorAll('[data-reading-finish]').forEach(function(b){b.addEventListener('click',function(){if(refreshReadingTimerFromStorage()){render();return;}if(readingSaveAttempt)return;readingFinishKind=b.getAttribute('data-reading-finish');persistReadingTimer();render();});});
   var pageInput=document.getElementById('reading-log-page-input');
   var pageSlider=document.getElementById('reading-log-page-slider');
@@ -4132,6 +4241,7 @@ function bindReadingTimerEvents(){
   app.querySelectorAll('[data-reading-return]').forEach(function(b){b.addEventListener('click',returnToReadingTimer);});
   app.querySelectorAll('[data-reading-home-close]').forEach(function(b){b.addEventListener('click',closeReadingHomeDialog);});
   showReadingHomeDialog();
+  bindReadingSessionNotifications();
   if(readingTimerIntervalId)clearInterval(readingTimerIntervalId);
   readingTimerIntervalId=readingTimer?setInterval(tickReadingTimer,250):null;
   if(!document._readingLifecycleBound){
@@ -5306,7 +5416,10 @@ function noteComposerHtml(book, opts){
       rtToolbarHtml() +
       '<div class="note-editor" id="note-editor" contenteditable="true" role="textbox" aria-label="글 내용" aria-multiline="true" data-placeholder="'+esc(opts.placeholder||'마음에 남은 문장과 생각을 자유롭게 적어보세요.')+'">'+(editing?(editing.html||''):'')+'</div>' +
       '<div class="photo-attach" id="photo-attach">' +
+        '<button type="button" class="btn btn-sm" id="btn-photo-capture">'+svgIcon(I_IMG)+' 사진 촬영</button>' +
         '<button type="button" class="btn btn-sm" id="btn-photo-pick">'+svgIcon(I_IMG)+' 사진 첨부</button>' +
+        '<input type="file" id="note-photo-camera" accept="image/*" capture="environment" style="display:none">' +
+        '<button type="button" class="btn btn-sm book-photo-ocr-trigger" id="btn-book-photo-ocr" aria-haspopup="dialog">사진에서 글자 가져오기</button>' +
         '<input type="file" id="note-photo-input" accept="image/*" style="display:none">' +
         '<div id="photo-preview">'+photoPreviewInner+'</div>' +
       '</div>' +
@@ -5770,6 +5883,7 @@ function readingCardHtml(book,inDialog){
       '<div class="reading-timer-label">이번에 읽은 시간</div><div class="reading-timer-display mono" id="reading-timer-display" data-reading-elapsed>'+fmtElapsed(elapsedRun)+'</div>' +
       '<button type="button" class="reading-timer-main-control'+(readingTimer.targetMs!==null?' has-countdown':'')+'" id="btn-reading-toggle-pause" aria-label="'+(running?'독서 타이머 일시정지':'독서 타이머 계속 읽기')+'">'+readingCountdownRingHtml()+'<span class="reading-timer-control-icon">'+(running?svgIcon(I_PAUSE):svgIcon(I_PLAY))+'</span></button><p class="reading-control-label">'+(running?'잠시 멈춤':'계속 읽기')+'</p>'+
       (readingTimer.targetMs!==null?'<p class="reading-countdown-left">남은 시간 <strong class="mono" data-reading-remaining>'+fmtElapsed(GrowellReadingTimer.remaining(readingTimer,Date.now()))+'</strong></p>':'')+
+      readingSessionNotificationSettingsHtml()+
       '<button class="btn reading-countdown-open" id="btn-reading-countdown" type="button" aria-expanded="'+readingCountdownOpen+'">'+svgIcon(I_TIMER)+' 카운트다운 '+(readingTimer.targetMs===null?'설정':'변경')+'</button>'+
       (readingCountdownOpen?readingCountdownHtml():'')+
       '<div class="reading-timer-book"><div class="reading-cover reading-cover-sm">'+GrowellBookDetails.coverHtml(book)+'</div><div><strong>'+esc(book.title)+'</strong><span>'+esc(book.author||'')+'</span><span>'+readingTimer.startPage+' / '+total+'쪽부터 읽는 중</span><button class="reading-note-open" type="button" data-reading-note="'+book.id+'" aria-haspopup="dialog">'+svgIcon(I_EDIT)+' 노트 작성</button></div></div>' +
@@ -8084,26 +8198,58 @@ function bindEvents(route){
   var notePhotoData = existingThumbImg ? {dataUrl:existingThumbImg.getAttribute('src'), mimeType:'image/jpeg'} : null;
   var photoPick = document.getElementById('btn-photo-pick');
   var photoInput = document.getElementById('note-photo-input');
+  var photoCapture = document.getElementById('btn-photo-capture');
+  var photoCamera = document.getElementById('note-photo-camera');
+  var photoComposer = noteEditor && noteEditor.closest('.composer');
+  var photoSession = SESSION, photoEpoch = saveSessionEpoch, photoRoute = location.hash;
+  var photoDraftKey = photoComposer && photoComposer.getAttribute('data-draft-key'), photoSequence = 0;
+  function currentPhotoComposer(){
+    return !!photoSession && SESSION===photoSession && saveSessionEpoch===photoEpoch && location.hash===photoRoute &&
+      !!photoComposer && photoComposer.isConnected && !!noteEditor && noteEditor.isConnected &&
+      noteEditor.closest('.composer')===photoComposer && photoComposer.getAttribute('data-draft-key')===photoDraftKey &&
+      photoComposer.getAttribute('data-draft-user')===photoSession.userId;
+  }
   function renderPhotoPreview(){
     if(!photoPreview) return;
     photoPreview.innerHTML = notePhotoData ? '<div class="thumb"><img src="'+notePhotoData.dataUrl+'"><button type="button" id="btn-photo-remove">&times;</button></div>' : '';
     var rm = document.getElementById('btn-photo-remove');
-    if(rm) rm.addEventListener('click', function(){ notePhotoData=null; renderPhotoPreview(); captureComposerDraft(); });
+    if(rm) rm.addEventListener('click', function(){ photoSequence++;notePhotoData=null; renderPhotoPreview(); captureComposerDraft(); });
   }
   if(notePhotoData) renderPhotoPreview();
+  function editSelectedNotePhoto(file,trigger){
+    if(!file || !currentPhotoComposer())return;
+    var sequence=++photoSequence;
+    function current(){return sequence===photoSequence && currentPhotoComposer();}
+    if(!/^image\//.test(file.type)){showToast('사진 파일만 선택해주세요.',true);return;}
+    if(file.size>20*1024*1024){showToast('사진은 20MB 이하로 선택해주세요.',true);return;}
+    if(typeof GrowellPhotoEditor==='undefined'){showToast('사진 편집 도구를 불러오지 못했어요. 다시 열어주세요.',true);return;}
+    GrowellPhotoEditor.edit(file,{isCurrent:current,trigger:trigger}).then(function(edited){
+      if(!edited || !current())return null;
+      return resizeNotePhotoDataUrl(edited);
+    }).then(function(dataUrl){
+      if(!dataUrl || !current())return;
+      notePhotoData={dataUrl:dataUrl,mimeType:'image/jpeg'};
+      renderPhotoPreview();captureComposerDraft();
+    }).catch(function(){if(current())showToast('사진을 편집하지 못했어요. 다른 사진으로 다시 선택해주세요.',true);});
+  }
   if(photoPick && photoInput){
     photoPick.addEventListener('click', function(){ photoInput.click(); });
     photoInput.addEventListener('change', function(){
       var f = photoInput.files && photoInput.files[0];
-      if(!f) return;
-      if(!/^image\//.test(f.type)){ showToast('사진 파일만 첨부할 수 있어요.', true); return; }
-      if(f.size > MAX_FILE_BYTES){ showToast('사진이 너무 커요. '+fmtSize(MAX_FILE_BYTES)+' 이하로 올려주세요.', true); return; }
-      resizeNotePhotoDataUrl(f).then(function(dataUrl){
-        notePhotoData = {dataUrl:dataUrl, mimeType:'image/jpeg'};
-        renderPhotoPreview();
-        captureComposerDraft();
-      }).catch(function(){ showToast('사진을 처리하지 못했어요.', true); });
+      photoInput.value='';editSelectedNotePhoto(f,photoPick);
     });
+  }
+  if(photoCapture && photoCamera){
+    photoCapture.addEventListener('click',function(){photoCamera.click();});
+    photoCamera.addEventListener('change',function(){var file=photoCamera.files&&photoCamera.files[0];photoCamera.value='';editSelectedNotePhoto(file,photoCapture);});
+  }
+
+  if(typeof GrowellBookPhotoOcr!=='undefined'){
+    var ocrComposer=noteEditor&&noteEditor.closest('.composer');
+    GrowellBookPhotoOcr.bind({button:document.getElementById('btn-book-photo-ocr'),editor:noteEditor,composer:ocrComposer,
+      getContext:function(){return {session:SESSION,userId:SESSION&&SESSION.userId,epoch:saveSessionEpoch,route:location.hash,draftKey:ocrComposer&&ocrComposer.getAttribute('data-draft-key')};},
+      isCurrent:function(context){return !!context&&!!SESSION&&SESSION===context.session&&SESSION.userId===context.userId&&saveSessionEpoch===context.epoch&&location.hash===context.route&&!!ocrComposer&&ocrComposer.isConnected&&!!noteEditor&&noteEditor.isConnected&&noteEditor.closest('.composer')===ocrComposer&&ocrComposer.getAttribute('data-draft-key')===context.draftKey&&ocrComposer.getAttribute('data-draft-user')===context.userId;},
+      onAppend:function(){captureComposerDraft();}});
   }
 
   /* 나눔공간/나의공간 글 배경색 선택 — 수정 화면을 열 때는 기존에 고른 색이 미리

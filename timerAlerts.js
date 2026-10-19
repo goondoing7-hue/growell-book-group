@@ -6,6 +6,7 @@
   'use strict';
   var STORE='growell_timer_alerts_v1',LIMIT=64,MAX_AGE=30*86400000;
   var audioContext=null,registrationPromise=null,notificationError=false,memorySeen=[];
+  var sessionSerial=0,sessionSignature='',sessionPending=null,sessionRegistration=null,sessionIdentity=null,SESSION_TAG='growell-reading-session';
   var allowedBooks=['emotion','thought','body','action'];
   function bounded(promise,milliseconds,fallback){
     return new Promise(function(resolve){
@@ -22,7 +23,7 @@
     return {supported:supported,permission:permission,enabled:supported&&permission==='granted'&&!notificationError,label:label};
   }
   function waitForActivation(registration){
-    if(registration.active&&registration.active.state==='activated')return Promise.resolve(registration);
+    if(!registration.installing&&!registration.waiting&&registration.active&&registration.active.state==='activated')return Promise.resolve(registration);
     return new Promise(function(resolve){
       var worker=registration.installing||registration.waiting||registration.active;
       if(!worker){resolve(null);return;}
@@ -35,7 +36,7 @@
   function ensureRegistration(){
     if(!notificationStatus().supported)return Promise.resolve(null);
     if(!registrationPromise){
-      registrationPromise=bounded(Promise.resolve().then(function(){return root.navigator.serviceWorker.register('/timer-alert-sw.js',{scope:'/'});}).then(waitForActivation),8000,null).then(function(registration){
+      registrationPromise=bounded(Promise.resolve().then(function(){return root.navigator.serviceWorker.register('/timer-alert-sw.js',{scope:'/',updateViaCache:'none'});}).then(waitForActivation),8000,null).then(function(registration){
         if(!registration||typeof registration.showNotification!=='function')throw new Error('notification-unavailable');
         notificationError=false;return registration;
       }).catch(function(){registrationPromise=null;notificationError=true;return null;});
@@ -136,5 +137,56 @@
       return Promise.all([sound(),systemNotification(options.bookId,id)]).then(function(results){return {notified:!!(results[0]||vibration||results[1]),duplicate:false,audio:results[0],vibration:vibration,notification:results[1]};});
     });
   }
-  return {prepare:prepare,notify:notify,enableNotifications:enableNotifications,notificationStatus:notificationStatus};
+  function sessionView(options){
+    var timer=options&&options.timer,owner=options&&options.userId;
+    if(!timer||typeof owner!=='string'||timer.userId!==owner||! /^[A-Za-z0-9_-]{1,200}$/.test(timer.id||'')||allowedBooks.indexOf(timer.bookId)<0||typeof timer.running!=='boolean'||['timer','save'].indexOf(timer.phase)<0||!Number.isSafeInteger(timer.elapsedMs)||timer.elapsedMs<0||timer.running&&(!Number.isSafeInteger(timer.startedAt)||timer.startedAt<0))return null;
+    var ownerKey=opaqueId('member:'+owner),revision=opaqueId(JSON.stringify([timer.id,owner,timer.bookId,timer.running,timer.startedAt,timer.elapsedMs,timer.phase,!!options.note]));
+    if(!ownerKey||!revision)return null;
+    var seconds=Math.floor((timer.elapsedMs+(timer.running?Math.max(0,Date.now()-timer.startedAt):0))/1000),h=Math.floor(seconds/3600),m=Math.floor(seconds/60)%60,s=seconds%60;
+    var elapsed=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+    return {data:{kind:'growell-reading-session',version:1,ownerKey:ownerKey,timerId:timer.id,bookId:timer.bookId,revision:revision,running:timer.running,note:!!options.note,phase:timer.phase},
+      title:'GROWELL 독서 타이머',body:(options.note?'노트 작성 중 · 잠시 멈춤':timer.running?'읽는 중':'잠시 멈춤')+' · 누적 '+elapsed+'\n시간은 상태가 바뀔 때 갱신돼요.',timestamp:timer.running?timer.startedAt:timer.createdAt};
+  }
+  function closeSession(view){
+    var serial=++sessionSerial;sessionSignature='';sessionPending=null;
+    var identity=view&&view.data||sessionIdentity,registration=sessionRegistration;sessionRegistration=null;sessionIdentity=null;
+    var lookup;try{lookup=registration?Promise.resolve(registration):root.navigator&&root.navigator.serviceWorker&&typeof root.navigator.serviceWorker.getRegistration==='function'?root.navigator.serviceWorker.getRegistration('/'):Promise.resolve(null);}catch(error){lookup=Promise.resolve(null);}
+    return bounded(Promise.resolve(lookup).then(function(reg){
+      if(serial!==sessionSerial)return false;
+      if(reg&&reg.active&&typeof reg.active.postMessage==='function'&&identity&&/^t1-[a-f0-9]+-[a-f0-9]+$/.test(identity.ownerKey||''))reg.active.postMessage({type:'growell-reading-clear',ownerKey:identity.ownerKey});
+      if(!reg||typeof reg.getNotifications!=='function')return false;return reg.getNotifications({tag:SESSION_TAG}).then(function(list){if(serial!==sessionSerial)return false;list.forEach(function(item){item.close();});return true;});
+    }).catch(function(){return false;}),3000,false);
+  }
+  function showSession(view,isCurrent,force){
+    if(!view||!view.data||typeof isCurrent!=='function'||!isCurrent()||notificationStatus().permission!=='granted')return Promise.resolve(false);
+    if(view.data.phase==='save')return closeSession(view);
+    var signature=JSON.stringify(view.data);if(!force&&signature===sessionSignature)return sessionPending||Promise.resolve(true);
+    var serial=++sessionSerial;sessionSignature=signature;sessionIdentity=view.data;
+    function current(){return serial===sessionSerial&&isCurrent();}
+    sessionPending=ensureRegistration().then(function(reg){
+      if(!reg||!current())return false;sessionRegistration=reg;
+      var actions=view.data.note?[{action:'open',title:'타이머 보기'}]:[{action:view.data.running?'pause':'resume',title:view.data.running?'멈춤':'시작'},{action:'finish',title:'끝내기'}];
+      var maximum=root.Notification&&root.Notification.maxActions;if(typeof maximum==='number'&&Number.isFinite(maximum))actions=actions.slice(0,Math.max(0,maximum));
+      return reg.showNotification(view.title,{body:view.body,tag:SESSION_TAG,icon:'/covers/growell-icon-192.png',badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:Number.isSafeInteger(view.timestamp)?view.timestamp:Date.now(),actions:actions,data:view.data}).then(function(){
+        if(current())return true;
+        if(typeof reg.getNotifications==='function')return reg.getNotifications({tag:SESSION_TAG}).then(function(list){list.forEach(function(item){if(item.data&&item.data.ownerKey===view.data.ownerKey&&item.data.revision===view.data.revision)item.close();});return false;});
+        return false;
+      });
+    }).catch(function(){if(serial===sessionSerial){sessionSignature='';notificationError=true;}return false;}).then(function(result){if(serial===sessionSerial&&!result)sessionSignature='';return result;});
+    return sessionPending;
+  }
+  function claimSessionAction(view){
+    if(!view||!view.data||typeof root.MessageChannel!=='function')return Promise.resolve(null);
+    return ensureRegistration().then(function(reg){
+      if(!reg||!reg.active||typeof reg.active.postMessage!=='function')return null;
+      return new Promise(function(resolve){
+        var channel=new root.MessageChannel(),done=false,timer=root.setTimeout(function(){finish(null);},4000);
+        function finish(value){if(done)return;done=true;root.clearTimeout(timer);channel.port1.close();channel.port2.close();resolve(value);}
+        channel.port1.onmessage=function(event){var value=event.data;finish(value&&value.type==='growell-reading-command'?value.command:null);};
+        try{reg.active.postMessage({type:'growell-reading-claim',identity:view.data},[channel.port2]);}catch(error){finish(null);}
+      });
+    }).catch(function(){return null;});
+  }
+  return {prepare:prepare,notify:notify,enableNotifications:enableNotifications,notificationStatus:notificationStatus,
+    sessionView:sessionView,showSession:showSession,closeSession:closeSession,claimSessionAction:claimSessionAction};
 });

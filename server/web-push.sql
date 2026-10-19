@@ -76,6 +76,7 @@ create or replace function public.growell_web_push_configure(p_owner text,p_auth
 returns jsonb language plpgsql security definer set search_path=''
 as $function$
 declare device public.growell_web_push_subscriptions%rowtype; endpoint_fingerprint text; same_owner boolean; key_name text;
+  test_requested_at timestamptz; test_available_at timestamptz;
 begin
   perform 1 from public.profiles where id=p_owner and auth_user_id=p_auth and approval_status='approved' and is_deleted=false for share;
   if not found then raise exception 'Approved owner required' using errcode='42501';end if;
@@ -87,9 +88,13 @@ begin
   end if;
   if endpoint_fingerprint is null or endpoint_fingerprint !~ '^[0-9a-f]{64}$' then raise exception 'Device fingerprint required' using errcode='22023';end if;
   for key_name in select jsonb_object_keys(p_payload) loop
-    if key_name not in ('fingerprint','subscription_cipher','new_posts','daily_verse') then
+    if key_name not in ('fingerprint','subscription_cipher','new_posts','daily_verse')
+      and not (key_name='delay_seconds' and p_operation='test') then
       raise exception 'Invalid device setting' using errcode='22023';end if;
   end loop;
+  if p_payload ? 'delay_seconds' and (jsonb_typeof(p_payload->'delay_seconds') is distinct from 'number'
+    or p_payload->'delay_seconds' not in ('0'::jsonb,'60'::jsonb)) then
+    raise exception 'Invalid test delay' using errcode='22023';end if;
   if (p_payload ? 'new_posts' and jsonb_typeof(p_payload->'new_posts')<>'boolean')
     or (p_payload ? 'daily_verse' and jsonb_typeof(p_payload->'daily_verse')<>'boolean') then
     raise exception 'Boolean preferences required' using errcode='22023';end if;
@@ -127,10 +132,12 @@ begin
   elsif p_operation='test' then
     if not public.growell_web_push_eligible(device.id,'test') then raise exception 'Active device required' using errcode='55000';end if;
     if device.last_test_at>clock_timestamp()-interval '60 seconds' then raise exception 'Test cooldown' using errcode='54000';end if;
-    insert into public.growell_web_push_jobs(subscription_id,owner_id,auth_user_id,generation,kind,source_key,expires_at)
-      values(device.id,p_owner,p_auth,device.generation,'test',floor(extract(epoch from clock_timestamp())/60)::text,clock_timestamp()+interval '10 minutes')
+    test_requested_at:=clock_timestamp();
+    test_available_at:=test_requested_at+make_interval(secs=>case when p_payload->'delay_seconds'='60'::jsonb then 60 else 0 end);
+    insert into public.growell_web_push_jobs(subscription_id,owner_id,auth_user_id,generation,kind,source_key,available_at,expires_at)
+      values(device.id,p_owner,p_auth,device.generation,'test',floor(extract(epoch from test_requested_at)/60)::text,test_available_at,test_available_at+interval '5 minutes')
       on conflict(subscription_id,kind,source_key) do nothing;
-    update public.growell_web_push_subscriptions set last_test_at=clock_timestamp() where id=device.id returning * into device;
+    update public.growell_web_push_subscriptions set last_test_at=test_requested_at where id=device.id returning * into device;
   end if;
   return jsonb_build_object('connected',device.enabled and device.subscription_cipher is not null,'deviceId',device.id,
     'newPosts',device.new_posts,'dailyVerse',device.daily_verse,'lastSentAt',device.last_sent_at,'lastError',device.last_error);
