@@ -1688,6 +1688,17 @@ function memberSessionFailure(error,invalid){
   failure.invalidSession=invalid===true || invalid!==false && definitiveMemberSessionError(error);
   return failure;
 }
+function reportProfileReadFailure(stage,result){
+  // Support diagnostics only: never copy errors, descriptions, queries, member
+  // fields or authentication headers into the browser console.
+  if(stage!=='restore'&&stage!=='login')return;
+  try{
+    var value=result&&result.error&&result.error.code,status=result&&result.status;
+    var code=typeof value==='string'&&/^(?:PGRST[0-9]{3}|[0-9A-Z]{5})$/.test(value)?value:null;
+    var safeStatus=typeof status==='number'&&Number.isInteger(status)&&status>=100&&status<=599?status:null;
+    if(typeof console!=='undefined'&&typeof console.warn==='function')console.warn('growell: profile-read',JSON.stringify({stage:stage,code:code,status:safeStatus}));
+  }catch(error){/* Diagnostics must not change authentication or key recovery. */}
+}
 function scheduleMemberSessionRestore(){
   var delays=[1500,5000,15000];
   if(authRestoreState!=='retry'||SESSION||authRestoreRetryTimer!==null||authRestoreRetryCount>=delays.length)return;
@@ -1730,7 +1741,10 @@ function restoreMemberSession(){
     authRestoreUserId=result.data.session.user&&result.data.session.user.id||null;
     var user=await verifiedUser(result.data.session);guard();
     var profileResult=await sb.from('profiles').select('*').eq('auth_user_id',user.id).maybeSingle();guard();
-    if(!profileResult||profileResult.error)throw memberSessionFailure(null,false);
+    if(!profileResult||profileResult.error){
+      if(typeof reportProfileReadFailure==='function')reportProfileReadFailure('restore',profileResult);
+      throw memberSessionFailure(null,false);
+    }
     var row=profileResult.data,restored=null;
     if(row&&row.auth_user_id!==user.id)throw memberSessionFailure(null,true);
     if(row&&!GrowellMemberAccess.approved(row)){
@@ -2820,7 +2834,10 @@ function doLogin(id, pw, btn){
     return sb.from('profiles').select('*').eq('login_id', id).maybeSingle();
   }).then(function(profRes){
     authGuard();
-    if(profRes.error || !profRes.data) throw new Error('profile-not-found');
+    if(profRes.error || !profRes.data){
+      if(typeof reportProfileReadFailure==='function')reportProfileReadFailure('login',profRes);
+      throw new Error('profile-not-found');
+    }
     if(!GrowellMemberAccess.approved(profRes.data)){oauthMessage=GrowellMemberAccess.message(profRes.data.approval_status);return sb.auth.signOut().then(function(){throw new Error('membership-pending');});}
     var u = mapProfileRow(profRes.data);
     STATE.users[u.id] = u;

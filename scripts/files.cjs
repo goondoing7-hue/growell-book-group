@@ -32,6 +32,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/auth-profile-diagnostics.test.cjs',
   'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs',
   'tests/meeting-record-download.test.cjs',
   'tests/meeting-mail-server.test.cjs', 'tests/meeting-mail-sql.test.cjs', 'tests/meeting-record-pdf.test.cjs', 'tests/meeting-email-worker.test.cjs',
