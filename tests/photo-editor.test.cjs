@@ -15,7 +15,7 @@ class Node extends BaseNode{
   getContext(){return context(this.draws);}
   toBlob(callback,type,quality){this.exported={type,quality,width:this.width,height:this.height};if(this.pendingExport)this.pendingExport(callback);else callback(new Blob(['synthetic-edited-image'],{type}));}
 }
-function context(calls){const result={save(){calls.push(['save']);},restore(){calls.push(['restore']);},drawImage(...args){calls.push(['image',...args]);},fillRect(...args){calls.push(['fillRect',...args]);},strokeRect(...args){calls.push(['strokeRect',...args]);},beginPath(){},arc(...args){calls.push(['arc',...args]);},fill(){calls.push(['fill']);},moveTo(){},lineTo(){},stroke(){calls.push(['stroke',this.globalAlpha,this.lineWidth,this.strokeStyle]);},setLineDash(){},measureText:text=>({width:Array.from(text).length*10}),fillText(...args){calls.push(['text',...args]);}};return result;}
+function context(calls){const result={save(){calls.push(['save']);},restore(){calls.push(['restore']);},drawImage(...args){calls.push(['image',...args]);},fillRect(...args){calls.push(['fillRect',...args]);},strokeRect(...args){calls.push(['strokeRect',...args]);},beginPath(){},arc(...args){calls.push(['arc',...args]);},fill(){calls.push(['fill']);},moveTo(){},lineTo(){},stroke(){calls.push(['stroke',this.globalAlpha,this.lineWidth,this.strokeStyle]);},setLineDash(){},measureText(text){return {width:Array.from(text).length*Number((this.font||'20px').match(/([0-9.]+)px/)[1])*.55};},fillText(...args){calls.push(['text',...args,this.font,this.fillStyle]);}};return result;}
 function harness(options={}){
   const body=new Node('body'),trigger=new Node('button');body.appendChild(trigger);const timers=new Map(),history=[];let id=0,current=true;
   const canvases=[],document={body,createElement:tag=>{const node=new Node(tag);if(tag==='canvas')canvases.push(node);return node;}};const browser={document,addEventListener(){},removeEventListener(){},GrowellPopupHistory:{open:(key,value)=>history.push({key,value}),closed:key=>history.push({closed:key})}};
@@ -25,6 +25,8 @@ function harness(options={}){
 }
 function pointer(canvas,type,x,y,id=1){canvas.dispatchEvent({type,pointerId:id,isPrimary:true,button:0,clientX:x,clientY:y,preventDefault(){}});}
 function button(h,attribute,value){return h.dialog.querySelectorAll('['+attribute+']').find(node=>node.getAttribute(attribute)===value);}
+function lastText(h,text){for(const frame of [...h.canvases].reverse()){const draw=frame.draws?.findLast(value=>value[0]==='text'&&(!text||value[1]===text));if(draw)return draw;}return null;}
+function input(node,value){node.value=value;node.dispatchEvent({type:'input'});}
 
 test('image dimensions normalize to 2200 pixels and pointer coordinates account for CSS scaling and clamping',()=>{
   assert.deepEqual(D.size(4400,2200),{width:2200,height:1100});assert.deepEqual(D.size(400,800),{width:400,height:800});
@@ -69,13 +71,15 @@ test('crop rendering copies the exact selected pixels and keeps source canvas di
   assert.equal(rendered.width,200);assert.equal(rendered.height,100);assert.equal(base.width,600);assert.equal(base.height,400);
   assert.ok(rendered.draws.some(call=>call[0]==='image'&&JSON.stringify(call.slice(2))===JSON.stringify([20,30,200,100,0,0,200,100])));
 });
-test('editor starts with the full eight-handle frame and exposes three simple tools with contextual settings',async()=>{
-  const h=harness();await flush();assert.deepEqual(Array.from(h.dialog.querySelectorAll('[data-photo-tool]'),node=>node.getAttribute('data-photo-tool')),['crop','mark','text']);
-  assert.equal(h.q('[data-photo-settings]').hidden,true);assert.equal(h.q('[data-photo-mark-tools]').hidden,true);assert.equal(h.q('[data-photo-text-fields]').hidden,true);assert.equal(h.q('[data-photo-crop-settings]').hidden,false);
+test('editor starts with the full eight-handle frame and exposes one row of accessible icon tools and real color swatches',async()=>{
+  const h=harness();await flush();assert.deepEqual(Array.from(h.dialog.querySelectorAll('[data-photo-tool]'),node=>node.getAttribute('data-photo-tool')),['crop','partial','pen','highlight','text']);
+  assert.equal(h.q('[data-photo-settings]').hidden,false);assert.equal(h.q('[data-photo-width-settings]').hidden,true);assert.equal(h.q('[data-photo-text-fields]').hidden,true);assert.equal(h.dialog.querySelectorAll('select').length,0,'fixed font sizes and named color select are removed');
+  for(const tool of h.dialog.querySelectorAll('[data-photo-tool]')){assert.ok(tool.getAttribute('aria-label'));assert.ok(tool.getAttribute('title'));assert.ok(tool.querySelector('svg'));}
+  assert.equal(h.dialog.querySelectorAll('[data-photo-color]').length,7);for(const swatch of h.dialog.querySelectorAll('[data-photo-color]'))assert.ok(swatch.getAttribute('style').includes(swatch.getAttribute('data-photo-color')));
   assert.ok(h.q('[data-photo-canvas]').draws.filter(call=>call[0]==='strokeRect').length>=9,'initial crop boundary and all eight frame handles are drawn');
-  button(h,'data-photo-tool','mark').click();assert.equal(h.q('[data-photo-settings]').hidden,false);assert.equal(h.q('[data-photo-mark-tools]').hidden,false);assert.equal(h.q('[data-photo-crop-settings]').hidden,true);
-  button(h,'data-photo-mark','highlight').click();assert.equal(h.q('[data-photo-width]').value,'32');assert.equal(h.q('[data-photo-color]').value,'#f4ca38');
-  button(h,'data-photo-tool','text').click();assert.equal(h.q('[data-photo-text-fields]').hidden,false);assert.equal(h.q('[data-photo-width-settings]').hidden,true);assert.equal(h.q('[data-photo-mark-tools]').hidden,true);
+  button(h,'data-photo-tool','pen').click();assert.equal(h.q('[data-photo-width-settings]').hidden,false);
+  button(h,'data-photo-tool','highlight').click();assert.equal(h.q('[data-photo-width]').value,'32');assert.equal(button(h,'data-photo-color','#f4ca38').getAttribute('aria-pressed'),'true');
+  button(h,'data-photo-tool','text').click();assert.equal(h.q('[data-photo-text-fields]').hidden,false);assert.equal(h.q('[data-photo-width-settings]').hidden,true);
   assert.equal(h.q('[data-photo-done]').disabled,false);h.q('[data-photo-done]').click();const result=await h.result;assert.ok(result instanceof Blob);assert.equal(result.type,'image/jpeg');assert.equal(h.dialog.isConnected,false);assert.equal(h.base.width,0,'decoded source is released after export');assert.ok(h.history.some(item=>item.key==='photo-editor'));assert.ok(h.history.some(item=>item.closed==='photo-editor'));
 });
 test('touch-equivalent crop dragging uses scaled image coordinates and undo restores the full image',async()=>{
@@ -97,16 +101,41 @@ test('cancelled frame drags and undo of a first partial selection never silently
   h.q('[data-photo-done]').click();assert.ok(await h.result instanceof Blob);assert.deepEqual(h.canvases.find(node=>node.exported).exported,{type:'image/jpeg',quality:.93,width:600,height:400});
 });
 test('OCR crop-only mode hides drawing tools and exports the adjusted frame using the safe custom confirmation label',async()=>{
-  const h=harness({settings:{cropOnly:true,confirmLabel:'자르고 글자 인식'}});await flush();assert.equal(h.q('[data-photo-tools]').hidden,true);assert.equal(h.q('[data-photo-crop-settings]').hidden,true);assert.equal(h.q('[data-photo-mark-tools]').hidden,true);assert.equal(h.q('[data-photo-settings]').hidden,true);assert.equal(h.q('[data-photo-text-fields]').hidden,true);assert.equal(h.q('[data-photo-reset]').hidden,true);assert.equal(h.q('[data-photo-crop-apply]').hidden,true);assert.equal(h.q('[data-photo-done]').textContent,'자르고 글자 인식');
-  button(h,'data-photo-tool','mark').click();button(h,'data-photo-crop-mode','partial').click();assert.equal(h.q('[data-photo-mark-tools]').hidden,true);assert.equal(h.q('[data-photo-settings]').hidden,true,'hidden controls cannot switch OCR mode');
+  const h=harness({settings:{cropOnly:true,confirmLabel:'자르고 글자 인식'}});await flush();assert.equal(h.q('[data-photo-tools]').hidden,true);assert.equal(h.q('[data-photo-settings]').hidden,true);assert.equal(h.q('[data-photo-text-fields]').hidden,true);assert.equal(h.q('[data-photo-reset]').hidden,true);assert.equal(h.q('[data-photo-crop-apply]').hidden,true);assert.equal(h.q('[data-photo-done]').textContent,'자르고 글자 인식');
+  button(h,'data-photo-tool','pen').click();button(h,'data-photo-crop-mode','partial').click();assert.equal(h.q('[data-photo-text-fields]').hidden,true);assert.equal(h.q('[data-photo-settings]').hidden,true,'hidden controls cannot switch OCR mode');
   const canvas=h.q('[data-photo-canvas]');pointer(canvas,'pointerdown',20,30);pointer(canvas,'pointermove',70,80);pointer(canvas,'pointerup',70,80);h.q('[data-photo-done]').click();const result=await h.result;assert.ok(result instanceof Blob);assert.deepEqual(h.canvases.find(node=>node.exported).exported,{type:'image/jpeg',quality:.93,width:500,height:300});
   const label=harness({settings:{cropOnly:true,confirmLabel:'<img onerror=evil()>'}});await flush();assert.equal(label.q('[data-photo-done]').textContent,'<img onerror=evil()>');assert.equal(label.dialog.querySelectorAll('img').length,0);label.api.close();assert.equal(await label.result,null);
 });
 test('text placement uses edited plain text and cancelled pointer strokes do not become edits',async()=>{
-  const h=harness();await flush();const tools=h.dialog.querySelectorAll('[data-photo-tool]'),canvas=h.q('[data-photo-canvas]');button(h,'data-photo-tool','mark').click();
+  const h=harness();await flush();const tools=h.dialog.querySelectorAll('[data-photo-tool]'),canvas=h.q('[data-photo-canvas]');button(h,'data-photo-tool','pen').click();
   pointer(canvas,'pointerdown',70,80);pointer(canvas,'pointermove',100,90);canvas.dispatchEvent({type:'pointercancel',pointerId:1});assert.equal(h.q('[data-photo-undo]').disabled,true);
   tools.find(node=>node.getAttribute('data-photo-tool')==='text').click();h.q('[data-photo-text]').value='<script>안전한 글자</script>';pointer(canvas,'pointerdown',70,80);assert.equal(h.q('[data-photo-undo]').disabled,false);assert.equal(h.dialog.querySelectorAll('script').length,0);
   h.api.close();assert.equal(await h.result,null);
+});
+test('text boxes move, resize continuously from edges, edit and recolor with one undo step per drag and stay in the exported JPEG',async()=>{
+  const h=harness();await flush();const canvas=h.q('[data-photo-canvas]');button(h,'data-photo-tool','text').click();input(h.q('[data-photo-text]'),'hello');pointer(canvas,'pointerdown',70,80);
+  assert.equal(lastText(h,'hello')[2],100);assert.equal(lastText(h,'hello')[3],100);assert.match(lastText(h,'hello')[4],/48px/);
+  // The center moves a selected box instead of grabbing its nearby resize handles.
+  pointer(canvas,'pointerdown',103,95.6);pointer(canvas,'pointermove',113,105.6);pointer(canvas,'pointermove',133,115.6);pointer(canvas,'pointerup',133,115.6);assert.equal(lastText(h,'hello')[2],160);assert.equal(lastText(h,'hello')[3],140);
+  h.q('[data-photo-undo]').click();assert.equal(lastText(h,'hello')[2],100,'one undo cancels the complete drag, not only its last pointermove');
+  // Right edge expands the text without a fixed font-size menu.
+  pointer(canvas,'pointerdown',136,95.6);pointer(canvas,'pointermove',176,95.6);pointer(canvas,'pointerup',176,95.6);assert.match(lastText(h,'hello')[4],/77px/);
+  input(h.q('[data-photo-text]'),'changed');button(h,'data-photo-color','#d63b3b').click();assert.equal(lastText(h,'changed')[5],'#d63b3b');
+  h.q('[data-photo-text-new]').click();input(h.q('[data-photo-text]'),'second');pointer(canvas,'pointerdown',220,150);assert.ok(lastText(h,'second'));assert.ok(lastText(h,'changed'));
+  h.q('[data-photo-done]').click();assert.ok(await h.result instanceof Blob);const exported=h.canvases.find(node=>node.exported);assert.ok(exported.draws.some(value=>value[0]==='text'&&value[1]==='changed'));assert.ok(exported.draws.some(value=>value[0]==='text'&&value[1]==='second'));assert.equal(h.base.width,0);
+});
+test('text drag cancellation, tool changes and late pointer events cannot commit or target another text box',async()=>{
+  const h=harness();await flush();const canvas=h.q('[data-photo-canvas]');button(h,'data-photo-tool','text').click();input(h.q('[data-photo-text]'),'hello');pointer(canvas,'pointerdown',70,80);
+  pointer(canvas,'pointerdown',103,95.6);pointer(canvas,'pointermove',133,115.6);canvas.dispatchEvent({type:'pointercancel',pointerId:1});assert.equal(lastText(h,'hello')[2],100);assert.equal(lastText(h,'hello')[3],100);
+  pointer(canvas,'pointerdown',103,95.6);pointer(canvas,'pointermove',133,115.6);button(h,'data-photo-tool','pen').click();pointer(canvas,'pointerup',200,150);assert.equal(lastText(h,'hello')[2],100,'switching tools discards an unfinished text drag');
+  button(h,'data-photo-tool','text').click();h.q('[data-photo-text-remove]').click();h.q('[data-photo-undo]').click();assert.ok(lastText(h,'hello'),'removing a selected text box is undoable');
+  h.api.close();assert.equal(await h.result,null);
+});
+test('user close and Back notify the optional cancel handler once; replacements, stale contexts and completed photos do not',async()=>{
+  let cancelled=0;const h=harness({settings:{onCancel:()=>{cancelled++;}}});await flush();h.history.find(value=>value.key==='photo-editor').value.close();h.q('[data-photo-close]').click();assert.equal(await h.result,null);assert.equal(cancelled,1);
+  const program=harness({settings:{onCancel:()=>{cancelled++;}}});await flush();program.api.close();assert.equal(await program.result,null);assert.equal(cancelled,1);
+  const stale=harness({settings:{onCancel:()=>{cancelled++;}}});await flush();stale.setCurrent(false);stale.q('[data-photo-close]').click();assert.equal(await stale.result,null);assert.equal(cancelled,1);
+  const accepted=harness({settings:{onCancel:()=>{cancelled++;}}});await flush();accepted.q('[data-photo-done]').click();assert.ok(await accepted.result instanceof Blob);assert.equal(cancelled,1);
 });
 test('cancel, Back and late decode never return a changed photo or replace a parent document',async()=>{
   const late=deferred(),h=harness({decode:()=>late.promise});h.history.find(item=>item.key==='photo-editor').value.close();assert.equal(await h.result,null);

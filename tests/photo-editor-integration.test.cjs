@@ -15,6 +15,7 @@ function harness(options={}){
   const edited=[],resized=[],toasts=[];let captures=0;
   const state={SESSION:{userId:'owner',keyB64:'synthetic-key'},saveSessionEpoch:4,location:{hash:'#/book/emotion/mine'},noteEditor:editor,
     document:{getElementById:id=>body.querySelector('#'+id)},showToast:(...args)=>toasts.push(args),captureComposerDraft:()=>{captures++;},
+    GrowellPhotoSources:options.sources,
     GrowellPhotoEditor:{edit(file,config){edited.push({file,config});return options.edit?options.edit(file,config):Promise.resolve(new Blob(['accepted-edited-image'],{type:'image/jpeg'}));}},
     resizeNotePhotoDataUrl(image){resized.push(image);return options.resize?options.resize(image):Promise.resolve('data:image/jpeg;base64,RURJVEVELVBJWEVMUw==');}
   };
@@ -59,4 +60,27 @@ test('unsupported or oversized inputs do not reach editing and keep existing pho
   for(const image of [{type:'text/html',size:100},{type:'image/jpeg',size:20*1024*1024+1}]){
     const h=harness(),original=h.photo();await h.choose(image);assert.equal(h.edited.length,0);assert.equal(h.resized.length,0);assert.deepEqual(h.photo(),original);assert.equal(h.captures,0);assert.equal(h.toasts.length,1);
   }
+});
+
+test('the single photo icon opens its source sheet and cancellation preserves the original body and attachment',async()=>{
+  const selected=deferred(),requests=[],h=harness({sources:{open:settings=>{requests.push(settings);return selected.promise;}}}),original=h.photo();
+  h.state.document.getElementById('btn-photo-pick').click();assert.equal(requests[0].mode,'photo');assert.equal(requests[0].isCurrent(),true);assert.equal(h.edited.length,0);
+  selected.resolve(null);await flush();assert.deepEqual(h.photo(),original);assert.equal(h.editor.textContent,'보존할 원래 본문');assert.equal(h.composer.isConnected,true);assert.equal(h.captures,0);
+});
+
+test('a source-sheet file reaches the editor only for the original composer and a cancelled editor rejects its late Blob',async()=>{
+  for(const stale of [false,true]){
+    const selected=deferred(),editing=deferred(),h=harness({sources:{open:()=>selected.promise},edit:()=>editing.promise}),original=h.photo();h.state.document.getElementById('btn-photo-pick').click();
+    if(stale)h.state.saveSessionEpoch++;selected.resolve({type:'image/jpeg',size:2048});await flush();
+    if(stale){assert.equal(h.edited.length,0);continue;}
+    assert.equal(h.edited.length,1);h.edited[0].config.onCancel();editing.resolve(new Blob(['must-not-attach-after-cancel'],{type:'image/jpeg'}));await flush();
+    assert.equal(h.resized.length,0);assert.deepEqual(h.photo(),original);assert.equal(h.captures,0);assert.equal(h.editor.textContent,'보존할 원래 본문');
+  }
+});
+
+test('common composers render just the two labelled media icons instead of separate camera and gallery buttons',()=>{
+  const a=html.indexOf('function noteComposerHtml('),b=html.indexOf('\nfunction ',a+20),composer=html.slice(a,b);
+  assert.match(composer,/class="note-photo-tool" id="btn-photo-pick"[^>]+aria-label="사진 촬영 또는 첨부"/);
+  assert.match(composer,/id="btn-book-photo-ocr"[^>]+aria-label="사진에서 글자 추출"/);assert.match(composer,/photo-ocr-letter/);
+  assert.doesNotMatch(composer,/id="btn-photo-capture"/);assert.match(html,/<script src="photoSources\.js"><\/script>/);assert.match(html,/<link rel="stylesheet" href="photoSources\.css">/);
 });

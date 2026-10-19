@@ -36,7 +36,7 @@ function harness(options={}){
   const original=new Node('p');original.textContent='보존할 기존 문장';original.setAttribute('data-original','yes');editor.appendChild(original);
   const document={body,head:new Node('head'),createElement:tag=>new Node(tag),createDocumentFragment:()=>new Node('#fragment')};body.appendChild(document.head);
   const history=[],calls=[],timers=new Map();let serial=0,released=0,terminated=0,appended=0,current=true;
-  const browser={document,Event:class{constructor(type,options){this.type=type;this.bubbles=options&&options.bubbles;}},GrowellPopupHistory:{open:(key,value)=>history.push({key,value}),closed:key=>history.push({closed:key})},addEventListener(){},removeEventListener(){}};
+  const browser={document,Event:class{constructor(type,options){this.type=type;this.bubbles=options&&options.bubbles;}},GrowellPhotoSources:options.photoSources,GrowellPopupHistory:{open:(key,value)=>history.push({key,value}),closed:key=>history.push({closed:key})},addEventListener(){},removeEventListener(){}};
   const worker=options.worker||{recognize:async image=>{calls.push({image});return {data:{text:'인식한 첫 문장\n둘째 문장'}};},terminate:async()=>{terminated++;}};
   const engine={createWorker:async(...args)=>{calls.push({create:args});return options.createWorker?options.createWorker(...args):worker;}};
   const api=OCR.create({browser,document,setTimeout:(callback,delay)=>{const id=++serial;timers.set(id,{callback,delay});return id;},clearTimeout:id=>timers.delete(id),
@@ -120,7 +120,7 @@ test('the actual composer adapter binds OCR to the exact session, epoch, route, 
 });
 test('cancelling photo editing never starts OCR or changes the existing editor',async()=>{
   let editCalls=0;const h=harness({editPhoto:async()=>{editCalls++;return null;}});await choose(h);
-  assert.equal(editCalls,1);assert.equal(h.calls.length,0);assert.equal(h.released,0);assert.equal(h.state.text.value,'');assert.equal(h.state.review.hidden,true);assert.match(h.state.status.textContent,/편집을 취소/);assert.equal(h.editor.children[0],h.original);assert.equal(h.appended,0);h.api.close();
+  assert.equal(editCalls,1);assert.equal(h.calls.length,0);assert.equal(h.released,0);assert.equal(h.state.text.value,'');assert.equal(h.state.review.hidden,true);assert.equal(h.state.node.isConnected,false,'cancelling crop returns directly to the original composer');assert.equal(h.config.composer.isConnected,true);assert.equal(h.editor.children[0],h.original);assert.equal(h.appended,0);h.api.close();
 });
 test('only the explicitly accepted edited Blob reaches image preparation and the local recognition worker',async()=>{
   const original=file(),edited=new Blob(['edited-pixels'],{type:'image/jpeg'}),prepared=[],recognized=[];
@@ -133,4 +133,29 @@ test('photo editing time does not consume the 180-second OCR limit and a late ed
   editing.resolve(new Blob(['accepted-edit'],{type:'image/jpeg'}));await flush();assert.equal([...h.timers.values()].some(timer=>timer.delay===180000),true);
   h.api.close();recognition.resolve({data:{text:'late'}});await flush();assert.equal(h.appended,0);
   const late=deferred(),changed=harness({editPhoto:()=>late.promise});await choose(changed);changed.setCurrent(false);late.resolve(new Blob(['old-account-edit'],{type:'image/jpeg'}));await flush();assert.equal(changed.calls.length,0);assert.equal(changed.editor.children[0],changed.original);changed.api.close();
+});
+
+test('OCR starts with the source sheet and skips the intermediate OCR picker until crop is accepted',async()=>{
+  const selected=deferred(),cropped=deferred(),requests=[];let settings;
+  const sources={open:request=>{requests.push(request);return selected.promise;},close(){}};
+  const h=harness({photoSources:sources,editPhoto:(file,options)=>{settings=options;return cropped.promise;}});
+  assert.equal(requests[0].mode,'ocr');assert.equal(h.body.querySelector('dialog'),null);assert.equal(h.calls.length,0);
+  selected.resolve(file());const state=await h.state;assert.ok(state);assert.equal(state.node.open,false);assert.equal(h.history.some(item=>item.key==='book-photo-ocr'),false);assert.equal(settings.cropOnly,true);assert.equal(settings.trigger,h.button);
+  cropped.resolve(new Blob(['cropped-pixels'],{type:'image/jpeg'}));await flush();assert.equal(state.node.open,true);assert.equal(state.review.hidden,false);assert.equal(h.history.some(item=>item.key==='book-photo-ocr'),true);assert.equal(h.editor.children[0],h.original);assert.equal(h.appended,0);h.api.close();
+});
+
+test('Back from OCR crop closes the complete photo operation and a late crop cannot start recognition',async()=>{
+  const selected=deferred(),cropped=deferred();let settings;
+  const h=harness({photoSources:{open:()=>selected.promise,close(){}},editPhoto:(file,options)=>{settings=options;return cropped.promise;}});
+  selected.resolve(file());const state=await h.state;settings.onCancel();
+  assert.equal(state.node.isConnected,false);assert.equal(h.config.composer.isConnected,true);assert.equal(h.button.focused,true);assert.equal(h.editor.children[0],h.original);
+  cropped.resolve(new Blob(['late-cancelled-crop'],{type:'image/jpeg'}));await flush();assert.equal(h.calls.length,0);assert.equal(h.appended,0);assert.equal(h.history.some(item=>item.key==='book-photo-ocr'),false);
+});
+
+test('source selection cancellation and stale identity never create OCR state or touch the draft',async()=>{
+  for(const mode of ['cancel','owner','rebind']){
+    const selected=deferred(),requests=[];const h=harness({photoSources:{open:request=>{requests.push(request);return selected.promise;},close(){}}});
+    if(mode==='owner')h.setCurrent(false);if(mode==='rebind')h.api.bind({});
+    selected.resolve(mode==='cancel'?null:file());assert.equal(await h.state,null);assert.equal(h.body.querySelector('dialog'),null);assert.equal(h.config.composer.isConnected,true);assert.equal(h.editor.children[0],h.original);assert.equal(h.calls.length,0);assert.equal(h.appended,0);
+  }
 });

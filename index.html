@@ -518,10 +518,8 @@
   .rich-content pre,.rich-content code{font-family:var(--font-code); background:var(--surface-2); border-radius:6px;}
   .rich-content pre{padding:10px 12px; margin:6px 0; white-space:pre-wrap; font-size:13px;}
 
-  .photo-attach{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.65fr);align-items:center;gap:6px;margin:10px 0 4px;}
-  .photo-attach>.btn{box-sizing:border-box;min-width:0;height:44px;min-height:44px;margin:0;padding:9px 6px;justify-content:center;white-space:nowrap;font-size:clamp(10px,2.8vw,12px);line-height:1.3;gap:4px;}
+  .photo-attach{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:6px;margin:10px 0 4px;}
   .photo-attach #photo-preview{grid-column:1/-1;}
-  @media(max-width:380px){.photo-attach>.btn svg{display:none;}}
   .photo-attach .thumb{position:relative; width:64px; height:64px; border-radius:10px; overflow:hidden; border:1px solid var(--line);}
   .photo-attach .thumb img{width:100%; height:100%; object-fit:cover; display:block;}
   .photo-attach .thumb button{position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,.55); color:#fff; border:none; font-size:11px; line-height:1;}
@@ -1115,6 +1113,7 @@
 <link rel="stylesheet" href="materialsVideo.css">
 <link rel="stylesheet" href="materialTranscript.css">
 <link rel="stylesheet" href="photoEditor.css">
+<link rel="stylesheet" href="photoSources.css">
 <link rel="stylesheet" href="bookPhotoOcr.css">
 <script src="popupHistory.js"></script>
 <script src="profile.js"></script>
@@ -1137,6 +1136,7 @@
 <script src="materialsMedia.js"></script>
 <script src="materialTranscript.js"></script>
 <script src="photoEditor.js"></script>
+<script src="photoSources.js"></script>
 <script src="bookPhotoOcr.js"></script>
 <script src="materialsVideo.js"></script>
 <script src="habitDomain.js"></script>
@@ -5517,10 +5517,9 @@ function noteComposerHtml(book, opts){
       rtToolbarHtml() +
       '<div class="note-editor" id="note-editor" contenteditable="true" role="textbox" aria-label="글 내용" aria-multiline="true" data-placeholder="'+esc(opts.placeholder||'마음에 남은 문장과 생각을 자유롭게 적어보세요.')+'">'+(editing?(editing.html||''):'')+'</div>' +
       '<div class="photo-attach" id="photo-attach">' +
-        '<button type="button" class="btn btn-sm" id="btn-photo-capture">'+svgIcon(I_IMG)+' 사진 촬영</button>' +
-        '<button type="button" class="btn btn-sm" id="btn-photo-pick">'+svgIcon(I_IMG)+' 사진 첨부</button>' +
+        '<div class="note-photo-tools"><button type="button" class="note-photo-tool" id="btn-photo-pick" aria-label="사진 촬영 또는 첨부" title="사진 촬영 또는 첨부" aria-haspopup="dialog">'+svgIcon(I_IMG)+'</button>' +
         '<input type="file" id="note-photo-camera" accept="image/*" capture="environment" style="display:none">' +
-        '<button type="button" class="btn btn-sm book-photo-ocr-trigger" id="btn-book-photo-ocr" aria-haspopup="dialog">사진에서 글자 가져오기</button>' +
+        '<button type="button" class="note-photo-tool book-photo-ocr-trigger" id="btn-book-photo-ocr" aria-label="사진에서 글자 추출" title="사진에서 글자 추출" aria-haspopup="dialog">'+svgIcon(I_IMG)+'<span class="photo-ocr-letter" aria-hidden="true">A</span></button></div>' +
         '<input type="file" id="note-photo-input" accept="image/*" style="display:none">' +
         '<div id="photo-preview">'+photoPreviewInner+'</div>' +
       '</div>' +
@@ -8303,7 +8302,7 @@ function bindEvents(route){
   var photoCamera = document.getElementById('note-photo-camera');
   var photoComposer = noteEditor && noteEditor.closest('.composer');
   var photoSession = SESSION, photoEpoch = saveSessionEpoch, photoRoute = location.hash;
-  var photoDraftKey = photoComposer && photoComposer.getAttribute('data-draft-key'), photoSequence = 0;
+  var photoDraftKey = photoComposer && photoComposer.getAttribute('data-draft-key'), photoSequence = 0, photoPickerCleanup = null;
   function currentPhotoComposer(){
     return !!photoSession && SESSION===photoSession && saveSessionEpoch===photoEpoch && location.hash===photoRoute &&
       !!photoComposer && photoComposer.isConnected && !!noteEditor && noteEditor.isConnected &&
@@ -8324,7 +8323,7 @@ function bindEvents(route){
     if(!/^image\//.test(file.type)){showToast('사진 파일만 선택해주세요.',true);return;}
     if(file.size>20*1024*1024){showToast('사진은 20MB 이하로 선택해주세요.',true);return;}
     if(typeof GrowellPhotoEditor==='undefined'){showToast('사진 편집 도구를 불러오지 못했어요. 다시 열어주세요.',true);return;}
-    GrowellPhotoEditor.edit(file,{isCurrent:current,trigger:trigger}).then(function(edited){
+    GrowellPhotoEditor.edit(file,{isCurrent:current,trigger:trigger,onCancel:function(){if(current()){photoSequence++;if(trigger&&trigger.isConnected)trigger.focus({preventScroll:true});}}}).then(function(edited){
       if(!edited || !current())return null;
       return resizeNotePhotoDataUrl(edited);
     }).then(function(dataUrl){
@@ -8333,16 +8332,26 @@ function bindEvents(route){
       renderPhotoPreview();captureComposerDraft();
     }).catch(function(){if(current())showToast('사진을 편집하지 못했어요. 다른 사진으로 다시 선택해주세요.',true);});
   }
+  function pickNotePhoto(input,trigger){
+    if(!currentPhotoComposer())return;if(photoPickerCleanup)photoPickerCleanup();
+    if(typeof GrowellPopupHistory!=='undefined'&&GrowellPopupHistory.watchFilePicker)photoPickerCleanup=GrowellPopupHistory.watchFilePicker(input,{isCurrent:currentPhotoComposer,onCancel:function(){photoSequence++;if(trigger&&trigger.isConnected)trigger.focus({preventScroll:true});}});
+    input.click();
+  }
+  function finishNotePhotoPicker(){if(photoPickerCleanup)photoPickerCleanup();photoPickerCleanup=null;}
   if(photoPick && photoInput){
-    photoPick.addEventListener('click', function(){ photoInput.click(); });
+    photoPick.addEventListener('click', function(){
+      if(!currentPhotoComposer())return;
+      if(typeof GrowellPhotoSources!=='undefined')GrowellPhotoSources.open({mode:'photo',trigger:photoPick,isCurrent:currentPhotoComposer}).then(function(file){if(file&&currentPhotoComposer())editSelectedNotePhoto(file,photoPick);});
+      else pickNotePhoto(photoInput,photoPick);
+    });
     photoInput.addEventListener('change', function(){
       var f = photoInput.files && photoInput.files[0];
-      photoInput.value='';editSelectedNotePhoto(f,photoPick);
+      finishNotePhotoPicker();photoInput.value='';editSelectedNotePhoto(f,photoPick);
     });
   }
   if(photoCapture && photoCamera){
-    photoCapture.addEventListener('click',function(){photoCamera.click();});
-    photoCamera.addEventListener('change',function(){var file=photoCamera.files&&photoCamera.files[0];photoCamera.value='';editSelectedNotePhoto(file,photoCapture);});
+    photoCapture.addEventListener('click',function(){pickNotePhoto(photoCamera,photoCapture);});
+    photoCamera.addEventListener('change',function(){var file=photoCamera.files&&photoCamera.files[0];finishNotePhotoPicker();photoCamera.value='';editSelectedNotePhoto(file,photoCapture);});
   }
 
   if(typeof GrowellBookPhotoOcr!=='undefined'){

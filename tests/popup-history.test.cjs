@@ -182,3 +182,12 @@ test('old-document history after reload remains ordinary navigation with no popu
   fresh.open('new-habit', { close() { closed++; } });
   f.back(); assert.equal(closed, 1); assert.match(f.browser.location.href, /habits$/);
 });
+
+test('Back from a nested photo crop can retire the OCR layer and return directly to the unchanged composer',()=>{
+  const f=browserFixture(),popup=createPopupHistory(f.browser),closed=[];
+  popup.open('space-composer',{close(){closed.push('composer');}});
+  popup.open('book-photo-ocr',{close(){closed.push('ocr');}});
+  popup.open('photo-editor',{close(){closed.push('photo');popup.closed('photo-editor');popup.closed('book-photo-ocr');}});
+  f.back();assert.deepEqual(closed,['photo']);assert.match(f.browser.location.href,/share$/);
+  f.back();assert.deepEqual(closed,['photo','composer'],'retired photo/OCR entries add no extra visible Back screen');
+});

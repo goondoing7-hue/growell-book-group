@@ -82,6 +82,54 @@
     // route chosen immediately after closing a popup. Retired entries are skipped
     // on the next traversal, while reopening can safely reuse the current entry.
   }
+  // Native camera/file screens do not reliably emit `cancel` on older phones.
+  // A return after blur/hidden is checked after `change` has had time to arrive.
+  // This observes an explicit user-opened picker; it never adds history entries.
+  function watchFilePicker(input, options) {
+    options = options || {};
+    if (!input || typeof input.addEventListener !== 'function') return function () {};
+    var active = true, away = false, timer = null, document = browser.document;
+    function cleanup() {
+      if (!active) return;
+      active = false;
+      if (timer !== null && browser.clearTimeout) browser.clearTimeout(timer);
+      input.removeEventListener('change', cleanup);
+      input.removeEventListener('cancel', cancelled);
+      browser.removeEventListener('blur', departed);
+      browser.removeEventListener('focus', returned);
+      browser.removeEventListener('pageshow', returned);
+      browser.removeEventListener('hashchange', cleanup);
+      if (document && document.removeEventListener) document.removeEventListener('visibilitychange', visibility);
+    }
+    function cancelled() {
+      if (!active) return;
+      cleanup();
+      try {
+        if ((!options.isCurrent || options.isCurrent() === true) && typeof options.onCancel === 'function') options.onCancel();
+      } catch (error) { /* A replaced composer must never be reopened. */ }
+    }
+    function departed() { away = true; }
+    function returned() {
+      if (!active || !away || !browser.setTimeout) return;
+      if (timer !== null && browser.clearTimeout) browser.clearTimeout(timer);
+      timer = browser.setTimeout(function () {
+        timer = null;
+        if (!active) return;
+        // Selecting a file wins even if the browser delays its change event.
+        if (input.files && input.files.length) { cleanup(); return; }
+        cancelled();
+      }, 500);
+    }
+    function visibility() { if (document.hidden) departed(); else returned(); }
+    input.addEventListener('change', cleanup);
+    input.addEventListener('cancel', cancelled);
+    browser.addEventListener('blur', departed);
+    browser.addEventListener('focus', returned);
+    browser.addEventListener('pageshow', returned);
+    browser.addEventListener('hashchange', cleanup);
+    if (document && document.addEventListener) document.addEventListener('visibilitychange', visibility);
+    return cleanup;
+  }
   function skip(direction, skipBase) {
     skipping = { direction: direction, skipBase: !!skipBase, url: href() };
     browser.history.go(direction);
@@ -132,5 +180,5 @@
   stamp(0);
   browser.addEventListener('popstate', onPop);
   browser.addEventListener('hashchange', synchronizeRoute);
-  return Object.freeze({ open: open, closed: closed, retire: retire });
+  return Object.freeze({ open: open, closed: closed, retire: retire, watchFilePicker: watchFilePicker });
 }));

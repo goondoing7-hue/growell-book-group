@@ -1,0 +1,14 @@
+.photo-source-sheet{box-sizing:border-box;width:min(480px,calc(100% - 20px));max-width:none;margin:auto auto 0;padding:22px 18px max(22px,env(safe-area-inset-bottom));border:1px solid var(--line,#dce3d7);border-bottom:0;border-radius:24px 24px 0 0;background:var(--surface,#fff);color:var(--ink,#253a31);font-family:inherit;box-shadow:0 -12px 50px #182e2526}
+.photo-source-sheet::backdrop{background:#14271f70}
+.photo-source-sheet header{position:relative;display:flex;align-items:center;justify-content:center;min-height:44px;margin-bottom:16px}
+.photo-source-sheet h2{margin:0;padding:0 42px;font-size:18px;font-weight:700;line-height:1.4;text-align:center;letter-spacing:-.02em}
+.photo-source-close{position:absolute;right:0;top:0;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:transparent;color:inherit;font:inherit;font-size:28px;cursor:pointer}
+.photo-source-options{display:grid;gap:10px}
+.photo-source-options>button{display:flex;align-items:center;gap:16px;min-height:68px;width:100%;padding:14px 18px;border:1px solid var(--line,#dce3d7);border-radius:16px;background:var(--bg,#f7f8f3);color:inherit;font:inherit;font-size:16px;font-weight:600;text-align:left;cursor:pointer}
+.photo-source-options svg{flex:none;width:28px;height:28px;color:var(--primary,#3e6551)}
+.photo-source-options>button:focus-visible,.photo-source-close:focus-visible{outline:3px solid var(--primary,#3e6551);outline-offset:2px}
+.note-photo-tools{display:flex;align-items:center;gap:6px}
+.note-photo-tools .note-photo-tool,.archive-note-photo-tools .note-photo-tool{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:46px;min-width:46px;height:46px;min-height:46px;padding:10px;border:1px solid var(--line,#dce3d7);border-radius:12px;background:var(--bg,#f7f8f3);color:var(--primary,#3e6551);cursor:pointer}
+.note-photo-tool svg{display:block;width:24px;height:24px;flex:none}
+.note-photo-tool .photo-ocr-letter{position:absolute;right:4px;bottom:3px;display:grid;place-items:center;width:17px;height:18px;border-radius:4px;background:var(--surface,#fff);font-family:inherit;font-size:14px;font-weight:800;line-height:1;color:var(--primary,#3e6551)}
+.note-photo-tool:focus-visible{outline:3px solid var(--primary,#3e6551);outline-offset:2px}
