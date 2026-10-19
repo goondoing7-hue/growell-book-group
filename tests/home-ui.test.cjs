@@ -17,7 +17,7 @@ const authorSource=source.slice(source.indexOf('function publicAuthorHtml('),sou
 const escSource=source.slice(source.indexOf('function esc(s){'),source.indexOf('function nlToBr('));
 const habitValueBadgeSource=source.slice(source.indexOf('function habitValueInfo('),source.indexOf('function habitValueFiltersHtml('));
 const timerSource=source.slice(source.indexOf('function readingTimerElapsedMs(){'),source.indexOf('function activeReadingStripHtml('));
-const closeNoteSource=source.slice(source.indexOf('function closeReadingNoteDialog(){'),source.indexOf('function openReadingNote('));
+const closeNoteSource=source.slice(source.indexOf('function closeReadingNoteDialog('),source.indexOf('function openReadingNote('));
 const timerNotificationSource=source.slice(source.indexOf('function readingSessionNotificationSettingsHtml(){'),source.indexOf('function readingCountdownRingHtml(){'));
 const timerEventsSource=source.slice(source.indexOf('function bindReadingTimerEvents(){'),source.indexOf('function submitWorksheet('));
 const cardDateSource=source.slice(source.indexOf('function fmtPostDate('),source.indexOf('function initials('));
@@ -58,7 +58,7 @@ function harness(){
     readingTimerStorageOwner:null,readingTimerStorageSnapshot:null,readingTimerStorageWritable:true,
     readingSaveBusy:false,readingSaveError:false,readingFinishKind:'finish',readingTimerIntervalId:null,
     readingNoteReturn:null,readingHomeReturn:false,readingHomeDialogFor:null,readingHomeDialogPosition:null,
-    readingNotificationDialogRoute:null,readingNotificationBusy:false,readingNotificationPending:null,readingNotificationBound:false,readingNotificationLast:'',
+    readingNotificationDialogRoute:null,readingNotificationBusy:false,readingNotificationPending:null,readingNotificationBound:false,readingNotificationLast:'',readingNotificationCheckpoint:null,readingNotificationArchiveBlocked:false,readingNotificationGuard:false,readingNotificationTask:null,readingNotificationLease:null,readingNotificationApply:false,readingNotificationOpenedIntent:'',readingNotificationNoteChoice:null,
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     setInterval:()=>1,clearInterval:()=>{},tickReadingTimer:()=>{},uid:prefix=>prefix+'-ui-test',showToast:(...args)=>toasts.push(args),
     mineComposerOpenFor:null,mineEditingId:'old-edit',mineEditingPayload:{title:'old edit'},

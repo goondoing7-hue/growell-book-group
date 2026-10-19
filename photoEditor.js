@@ -18,6 +18,22 @@
     var right=Math.max(left,Math.min(width,Math.ceil(Math.max(a.x,b.x)))),bottom=Math.max(top,Math.min(height,Math.ceil(Math.max(a.y,b.y))));
     return {x:left,y:top,width:right-left,height:bottom-top};
   }
+  function cropHandles(rect){var middleX=rect.x+rect.width/2,middleY=rect.y+rect.height/2,right=rect.x+rect.width,bottom=rect.y+rect.height;return [{key:'nw',x:rect.x,y:rect.y},{key:'n',x:middleX,y:rect.y},{key:'ne',x:right,y:rect.y},{key:'e',x:right,y:middleY},{key:'se',x:right,y:bottom},{key:'s',x:middleX,y:bottom},{key:'sw',x:rect.x,y:bottom},{key:'w',x:rect.x,y:middleY}];}
+  function cropHandleAt(p,rect,width,height,scaleX,scaleY){
+    var hitWidth=Math.min(width,28*scaleX),hitHeight=Math.min(height,28*scaleY),candidates=[];
+    cropHandles(rect).forEach(function(handle){var left=Math.max(0,Math.min(width-hitWidth,handle.x-hitWidth/2)),top=Math.max(0,Math.min(height-hitHeight,handle.y-hitHeight/2));if(p.x>=left&&p.x<=left+hitWidth&&p.y>=top&&p.y<=top+hitHeight)candidates.push({key:handle.key,distance:Math.pow((p.x-handle.x)/scaleX,2)+Math.pow((p.y-handle.y)/scaleY,2)});});
+    candidates.sort(function(a,b){return a.distance-b.distance;});return candidates.length?candidates[0].key:null;
+  }
+  function resizeCrop(rect,handle,p,width,height){
+    if(!rect||!p||['nw','n','ne','e','se','s','sw','w'].indexOf(handle)<0)throw error('photo-coordinate');
+    var left=rect.x,top=rect.y,right=left+rect.width,bottom=top+rect.height;
+    if(handle.indexOf('w')>=0)left=Math.max(0,Math.min(right-8,Math.round(p.x)));
+    if(handle.indexOf('e')>=0)right=Math.min(width,Math.max(left+8,Math.round(p.x)));
+    if(handle.indexOf('n')>=0)top=Math.max(0,Math.min(bottom-8,Math.round(p.y)));
+    if(handle.indexOf('s')>=0)bottom=Math.min(height,Math.max(top+8,Math.round(p.y)));
+    return {x:left,y:top,width:right-left,height:bottom-top};
+  }
+  function moveCrop(rect,dx,dy,width,height){return {x:Math.max(0,Math.min(width-rect.width,Math.round(rect.x+dx))),y:Math.max(0,Math.min(height-rect.height,Math.round(rect.y+dy))),width:rect.width,height:rect.height};}
   function dimensions(model){var width=model.baseWidth,height=model.baseHeight;model.commands.forEach(function(command){if(command.type==='crop'){width=command.width;height=command.height;}});return {width:width,height:height};}
   function newModel(width,height){if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>MAX_EDGE||height>MAX_EDGE)throw error('photo-size');return {baseWidth:width,baseHeight:height,commands:[],history:[]};}
   function normalizedCommand(model,command){
@@ -95,22 +111,27 @@
       if(canvas.width!==state.frame.width)canvas.width=state.frame.width;if(canvas.height!==state.frame.height)canvas.height=state.frame.height;
       var context=canvas.getContext('2d',{alpha:false});context.drawImage(state.frame,0,0);
       if(state.pendingStroke)paint(context,state.pendingStroke,canvas.width,canvas.height);
-      var crop=state.crop;if(crop&&crop.width>0&&crop.height>0){context.save();context.fillStyle='rgba(0,0,0,.48)';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(state.frame,crop.x,crop.y,crop.width,crop.height,crop.x,crop.y,crop.width,crop.height);context.strokeStyle='#ffffff';context.lineWidth=Math.max(2,canvas.width/400);context.setLineDash([canvas.width/80,canvas.width/100]);context.strokeRect(crop.x,crop.y,crop.width,crop.height);context.restore();}
-      state.cropApply.disabled=!crop||crop.width<8||crop.height<8;state.cropApply.hidden=state.tool!=='crop';state.fullCrop.hidden=state.tool!=='crop';
-      state.undo.disabled=!state.model.history.length;state.reset.disabled=!state.model.commands.length;
+      var crop=state.crop;if(crop&&crop.width>0&&crop.height>0){context.save();context.fillStyle='rgba(0,0,0,.48)';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(state.frame,crop.x,crop.y,crop.width,crop.height,crop.x,crop.y,crop.width,crop.height);context.strokeStyle='#ffffff';context.lineWidth=Math.max(2,canvas.width/400);context.setLineDash([canvas.width/80,canvas.width/100]);context.strokeRect(crop.x,crop.y,crop.width,crop.height);context.setLineDash([]);
+        if(state.cropMode==='frame'){var bounds=canvas.getBoundingClientRect(),sx=bounds.width?canvas.width/bounds.width:1,sy=bounds.height?canvas.height/bounds.height:1;context.fillStyle='#ffffff';context.strokeStyle='#3e6551';cropHandles(crop).forEach(function(handle){var w=12*sx,h=12*sy,x=Math.max(0,Math.min(canvas.width-w,handle.x-w/2)),y=Math.max(0,Math.min(canvas.height-h,handle.y-h/2));context.fillRect(x,y,w,h);context.strokeRect(x,y,w,h);});}context.restore();}
+      state.cropApply.disabled=!crop||crop.width<8||crop.height<8;state.cropApply.hidden=state.tool!=='crop'||state.options.cropOnly===true;state.fullCrop.hidden=state.tool!=='crop';
+      state.undo.disabled=!state.model.history.length&&!state.cropHistory.length;state.reset.disabled=!state.model.commands.length;state.reset.hidden=state.options.cropOnly===true;
     }
     function rebuild(state){var frame=renderModel(document,state.base,state.model);release(state.frame);state.frame=frame;redraw(state);}
     function command(state,value){
       if(!current(state)||state.busy||!state.model)return false;
-      try{var next=apply(state.model,value);var frame=renderModel(document,state.base,next);release(state.frame);state.model=next;state.frame=frame;state.crop=null;state.pendingStroke=null;redraw(state);say(state,'편집을 적용했어요. 되돌리기로 한 단계 취소할 수 있어요.');return true;}
+      try{var next=apply(state.model,value);var frame=renderModel(document,state.base,next);release(state.frame);state.model=next;state.frame=frame;state.crop=state.tool==='crop'?{x:0,y:0,width:frame.width,height:frame.height}:null;state.cropHistory=[];state.pendingStroke=null;redraw(state);say(state,'편집을 적용했어요. 되돌리기로 한 단계 취소할 수 있어요.');return true;}
       catch(e){say(state,e.code==='photo-limit'?'표시가 많아요. 되돌리거나 완료한 뒤 다시 편집해주세요.':'선택 영역이나 입력 내용을 확인해주세요.',true);return false;}
     }
     function setTool(state,tool){
-      if(!current(state)||state.busy)return;state.tool=tool;state.crop=null;state.pendingStroke=null;state.pointer=null;
-      state.node.querySelectorAll('[data-photo-tool]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-photo-tool')===tool));});state.textFields.hidden=tool!=='text';
+      if(!current(state)||state.busy||state.options.cropOnly===true&&tool!=='crop')return;
+      if(state.tool==='crop'&&tool!=='crop'&&state.crop&&state.frame&&(state.crop.x||state.crop.y||state.crop.width!==state.frame.width||state.crop.height!==state.frame.height)&&!command(state,Object.assign({type:'crop'},state.crop)))return;
+      state.tool=tool;state.crop=tool==='crop'&&state.frame?{x:0,y:0,width:state.frame.width,height:state.frame.height}:null;state.cropHistory=[];state.pendingStroke=null;state.pointer=null;
+      state.node.querySelectorAll('[data-photo-tool]').forEach(function(button){var target=button.getAttribute('data-photo-tool');button.setAttribute('aria-pressed',String(target===tool||target==='mark'&&(tool==='pen'||tool==='highlight')));});state.textFields.hidden=tool!=='text';
+      state.markTools.hidden=tool!=='pen'&&tool!=='highlight';state.settings.hidden=tool==='crop';state.widthSettings.hidden=tool==='text';state.cropTools.hidden=tool!=='crop'||state.options.cropOnly===true;
+      state.node.querySelectorAll('[data-photo-mark]').forEach(function(button){button.setAttribute('aria-pressed',String(button.getAttribute('data-photo-mark')===tool));});
       if(tool==='highlight'){if(Number(state.width.value)<20)state.width.value='32';if(state.color.value==='#253a31')state.color.value='#f4ca38';}
       else if(tool==='pen'){if(Number(state.width.value)>20)state.width.value='10';if(state.color.value==='#f4ca38')state.color.value='#253a31';}state.widthLabel.textContent=state.width.value;
-      say(state,{crop:'사진 위를 드래그해 남길 영역을 선택하고 자르기 적용을 눌러주세요.',pen:'사진 위를 손가락이나 마우스로 그려 표시해주세요.',highlight:'강조할 부분 위를 손가락이나 마우스로 그어주세요.',text:'넣을 글자를 입력한 뒤 사진에서 원하는 위치를 눌러주세요.'}[tool]);redraw(state);
+      say(state,{crop:state.cropMode==='frame'?'사각형의 모서리나 변을 끌어 남길 영역을 맞추세요. 끝나면 아래 완료 버튼을 누르세요.':'사진 위를 드래그해 남길 부분을 선택하세요.',pen:'사진 위를 손가락이나 마우스로 그려 표시해주세요.',highlight:'강조할 부분 위를 손가락이나 마우스로 그어주세요.',text:'넣을 글자를 입력한 뒤 사진에서 원하는 위치를 눌러주세요.'}[tool]);redraw(state);
     }
     function edit(file,settings){
       if(active)finish(active,null);settings=settings||{};
@@ -118,40 +139,52 @@
       if(!permitted)return Promise.resolve(null);
       return new Promise(function(resolve){
         var node=document.createElement('dialog');node.className='photo-editor';node.setAttribute('aria-labelledby','photo-editor-title');
-        node.innerHTML='<header class="photo-editor-head"><div><h2 id="photo-editor-title">사진 편집</h2><p>자르거나 표시하고, 원하는 글자를 넣어보세요.</p></div><button type="button" class="icon-btn" data-photo-close aria-label="사진 편집 닫기">×</button></header>'+
-          '<div class="photo-editor-tools" role="group" aria-label="사진 편집 도구"><button type="button" class="btn btn-sm" data-photo-tool="crop" aria-pressed="true">자르기</button><button type="button" class="btn btn-sm" data-photo-tool="pen" aria-pressed="false">펜</button><button type="button" class="btn btn-sm" data-photo-tool="highlight" aria-pressed="false">형광펜</button><button type="button" class="btn btn-sm" data-photo-tool="text" aria-pressed="false">글자</button></div>'+
-          '<div class="photo-editor-settings"><label>색 <select data-photo-color aria-label="표시 색">'+COLORS.map(function(color,index){return '<option value="'+color+'">'+['먹색','흰색','빨강','노랑','초록','파랑','보라'][index]+'</option>';}).join('')+'</select></label><label class="photo-editor-width">굵기 <input type="range" min="2" max="60" step="1" value="10" data-photo-width aria-label="펜과 형광펜 굵기"><output data-photo-width-value>10</output></label></div>'+
+        node.innerHTML='<header class="photo-editor-head"><div><h2 id="photo-editor-title" data-photo-title>사진 편집</h2><p data-photo-description>자르거나 표시하고, 원하는 글자를 넣어보세요.</p></div><button type="button" class="icon-btn" data-photo-close aria-label="사진 편집 닫기">×</button></header>'+
+          '<div class="photo-editor-tools" data-photo-tools role="group" aria-label="사진 편집 도구"><button type="button" class="btn btn-sm" data-photo-tool="crop" aria-pressed="true">자르기</button><button type="button" class="btn btn-sm" data-photo-tool="mark" aria-pressed="false">표시</button><button type="button" class="btn btn-sm" data-photo-tool="text" aria-pressed="false">글자</button></div>'+
+          '<div class="photo-editor-subtools" data-photo-crop-settings><button type="button" class="btn btn-sm" data-photo-crop-mode="frame" aria-pressed="true">전체 자르기</button><button type="button" class="btn btn-sm" data-photo-crop-mode="partial" aria-pressed="false">부분 자르기</button></div>'+
+          '<div class="photo-editor-subtools" data-photo-mark-tools hidden><button type="button" class="btn btn-sm" data-photo-mark="pen" aria-pressed="true">펜</button><button type="button" class="btn btn-sm" data-photo-mark="highlight" aria-pressed="false">형광펜</button></div>'+
+          '<div class="photo-editor-settings" data-photo-settings hidden><label>색 <select data-photo-color aria-label="표시 색">'+COLORS.map(function(color,index){return '<option value="'+color+'">'+['먹색','흰색','빨강','노랑','초록','파랑','보라'][index]+'</option>';}).join('')+'</select></label><label class="photo-editor-width" data-photo-width-settings>굵기 <input type="range" min="2" max="60" step="1" value="10" data-photo-width aria-label="펜과 형광펜 굵기"><output data-photo-width-value>10</output></label></div>'+
           '<div class="photo-editor-text-fields" data-photo-text-fields hidden><label>넣을 글자 <input type="text" maxlength="200" data-photo-text placeholder="글자를 입력하고 사진을 눌러주세요"></label><label>글자 크기 <select data-photo-font><option>24</option><option>36</option><option selected>48</option><option>64</option><option>96</option></select></label></div>'+
           '<p class="photo-editor-status" data-photo-status role="status" aria-live="polite">사진을 준비하고 있어요.</p><div class="photo-editor-stage"><canvas data-photo-canvas aria-label="편집할 사진. 도구를 고르고 사진 위에서 표시해주세요."></canvas></div>'+
           '<div class="photo-editor-secondary"><button type="button" class="btn btn-sm" data-photo-crop-apply disabled>자르기 적용</button><button type="button" class="btn btn-sm" data-photo-full>전체 선택</button><button type="button" class="btn btn-sm" data-photo-undo disabled>되돌리기</button><button type="button" class="btn btn-sm" data-photo-reset disabled>원본으로</button></div>'+
           '<footer class="photo-editor-actions"><p>이 기기에서만 편집해요. 완료 전에는 원래 사진과 글이 바뀌지 않아요.</p><div><button type="button" class="btn" data-photo-close>취소</button><button type="button" class="btn btn-primary" data-photo-done disabled>이 사진 사용</button></div></footer>';
         function q(selector){return node.querySelector(selector);}
-        var state={node:node,options:settings,resolve:resolve,closed:false,base:null,frame:null,model:null,busy:false,tool:'crop',crop:null,pointer:null,pendingStroke:null,canvas:q('[data-photo-canvas]'),status:q('[data-photo-status]'),width:q('[data-photo-width]'),widthLabel:q('[data-photo-width-value]'),color:q('[data-photo-color]'),text:q('[data-photo-text]'),font:q('[data-photo-font]'),textFields:q('[data-photo-text-fields]'),cropApply:q('[data-photo-crop-apply]'),fullCrop:q('[data-photo-full]'),undo:q('[data-photo-undo]'),reset:q('[data-photo-reset]'),done:q('[data-photo-done]')};
+        var state={node:node,options:settings,resolve:resolve,closed:false,base:null,frame:null,model:null,busy:false,tool:'crop',cropMode:'frame',cropHistory:[],crop:null,pointer:null,pendingStroke:null,canvas:q('[data-photo-canvas]'),status:q('[data-photo-status]'),width:q('[data-photo-width]'),widthLabel:q('[data-photo-width-value]'),color:q('[data-photo-color]'),text:q('[data-photo-text]'),font:q('[data-photo-font]'),textFields:q('[data-photo-text-fields]'),markTools:q('[data-photo-mark-tools]'),settings:q('[data-photo-settings]'),widthSettings:q('[data-photo-width-settings]'),cropTools:q('[data-photo-crop-settings]'),cropApply:q('[data-photo-crop-apply]'),fullCrop:q('[data-photo-full]'),undo:q('[data-photo-undo]'),reset:q('[data-photo-reset]'),done:q('[data-photo-done]')};
+        if(settings.cropOnly===true){q('[data-photo-tools]').hidden=true;state.cropTools.hidden=true;q('[data-photo-title]').textContent='책 사진 자르기';q('[data-photo-description]').textContent='사진의 사각형 틀을 맞추면 바로 글자를 읽어요.';}
+        if(typeof settings.confirmLabel==='string'&&settings.confirmLabel.trim())state.done.textContent=settings.confirmLabel.trim().slice(0,40);
         document.body.appendChild(node);active=state;
         node.querySelectorAll('[data-photo-close]').forEach(function(button){button.addEventListener('click',function(){finish(state,null);});});
         node.addEventListener('cancel',function(event){event.preventDefault();finish(state,null);});node.addEventListener('close',function(){finish(state,null);});
-        node.querySelectorAll('[data-photo-tool]').forEach(function(button){button.addEventListener('click',function(){setTool(state,button.getAttribute('data-photo-tool'));});});
+        node.querySelectorAll('[data-photo-tool]').forEach(function(button){button.addEventListener('click',function(){var tool=button.getAttribute('data-photo-tool');setTool(state,tool==='mark'?'pen':tool);});});
+        node.querySelectorAll('[data-photo-mark]').forEach(function(button){button.addEventListener('click',function(){setTool(state,button.getAttribute('data-photo-mark'));});});
+        node.querySelectorAll('[data-photo-crop-mode]').forEach(function(button){button.addEventListener('click',function(){if(!current(state)||state.busy||settings.cropOnly===true)return;state.cropMode=button.getAttribute('data-photo-crop-mode');setTool(state,'crop');if(state.cropMode==='partial')state.crop=null;node.querySelectorAll('[data-photo-crop-mode]').forEach(function(item){item.setAttribute('aria-pressed',String(item===button));});redraw(state);});});
         state.width.addEventListener('input',function(){state.widthLabel.textContent=state.width.value;});
         state.cropApply.addEventListener('click',function(){if(state.crop)command(state,Object.assign({type:'crop'},state.crop));});
-        state.fullCrop.addEventListener('click',function(){if(!current(state)||!state.frame)return;state.crop={x:0,y:0,width:state.frame.width,height:state.frame.height};redraw(state);});
-        state.undo.addEventListener('click',function(){if(!current(state)||state.busy||!state.model)return;state.model=undo(state.model);state.crop=null;state.pendingStroke=null;rebuild(state);say(state,'한 단계 되돌렸어요.');});
-        state.reset.addEventListener('click',function(){if(!current(state)||state.busy||!state.model)return;state.model=reset(state.model);state.crop=null;state.pendingStroke=null;rebuild(state);say(state,'이 사진에서 한 편집을 되돌렸어요.');});
+        state.fullCrop.addEventListener('click',function(){if(!current(state)||state.busy||!state.frame)return;var full={x:0,y:0,width:state.frame.width,height:state.frame.height};if(JSON.stringify(state.crop)!==JSON.stringify(full))state.cropHistory.push(state.crop&&Object.assign({},state.crop));state.crop=full;redraw(state);});
+        state.undo.addEventListener('click',function(){if(!current(state)||state.busy||!state.model)return;if(state.cropHistory.length)state.crop=state.cropHistory.pop();else{state.model=undo(state.model);var view=dimensions(state.model);state.crop=state.tool==='crop'?{x:0,y:0,width:view.width,height:view.height}:null;state.pendingStroke=null;rebuild(state);}redraw(state);say(state,'한 단계 되돌렸어요.');});
+        state.reset.addEventListener('click',function(){if(!current(state)||state.busy||!state.model)return;state.model=reset(state.model);var view=dimensions(state.model);state.crop=state.tool==='crop'?{x:0,y:0,width:view.width,height:view.height}:null;state.cropHistory=[];state.pendingStroke=null;rebuild(state);say(state,'이 사진에서 한 편집을 되돌렸어요.');});
         function canvasPoint(event){return point(event.clientX,event.clientY,state.canvas.getBoundingClientRect(),state.canvas.width,state.canvas.height);}
         state.canvas.addEventListener('pointerdown',function(event){
           if(!current(state)||state.busy||!state.frame||state.pointer!==null||event.isPrimary===false||event.button>0)return;event.preventDefault();var p=canvasPoint(event);
           if(state.tool==='text'){if(!state.text.value.trim()){say(state,'먼저 넣을 글자를 입력해주세요.',true);state.text.focus();return;}command(state,{type:'text',x:p.x,y:p.y,text:state.text.value,color:state.color.value,size:Number(state.font.value)});return;}
-          state.pointer=event.pointerId;state.start=p;try{state.canvas.setPointerCapture(event.pointerId);}catch(e){}
-          if(state.tool==='crop'){state.crop=cropRectangle(p,p,state.frame.width,state.frame.height);state.pendingStroke=null;}
+          state.pointer=event.pointerId;state.start=p;state.previousCrop=state.crop&&Object.assign({},state.crop);try{state.canvas.setPointerCapture(event.pointerId);}catch(e){}
+          if(state.tool==='crop'){
+            if(state.cropMode==='frame'){var bounds=state.canvas.getBoundingClientRect(),handle=cropHandleAt(p,state.crop,state.frame.width,state.frame.height,state.canvas.width/bounds.width,state.canvas.height/bounds.height);state.drag=handle?{kind:'handle',handle:handle,rect:Object.assign({},state.crop)}:{kind:'move',rect:Object.assign({},state.crop)};}
+            else state.crop=cropRectangle(p,p,state.frame.width,state.frame.height);state.pendingStroke=null;
+          }
           else{state.crop=null;state.pendingStroke={type:'stroke',tool:state.tool,color:state.color.value,width:Number(state.width.value),points:[p]};}redraw(state);
         });
         state.canvas.addEventListener('pointermove',function(event){if(!current(state)||state.pointer!==event.pointerId)return;event.preventDefault();var p=canvasPoint(event);
-          if(state.tool==='crop')state.crop=cropRectangle(state.start,p,state.frame.width,state.frame.height);else if(state.pendingStroke&&state.pendingStroke.points.length<5000)state.pendingStroke.points.push(p);redraw(state);});
-        function endPointer(event,cancelled){if(state.pointer!==event.pointerId)return;state.pointer=null;try{state.canvas.releasePointerCapture(event.pointerId);}catch(e){}if(cancelled){state.pendingStroke=null;state.crop=null;redraw(state);return;}
-          if(state.pendingStroke){var stroke=state.pendingStroke;state.pendingStroke=null;command(state,stroke);}else redraw(state);}
+          if(state.tool==='crop'){
+            if(state.cropMode==='frame'&&state.drag)state.crop=state.drag.kind==='handle'?resizeCrop(state.drag.rect,state.drag.handle,p,state.frame.width,state.frame.height):moveCrop(state.drag.rect,p.x-state.start.x,p.y-state.start.y,state.frame.width,state.frame.height);
+            else state.crop=cropRectangle(state.start,p,state.frame.width,state.frame.height);
+          }else if(state.pendingStroke&&state.pendingStroke.points.length<5000)state.pendingStroke.points.push(p);redraw(state);});
+        function endPointer(event,cancelled){if(state.pointer!==event.pointerId)return;state.pointer=null;try{state.canvas.releasePointerCapture(event.pointerId);}catch(e){}if(cancelled){state.pendingStroke=null;state.crop=state.previousCrop;state.drag=null;redraw(state);return;}
+          if(state.pendingStroke){var stroke=state.pendingStroke;state.pendingStroke=null;command(state,stroke);}else{if(JSON.stringify(state.previousCrop)!==JSON.stringify(state.crop))state.cropHistory.push(state.previousCrop);state.drag=null;redraw(state);}}
         state.canvas.addEventListener('pointerup',function(event){endPointer(event,false);});state.canvas.addEventListener('pointercancel',function(event){endPointer(event,true);});
         state.done.addEventListener('click',function(){
           if(!current(state)||state.busy||!state.frame||state.pointer!==null)return;
-          if(state.crop&&state.crop.width>=8&&state.crop.height>=8&&!command(state,Object.assign({type:'crop'},state.crop)))return;
+          if(state.crop&&(state.crop.x||state.crop.y||state.crop.width!==state.frame.width||state.crop.height!==state.frame.height)&&!command(state,Object.assign({type:'crop'},state.crop)))return;
           state.busy=true;state.done.disabled=true;say(state,'편집한 사진을 준비하고 있어요.');
           try{state.frame.toBlob(function(blob){if(!current(state)){finish(state,null);return;}if(!blob){state.busy=false;state.done.disabled=false;say(state,'사진을 만들지 못했어요. 다시 시도해주세요.',true);return;}finish(state,blob);},'image/jpeg',.93);}catch(e){state.busy=false;state.done.disabled=false;say(state,'사진을 만들지 못했어요. 다시 시도해주세요.',true);}
         });
@@ -168,5 +201,5 @@
     }
     return {edit:edit,close:function(){if(active)finish(active,null);}};
   }
-  var api=create();api.create=create;api.domain=Object.freeze({size:size,point:point,cropRectangle:cropRectangle,newModel:newModel,dimensions:dimensions,apply:apply,undo:undo,reset:reset,paint:paint,renderModel:renderModel,colors:COLORS.slice(),MAX_BYTES:MAX_BYTES});return api;
+  var api=create();api.create=create;api.domain=Object.freeze({size:size,point:point,cropRectangle:cropRectangle,cropHandles:cropHandles,cropHandleAt:cropHandleAt,resizeCrop:resizeCrop,moveCrop:moveCrop,newModel:newModel,dimensions:dimensions,apply:apply,undo:undo,reset:reset,paint:paint,renderModel:renderModel,colors:COLORS.slice(),MAX_BYTES:MAX_BYTES});return api;
 });

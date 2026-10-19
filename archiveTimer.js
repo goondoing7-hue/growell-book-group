@@ -43,14 +43,9 @@
     var storeKey=key(owner,book.id),snapshot=null,writable=true,busy=false,error='',timer=null,attempt=null,endPage=book.currentPage||0,complete=false;
     function owned(){return !adapter.getOwnerId||adapter.getOwnerId()===owner;}
     function beforeStart(){
-      try{
-        if(!owned())return false;
-        var ready=adapter.beforeStart?adapter.beforeStart(owner,book.id):true;
-        if(ready===false||(ready&&typeof ready.then==='function')||!pauseOthers(owner,book.id,{storage:storage,now:now})){
-          error='먼저 읽던 타이머의 일시정지를 확인하지 못했어요. 다시 눌러주세요.';return false;
-        }
-        return true;
-      }catch(e){error='먼저 읽던 타이머의 일시정지를 확인하지 못했어요. 다시 눌러주세요.';return false;}
+      function checked(ready){if(ready===false||!owned()||!pauseOthers(owner,book.id,{storage:storage,now:now})){error='먼저 읽던 타이머의 일시정지를 확인하지 못했어요. 다시 눌러주세요.';return false;}return true;}
+      try{if(!owned())return false;var ready=adapter.beforeStart?adapter.beforeStart(owner,book.id):true;return ready&&typeof ready.then==='function'?Promise.resolve(ready).then(checked,function(){return checked(false);}):checked(ready);}
+      catch(e){return checked(false);}
     }
     function decode(raw){
       if(raw===null){timer=null;attempt=null;return true;}
@@ -88,22 +83,29 @@
       }catch(e){error='타이머를 이 기기에 보관하지 못했어요. 화면을 닫기 전에 다시 시도해주세요.';return false;}
     }
     function change(work){if(busy||!fresh()||!timer)return false;var before=copy({timer:timer,attempt:attempt,endPage:endPage,complete:complete});error='';if(work()===false)return false;if(!persist()){timer=before.timer;attempt=before.attempt;endPage=before.endPage;complete=before.complete;return false;}return true;}
+    function resumeReady(ready){
+      function apply(allowed){busy=false;if(!allowed||!owned()||!fresh()||!timer||attempt)return false;return change(function(){timer=D.resume(timer,now());});}
+      if(ready&&typeof ready.then==='function'){busy=true;return Promise.resolve(ready).then(apply,function(){return apply(false);}).finally(function(){if(active&&active.ownerId===owner&&active.book.id===book.id)render();});}
+      return apply(ready);
+    }
     read();
     if(writable&&!timer&&owned()){
-      var ready=beforeStart();
-      timer=D.create({id:id(),userId:owner,bookId:book.id,startPage:Number.isSafeInteger(book.currentPage)?book.currentPage:0,running:ready},now());
-      endPage=timer?timer.startPage:0;persist();
-    }else if(writable&&timer&&timer.running&&!beforeStart()){
-      timer=D.pause(timer,now());persist();
+      var ready=beforeStart(),asynchronous=ready&&typeof ready.then==='function';
+      timer=D.create({id:id(),userId:owner,bookId:book.id,startPage:Number.isSafeInteger(book.currentPage)?book.currentPage:0,running:asynchronous?false:ready},now());
+      endPage=timer?timer.startPage:0;persist();if(asynchronous)resumeReady(ready);
+    }else if(writable&&timer&&timer.running){
+      var restoredReady=beforeStart();
+      if(restoredReady&&typeof restoredReady.then==='function'){timer=D.pause(timer,now());persist();resumeReady(restoredReady);}
+      else if(!restoredReady){timer=D.pause(timer,now());persist();}
     }
     return {
       book:book,ownerId:owner,adapter:adapter,
       state:function(){return {timer:timer?copy(timer):null,attempt:attempt?copy(attempt):null,endPage:endPage,complete:complete,busy:busy,error:error,writable:writable};},
       elapsed:function(){return timer?D.elapsed(timer,now()):0;},
-      toggle:function(){return change(function(){if(attempt)return false;if(!timer.running&&!beforeStart())return false;timer=timer.running?D.pause(timer,now()):D.resume(timer,now());});},
+      toggle:function(){if(busy||!fresh()||!timer||attempt)return false;if(!timer.running)return resumeReady(beforeStart());return change(function(){timer=D.pause(timer,now());});},
       pause:function(){return change(function(){timer=D.pause(timer,now());});},
       pauseForReset:function(){if(busy||!timer||!writable)return false;try{if(storage.getItem(storeKey)!==snapshot)return false;}catch(e){return false;}timer=D.pause(timer,now());return persist();},
-      resume:function(){return change(function(){if(attempt||!beforeStart())return false;timer=D.resume(timer,now());});},
+      resume:function(){if(busy||!fresh()||!timer||attempt)return false;return resumeReady(beforeStart());},
       done:function(){return change(function(){timer=D.pause(timer,now());timer.phase='save';});},
       setPage:function(value){if(!timer||attempt)return false;var valid=D.validatePages(timer.startPage,value,book.pageCount||100000);if(!valid.ok){error=valid.error;return false;}return change(function(){endPage=valid.page;});},
       setComplete:function(value){return change(function(){if(attempt)return;complete=!!value;if(complete&&book.pageCount)endPage=book.pageCount;});},
@@ -158,9 +160,9 @@
     var left=D.remaining(active.state().timer,Date.now()),minutes=left===null?20:Math.max(1,Math.min(1439,Math.ceil(left/60000))),hours=Math.floor(minutes/60),mins=minutes%60;
     return '<div class="reading-countdown-settings"><h4>지금부터 얼마 동안 읽을까요?</h4><div class="reading-countdown-presets">'+[10,20,30].map(function(n){return '<button type="button" class="btn btn-sm" data-at-minutes="'+n+'">'+n+'분</button>';}).join('')+'</div><output class="reading-countdown-selection" data-at-selection for="archive-countdown-hours archive-countdown-minutes" aria-live="polite">'+hours+'시간 '+mins+'분</output><div class="reading-countdown-sliders"><label for="archive-countdown-hours">시간 <span>0–23시간</span></label><input id="archive-countdown-hours" type="range" min="0" max="23" step="1" value="'+hours+'" aria-valuetext="'+hours+'시간" data-at-hours><label for="archive-countdown-minutes">분 <span>0–59분</span></label><input id="archive-countdown-minutes" type="range" min="0" max="59" step="1" value="'+mins+'" aria-valuetext="'+mins+'분" data-at-mins></div><p>시간이 끝나면 알려드려요. 독서 시간은 계속 기록돼요.</p><div class="reading-countdown-actions"><button type="button" class="btn btn-sm" data-at-clear>시간 제한 없이</button><button type="button" class="btn btn-primary btn-sm" data-at-countdown-save>설정하기</button></div>'+notificationSettings()+'</div>';
   }
-  function notificationSettings(){if(!root.GrowellTimerAlerts)return '';var status=root.GrowellTimerAlerts.notificationStatus();return '<div class="reading-notifications"><p>'+esc(status.label)+'</p>'+(!status.enabled&&status.supported&&status.permission!=='denied'?'<button type="button" class="btn btn-sm" data-at-notifications>기기 알림 켜기</button>':'')+'</div>';}
+  function notificationSettings(){return '';}
   function timerHtml(state){var timer=state.timer,ratio=D.countdownRatio(timer,Date.now());return '<section class="reading-card reading-timer-card"><div class="reading-timer-head"><button type="button" class="btn btn-secondary" data-at-close>'+icon('back')+' 책</button><span class="reading-timer-status" data-at-status>'+(timer.running?'읽고 있는 중…':'잠시 멈춤')+'</span><button type="button" class="btn reading-complete-btn" data-at-done>'+icon('check')+' 완료</button></div><div class="reading-timer-label">이번에 읽은 시간</div><div class="reading-timer-display" data-at-elapsed>'+clock(active.elapsed())+'</div><button type="button" class="reading-timer-main-control" data-at-toggle aria-label="'+(timer.running?'잠시 멈춤':'계속 읽기')+'">'+(ratio===null?'':'<svg class="reading-countdown-ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="reading-countdown-track" cx="60" cy="60" r="55"/><circle class="reading-countdown-progress" data-at-ring cx="60" cy="60" r="55" pathLength="100" stroke-dasharray="100" stroke-dashoffset="'+((1-ratio)*100)+'"/></svg>')+'<span class="reading-timer-control-icon">'+icon(timer.running?'pause':'play')+'</span></button><p class="reading-control-label">'+(timer.running?'잠시 멈춤':'계속 읽기')+'</p>'+(timer.targetMs!==null?'<p class="reading-countdown-left">카운트다운 <strong data-at-remaining>'+clock(D.remaining(timer,Date.now()))+'</strong>'+(timer.goalReached?'<span>종료 · 독서 시간은 계속 기록돼요</span>':'')+'</p>':'')+'<button type="button" class="btn btn-secondary reading-countdown-open" data-at-countdown>'+icon('timer')+' 카운트다운 설정</button>'+(countdownOpen?countdownHtml():'')+bookCard()+'<p class="reading-continuity">화면을 이동해도 타이머는 이어져요. 일시정지한 시간은 제외해요.</p><button type="button" class="reading-discard" data-at-discard>이번 독서 취소</button></section>';}
-  function saveHtml(state){var book=active.book,total=book.pageCount,disabled=state.busy||!!state.attempt;return '<section class="reading-card reading-save-card"><p class="reading-save-book">'+esc(book.title)+'</p>'+sourceAttribution(book)+'<div class="reading-save-duration"><span>이번에 읽은 시간</span><strong>'+clock(active.elapsed())+'</strong></div><div class="reading-finish-options"><button type="button" class="btn btn-sm" data-at-finish="false" aria-pressed="'+(!state.complete)+'"'+(disabled?' disabled':'')+'>오늘은 여기까지</button><button type="button" class="btn btn-sm" data-at-finish="true" aria-pressed="'+state.complete+'"'+(disabled?' disabled':'')+'>이 책 다 읽었어요</button></div><p><label for="archive-reading-page">어디까지 읽었나요?</label></p><div class="reading-page-entry"><div class="reading-page-number"><input id="archive-reading-page" type="number" inputmode="numeric" min="'+state.timer.startPage+'"'+(total?' max="'+total+'"':'')+' value="'+state.endPage+'"'+(disabled?' disabled':'')+'>'+(total?'<span>/ '+total+'쪽</span>':'<span>쪽</span>')+'</div>'+(total?'<strong class="reading-page-percentage" data-at-percent>'+Math.round(state.endPage/total*100)+'%</strong>':'')+'</div>'+(total?'<div class="reading-page-slider-row"><button class="btn btn-sm" type="button" data-at-step="-1"'+(disabled?' disabled':'')+'>−</button><input type="range" aria-label="읽은 쪽수" min="'+state.timer.startPage+'" max="'+total+'" value="'+state.endPage+'" data-at-page-range'+(disabled?' disabled':'')+'><button class="btn btn-sm" type="button" data-at-step="1"'+(disabled?' disabled':'')+'>+</button></div>':'')+'<p class="reading-page-delta" data-at-delta>'+state.timer.startPage+' → '+state.endPage+'쪽 · 이번에 '+Math.max(0,state.endPage-state.timer.startPage)+'쪽 읽음</p><div class="composer-foot reading-save-actions">'+(!state.attempt?'<button type="button" class="btn btn-secondary" data-at-resume'+(state.busy?' disabled':'')+'>계속 읽기</button>':'')+'<button type="button" class="btn reading-complete-btn" data-at-save'+(state.busy?' disabled':'')+'>'+(state.busy?'저장 중…':'읽은 기록 저장')+'</button></div><p class="reading-continuity">이 책의 읽은 시간과 진도에 반영돼요.</p></section>';}
+  function saveHtml(state){var book=active.book,total=book.pageCount,disabled=state.busy||!!state.attempt;return '<section class="reading-card reading-save-card"><p class="reading-save-book">'+esc(book.title)+'</p>'+sourceAttribution(book)+'<div class="reading-save-duration"><span>이번에 읽은 시간</span><strong>'+clock(active.elapsed())+'</strong></div><div class="reading-finish-options"><button type="button" class="btn btn-sm" data-at-finish="false" aria-pressed="'+(!state.complete)+'"'+(disabled?' disabled':'')+'>오늘은 여기까지</button><button type="button" class="btn btn-sm" data-at-finish="true" aria-pressed="'+state.complete+'"'+(disabled?' disabled':'')+'>이 책 다 읽었어요</button></div><p><label for="archive-reading-page">어디까지 읽었나요?</label></p><div class="reading-page-entry"><div class="reading-page-number"><input id="archive-reading-page" type="number" inputmode="numeric" min="'+state.timer.startPage+'"'+(total?' max="'+total+'"':'')+' value="'+state.endPage+'"'+(disabled?' disabled':'')+'>'+(total?'<span>/ '+total+'쪽</span>':'<span>쪽</span>')+'</div>'+(total?'<strong class="reading-page-percentage" data-at-percent>'+Math.round(state.endPage/total*100)+'%</strong>':'')+'</div>'+(total?'<div class="reading-page-slider-row"><button class="btn btn-sm" type="button" data-at-step="-1"'+(disabled?' disabled':'')+'>−</button><input type="range" aria-label="읽은 쪽수" min="'+state.timer.startPage+'" max="'+total+'" value="'+state.endPage+'" data-at-page-range'+(disabled?' disabled':'')+'><button class="btn btn-sm" type="button" data-at-step="1"'+(disabled?' disabled':'')+'>+</button></div>':'')+'<p class="reading-page-delta" data-at-delta>'+state.timer.startPage+' → '+state.endPage+'쪽 · 이번에 '+Math.max(0,state.endPage-state.timer.startPage)+'쪽 읽음</p><div class="composer-foot reading-save-actions">'+(!state.attempt?'<button type="button" class="btn btn-secondary" data-at-resume'+(state.busy?' disabled':'')+'>계속 읽기</button>':'')+'<button type="button" class="btn btn-secondary" data-at-save-cancel'+(state.busy?' disabled':'')+'>취소</button><button type="button" class="btn reading-complete-btn" data-at-save'+(state.busy?' disabled':'')+'>'+(state.busy?'저장 중…':'읽은 기록 저장')+'</button></div><p class="reading-continuity">이 책의 읽은 시간과 진도에 반영돼요.</p></section>';}
   function render(){
     if(!dialog||!active)return;var state=active.state();
     renderedState=stateKey(state);
@@ -170,9 +172,10 @@
   function event(selector,fn){dialog.querySelectorAll(selector).forEach(function(node){node.addEventListener('click',fn);});}
   function bind(){
     event('[data-at-close]',function(){if(!active.state().busy)close(true);});
-    event('[data-at-toggle]',function(){prepare();active.toggle();render();});
+    event('[data-at-toggle]',function(){prepare();Promise.resolve(active.toggle()).then(render);render();});
+    event('[data-at-save-cancel]',function(){if(!active.state().busy)close(true);});
     event('[data-at-done]',function(){active.done();countdownOpen=false;closeNotice();render();});
-    event('[data-at-resume]',function(){prepare();active.resume();render();});
+    event('[data-at-resume]',function(){prepare();Promise.resolve(active.resume()).then(render);render();});
     event('[data-at-countdown]',function(){countdownOpen=!countdownOpen;render();});
     function updateCountdownSelection(){
       var hours=dialog.querySelector('[data-at-hours]'),mins=dialog.querySelector('[data-at-mins]');if(!hours||!mins)return;
@@ -183,7 +186,7 @@
     event('[data-at-minutes]',function(e){dialog.querySelector('[data-at-hours]').value='0';dialog.querySelector('[data-at-mins]').value=e.currentTarget.dataset.atMinutes;updateCountdownSelection();});
     event('[data-at-countdown-save]',function(){var duration=D.countdownDuration(dialog.querySelector('[data-at-hours]').value,dialog.querySelector('[data-at-mins]').value);if(!duration){dialog.querySelector('[data-at-error]').textContent='1분에서 23시간 59분 사이로 설정해주세요.';return;}prepare();active.setCountdown(duration);countdownOpen=false;render();});
     event('[data-at-clear]',function(){active.clearCountdown();countdownOpen=false;closeNotice();render();});
-    event('[data-at-notifications]',function(){root.GrowellTimerAlerts.enableNotifications().then(render);});
+
     event('[data-at-discard]',function(){if(root.confirm('이번 독서를 취소할까요? 저장한 이전 기록은 유지돼요.')&&active.discard()){close(true);}});
     event('[data-at-finish]',function(e){active.setComplete(e.currentTarget.dataset.atFinish==='true');render();});
     event('[data-at-step]',function(e){active.setPage(active.state().endPage+Number(e.currentTarget.dataset.atStep));render();});

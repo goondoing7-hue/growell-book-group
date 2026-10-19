@@ -18,7 +18,7 @@ const DEPLOY_FILES = Object.freeze([
   'googleConnection.js', 'googleConnection.css',
   'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
   'materialsMedia.js', 'materialsVideo.js', 'materialsVideo.css', 'materialTranscript.js', 'materialTranscript.css', ...require('../vendor/pdfjs/manifest.json').files,
-  'timerAlerts.js', 'timer-alert-sw.js', 'navigation.css', 'habitReminder.js', 'habitReminder.css',
+  'readingNotificationState.js', 'timerAlerts.js', 'timer-alert-sw.js', 'navigation.css', 'habitReminder.js', 'habitReminder.css',
   'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css',
   'dailyVerseDomain.js', 'popupHistory.js',
   'index.html', 'privacy.html', 'guide.html', 'guide-pc.html', 'guideRouting.js', 'covers/guide-og.png', 'covers/guide-og.svg', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
@@ -38,7 +38,7 @@ const DEPLOY_FILES = Object.freeze([
 
 const TEST_FILES = Object.freeze([
   'tests/book-photo-ocr.test.cjs', 'tests/book-photo-ocr-assets.test.cjs', 'tests/reading-notification.test.cjs', 'tests/save-diagnostics.test.cjs',
-  'tests/photo-editor.test.cjs', 'tests/photo-editor-integration.test.cjs',
+  'tests/photo-editor.test.cjs', 'tests/photo-editor-integration.test.cjs', 'tests/archive-photo-tools.test.cjs', 'tests/reading-notification-background.test.cjs', 'tests/reading-notification-reconciliation.test.cjs',
   'tests/auth-profile-diagnostics.test.cjs',
   'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs',
   'tests/meeting-record-download.test.cjs',

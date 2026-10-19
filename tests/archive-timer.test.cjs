@@ -230,3 +230,17 @@ test('timer attribution never links an unsafe or unrelated YES24 source URL',()=
     for(const html of Object.values(timerView({source,sourceUrl:'https://www.yes24.com/product/goods/123'})))assert.equal(html.includes('도서 정보:'),false);
   }
 });
+
+
+test('async shared-timer coordination is awaited before initial archive start and resume',async()=>{
+  const f=fixture();let finish;f.options.adapter.beforeStart=()=>new Promise(resolve=>{finish=resolve;});const timer=f.create();assert.equal(timer.state().timer.running,false);assert.equal(timer.state().busy,true);
+  f.clock(10000);finish(true);await new Promise(resolve=>setImmediate(resolve));assert.equal(timer.state().timer.running,true);assert.equal(timer.elapsed(),0);
+  f.clock(12000);timer.pause();const pending=timer.resume();assert.equal(timer.state().timer.running,false);f.clock(50000);finish(true);assert.equal(await pending,true);assert.equal(timer.elapsed(),2000);
+});
+
+test('failed or stale async coordination leaves the archive clock paused without changing saved data',async()=>{
+  for(const outcome of ['reject','account','newtab']){const f=fixture();let finish;f.options.adapter.beforeStart=()=>new Promise(resolve=>{finish=resolve;});const timer=f.create(),raw=f.storage.getItem(ArchiveTimer.storageKey('member','arc_book'));
+    if(outcome==='account')f.owner('other');if(outcome==='newtab'){const envelope=JSON.parse(raw);envelope.endPage=18;f.storage.setItem(ArchiveTimer.storageKey('member','arc_book'),JSON.stringify(envelope));}
+    finish(outcome!=='reject');await new Promise(resolve=>setImmediate(resolve));assert.equal(timer.state().timer.running,false);assert.equal(f.saves.length,0);
+  }
+});

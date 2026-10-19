@@ -121,7 +121,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
   const c={
     console,Promise,Uint8Array,atob,setTimeout,clearInterval(){},
     Date:class extends Date{static now(){return clock;}},
-    GrowellReadingTimer:domain,BOOKS:books,GrowellTimerAlerts:{notify:details=>{notifications.push(clone(details));return Promise.resolve();}},
+    GrowellReadingTimer:domain,BOOKS:books,GrowellTimerAlerts:{notificationStatus:()=>({supported:false,permission:'unsupported'}),notify:details=>{notifications.push(clone(details));return Promise.resolve();}},
     STATE:{users:{[owner]:{id:owner,name:'독서회원',authUserId:'auth-'+owner}},posts:{},comments:{},privateEntries:{},materialNotes:{},worksheets:{},habits:{},
       readingLogs:{},readingMeta:{},bookLocks:{},announcement:{next:{},reading:{}}},
     SESSION:{userId:owner,name:'독서회원',keyB64:'memory-only'},CURRENT_KEY:null,
@@ -172,6 +172,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
   vm.runInContext(section('var readingTimer =', 'var worksheetOpenFor ='),c);
   vm.runInContext(section('var saving = false;', '/* ---------------- toast'),c);
   vm.runInContext(section('function submitReadingLog(', 'function todayReadSeconds('),c);
+  vm.runInContext(section('function readingSessionNotificationSettingsHtml(){','function readingCountdownRingHtml(){'),c);
   c.memberLoadState={privateEntries:'ready',habits:'ready',readingLogs:'ready',readingMeta:'ready'};
   Object.values(server.logs).filter(row=>row.user_id===owner).forEach(row=>{const mapped=c.mapReadingLogRow(row);c.STATE.readingLogs[mapped.id]=mapped;});
   Object.values(server.meta).filter(row=>row.user_id===owner).forEach(row=>{const mapped=c.mapReadingMetaRow(row,c.STATE.users);c.STATE.readingMeta[c.readingMetaKey(mapped.bookId,mapped.userId)]=mapped;});
@@ -185,7 +186,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
 
 function timerBrowserEvents(fixture){
   const {c}=fixture,buttons=new Map(),documentEvents={},windowEvents={};
-  for(const id of ['btn-reading-toggle-pause','btn-reading-done','btn-reading-cancel','btn-reading-save-back']){
+  for(const id of ['btn-reading-toggle-pause','btn-reading-done','btn-reading-cancel','btn-reading-save-back','btn-reading-save-cancel']){
     const handlers={};buttons.set(id,{addEventListener:(event,handler)=>{handlers[event]=handler;},click:()=>handlers.click()});
   }
   const originalElement=c.document.getElementById;
@@ -776,7 +777,7 @@ test('v1 migration preserves note handoff and the writing pause before returning
   assert.equal(next.c.readingTimerElapsedMs(),6000);assert.equal(next.c.readingTimer.running,true);
 });
 
-test('notification permission is requested only by the explicit button; countdown and resume only prepare audio',async()=>{
+test('device notification permission is requested by the actual resume gesture and has no per-book settings buttons',async()=>{
   const {c}=harness({now:0});
   const elements=new Map();
   function control(id,value){
@@ -799,11 +800,10 @@ test('notification permission is requested only by the explicit button; countdow
   c.bindReadingTimerEvents();
   assert.equal(requested,0);assert.equal(prepared,0);
   countdown.click();assert.equal(requested,0);assert.equal(prepared,1);
-  pause.click();pause.click();assert.equal(requested,0);assert.equal(prepared,2);
-  settings.click();await tick();assert.equal(requested,1);
-  assert.equal(settings.disabled,true);assert.equal(settings.textContent,'휴대폰 알림 켜짐');assert.equal(label.textContent,'알림 켜짐');
-  settings.click();assert.equal(requested,1,'already granted permission is not requested again');
-  permission='denied';settings.click();assert.equal(requested,1,'denied permission is not requested again');
+  pause.click();assert.equal(requested,0);pause.click();assert.equal(requested,1,'permission call stays in the original resume click');assert.equal(prepared,2);await tick();
+  assert.equal(c.readingNotificationSettingsHtml(),'');assert.equal(c.readingSessionNotificationSettingsHtml(),'');
+  pause.click();pause.click();assert.equal(requested,1,'already granted permission is not requested again');
+  permission='denied';pause.click();pause.click();assert.equal(requested,1,'denied permission is not requested again');
 });
 
 
@@ -1088,5 +1088,14 @@ test('leaving and returning before an earlier reading save finishes keeps the ne
     assert.equal(c.readingHistoryOpenFor,null,'the response from the previous visit via '+destination+' cannot expand this visit');
     assert.equal(c.STATE.readingMeta.emotion_reader.currentPage,15,'the record still saves normally');
     assert.equal(c.readingTimer,null);
+  }
+});
+
+
+test('save cancellation closes only its popup and preserves paused time, edited page and immutable retry state',()=>{
+  for(const attempted of [false,true]){const h=harness({now:10000}),{c}=h;h.prepared();c.readingEndPage=17;c.readingHomeDialogFor=c.readingTimer.id;if(attempted)c.readingSaveAttempt={id:c.readingTimer.id,userId:'reader',bookId:'emotion',startPage:10,page:17,seconds:10,createdAt:10000};
+    c.persistReadingTimer();const before=clone(c.readingTimer),attempt=clone(c.readingSaveAttempt);const events=timerBrowserEvents(h);events.buttons.get('btn-reading-save-cancel').click();
+    assert.equal(c.readingHomeDialogFor,null);assert.deepEqual(clone(c.readingTimer),before);assert.equal(c.readingEndPage,17);assert.deepEqual(clone(c.readingSaveAttempt),attempt);assert.equal(c.readingTimer.phase,'save');assert.equal(h.requests.length,0);
+    if(attempted){events.buttons.get('btn-reading-save-back').click();assert.deepEqual(clone(c.readingTimer),before);assert.deepEqual(clone(c.readingSaveAttempt),attempt);}
   }
 });

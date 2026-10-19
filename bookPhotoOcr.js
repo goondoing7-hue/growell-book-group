@@ -108,8 +108,8 @@
       try{
         var editPhoto=options.editPhoto || (browser.GrowellPhotoEditor && browser.GrowellPhotoEditor.edit);
         if(typeof editPhoto==='function'){
-          message(state,'사진을 자르거나 표시한 뒤 편집을 완료해주세요.');
-          file=await editPhoto(file,{isCurrent:current,trigger:state.galleryButton});
+          message(state,'사각 틀로 책의 문장 범위를 맞춘 뒤 글자 인식을 시작해주세요.');
+          file=await editPhoto(file,{isCurrent:current,trigger:state.galleryButton,cropOnly:true,confirmLabel:'자르고 글자 인식'});
           if(!current())return;
           if(!file){busy(state,false);message(state,'사진 편집을 취소했어요. 사진을 다시 선택할 수 있어요.');return;}
         }
@@ -142,7 +142,7 @@
         '<div class="book-photo-ocr-body"><p class="book-photo-ocr-description">책의 문장을 촬영하거나 사진을 골라주세요. 사진은 이 기기에서만 처리하며 서버나 외부 AI로 보내지 않아요.</p>'+
         '<div class="book-photo-ocr-picks"><button type="button" class="btn" data-ocr-camera>사진 촬영</button><button type="button" class="btn" data-ocr-gallery>사진 선택</button></div>'+
         '<input type="file" accept="image/*" capture="environment" data-ocr-camera-input hidden><input type="file" accept="image/*" data-ocr-gallery-input hidden>'+
-        '<p class="book-photo-ocr-hint">사진을 고르면 자르기·표시·글자 편집을 할 수 있어요. 한 번에 한 쪽씩, 글자가 선명한 사진을 20MB까지 선택해주세요.</p>'+
+        '<p class="book-photo-ocr-hint">사진을 고르면 사각 틀의 모서리나 변을 움직여 글자가 있는 범위를 맞춰요. 자르기를 마치면 바로 글자를 인식해요. 한 번에 한 쪽씩, 선명한 사진을 20MB까지 선택해주세요.</p>'+
         '<div class="book-photo-ocr-state"><p data-ocr-status role="status" aria-live="polite">사진을 선택하면 한국어와 영어 문장을 읽어요.</p><progress max="1" value="0" data-ocr-progress hidden aria-label="글자 인식 진행"></progress><button type="button" class="btn btn-sm" data-ocr-cancel hidden>인식 중지</button></div>'+
         '<div data-ocr-review hidden><label class="field-label" for="book-photo-ocr-text">인식한 문장 · 수정할 수 있어요</label><textarea id="book-photo-ocr-text" data-ocr-text maxlength="200000" spellcheck="false"></textarea><p class="book-photo-ocr-hint">오탈자와 줄바꿈을 확인해주세요. 기존 본문과 첨부 사진은 그대로 유지해요.</p></div></div>'+
         '<div class="book-photo-ocr-actions"><button type="button" class="btn" data-ocr-close>닫기</button><button type="button" class="btn btn-primary" data-ocr-append disabled>글 끝에 추가</button></div>';

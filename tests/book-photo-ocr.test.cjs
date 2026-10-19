@@ -124,7 +124,7 @@ test('cancelling photo editing never starts OCR or changes the existing editor',
 });
 test('only the explicitly accepted edited Blob reaches image preparation and the local recognition worker',async()=>{
   const original=file(),edited=new Blob(['edited-pixels'],{type:'image/jpeg'}),prepared=[],recognized=[];
-  const h=harness({editPhoto:async image=>{assert.equal(image,original);return edited;},prepareImage:async image=>{prepared.push(image);return {image,release(){}};},worker:{recognize:async image=>{recognized.push(image);return {data:{text:'편집 사진의 문장'}};},terminate:async()=>{}}});
+  const h=harness({editPhoto:async (image,settings)=>{assert.equal(image,original);assert.equal(settings.cropOnly,true);assert.equal(settings.confirmLabel,'자르고 글자 인식');return edited;},prepareImage:async image=>{prepared.push(image);return {image,release(){}};},worker:{recognize:async image=>{recognized.push(image);return {data:{text:'편집 사진의 문장'}};},terminate:async()=>{}}});
   await choose(h,'gallery',original);assert.deepEqual(prepared,[edited]);assert.deepEqual(recognized,[edited]);assert.equal(h.state.text.value,'편집 사진의 문장');assert.equal(h.editor.textContent,'보존할 기존 문장');h.api.close();
 });
 test('photo editing time does not consume the 180-second OCR limit and a late edited result cannot cross an account guard',async()=>{

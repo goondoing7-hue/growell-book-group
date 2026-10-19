@@ -25,7 +25,7 @@ test('ongoing reading notification uses one tag, safe generic content and explic
   const h=notificationHarness(),raw=timer(Date.now()),view=h.api.sessionView({timer:raw,userId:raw.userId});
   assert.equal(await h.api.showSession(view,()=>true),true);const first=h.calls.notifications[0];
   assert.equal(first.settings.tag,'growell-reading-session');assert.equal(first.settings.requireInteraction,true);assert.equal(first.settings.silent,true);assert.equal(first.settings.renotify,false);
-  assert.deepEqual(clone(first.settings.actions),[{action:'pause',title:'멈춤'},{action:'finish',title:'끝내기'}]);
+  assert.deepEqual(clone(first.settings.actions),[{action:'pause',title:'일시정지'},{action:'finish',title:'끝내기'}]);
   assert.doesNotMatch(JSON.stringify(first),/PRIVATE_MEMBER|startPage|access_token|keyB64/);assert.match(first.settings.badge,/notification-badge-96/);
   await h.api.showSession(view,()=>true);assert.equal(h.calls.notifications.length,1,'rerenders do not recreate the same notification');
   const paused=Domain.pause(raw,Date.now()),next=h.api.sessionView({timer:paused,userId:raw.userId});await h.api.showSession(next,()=>true);
@@ -58,101 +58,134 @@ test('a late old-session notification listing cannot close the newly displayed t
   const next=Domain.create({id:'rl-new-reading',userId:old.userId,bookId:'thought'},Date.now());await h.api.showSession(h.api.sessionView({timer:next,userId:next.userId}),()=>true);
   finish([h.listed.at(-1)]);assert.equal(await closing,false);assert.equal(h.calls.closed,0);assert.equal(h.calls.notifications.length,2);
 });
-function fakeIndexedDB(){
-  const values=new Map(),names=new Set();let tail=Promise.resolve();
-  const api={open(name,version){assert.equal(name,'growell-reading-notification-v1');assert.equal(version,1);const request={};
-    setImmediate(()=>{request.result={objectStoreNames:{contains:key=>names.has(key)},createObjectStore:key=>names.add(key),close(){},transaction(store,mode){assert.equal(store,'pending');assert.equal(mode,'readwrite');const ops=[],tx={objectStore(){return {put(value,key){ops.push(()=>values.set(key,clone(value)));},delete(key){ops.push(()=>values.delete(key));},get(key){const result={};ops.push(()=>{result.result=values.has(key)?clone(values.get(key)):undefined;if(result.onsuccess)result.onsuccess();});return result;}};}};
-      tail=tail.then(()=>new Promise(resolve=>setImmediate(()=>{try{for(let i=0;i<ops.length;i++)ops[i]();if(tx.oncomplete)tx.oncomplete();}catch(error){if(tx.onerror)tx.onerror(error);}resolve();})));return tx;}};
-      if(!names.has('pending')&&request.onupgradeneeded)request.onupgradeneeded();if(request.onsuccess)request.onsuccess();});return request;}};
-  return {api,values};
-}
-function workerHarness(options={}){
-  let clock=10000;const database=fakeIndexedDB(),events={},opened=[],root={URL,Promise,Number,Date:class extends Date{static now(){return clock;}},MessageChannel,setTimeout,clearTimeout,
-    self:{location:{origin:'https://growell-book.vercel.app'},indexedDB:options.noStorage?undefined:database.api,addEventListener:(name,handler)=>events[name]=handler,skipWaiting:async()=>{},clients:{claim:async()=>{},matchAll:async()=>options.windows||[],openWindow:async url=>{opened.push(url);return {};}}}};
-  vm.createContext(root);vm.runInContext(workerSource,root);
-  async function click(data,action='pause'){let waiting,closed=0;events.notificationclick({action,notification:{data,close(){closed++;}},waitUntil:value=>{waiting=value;}});if(waiting)await waiting;assert.equal(closed,1);}
-  async function claim(identity,source='https://growell-book.vercel.app/#/'){let waiting,result;events.message({data:{type:'growell-reading-claim',identity},source:{url:source},ports:[{postMessage:value=>{result=value;}}],waitUntil:value=>{waiting=value;}});if(waiting)await waiting;return result&&result.command;}
-  async function clear(ownerKey){let waiting;events.message({data:{type:'growell-reading-clear',ownerKey},source:{url:'https://growell-book.vercel.app/#/'},waitUntil:value=>{waiting=value;}});if(waiting)await waiting;}
-  return {root,database,events,opened,click,claim,clear,setNow(value){clock=value;}};
-}
-const identity=()=>Alerts.sessionView({timer:timer(0),userId:'PRIVATE_MEMBER'}).data;
-test('worker queues only opaque metadata, opens a safe route for a closed app, and consumes a command once atomically',async()=>{
-  const h=workerHarness(),data=identity();await h.click(data,'pause');assert.deepEqual(h.opened,['https://growell-book.vercel.app/#/book/emotion/mine']);
-  assert.equal(h.database.values.size,1);assert.doesNotMatch(JSON.stringify([...h.database.values]),/PRIVATE_MEMBER|access_token|keyB64|PRIVATE_BODY/);
-  const [first,second]=await Promise.all([h.claim(data),h.claim(data)]);assert.equal(first.action,'pause');assert.equal(second,null);assert.equal(h.database.values.size,0);
-});
-test('a later click replaces the single queued command and expiry, stale state or another member cannot execute it',async()=>{
-  const h=workerHarness(),data=identity();await h.click(data,'pause');await h.click(data,'finish');assert.equal(h.database.values.size,1);assert.equal((await h.claim(data)).action,'finish');
-  await h.click(data,'pause');assert.equal(await h.claim({...data,ownerKey:'t1-dead-beef'}),null);assert.equal(h.database.values.size,1);
-  assert.equal(await h.claim({...data,revision:'t1-abc-def'}),null);assert.equal(h.database.values.size,1);assert.equal((await h.claim(data)).action,'pause');
-  await h.click(data,'pause');h.setNow(310001);assert.equal(await h.claim(data),null);assert.equal(h.database.values.size,0);
-});
-test('foreign windows, invalid book/session actions and absent IndexedDB never mutate a saved timer or expose commands',async()=>{
-  const h=workerHarness(),data=identity();await h.click(data,'pause');assert.equal(await h.claim(data,'https://evil.example/#/'),undefined);assert.equal(h.database.values.size,1);
-  for(const [invalid,action] of [[{...data,bookId:'../../evil'},'pause'],[{...data,timerId:'https://evil.example'},'pause'],[data,'delete'],[data,'resume']])await h.click(invalid,action);
-  assert.equal(h.database.values.size,1);const blocked=workerHarness({noStorage:true});await blocked.click(data,'finish');assert.equal(blocked.database.values.size,0);assert.equal(blocked.opened.length,1);
-});
-test('an already open matching client receives a message without navigation, so another page draft stays intact',async()=>{
-  let focused=0,navigated=0,messages=0;const client={url:'https://growell-book.vercel.app/#/book/emotion/share',postMessage(message,ports){assert.equal(message.type,'growell-reading-pending');messages++;ports[0].postMessage({accepted:true});},focus:async()=>{focused++;},navigate(){navigated++;}};
-  const h=workerHarness({windows:[client]});await h.click(identity(),'finish');assert.equal(messages,1);assert.equal(focused,1);assert.equal(navigated,0);assert.equal(h.opened.length,0);
-});
-test('logout clears only the former owner queued action so a paused timer cannot resume after a later login',async()=>{
-  const h=workerHarness(),data=identity();await h.click(data,'pause');await h.clear('t1-dead-beef');assert.equal(h.database.values.size,1);await h.clear(data.ownerKey);assert.equal(h.database.values.size,0);assert.equal(await h.claim(data),null);
-});
+
+const State=require('../readingNotificationState.js');
 function appHarness(options={}){
-  let clock=5000;const calls={renders:0,captures:0,commits:0,clears:0},draft={id:'draft-fixed',body:'작성 중인 원문 그대로'},book={id:'emotion',title:'책',totalPages:100};
-  const c={Promise,Date:class extends Date{static now(){return clock;}},Number,Math,JSON,URL,
+  let clock=5000,nonce=0;const records=options.records||new Map(),values=options.values||new Map(),calls={renders:0,prompts:0,saves:0,acks:0,requests:[],toasts:[]};let active=options.active||null;
+  const draft={body:'작성 중인 원문 <b>그대로</b>',photos:['original-photo']};
+  const c={Promise,Date:class extends Date{static now(){return clock;}},Number,Math,JSON,URL,console,
     SESSION:{userId:'PRIVATE_MEMBER'},saveSessionEpoch:3,memberPushPromptSession:{},currentMemberPushPrompt:()=>!options.unverified,
-    GrowellReadingTimer:Domain,GrowellTimerAlerts:{sessionView:Alerts.sessionView,claimSessionAction:()=>options.claim||Promise.resolve(null),showSession:async()=>true,closeSession:async()=>{calls.clears++;}},
-    readingTimer:timer(0),readingSaveBusy:false,readingSaveAttempt:null,readingNoteReturn:null,readingHomeReturn:false,readingHomeDialogFor:null,readingHomeDialogPosition:null,readingNotificationDialogRoute:null,readingNotificationBusy:false,readingNotificationPending:null,readingNotificationBound:false,readingNotificationLast:'',readingCountdownOpen:false,
-    readingDataReady:()=>true,refreshReadingTimerFromStorage:()=>false,bookById:()=>book,isBookLocked:()=>false,pauseArchiveReadingBeforeSharedStart:()=>options.archiveBlocked!==true,
-    captureReadingTimerState(){return {timer:clone(c.readingTimer),noteReturn:c.readingNoteReturn,returnView:'mine'};},
-    commitReadingTimerState(next){calls.commits++;if(options.failStorage)return false;c.readingTimer=clone(next.timer);c.readingNoteReturn=next.noteReturn;c.readingSavePanelOpen=c.readingTimer.phase==='save';return true;},
+    GrowellReadingTimer:Domain,GrowellReadingNotificationState:State,BOOKS:[{id:'emotion',totalPages:100},{id:'thought',totalPages:200},{id:'body',totalPages:200},{id:'action',totalPages:200}],
+    readingTimer:timer(0),readingParkedSessions:{},readingTimerStorageOwner:'PRIVATE_MEMBER',readingTimerStorageSnapshot:null,readingTimerStorageWritable:true,readingTimerRestoreOwner:'PRIVATE_MEMBER',readingTimerMemoryWarning:false,
+    readingSaveBusy:false,readingSaveAttempt:null,readingSavePanelOpen:false,readingFinishKind:'finish',readingEndPage:9,readingNoteReturn:null,readingHomeReturn:false,readingHomeDialogFor:null,readingHomeDialogPosition:null,readingNotificationDialogRoute:null,
+    readingNotificationBusy:false,readingNotificationPending:null,readingNotificationBound:false,readingNotificationLast:'',readingNotificationCheckpoint:null,readingNotificationArchiveBlocked:false,readingNotificationGuard:false,readingNotificationTask:null,readingNotificationLease:null,readingNotificationApply:false,readingNotificationOpenedIntent:'',readingNotificationNoteChoice:null,readingCountdownOpen:false,
+    readingDataReady:()=>true,bookById:id=>c.BOOKS.find(b=>b.id===id),isBookLocked:()=>!!options.locked,myCurrentPage:()=>7,uid:()=> 'rl-book-'+(++nonce),
+    localStorage:{getItem:key=>values.get(key)??null,setItem(key,value){if(options.failStorage)throw Error('storage');values.set(key,value);}},
+    readingTimerStorageKey:owner=>'timer:'+owner,previousReadingTimerStorageKey:owner=>'timer-old:'+owner,legacyReadingTimerStorageKey:owner=>'timer-legacy:'+owner,
     location:{hash:'#/book/emotion/share',origin:'https://growell-book.vercel.app'},document:{getElementById:()=>null,querySelector:()=>null},navigator:{serviceWorker:{addEventListener(){}}},
-    captureComposerDraft(){calls.captures++;},render(){calls.renders++;c.captureComposerDraft();},showToast(){},mineComposerOpenFor:'emotion',shareComposerOpenFor:null,
-    resetMineComposer(){c.mineComposerOpenFor=null;},resetShareComposer(){c.shareComposerOpenFor=null;},
-    esc:String,svgIcon:()=>'',I_CLOSE:'close',readingCardHtml:()=>'<div data-existing-reading-card></div>'};
-  vm.createContext(c);vm.runInContext(section('function readingSessionNotificationSettingsHtml(){','function readingCountdownRingHtml(){'),c);
-  vm.runInContext(section('function isReadingHomeRoute(){','function startReading('),c);
-  vm.runInContext(section('function completeReadingNote(','function tickReadingTimer(){'),c);
-  function command(action='pause'){return {...c.readingNotificationView().data,action,createdAt:clock,expiresAt:clock+300000};}
-  return {c,calls,draft,command,setNow(value){clock=value;}};
+    syncReadingTimer(){if(c.readingTimer)c.readingTimer=Domain.settle(c.readingTimer,clock);},
+    render(){calls.renders++;},showToast(text){calls.toasts.push(text);},captureComposerDraft(){},closeReadingCountdownNotice(){},prepareReadingTimerAlerts(){},
+    isReadingHomeRoute:()=>false,closeReadingHomeDialog(){c.readingHomeDialogFor=null;},GrowellArchiveTimer:{pauseOthers:()=>true},
+    readingSaveError:false,readingSaveFailure:'',esc:String,svgIcon:()=>'',I_CLOSE:'close',readingCardHtml:()=>'',mineComposerOpenFor:null,shareComposerOpenFor:null};
+  c.GrowellTimerAlerts={...Alerts,notificationStatus:()=>({supported:options.supported!==false,permission:options.permission||'granted'}),newGeneration:()=> 'rn-'+String(++nonce).padStart(32,'0'),newLease:()=> 'rh-'+String(++nonce).padStart(32,'0'),enableNotifications(){calls.prompts++;return Promise.resolve({enabled:true});},closeSession:async()=>true,
+    async sessionState(request){
+      calls.requests.push(clone(request));if(options.beforeRequest)await options.beforeRequest(request,c);if(options.failRpc)return {ok:false,code:options.failRpc};
+      const id=request.snapshot||request.identity,key=id.ownerKey+':'+id.timerId,old=records.get(key)||null;
+      if(request.type==='arm'&&active&&!State.matches(active,request.expectedActive))return {ok:false,code:'active-conflict',active,state:old};
+      if(!['read','arm','ack','revoke'].includes(request.type)&&(!active||!State.matches(active,State.head(old))))return {ok:false,code:'inactive',active,state:old};
+      const changed=State.transition(old,request,clock),result=clone(changed.result);result.active=active;
+      if(result.ok&&request.type!=='read'){records.set(key,clone(changed.record));if(request.type==='arm'||active&&State.same(active,changed.record)){active=State.head(changed.record);result.active=clone(active);}}
+      if(request.type==='ack'){calls.acks++;if(options.loseAck){options.loseAck=false;return {ok:false,code:'timeout'};}}
+      if(options.afterRequest)await options.afterRequest(request,result,c);
+      return result;
+    }};
+  vm.createContext(c);
+  vm.runInContext(section('function captureReadingTimerState(){','function prepareReadingTimerAlerts(){'),c);
+  vm.runInContext(section('function readingSessionNotificationSettingsHtml(){','function readingCountdownRingHtml(){'),c);
+  vm.runInContext(section('function startReading(bookId){','function todayReadSeconds('),c);
+  const parked=Domain.pause(Domain.create({id:'rl-parked',userId:'PRIVATE_MEMBER',bookId:'body',startPage:11},0),1200);
+  if(!values.has('timer:PRIVATE_MEMBER'))values.set('timer:PRIVATE_MEMBER',JSON.stringify({v:3,timer:c.readingTimer,attempt:null,finishKind:'finish',endPage:9,noteReturn:null,returnView:'mine',parked:{body:{timer:parked,attempt:null,finishKind:'finish',endPage:12,noteReturn:null,returnView:'mine'}}}));
+  function restore(){const raw=values.get('timer:PRIVATE_MEMBER');c.readingTimerStorageSnapshot=raw;const saved=JSON.parse(raw);c.applyReadingTimerState(saved);c.readingParkedSessions=saved.parked||{};}
+  restore();
+  function currentRecord(){const view=c.readingNotificationView();return view&&records.get(view.data.ownerKey+':'+view.data.timerId);}
+  function action(kind,at){clock=at;const old=currentRecord();assert.ok(old,'timer must be armed');const changed=State.transition(old,{type:'action',identity:State.head(old),action:kind},at);assert.equal(changed.result.ok,true,changed.result.code);records.set(old.ownerKey+':'+old.timerId,clone(changed.record));active=State.head(changed.record);return changed.record;}
+  return {c,calls,draft,values,records,options,restore,action,record:currentRecord,get active(){return active;},setNow:n=>{clock=n;},arm:()=>c.withReadingNotificationMutation(null)};
 }
-test('notification pause/resume exclude paused time and finish freezes the same session without automatic saving',()=>{
-  const h=appHarness(),id=h.c.readingTimer.id,initial=clone(h.draft);let command=h.command('pause');assert.equal(h.c.applyReadingNotificationCommand(command,command),true);assert.equal(h.c.readingTimer.running,false);assert.equal(Domain.elapsed(h.c.readingTimer,5000),5000);
-  h.setNow(100000);command=h.command('resume');assert.equal(h.c.applyReadingNotificationCommand(command,command),true);h.setNow(103000);assert.equal(Domain.elapsed(h.c.readingTimer,103000),8000);
-  command=h.command('finish');assert.equal(h.c.applyReadingNotificationCommand(command,command),true);assert.equal(h.c.readingTimer.running,false);assert.equal(h.c.readingTimer.phase,'save');assert.equal(h.c.readingSaveAttempt,null);assert.equal(h.c.readingTimer.id,id);
-  assert.equal(h.c.location.hash,'#/book/emotion/share');assert.equal(h.c.readingHomeDialogFor,id);assert.match(h.c.readingHomeDialogHtml({view:'book',bookId:'emotion',tab:'share'}),/읽은 기록 저장/);assert.deepEqual(h.draft,initial);
+
+test('background clock is reconciled once into v3 while parked books, original draft and page choices are preserved',async()=>{
+  const h=appHarness(),draft=clone(h.draft);assert.equal(await h.arm(),true);const parked=JSON.parse(h.values.get('timer:PRIVATE_MEMBER')).parked;
+  h.action('pause',10000);h.action('resume',100000);h.action('finish',103000);h.setNow(800000);
+  assert.equal(await h.c.consumeReadingSessionNotificationAction(),true);
+  assert.equal(h.c.readingTimer.phase,'save');assert.equal(h.c.readingTimer.running,false);assert.equal(h.c.readingTimer.elapsedMs,13000);assert.equal(h.c.readingSaveAttempt,null);assert.equal(h.c.readingEndPage,9);
+  assert.deepEqual(JSON.parse(h.values.get('timer:PRIVATE_MEMBER')).parked,parked);assert.deepEqual(h.draft,draft);assert.equal(h.c.location.hash,'#/book/emotion/share');
+  assert.equal(h.record().journal.length,0);assert.equal(h.calls.acks,1);assert.equal(h.calls.saves,0);
+  await h.c.consumeReadingSessionNotificationAction();assert.equal(h.c.readingTimer.elapsedMs,13000);
 });
-test('stale, expired, wrong-owner and already saving notifications never alter the current timer',()=>{
-  for(const edit of [cmd=>{cmd.ownerKey='t1-wrong-owner';},cmd=>{cmd.timerId='rl-old';},cmd=>{cmd.revision='t1-stale-revision';},cmd=>{cmd.expiresAt=1;},cmd=>{cmd.action='delete';}]){
-    const h=appHarness(),before=clone(h.c.readingTimer),command=h.command();edit(command);assert.equal(h.c.applyReadingNotificationCommand(command,h.c.readingNotificationView().data),false);assert.deepEqual(clone(h.c.readingTimer),before);assert.equal(h.calls.commits,0);
+
+test('a failed local commit keeps every background action unacknowledged and retry never doubles elapsed time',async()=>{
+  const h=appHarness();await h.arm();h.action('pause',10000);const before=h.values.get('timer:PRIVATE_MEMBER');h.options.failStorage=true;
+  assert.equal(await h.arm(),false);assert.equal(h.values.get('timer:PRIVATE_MEMBER'),before);assert.equal(h.record().journal.length,1);assert.equal(h.calls.acks,0);
+  h.options.failStorage=false;assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.elapsedMs,10000);assert.equal(h.record().journal.length,0);
+  await h.arm();assert.equal(h.c.readingTimer.elapsedMs,10000);
+});
+
+test('lost acknowledgement replies and a new action during prefix acknowledgement remain idempotent after reload',async()=>{
+  const h=appHarness();await h.arm();h.action('pause',10000);h.options.loseAck=true;
+  assert.equal(await h.arm(),false);assert.equal(h.c.readingNotificationCheckpoint.throughSeq,1);assert.equal(h.c.readingTimer.elapsedMs,10000);h.restore();
+  assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.elapsedMs,10000);
+  h.action('resume',100000);let injected=false;h.options.beforeRequest=async request=>{if(request.type==='ack'&&!injected){injected=true;h.action('pause',103000);}};
+  assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.elapsedMs,13000);assert.equal(h.record().journal.length,0);assert.equal(h.c.readingNotificationCheckpoint.throughSeq,3);
+});
+
+test('app timer mutations hold the exact worker revision until the new source is durably published',async()=>{
+  const h=appHarness();await h.arm();let seen=false;
+  assert.equal(await h.c.withReadingNotificationMutation(()=>{const record=h.record();seen=true;assert.ok(record.held);const denied=State.transition(record,{type:'action',identity:State.head(record),action:'pause'},9000);assert.equal(denied.result.code,'blocked');const next=h.c.captureReadingTimerState();next.timer=Domain.pause(next.timer,8000);return h.c.commitReadingTimerState(next);}),true);
+  assert.equal(seen,true);assert.equal(h.record().held,null);assert.equal(h.record().clock.elapsedMs,8000);assert.equal(h.c.readingTimer.running,false);
+});
+
+test('switching A to B and back preserves parked clocks and creates no stuck worker lease',async()=>{
+  const h=appHarness();await h.arm();h.action('pause',10000);h.setNow(12000);await h.c.startReading('thought');
+  assert.equal(h.c.readingTimer.bookId,'thought');assert.equal(h.c.readingParkedSessions.emotion.timer.elapsedMs,10000);const first=h.c.readingParkedSessions.emotion.timer.id;
+  h.setNow(16000);await h.c.startReading('emotion');assert.equal(h.c.readingTimer.id,first);assert.equal(h.c.readingTimer.elapsedMs,10000);assert.equal(h.c.readingTimer.running,false);assert.equal(h.record().held,null);assert.equal(h.record().revoked,false);
+  assert.equal(h.c.readingParkedSessions.thought.timer.elapsedMs,4000);assert.ok(h.c.readingParkedSessions.body);
+});
+
+test('a resumed archive timer blocks independent shared resume and note/save attempts also block all timer actions',async()=>{
+  const h=appHarness();await h.arm();h.setNow(10000);assert.equal(await h.c.pauseSharedReadingForArchive('PRIVATE_MEMBER'),true);assert.equal(h.record().blocked,'archive');
+  assert.equal(State.transition(h.record(),{type:'action',identity:State.head(h.record()),action:'resume'},20000).result.ok,false);
+  await h.c.withReadingNotificationMutation(()=>{const next=h.c.captureReadingTimerState();next.noteReturn={timerId:next.timer.id,userId:'PRIVATE_MEMBER',bookId:'emotion',type:'mine',wasRunning:true};next.notificationArchiveBlocked=false;return h.c.commitReadingTimerState(next);});
+  assert.equal(h.record().blocked,'note');assert.equal(State.transition(h.record(),{type:'action',identity:State.head(h.record()),action:'finish'},20000).result.ok,false);
+  const before=clone(h.draft);await h.c.withReadingNotificationMutation(()=>{const next=h.c.captureReadingTimerState();next.noteReturn=null;next.timer.phase='save';return h.c.commitReadingTimerState(next);});assert.equal(h.record().blocked,'save');assert.deepEqual(h.draft,before);
+});
+
+test('a changed account or epoch during the read cannot touch the former source or acknowledge its pending clock',async()=>{
+  for(const mode of ['account','epoch']){const h=appHarness();await h.arm();h.action('pause',10000);const before=h.values.get('timer:PRIVATE_MEMBER');let changed=false;
+    h.options.afterRequest=async request=>{if(request.type==='read'&&!changed){changed=true;if(mode==='account')h.c.SESSION={userId:'OTHER'};else h.c.saveSessionEpoch++;}};
+    assert.equal(await h.arm(),false);assert.equal(h.values.get('timer:PRIVATE_MEMBER'),before);assert.equal(h.record()?.journal.length||[...h.records.values()][0].journal.length,1);assert.equal(h.calls.acks,0);
   }
-  const saved=appHarness();saved.c.readingSaveAttempt={id:'immutable-attempt'};const command=saved.command('finish');assert.equal(saved.c.applyReadingNotificationCommand(command,command),false);assert.equal(saved.calls.commits,0);
 });
-test('failed local persistence preserves the original time and pending note handoff remains on the existing draft-safe path',()=>{
-  const failed=appHarness({failStorage:true}),before=clone(failed.c.readingTimer),cmd=failed.command('finish');assert.equal(failed.c.applyReadingNotificationCommand(cmd,cmd),false);assert.deepEqual(clone(failed.c.readingTimer),before);
-  for(const action of ['resume','finish']){
-    const h=appHarness(),handoff=Domain.beginNote(h.c.readingTimer,'mine',5000);h.c.readingTimer=handoff.timer;h.c.readingNoteReturn=handoff.handoff;h.setNow(100000);const draftBefore=clone(h.draft),command=h.command(action);
-    assert.equal(h.c.applyReadingNotificationCommand(command,command),true);assert.equal(h.c.readingNoteReturn,null);assert.equal(h.c.readingTimer.phase,'timer');assert.equal(Domain.elapsed(h.c.readingTimer,100000),5000);assert.ok(h.calls.captures>0);assert.deepEqual(h.draft,draftBefore);
+
+test('initial notification failures and denied/default permission do not disable reading, while a known checkpoint fails closed',async()=>{
+  for(const permission of ['default','denied']){const h=appHarness({permission,failRpc:'storage'});let ran=false;assert.equal(h.c.withReadingNotificationMutation(()=>{ran=true;return true;}),true);assert.equal(ran,true);assert.equal(h.calls.requests.length,0);assert.equal(h.calls.prompts,0);}
+  const missing=appHarness({failRpc:'storage'});let ran=false;assert.equal(await missing.c.withReadingNotificationMutation(()=>{ran=true;return true;}),true);assert.equal(ran,true);
+  const known=appHarness();await known.arm();known.options.failRpc='storage';let mutated=false;assert.equal(await known.c.withReadingNotificationMutation(()=>{mutated=true;}),false);assert.equal(mutated,false);
+});
+
+test('locked or unopened books never request notification permission, and a real start gesture requests it before async work',async()=>{
+  const locked=appHarness({permission:'default',locked:true});await locked.c.startReading('thought');assert.equal(locked.calls.prompts,0);
+  const denied=appHarness({permission:'denied'});await denied.c.startReading('thought');assert.equal(denied.calls.prompts,0);
+  const start=appHarness({permission:'default'});const pending=start.c.startReading('thought');assert.equal(start.calls.prompts,1);await pending;
+  const view=start.c.readingTimer.id;await start.c.startReading('thought');assert.equal(start.calls.prompts,1);assert.equal(start.c.readingTimer.id,view);
+});
+
+
+test('explicit notification save intent opens the actual save popup over the current route and acknowledges only that intent',async()=>{
+  const h=appHarness();await h.arm();h.action('finish',10000);const old=h.record();const opened=State.transition(old,{type:'open-intent',identity:State.head(old),action:'save'},10001);assert.equal(opened.result.ok,true);h.records.set(old.ownerKey+':'+old.timerId,opened.record);h.setNow(10002);
+  assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.phase,'save');assert.equal(h.c.readingHomeDialogFor,h.c.readingTimer.id);assert.equal(h.c.readingNotificationDialogRoute,'#/book/emotion/share');assert.equal(h.c.location.hash,'#/book/emotion/share');assert.equal(h.record().openIntent,undefined);assert.equal(h.calls.saves,0);
+});
+
+test('notification note intent pauses at the click, preserves original running state and excludes choice and writing time',async()=>{
+  for(const wasRunning of [true,false]){const h=appHarness();await h.arm();if(!wasRunning){h.action('pause',6000);await h.arm();}const originalDraft=clone(h.draft);h.action('note',10000);h.setNow(100000);
+    assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.running,false);assert.equal(h.c.readingNotificationNoteChoice.wasRunning,wasRunning);assert.equal(h.c.readingTimer.elapsedMs,wasRunning?10000:6000);
+    h.c.memberLoadState={privateEntries:'ready'};h.c.openComposerWithDraft=(type,book,id,opened)=>{opened(null);return Promise.resolve();};
+    vm.runInContext(section('function readingNoteDialogHtml(){','function tickReadingTimer(){'),h.c);
+    await h.c.openReadingNote('mine');assert.equal(h.c.readingNoteReturn.wasRunning,wasRunning);assert.equal(h.c.readingNotificationNoteChoice,null);assert.equal(h.c.readingTimer.running,false);
+    h.setNow(300000);assert.equal(h.c.completeReadingNote('mine','emotion'),true);assert.equal(h.c.readingTimer.running,wasRunning);assert.equal(Domain.elapsed(h.c.readingTimer,300000),wasRunning?10000:6000);assert.deepEqual(h.draft,originalDraft);
   }
 });
-test('an account or Auth epoch replaced during command claim prevents applying a former member action',async()=>{
-  for(const change of ['account','epoch']){let finish;const pending=new Promise(resolve=>{finish=resolve;}),h=appHarness({claim:pending}),command=h.command('finish');const operation=h.c.consumeReadingSessionNotificationAction();
-    if(change==='account')h.c.SESSION={userId:'OTHER_MEMBER'};else h.c.saveSessionEpoch++;
-    finish(command);assert.equal(await operation,false);assert.equal(h.calls.commits,0);assert.equal(h.c.readingTimer.phase,'timer');
-  }
-  const unverified=appHarness({unverified:true});assert.equal(await unverified.c.consumeReadingSessionNotificationAction(),false);assert.equal(unverified.calls.commits,0);
-});
-test('notification messages coalesce with a pending restore claim and the same command never toggles twice',async()=>{
-  let finish;const waiting=new Promise(resolve=>{finish=resolve;}),h=appHarness({claim:waiting}),command=h.command('pause');
-  const first=h.c.consumeReadingSessionNotificationAction(),second=h.c.consumeReadingSessionNotificationAction();assert.equal(first,second);finish(command);assert.equal(await first,true);assert.equal(await second,true);assert.equal(h.calls.commits,1);
-  assert.equal(h.c.applyReadingNotificationCommand(command,command),false);assert.equal(h.calls.commits,1);
-});
-test('a sleeping tab refreshes shared storage before claiming so its old revision cannot drain the current command',async()=>{
-  const current=appHarness(),sleeping=appHarness();current.c.readingTimer=Domain.pause(current.c.readingTimer,5000);const latest=clone(current.c.readingTimer),command=current.command('resume');
-  let claimed=null,refreshes=0;sleeping.c.refreshReadingTimerFromStorage=()=>{refreshes++;sleeping.c.readingTimer=clone(latest);return true;};
-  sleeping.c.GrowellTimerAlerts.claimSessionAction=async view=>{claimed=clone(view.data);return command;};
-  assert.equal(await sleeping.c.consumeReadingSessionNotificationAction(),true);assert.ok(refreshes>=1);assert.equal(claimed.revision,command.revision);assert.equal(sleeping.c.readingTimer.running,true);assert.equal(sleeping.calls.commits,1);
-  assert.equal(Domain.elapsed(sleeping.c.readingTimer,5000),5000);
+
+test('closing notification note-choice resumes only a previously running timer without counting the selection interval',async()=>{
+  const h=appHarness();await h.arm();h.action('note',10000);h.setNow(100000);await h.arm();
+  vm.runInContext(section('function closeReadingNoteDialog(','function openReadingNote('),h.c);
+  await h.c.closeReadingNoteDialog();assert.equal(h.c.readingNotificationNoteChoice,null);assert.equal(h.c.readingTimer.running,true);assert.equal(Domain.elapsed(h.c.readingTimer,100000),10000);assert.equal(h.record().blocked,'');
 });

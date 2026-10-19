@@ -145,15 +145,36 @@
     var seconds=Math.floor((timer.elapsedMs+(timer.running?Math.max(0,Date.now()-timer.startedAt):0))/1000),h=Math.floor(seconds/3600),m=Math.floor(seconds/60)%60,s=seconds%60;
     var elapsed=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
     return {data:{kind:'growell-reading-session',version:1,ownerKey:ownerKey,timerId:timer.id,bookId:timer.bookId,revision:revision,running:timer.running,note:!!options.note,phase:timer.phase},
-      title:'GROWELL 독서 타이머',body:(options.note?'노트 작성 중 · 잠시 멈춤':timer.running?'읽는 중':'잠시 멈춤')+' · 누적 '+elapsed+'\n시간은 상태가 바뀔 때 갱신돼요.',timestamp:timer.running?timer.startedAt:timer.createdAt};
+      title:'독서 타이머',body:({'emotion':'감정을 마주하면 길이 보인다','thought':'생각이 너무 많은 어른들을 위한 심리학','body':'몸이 나를 위로한다','action':'습관이 영성이다'}[timer.bookId])+'\n'+(options.note?'노트 작성 중 · 잠시 멈춤':timer.running?'읽는 중':'잠시 멈춤')+' · 누적 '+elapsed,timestamp:timer.running?timer.startedAt:timer.createdAt};
   }
-  function closeSession(view){
+  function randomIdentity(prefix){
+    try{var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);return prefix+Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join('');}catch(error){return null;}
+  }
+  function sessionSnapshot(options){
+    var view=sessionView(options),generation=options&&options.generation;if(!view||!/^rn-[a-f0-9]{32}$/.test(generation||''))return null;
+    var timer=options.timer;return {ownerKey:view.data.ownerKey,timerId:timer.id,bookId:timer.bookId,generation:generation,
+      baseRevision:opaqueId(JSON.stringify([timer.id,timer.userId,timer.bookId,timer.elapsedMs,timer.startedAt,timer.running,timer.phase,!!options.note,options.blocked||''])),
+      clock:{elapsedMs:timer.elapsedMs,startedAt:timer.running?timer.startedAt:null,running:timer.running,phase:timer.phase},blocked:options.note?'note':timer.phase==='save'?'save':options.blocked||''};
+  }
+  function sessionState(request){
+    if(request&&request.type==='arm')++sessionSerial;
+    if(typeof root.MessageChannel!=='function'||!notificationStatus().supported)return Promise.resolve({ok:false,code:'unavailable'});
+    return ensureRegistration().then(function(reg){
+      if(!reg||!reg.active||typeof reg.active.postMessage!=='function')return {ok:false,code:'unavailable'};sessionRegistration=reg;
+      return new Promise(function(resolve){var channel=new root.MessageChannel(),done=false,timer=root.setTimeout(function(){finish({ok:false,code:'timeout'});},5000);
+        function finish(value){if(done)return;done=true;root.clearTimeout(timer);channel.port1.close();channel.port2.close();resolve(value);}
+        channel.port1.onmessage=function(event){var data=event.data;finish(data&&data.type==='growell-reading-state-result'&&data.result||{ok:false,code:'invalid'});};
+        try{reg.active.postMessage({type:'growell-reading-state',request:request},[channel.port2]);}catch(error){finish({ok:false,code:'unavailable'});}
+      });
+    }).catch(function(){return {ok:false,code:'unavailable'};});
+  }
+  function closeSession(view,skipRevoke){
     var serial=++sessionSerial;sessionSignature='';sessionPending=null;
     var identity=view&&view.data||sessionIdentity,registration=sessionRegistration;sessionRegistration=null;sessionIdentity=null;
     var lookup;try{lookup=registration?Promise.resolve(registration):root.navigator&&root.navigator.serviceWorker&&typeof root.navigator.serviceWorker.getRegistration==='function'?root.navigator.serviceWorker.getRegistration('/'):Promise.resolve(null);}catch(error){lookup=Promise.resolve(null);}
     return bounded(Promise.resolve(lookup).then(function(reg){
       if(serial!==sessionSerial)return false;
-      if(reg&&reg.active&&typeof reg.active.postMessage==='function'&&identity&&/^t1-[a-f0-9]+-[a-f0-9]+$/.test(identity.ownerKey||''))reg.active.postMessage({type:'growell-reading-clear',ownerKey:identity.ownerKey});
+      if(!skipRevoke&&identity&&/^rn-[a-f0-9]{32}$/.test(identity.generation||''))sessionState({type:'revoke',identity:identity});
       if(!reg||typeof reg.getNotifications!=='function')return false;return reg.getNotifications({tag:SESSION_TAG}).then(function(list){if(serial!==sessionSerial)return false;list.forEach(function(item){item.close();});return true;});
     }).catch(function(){return false;}),3000,false);
   }
@@ -165,9 +186,9 @@
     function current(){return serial===sessionSerial&&isCurrent();}
     sessionPending=ensureRegistration().then(function(reg){
       if(!reg||!current())return false;sessionRegistration=reg;
-      var actions=view.data.note?[{action:'open',title:'타이머 보기'}]:[{action:view.data.running?'pause':'resume',title:view.data.running?'멈춤':'시작'},{action:'finish',title:'끝내기'}];
+      var actions=view.data.note?[{action:'open',title:'타이머 보기'}]:[{action:view.data.running?'pause':'resume',title:view.data.running?'일시정지':'시작'},{action:'finish',title:'끝내기'}];
       var maximum=root.Notification&&root.Notification.maxActions;if(typeof maximum==='number'&&Number.isFinite(maximum))actions=actions.slice(0,Math.max(0,maximum));
-      return reg.showNotification(view.title,{body:view.body,tag:SESSION_TAG,icon:'/covers/growell-icon-192.png',badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:Number.isSafeInteger(view.timestamp)?view.timestamp:Date.now(),actions:actions,data:view.data}).then(function(){
+      return reg.showNotification(view.title,{body:view.body,tag:SESSION_TAG,icon:'/covers/'+view.data.bookId+'.jpg',badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:Number.isSafeInteger(view.timestamp)?view.timestamp:Date.now(),actions:actions,data:view.data}).then(function(){
         if(current())return true;
         if(typeof reg.getNotifications==='function')return reg.getNotifications({tag:SESSION_TAG}).then(function(list){list.forEach(function(item){if(item.data&&item.data.ownerKey===view.data.ownerKey&&item.data.revision===view.data.revision)item.close();});return false;});
         return false;
@@ -188,5 +209,6 @@
     }).catch(function(){return null;});
   }
   return {prepare:prepare,notify:notify,enableNotifications:enableNotifications,notificationStatus:notificationStatus,
-    sessionView:sessionView,showSession:showSession,closeSession:closeSession,claimSessionAction:claimSessionAction};
+    sessionView:sessionView,sessionSnapshot:sessionSnapshot,sessionState:sessionState,newGeneration:function(){return randomIdentity('rn-');},newLease:function(){return randomIdentity('rh-');},
+    showSession:showSession,closeSession:closeSession,claimSessionAction:claimSessionAction};
 });
