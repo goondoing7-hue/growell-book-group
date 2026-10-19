@@ -104,6 +104,105 @@ test('a failed local discard keeps the existing elapsed timer available',()=>{
   assert.equal(timer.discard(),false);assert.ok(timer.state().timer);assert.equal(timer.elapsed(),4000);
 });
 
+test('cancel before any save backs up the complete frozen session and clears only that active timer',async()=>{
+  const f=fixture(),timer=f.create();f.clock(5000);timer.done();timer.setPage(31);timer.setComplete(false);
+  const current=ArchiveTimer.storageKey('member','arc_book'),original=f.storage.getItem(current),before=timer.state();
+  const unrelated={otherTimer:'growell_archive_timer_v1:member:arc_other',otherOwner:'growell_archive_timer_v1:other:arc_book',privateRecord:'private-original',savedProgress:'progress-original'};
+  for(const [name,key] of Object.entries(unrelated))f.storage.setItem(key,'ORIGINAL '+name);
+  const values=new Map(f.values);assert.equal(timer.discard(),true);assert.equal(timer.state().timer,null);assert.equal(await timer.save(),false);assert.equal(f.saves.length,0);
+  const backupKey=ArchiveTimer.cancelledStorageKey('member','arc_book',before.timer.id,5000),backup=JSON.parse(f.storage.getItem(backupKey));
+  assert.equal(backup.sourceKey,current);assert.equal(backup.sourceRaw,original);assert.equal(backup.ownerId,'member');assert.equal(backup.bookId,'arc_book');assert.equal(backup.timerId,before.timer.id);assert.equal(backup.cancelledAt,5000);
+  const recovery=JSON.parse(backup.recoveryRaw);assert.deepEqual(recovery.timer,before.timer);assert.equal(recovery.attempt,null);assert.equal(recovery.endPage,31);assert.equal(recovery.complete,false);
+  assert.equal(JSON.parse(f.storage.getItem(current)).timer,null);for(const key of Object.values(unrelated))assert.equal(f.storage.getItem(key),values.get(key),key);
+  assert.equal(timer.discard(),false,'stale repeated clicks cannot recreate or erase a session');
+});
+
+test('cancelling a running timer freezes its recovery time at the click and retains the exact pre-cancel bytes',()=>{
+  const f=fixture(),timer=f.create(),current=ArchiveTimer.storageKey('member','arc_book'),source=f.storage.getItem(current);f.clock(11000);const id=timer.state().timer.id;
+  assert.equal(timer.discard(),true);const backup=JSON.parse(f.storage.getItem(ArchiveTimer.cancelledStorageKey('member','arc_book',id,11000)));assert.equal(backup.sourceRaw,source);
+  const recovery=JSON.parse(backup.recoveryRaw);assert.equal(recovery.timer.running,false);assert.equal(recovery.timer.startedAt,null);assert.equal(recovery.timer.elapsedMs,10000);
+  // Explicit restoration of the preserved envelope never counts cancelled idle time.
+  f.storage.setItem(current,backup.recoveryRaw);f.clock(1000000);const restored=f.create();assert.equal(restored.state().timer.id,id);assert.equal(restored.elapsed(),10000);assert.equal(restored.state().timer.running,false);
+});
+
+test('backup write or readback failures leave the active draft unchanged and never call the save adapter',()=>{
+  for(const failure of ['quota','readback','conflicting-backup']){
+    const f=fixture(),timer=f.create();f.clock(5000);timer.done();timer.setPage(44);const current=ArchiveTimer.storageKey('member','arc_book'),original=f.storage.getItem(current),before=timer.state();
+    const backupKey=ArchiveTimer.cancelledStorageKey('member','arc_book',before.timer.id,5000),set=f.storage.setItem;
+    if(failure==='conflicting-backup')f.storage.setItem(backupKey,'SOME OTHER RECOVERY COPY');
+    else f.storage.setItem=(key,value)=>{if(key===backupKey){if(failure==='quota')throw Error('quota');return;}return set(key,value);};
+    assert.equal(timer.discard(),false,failure);assert.equal(f.storage.getItem(current),original);assert.deepEqual(timer.state().timer,before.timer);assert.equal(timer.state().endPage,44);assert.equal(f.saves.length,0);assert.match(timer.state().error,/복구본/);
+    if(failure==='conflicting-backup')assert.equal(f.storage.getItem(backupKey),'SOME OTHER RECOVERY COPY');
+  }
+});
+
+test('an active-clear failure or a newer cross-tab clock keeps a recoverable original without replacing that newer timer',()=>{
+  for(const failure of ['clear','silent-clear','cross-tab']){
+    const f=fixture(),timer=f.create();f.clock(5000);timer.done();timer.setPage(28);const current=ArchiveTimer.storageKey('member','arc_book'),original=f.storage.getItem(current),before=timer.state(),set=f.storage.setItem;let newer;
+    f.storage.setItem=(key,value)=>{if(key===current){if(failure==='clear')throw Error('quota');if(failure==='silent-clear')return;}set(key,value);if(key.startsWith('growell_archive_timer_cancelled_v1:')&&failure==='cross-tab'){newer=JSON.stringify({...JSON.parse(original),endPage:33,timer:{...before.timer,id:'new-tab-timer'}});set(current,newer);}};
+    assert.equal(timer.discard(),false);assert.equal(f.storage.getItem(current),failure==='cross-tab'?newer:original);assert.deepEqual(timer.state().timer,before.timer);
+    const backup=JSON.parse(f.storage.getItem(ArchiveTimer.cancelledStorageKey('member','arc_book',before.timer.id,5000)));assert.equal(backup.sourceRaw,original);assert.equal(JSON.parse(backup.recoveryRaw).endPage,28);assert.equal(f.saves.length,0);
+  }
+});
+
+test('busy and uncertain saves refuse cancellation and preserve the exact retry ID, clock, pages and server result',async()=>{
+  let reject;const f=fixture(),timer=f.create();f.options.adapter.saveSession=(_book,session)=>{f.saves.push(session);return new Promise((resolve,no)=>{reject=no;});};
+  f.clock(5000);timer.done();timer.setPage(44);const pending=timer.save(),current=ArchiveTimer.storageKey('member','arc_book'),original=f.storage.getItem(current),attempt=timer.state().attempt;
+  assert.equal(timer.discard(),false);assert.equal(f.storage.getItem(current),original);assert.match(timer.state().error,/저장 중/);reject(Error('response lost'));assert.equal(await pending,false);
+  assert.equal(timer.discard(),false);assert.match(timer.state().error,/저장 결과/);assert.equal(f.storage.getItem(current),original);assert.deepEqual(timer.state().attempt,attempt);assert.equal([...f.values.keys()].some(key=>key.startsWith('growell_archive_timer_cancelled_v1:')),false);
+  f.options.adapter.saveSession=async(_book,session)=>{f.saves.push(session);};f.clock(1000000);assert.ok(await timer.save());assert.deepEqual(f.saves[0],f.saves[1]);
+});
+
+test('a cancelled draft does not reopen on the next timer entry, which starts a new ID from saved progress',()=>{
+  const f=fixture(),timer=f.create();f.clock(5000);timer.done();timer.setPage(88);const oldId=timer.state().timer.id;assert.equal(timer.discard(),true);
+  f.clock(1000000);const next=f.create();assert.notEqual(next.state().timer.id,oldId);assert.equal(next.state().timer.startPage,15);assert.equal(next.state().endPage,15);assert.equal(next.elapsed(),0);assert.equal(next.state().timer.phase,'timer');
+});
+
+test('guarded recovery requires current-account readiness and saved-session verification before restoring the paused exact ID',async()=>{
+  const f=fixture(),timer=f.create();f.clock(11000);timer.done();timer.setPage(39);const state=timer.state();assert.equal(timer.discard(),true);const backupKey=ArchiveTimer.cancelledStorageKey('member','arc_book',state.timer.id,11000),backup=f.storage.getItem(backupKey);
+  assert.deepEqual(await ArchiveTimer.restoreCancelled(f.options,backupKey),{ok:false,code:'validation-required'});
+  const checked=[],options={...f.options,isCurrent:()=>true,adapter:{...f.options.adapter,canRestoreSession:async(book,id)=>{checked.push([book,id]);return true;}}};f.clock(1000000);
+  const restored=await ArchiveTimer.restoreCancelled(options,backupKey);assert.equal(restored.ok,true);assert.equal(restored.timerId,state.timer.id);assert.deepEqual(checked,[['arc_book',state.timer.id]]);assert.equal(f.storage.getItem(backupKey),backup,'recovery never consumes its preserved backup');
+  const recovered=f.create();assert.equal(recovered.elapsed(),10000);assert.equal(recovered.state().timer.running,false);assert.equal(recovered.state().endPage,39);assert.equal(f.saves.length,0);
+  assert.deepEqual(await ArchiveTimer.restoreCancelled(options,backupKey),{ok:false,code:'active-session'});
+});
+
+test('recovery refuses saved IDs, other live timers, wrong owners, invalid backup bytes and failed readiness without writes',async()=>{
+  for(const reason of ['already-saved','not-ready','other-timer','foreign-backup','corrupt']){
+    const f=fixture(),timer=f.create();f.clock(5000);timer.done();const id=timer.state().timer.id;assert.equal(timer.discard(),true);const backupKey=ArchiveTimer.cancelledStorageKey('member','arc_book',id,5000);
+    if(reason==='other-timer')f.storage.setItem(ArchiveTimer.storageKey('member','arc_second'),JSON.stringify({v:1,timer:Domain.create({id:'other-session',userId:'member',bookId:'arc_second'},1000),attempt:null,endPage:0}));
+    if(reason==='foreign-backup'){const value=JSON.parse(f.storage.getItem(backupKey));value.ownerId='other';f.storage.setItem(backupKey,JSON.stringify(value));}
+    if(reason==='corrupt')f.storage.setItem(backupKey,'{invalid');const before=new Map(f.values);
+    const result=await ArchiveTimer.restoreCancelled({...f.options,isCurrent:()=>reason!=='not-ready',adapter:{...f.options.adapter,canRestoreSession:async()=>reason!=='already-saved'}},backupKey);assert.equal(result.ok,false,reason);assert.deepEqual(f.values,before,reason);assert.equal(f.saves.length,0);
+  }
+});
+
+test('recovery rechecks exact local and account state after the async saved-ID check and retains newer clocks or backup bytes',async()=>{
+  for(const change of ['account','current','backup']){
+    const f=fixture(),timer=f.create();f.clock(5000);timer.done();const id=timer.state().timer.id;assert.equal(timer.discard(),true);const backupKey=ArchiveTimer.cancelledStorageKey('member','arc_book',id,5000),current=ArchiveTimer.storageKey('member','arc_book');let finish;
+    const pending=ArchiveTimer.restoreCancelled({...f.options,isCurrent:()=>true,adapter:{...f.options.adapter,canRestoreSession:()=>new Promise(resolve=>{finish=resolve;})}},backupKey);
+    if(change==='account')f.owner('different');if(change==='current')f.storage.setItem(current,'NEWER ACTIVE CLOCK MUST REMAIN');if(change==='backup')f.storage.setItem(backupKey,'NEWER BACKUP MUST REMAIN');const before=new Map(f.values);finish(true);assert.equal((await pending).ok,false,change);assert.deepEqual(f.values,before,change);
+  }
+});
+
+function cancelView(options={}){
+  const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),f=fixture();
+  const fixtureSource=fs.readFileSync(path.join(__dirname,'book-photo-ocr.test.cjs'),'utf8'),scope={};vm.runInNewContext(fixtureSource.slice(fixtureSource.indexOf('class Node{'),fixtureSource.indexOf('\nfunction harness('))+'\nthis.NodeFixture=Node;',scope);const Node=scope.NodeFixture;
+  const body=new Node('body'),history=[];class Clock extends Date{static now(){return f.options.now();}}
+  const browser={URL,GrowellReadingTimer:Domain,GrowellArchiveDomain:ArchiveDomain,localStorage:f.storage,Date:Clock,document:{createElement:tag=>new Node(tag),body},setInterval:()=>1,clearInterval(){},GrowellPopupHistory:{open:(key,settings)=>history.push({key,settings}),closed:key=>history.push({closed:key})}};
+  Object.assign(f.options.adapter,options.adapter||{});vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../archiveTimer.js'),'utf8'),browser);const api=browser.GrowellArchiveTimer;assert.equal(api.open(f.options),true);return {f,api,body,history,q:selector=>body.querySelector(selector)};
+}
+test('the actual save-dialog Cancel button discards the unsaved session while the close icon keeps it for later',()=>{
+  for(const discard of [false,true]){let closed=0;const h=cancelView({adapter:{onClose:()=>{closed++;}}});h.f.clock(5000);h.q('[data-at-done]').click();const current=ArchiveTimer.storageKey('member','arc_book'),original=h.f.storage.getItem(current);
+    assert.ok(h.q('[data-at-save-cancel]'));h.q(discard?'[data-at-save-cancel]':'[data-at-close]').click();assert.equal(h.body.querySelector('dialog'),null);assert.equal(closed,1);
+    const saved=JSON.parse(h.f.storage.getItem(current));assert.equal(saved.timer===null,discard);if(!discard)assert.equal(h.f.storage.getItem(current),original);assert.equal(h.f.saves.length,0);h.api.reset();
+  }
+});
+test('the actual uncertain-save Cancel click stays open with its frozen retry and cannot issue a delete or another save',async()=>{
+  const h=cancelView({adapter:{saveSession:async()=>{throw Error('unconfirmed');}}});h.f.clock(5000);h.q('[data-at-done]').click();h.q('#archive-reading-page').value='31';h.q('[data-at-save]').click();for(let n=0;n<4;n++)await new Promise(resolve=>setImmediate(resolve));
+  const current=ArchiveTimer.storageKey('member','arc_book'),before=h.f.storage.getItem(current);assert.ok(JSON.parse(before).attempt);h.q('[data-at-save-cancel]').click();assert.ok(h.body.querySelector('dialog').open);assert.equal(h.f.storage.getItem(current),before);assert.match(h.q('[data-at-error]').textContent,/같은 기록으로 다시 저장/);h.api.reset();
+});
+
 test('archive-domain retry after committed but lost response does not double elapsed totals',async()=>{
   const f=fixture();let book=ArchiveDomain.prepare({title:'나의 책',status:'reading',totalPages:300,currentPage:15}),dropResponse=true;
   f.options.adapter.saveSession=async function(_bookId,session,options){book=ArchiveDomain.addReadingSession(book,session,options);if(dropResponse)throw Error('response lost');};

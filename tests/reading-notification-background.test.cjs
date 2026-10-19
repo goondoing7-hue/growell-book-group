@@ -181,6 +181,7 @@ test('a crashed page lease can be recovered after fifteen seconds without revivi
 test('note, archive and save states expose safe app actions and cannot independently restart or finish',async()=>{
   for(const blocked of ['note','archive','save']){
     const h=workerHarness(),value=snapshot({blocked,clock:{elapsedMs:5000,startedAt:null,running:false,phase:blocked==='save'?'save':'timer'}}),armed=await arm(h,value),data=notification(h);
+    assert.equal(Object.hasOwn(h.shown.at(-1).settings,'image'),false,'app note, archive and save phases also keep only the small cover');
     assert.deepEqual(h.shown.at(-1).settings.actions.map(action=>action.action),[blocked==='save'?'save':'open']);
     await h.click(data,'resume');await h.click(data,'finish');const after=await read(h,armed.head);
     assert.equal(after.state.seq,0);assert.equal(after.state.journal.length,0);assert.equal(after.state.clock.running,false);assert.equal(h.opened.length,0);
@@ -255,22 +256,21 @@ test('every timer notification uses the fixed public book title and cover withou
   for(const [bookId,title] of Object.entries(books)){
     const h=workerHarness();await arm(h,snapshot({bookId,title:'PRIVATE_DRAFT_TITLE',icon:'https://untrusted.example/private-photo',image:'https://untrusted.example/private-expanded-photo'}));
     const item=h.shown.at(-1);assert.equal(item.title,'독서 타이머');assert.equal(item.settings.body.split('\n')[0],title);assert.equal(item.settings.icon,'/covers/notification-'+bookId+'.png');
-    assert.equal(State.book(bookId).cover,'/covers/'+bookId+'.jpg','the original full-size book cover remains available to the app');assert.equal(item.settings.image,'/covers/notification-expanded-'+bookId+'.png','expanded notifications use only the fixed public book image');
+    assert.equal(State.book(bookId).cover,'/covers/'+bookId+'.jpg','the original full-size book cover remains available to the app');assert.equal(Object.hasOwn(item.settings,'image'),false,'pulling down the ongoing notification does not request a large image');assert.equal(Object.hasOwn(State.book(bookId),'notificationImage'),false);
     const asset=fs.readFileSync(path.join(__dirname,'..',item.settings.icon.slice(1)));
     assert.equal(asset.subarray(0,8).toString('hex'),'89504e470d0a1a0a');assert.equal(asset.readUInt32BE(16),512);assert.equal(asset.readUInt32BE(20),512);assert.equal(asset[24],8);assert.equal(asset[25],6,'notification padding uses an alpha channel');
     const chunks=[];for(let offset=8;offset+12<=asset.length;){const length=asset.readUInt32BE(offset);assert.ok(offset+length+12<=asset.length);if(asset.toString('ascii',offset+4,offset+8)==='IDAT')chunks.push(asset.subarray(offset+8,offset+8+length));offset+=length+12;}
     const firstRow=require('node:zlib').inflateSync(Buffer.concat(chunks));assert.equal(firstRow[4],0,'the outer corner stays transparent instead of enlarging or cropping the book');
-    const expanded=fs.readFileSync(path.join(__dirname,'..',item.settings.image.slice(1)));assert.equal(expanded.subarray(0,8).toString('hex'),'89504e470d0a1a0a');assert.equal(expanded.readUInt32BE(16),1350);assert.equal(expanded.readUInt32BE(20),675);assert.equal(expanded[25],6,'the expanded landscape canvas preserves transparent padding');
     assert.equal(item.settings.actions[0].title,'일시정지');assert.equal(item.settings.requireInteraction,true);assert.equal(item.settings.silent,true);
     assert.doesNotMatch(JSON.stringify(item),/PRIVATE_DRAFT_TITLE|untrusted|PRIVATE_MEMBER|페이지|access_token/);
     assert.doesNotMatch(item.settings.body,/갱신|업데이트|시간.*다시/);
   }
 });
 
-test('expanded book images remain presentation-only while pause, resume and finish keep the same original timer journal',async()=>{
+test('running, paused, resumed and finished notifications retain only the small cover and the original timer journal',async()=>{
   const h=workerHarness(),armed=await arm(h);await h.click(notification(h),'pause');h.setNow(20000);await h.click(notification(h),'resume');h.setNow(23000);await h.click(notification(h),'finish');
   const current=await read(h,armed.head);assert.deepEqual(current.state.clock,{elapsedMs:12000,startedAt:null,running:false,phase:'save'});assert.deepEqual(current.state.journal.map(event=>event.action),['pause','resume','finish']);
-  for(const item of h.shown){assert.equal(item.settings.image,'/covers/notification-expanded-emotion.png');assert.equal(item.settings.icon,'/covers/notification-emotion.png');assert.equal(item.settings.tag,'growell-reading-session');assert.equal(item.settings.silent,true);assert.equal(item.settings.renotify,false);}
+  for(const item of h.shown){assert.equal(Object.hasOwn(item.settings,'image'),false);assert.equal(item.settings.icon,'/covers/notification-emotion.png');assert.equal(item.settings.tag,'growell-reading-session');assert.equal(item.settings.silent,true);assert.equal(item.settings.renotify,false);}
   assert.equal(h.closed,0);assert.equal(h.opened.length,0);assert.doesNotMatch(JSON.stringify(h.database.dump()),/notification-expanded|private-expanded-photo/);
 });
 

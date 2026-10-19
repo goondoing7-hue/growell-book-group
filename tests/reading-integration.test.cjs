@@ -1092,10 +1092,89 @@ test('leaving and returning before an earlier reading save finishes keeps the ne
 });
 
 
-test('save cancellation closes only its popup and preserves paused time, edited page and immutable retry state',()=>{
-  for(const attempted of [false,true]){const h=harness({now:10000}),{c}=h;h.prepared();c.readingEndPage=17;c.readingHomeDialogFor=c.readingTimer.id;if(attempted)c.readingSaveAttempt={id:c.readingTimer.id,userId:'reader',bookId:'emotion',startPage:10,page:17,seconds:10,createdAt:10000};
-    c.persistReadingTimer();const before=clone(c.readingTimer),attempt=clone(c.readingSaveAttempt);const events=timerBrowserEvents(h);events.buttons.get('btn-reading-save-cancel').click();
-    assert.equal(c.readingHomeDialogFor,null);assert.deepEqual(clone(c.readingTimer),before);assert.equal(c.readingEndPage,17);assert.deepEqual(clone(c.readingSaveAttempt),attempt);assert.equal(c.readingTimer.phase,'save');assert.equal(h.requests.length,0);
-    if(attempted){events.buttons.get('btn-reading-save-back').click();assert.deepEqual(clone(c.readingTimer),before);assert.deepEqual(clone(c.readingSaveAttempt),attempt);}
+test('save cancellation archives only the unsaved session and leaves saved records, notes, progress and parked books untouched',()=>{
+  const h=harness({now:10000}),{c}=h;h.prepared();c.readingEndPage=17;c.readingHomeDialogFor=c.readingTimer.id;
+  c.STATE.readingLogs.previous={id:'previous',userId:'reader',bookId:'emotion',seconds:200,page:10};c.STATE.readingMeta.emotion_reader={bookId:'emotion',userId:'reader',currentPage:10};c.STATE.privateEntries.note={data:'PRESERVED ENCRYPTED NOTE'};
+  c.readingParkedSessions.thought={timer:domain.pause(domain.create({id:'other-book',userId:'reader',bookId:'thought',startPage:3},0),3000),attempt:null,finishKind:'finish',endPage:4,noteReturn:null,returnView:'mine'};
+  c.persistReadingTimer();const saved=clone(c.STATE),parked=clone(c.readingParkedSessions),timer=clone(c.readingTimer),events=timerBrowserEvents(h);events.buttons.get('btn-reading-save-cancel').click();
+  assert.equal(c.readingTimer,null);assert.equal(c.readingHomeDialogFor,null);assert.equal(c.readingSaveAttempt,null);assert.equal(c.readingSavePanelOpen,false);assert.deepEqual(clone(c.STATE),saved);assert.deepEqual(clone(c.readingParkedSessions),parked);assert.equal(h.requests.length,0);
+  const backups=[...h.memory.keys()].filter(key=>key.startsWith('growell_reading_timer_cancelled_v1:reader:'));assert.equal(backups.length,1);const backup=JSON.parse(h.memory.get(backups[0]));
+  assert.deepEqual(JSON.parse(backup.sourceRaw).timer,timer);assert.equal(JSON.parse(backup.sourceRaw).parked,undefined,'only the cancelled session enters its recovery copy');assert.equal(JSON.parse(backup.recoveryRaw).endPage,17);
+  const reopened=harness({memory:h.memory,now:900000});reopened.c.syncReadingTimer();assert.equal(reopened.c.readingTimer,null,'ordinary reload cannot revive a cancelled session');assert.deepEqual(clone(reopened.c.readingParkedSessions),parked);
+  assert.equal(c.restoreCancelledReadingTimer(backups[0]),true);assert.equal(c.readingTimer.id,timer.id);assert.equal(c.readingTimer.running,false);h.setNow(900000);assert.equal(c.readingTimerElapsedMs(),10000);assert.equal(c.readingEndPage,17);assert.deepEqual(clone(c.readingParkedSessions),parked);assert.equal(c.readingNotificationArchiveBlocked,true);assert.equal(h.memory.has(backups[0]),true);
+});
+
+test('running timer cancellation uses the same recovery path and never counts the interval after cancellation',()=>{
+  const h=harness({now:0}),{c}=h;c.startReading('emotion');const originalId=c.readingTimer.id,events=timerBrowserEvents(h);h.setNow(12345);events.buttons.get('btn-reading-cancel').click();assert.equal(c.readingTimer,null);
+  const backupKey=[...h.memory.keys()].find(key=>key.startsWith('growell_reading_timer_cancelled_v1:reader:'));const backup=JSON.parse(h.memory.get(backupKey));assert.equal(JSON.parse(backup.sourceRaw).timer.running,true);assert.equal(JSON.parse(backup.recoveryRaw).timer.elapsedMs,12345);
+  h.setNow(900000);assert.equal(c.restoreCancelledReadingTimer(backupKey),true);assert.equal(c.readingTimer.id,originalId);assert.equal(c.readingTimerElapsedMs(),12345);assert.equal(c.readingTimer.running,false);assert.equal(h.requests.length,0);
+});
+
+test('busy and uncertain save attempts cannot be discarded or replaced by either cancel button',()=>{
+  for(const busy of [false,true])for(const button of ['btn-reading-cancel','btn-reading-save-cancel']){const h=harness({now:10000}),{c}=h;h.prepared();c.readingEndPage=17;c.readingHomeDialogFor=c.readingTimer.id;
+    if(busy)c.readingSaveBusy=true;else c.readingSaveAttempt={id:c.readingTimer.id,userId:'reader',bookId:'emotion',startPage:10,page:17,seconds:10,createdAt:10000};
+    c.persistReadingTimer();const before=clone(c.captureReadingTimerState()),raw=h.memory.get(c.readingTimerStorageKey('reader')),events=timerBrowserEvents(h);let confirmations=0;c.confirm=()=>{confirmations++;return true;};events.buttons.get(button).click();
+    assert.deepEqual(clone(c.captureReadingTimerState()),before);assert.equal(h.memory.get(c.readingTimerStorageKey('reader')),raw);assert.equal(c.readingHomeDialogFor,c.readingTimer.id);assert.equal(confirmations,0);assert.equal(h.requests.length,0);assert.match(h.toasts.at(-1)[0],/저장 결과 확인/);assert.equal([...h.memory.keys()].some(key=>key.startsWith('growell_reading_timer_cancelled_v1:')),false);
   }
+});
+
+test('cancel after a remotely committed log and failed progress update preserves the exact retry until reconciliation succeeds',async()=>{
+  const h=harness({failMeta:1}),{c}=h;h.prepared();assert.equal(await c.submitReadingLog('emotion',0,17,{}),false);const attempt=clone(c.readingSaveAttempt),before=clone(c.captureReadingTimerState()),remote=clone(h.server),events=timerBrowserEvents(h);events.buttons.get('btn-reading-save-cancel').click();
+  assert.deepEqual(clone(c.captureReadingTimerState()),before);assert.deepEqual(h.server,remote);assert.equal(h.requests.some(request=>request.operation==='delete'),false);
+  assert.equal(await c.submitReadingLog('emotion',0,99,{}),true);assert.equal(Object.keys(h.server.logs).length,1);assert.equal(h.server.logs[attempt.id].seconds,attempt.seconds);assert.equal(h.server.logs[attempt.id].page,17);assert.equal(c.readingTimer,null);
+});
+
+test('backup and active-write failures preserve the current timer, while declining confirmation leaves no backup',()=>{
+  for(const failure of ['decline','backup','readback','active','active-readback']){const h=harness({now:10000}),{c}=h;h.prepared();c.readingEndPage=17;c.persistReadingTimer();const key=c.readingTimerStorageKey('reader'),raw=h.memory.get(key),timer=clone(c.readingTimer),events=timerBrowserEvents(h);
+    if(failure==='decline')c.confirm=()=>false;
+    else{const originalSet=c.localStorage.setItem,originalGet=c.localStorage.getItem;c.localStorage.setItem=(name,value)=>{if(failure==='backup'&&name.startsWith('growell_reading_timer_cancelled_v1:'))throw new Error('quota');if(name===key&&JSON.parse(value).timer===null){if(failure==='active')throw new Error('active quota');if(failure==='active-readback')return;}return originalSet(name,value);};if(failure==='readback')c.localStorage.getItem=name=>name.startsWith('growell_reading_timer_cancelled_v1:')?null:originalGet(name);}
+    events.buttons.get('btn-reading-save-cancel').click();assert.deepEqual(clone(c.readingTimer),timer,failure);assert.equal(c.readingEndPage,17);assert.equal(h.memory.get(key),raw);assert.equal(h.requests.length,0);
+  }
+});
+
+test('cancel confirmation adopts a newer tab and recovery cannot replace current, parked, saved or foreign sessions',()=>{
+  const h=harness({now:10000}),{c}=h;h.prepared();c.persistReadingTimer();const key=c.readingTimerStorageKey('reader'),events=timerBrowserEvents(h),newer=JSON.parse(h.memory.get(key));newer.timer={...newer.timer,id:'newer-tab-session'};
+  c.confirm=()=>{h.memory.set(key,JSON.stringify(newer));return true;};events.buttons.get('btn-reading-save-cancel').click();assert.equal(c.readingTimer.id,'newer-tab-session');assert.equal(JSON.parse(h.memory.get(key)).timer.id,'newer-tab-session');
+  c.confirm=()=>true;events.buttons.get('btn-reading-save-cancel').click();const backupKey=[...h.memory.keys()].find(name=>name.startsWith('growell_reading_timer_cancelled_v1:reader:'));assert.ok(backupKey);
+  c.STATE.readingLogs['newer-tab-session']={id:'newer-tab-session'};assert.equal(c.restoreCancelledReadingTimer(backupKey),false);delete c.STATE.readingLogs['newer-tab-session'];
+  c.readingParkedSessions.emotion={timer:domain.pause(domain.create({id:'parked-other',userId:'reader',bookId:'emotion',startPage:0},0),1000),endPage:0};assert.equal(c.restoreCancelledReadingTimer(backupKey),false);c.readingParkedSessions={};
+  const foreign=harness({owner:'another',memory:h.memory});foreign.c.syncReadingTimer();timerBrowserEvents(foreign);assert.equal(foreign.c.restoreCancelledReadingTimer(backupKey),false);
+  assert.deepEqual(Object.keys(c.window.GrowellReadingTimerRecovery),['restoreCancelled']);assert.equal(c.window.GrowellReadingTimerRecovery.restoreCancelled(backupKey),true);assert.equal(c.restoreCancelledReadingTimer(backupKey),false,'recovery cannot replace even the same active timer');assert.equal(h.requests.length,0);
+});
+
+function notificationCancellationHarness(){
+  const fixture=fs.readFileSync(path.join(__dirname,'reading-notification.test.cjs'),'utf8'),start=fixture.indexOf('function appHarness(options={}){'),end=fixture.indexOf("\ntest('background clock",start);
+  const scope={vm,Domain:domain,Alerts:require('../timerAlerts.js'),State:require('../readingNotificationState.js'),section,clone,assert,Promise,Date,Number,Math,JSON,URL,console,timer:(at=0)=>domain.create({id:'rl-synthetic',userId:'PRIVATE_MEMBER',bookId:'emotion',startPage:5},at)};
+  vm.createContext(scope);vm.runInContext(fixture.slice(start,end)+'\nthis.create=appHarness;',scope);const h=scope.create();h.c.confirm=()=>true;
+  vm.runInContext(section('function cancelledReadingTimerStorageKey(','function bindReadingTimerEvents(){'),h.c);return h;
+}
+
+test('a known notification must be verifiably revoked before cancellation can clear its active session',async()=>{
+  const h=notificationCancellationHarness();await h.arm();h.action('finish',10000);await h.arm();const before=clone(h.c.readingTimer),parked=clone(h.c.readingParkedSessions),draft=clone(h.draft),request=h.c.GrowellTimerAlerts.sessionState;let rejectRevoke=true;
+  h.c.GrowellTimerAlerts.sessionState=async value=>value.type==='revoke'&&rejectRevoke?{ok:false,code:'timeout'}:request(value);
+  assert.equal(await h.c.cancelCurrentReadingTimer(),false);assert.deepEqual(clone(h.c.readingTimer),before);assert.deepEqual(clone(h.c.readingParkedSessions),parked);assert.deepEqual(clone(h.draft),draft);assert.equal(h.record().revoked,false);assert.match(h.calls.toasts.at(-1),/확인/);
+  rejectRevoke=false;h.setNow(11000);assert.equal(await h.c.cancelCurrentReadingTimer(),true);assert.equal(h.c.readingTimer,null);assert.equal([...h.records.values()][0].revoked,true);assert.deepEqual(clone(h.c.readingParkedSessions),parked);assert.deepEqual(clone(h.draft),draft);assert.equal(h.calls.saves,0);
+});
+
+test('a lost revocation response preserves the original timer and can safely retry after its new generation is published',async()=>{
+  const h=notificationCancellationHarness();await h.arm();h.action('finish',10000);await h.arm();const before=clone(h.c.readingTimer),request=h.c.GrowellTimerAlerts.sessionState;let lose=true;
+  h.c.GrowellTimerAlerts.sessionState=async value=>{const result=await request(value);if(value.type==='revoke'&&lose){lose=false;return {ok:false,code:'timeout'};}return result;};
+  assert.equal(await h.c.cancelCurrentReadingTimer(),false);assert.deepEqual(clone(h.c.readingTimer),before);assert.equal(h.record().revoked,true,'a lost response does not pretend the worker is still active');
+  assert.equal(await h.arm(),true);assert.equal(h.record().revoked,false,'the next reconciliation can safely publish a live new generation');
+  h.setNow(11000);assert.equal(await h.c.cancelCurrentReadingTimer(),true);assert.equal(h.c.readingTimer,null);assert.equal([...h.records.values()][0].revoked,true);assert.equal(h.calls.saves,0);
+});
+
+test('another tab taking the expired lease and pausing after backup cannot have its new journal discarded',async()=>{
+  const h=notificationCancellationHarness(),State=require('../readingNotificationState.js');await h.arm();h.setNow(10000);const request=h.c.GrowellTimerAlerts.sessionState;let injected=false;
+  h.options.beforeRequest=async value=>{
+    if(injected||value.type!=='read'||![...h.values.keys()].some(key=>key.startsWith('growell_reading_timer_cancelled_v1:')))return;injected=true;h.setNow(30000);const old=h.record(),lease='rh-'+'f'.repeat(32);
+    const held=await request({type:'hold',identity:State.head(old),expected:State.head(old),lease});assert.equal(held.ok,true);
+    const armed=await request({type:'arm',snapshot:h.c.readingNotificationView().snapshot,expected:held.head,expectedActive:h.active,lease});assert.equal(armed.ok,true);h.action('pause',30000);
+  };
+  assert.equal(await h.c.cancelCurrentReadingTimer(),false);assert.ok(h.c.readingTimer);assert.equal(h.record().journal.length,1);assert.equal(h.record().journal[0].at,30000);assert.equal(h.record().revoked,false);
+  h.options.beforeRequest=null;assert.equal(await h.arm(),true);assert.equal(h.c.readingTimer.elapsedMs,30000);assert.equal(h.record().journal.length,0);h.setNow(31000);assert.equal(await h.c.cancelCurrentReadingTimer(),true);assert.equal(h.c.readingTimer,null);assert.equal(h.calls.saves,0);
+});
+
+test('a confirmed already-revoked notification permits cancellation without a live lease',async()=>{
+  const h=notificationCancellationHarness();await h.arm();h.action('finish',10000);await h.arm();h.options.permission='denied';assert.equal(await h.c.cancelCurrentReadingTimer(),true);assert.equal(h.c.readingTimer,null);assert.equal([...h.records.values()][0].revoked,true);assert.equal(h.calls.saves,0);
 });

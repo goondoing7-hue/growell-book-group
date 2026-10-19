@@ -19,7 +19,7 @@ const habitValueBadgeSource=source.slice(source.indexOf('function habitValueInfo
 const timerSource=source.slice(source.indexOf('function readingTimerElapsedMs(){'),source.indexOf('function activeReadingStripHtml('));
 const closeNoteSource=source.slice(source.indexOf('function closeReadingNoteDialog('),source.indexOf('function openReadingNote('));
 const timerNotificationSource=source.slice(source.indexOf('function readingSessionNotificationSettingsHtml(){'),source.indexOf('function readingCountdownRingHtml(){'));
-const timerEventsSource=source.slice(source.indexOf('function bindReadingTimerEvents(){'),source.indexOf('function submitWorksheet('));
+const timerEventsSource=source.slice(source.indexOf('function cancelledReadingTimerStorageKey('),source.indexOf('function submitWorksheet('));
 const cardDateSource=source.slice(source.indexOf('function fmtPostDate('),source.indexOf('function initials('));
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
 

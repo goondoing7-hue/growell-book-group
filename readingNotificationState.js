@@ -4,7 +4,7 @@
   'use strict';
   var books=['emotion','thought','body','action'];
   var titles=['감정을 마주하면 길이 보인다','생각이 너무 많은 어른들을 위한 심리학','몸이 나를 위로한다','습관이 영성이다'];
-  function book(id){var index=books.indexOf(id);return index<0?null:{title:titles[index],cover:'/covers/'+id+'.jpg',notificationIcon:'/covers/notification-'+id+'.png',notificationImage:'/covers/notification-expanded-'+id+'.png'};}
+  function book(id){var index=books.indexOf(id);return index<0?null:{title:titles[index],cover:'/covers/'+id+'.jpg',notificationIcon:'/covers/notification-'+id+'.png'};}
   function integer(n){return Number.isSafeInteger(n)&&n>=0;}
   function hash(text){var a=2166136261,b=3339675911;for(var i=0;i<text.length;i++){a=Math.imul(a^text.charCodeAt(i),16777619);b=Math.imul(b^text.charCodeAt(i),2246822519);}return 't1-'+(a>>>0).toString(16)+'-'+(b>>>0).toString(16);}
   function opaque(value){return typeof value==='string'&&/^t1-[a-f0-9]+-[a-f0-9]+$/.test(value);}

@@ -7,6 +7,7 @@
   var active=null,dialog=null,notice=null,ticker=null,countdownOpen=false,renderedState='';
   function copy(value){return JSON.parse(JSON.stringify(value));}
   function key(owner,book){return 'growell_archive_timer_v1:'+encodeURIComponent(owner)+':'+encodeURIComponent(book);}
+  function cancelledKey(owner,book,timerId,at){return 'growell_archive_timer_cancelled_v1:'+encodeURIComponent(owner)+':'+encodeURIComponent(book)+':'+encodeURIComponent(timerId)+':'+at;}
   function id(){return 'art_'+(root.crypto&&root.crypto.randomUUID?root.crypto.randomUUID():Date.now().toString(36)+'_'+Math.random().toString(36).slice(2));}
   function pauseOthers(ownerId,exceptBookId,options){
     options=options||{};var storage=options.storage,now=options.now?options.now():Date.now();
@@ -36,6 +37,42 @@
       }
       return true;
     }catch(e){return false;}
+  }
+  // Explicit developer recovery only. Callbacks must verify the exact signed-in
+  // session, fully loaded records, and absence of this ID in saved reading logs.
+  async function restoreCancelled(options,backupKey){
+    options=options||{};var owner=options.ownerId,book=options.book,adapter=options.adapter||{},storage=options.storage,now=options.now||Date.now;
+    function fail(code){return {ok:false,code:code};}
+    function current(){try{return options.isCurrent()===true&&adapter.getOwnerId()===owner;}catch(e){return false;}}
+    if(typeof owner!=='string'||!owner||!book||typeof book.id!=='string'||!book.id||typeof options.isCurrent!=='function'||typeof adapter.getOwnerId!=='function'||typeof adapter.canRestoreSession!=='function')return fail('validation-required');
+    if(!current())return fail('session-changed');
+    if(active&&active.state().timer)return fail('active-session');
+    try{if(!storage)storage=root.localStorage;}catch(e){return fail('storage');}
+    if(!storage||typeof backupKey!=='string'||backupKey.length>2000)return fail('invalid-backup');
+    var raw,backup,recovery,restored,sourceKey,before,related;
+    function emptyTimers(){
+      var prefix='growell_archive_timer_v1:'+encodeURIComponent(owner)+':',found=[];
+      if(!Number.isSafeInteger(storage.length)||storage.length<0)throw new Error('storage');
+      for(var i=0;i<storage.length;i++){var item=storage.key(i);if(typeof item!=='string'||item.slice(0,prefix.length)!==prefix)continue;var value=storage.getItem(item);if(value===null)continue;if(value.length>25000)throw new Error('invalid-local-timer');var envelope=JSON.parse(value);if(!envelope||envelope.v!==1||envelope.timer!==null||envelope.attempt)throw new Error('active-session');found.push([item,value]);}
+      return JSON.stringify(found.sort(function(a,b){return a[0]<b[0]?-1:a[0]>b[0]?1:0;}));
+    }
+    try{
+      raw=storage.getItem(backupKey);if(typeof raw!=='string'||raw.length>150000)return fail('invalid-backup');backup=JSON.parse(raw);sourceKey=key(owner,book.id);
+      if(!backup||backup.v!==1||backup.kind!=='archive-reading-cancelled'||backup.ownerId!==owner||backup.bookId!==book.id||backup.sourceKey!==sourceKey||!Number.isSafeInteger(backup.cancelledAt)||backup.cancelledAt<0||backupKey!==cancelledKey(owner,book.id,backup.timerId,backup.cancelledAt)||typeof backup.recoveryRaw!=='string'||backup.recoveryRaw.length>25000)return fail('invalid-backup');
+      recovery=JSON.parse(backup.recoveryRaw);restored=D.restore(recovery.timer,owner,[book.id],now());
+      if(recovery.v!==1||!restored||restored.id!==backup.timerId||restored.running||restored.startedAt!==null||recovery.attempt||!D.validatePages(restored.startPage,recovery.endPage,book.pageCount||100000).ok||typeof recovery.complete!=='boolean')return fail('invalid-backup');
+      if(backup.sourceRaw!==null){if(typeof backup.sourceRaw!=='string'||backup.sourceRaw.length>25000)return fail('invalid-backup');var source=JSON.parse(backup.sourceRaw),old=D.restore(source.timer,owner,[book.id],backup.cancelledAt);if(source.v!==1||!old||old.id!==restored.id||source.attempt||JSON.stringify(D.pause(old,backup.cancelledAt))!==JSON.stringify(restored))return fail('invalid-backup');}
+      before=storage.getItem(sourceKey);related=emptyTimers();
+    }catch(e){return fail(e.message==='active-session'?'active-session':'invalid-backup');}
+    try{if(await adapter.canRestoreSession(book.id,restored.id)!==true)return fail('saved-or-unverified');}catch(e){return fail('saved-or-unverified');}
+    if(!current())return fail('session-changed');
+    if(active&&active.state().timer)return fail('active-session');
+    try{
+      if(storage.getItem(sourceKey)!==before||storage.getItem(backupKey)!==raw||emptyTimers()!==related)return fail('local-state-changed');
+      storage.setItem(sourceKey,backup.recoveryRaw);
+      if(storage.getItem(sourceKey)!==backup.recoveryRaw)return fail('storage-unconfirmed');
+      return {ok:true,code:'',timerId:restored.id,sourceKey:sourceKey};
+    }catch(e){return fail('storage-unconfirmed');}
   }
   function createController(options){
     var book=options.book,owner=options.ownerId,adapter=options.adapter||{},storage=options.storage,now=options.now||Date.now;
@@ -74,13 +111,13 @@
       }catch(e){error='타이머를 보관하지 못했어요. 다시 시도해주세요.';return false;}
       return writable;
     }
-    function persist(){
+    function persist(confirm){
       if(!writable)return false;
       try{
         var current=storage.getItem(storeKey);if(current!==snapshot){error='다른 화면에서 타이머가 바뀌었어요. 다시 열어주세요.';return false;}
         var next=JSON.stringify({v:1,timer:timer,attempt:attempt,endPage:endPage,complete:complete});
-        storage.setItem(storeKey,next);snapshot=next;return true;
-      }catch(e){error='타이머를 이 기기에 보관하지 못했어요. 화면을 닫기 전에 다시 시도해주세요.';return false;}
+        storage.setItem(storeKey,next);if(confirm===true&&storage.getItem(storeKey)!==next){error='취소 상태를 확인하지 못했어요. 복구본은 보관되어 있으니 타이머를 다시 확인해주세요.';return false;}snapshot=next;return true;
+      }catch(e){error=confirm===true?'취소 상태를 확인하지 못했어요. 복구본은 보관되어 있으니 타이머를 다시 확인해주세요.':'타이머를 이 기기에 보관하지 못했어요. 화면을 닫기 전에 다시 시도해주세요.';return false;}
     }
     function change(work){if(busy||!fresh()||!timer)return false;var before=copy({timer:timer,attempt:attempt,endPage:endPage,complete:complete});error='';if(work()===false)return false;if(!persist()){timer=before.timer;attempt=before.attempt;endPage=before.endPage;complete=before.complete;return false;}return true;}
     function resumeReady(ready){
@@ -114,7 +151,23 @@
       markNotified:function(){return change(function(){timer=D.markCountdownNotified(timer,now())||timer;});},
       acknowledge:function(){return change(function(){timer=D.acknowledgeCountdown(timer,now())||timer;});},
       poll:function(){if(!owned())return false;if(!busy&&!fresh())return false;if(timer){var next=D.settle(timer,now());if(next&&next.goalReached!==timer.goalReached){timer=next;persist();}}return true;},
-      discard:function(){if(busy||attempt||!fresh())return false;var previous=timer;timer=null;if(persist())return true;timer=previous;return false;},
+      discard:function(){
+        if(busy){error='저장 중에는 취소할 수 없어요. 저장 결과를 확인해주세요.';return false;}
+        if(attempt){error='저장 결과를 먼저 확인해야 해요. 같은 기록으로 다시 저장해주세요.';return false;}
+        if(!fresh()||!timer)return false;
+        var previous=timer,at=now(),backupKey=cancelledKey(owner,book.id,timer.id,at),backup;
+        try{
+          if(!Number.isSafeInteger(at)||at<0)throw new Error('invalid-time');
+          var envelope=snapshot===null?{}:JSON.parse(snapshot),frozen=D.pause(timer,at);
+          backup=JSON.stringify({v:1,kind:'archive-reading-cancelled',ownerId:owner,bookId:book.id,timerId:timer.id,cancelledAt:at,
+            sourceKey:storeKey,sourceRaw:snapshot,recoveryRaw:JSON.stringify(Object.assign({},envelope,{v:1,timer:frozen,attempt:null,endPage:endPage,complete:complete}))});
+          var existing=storage.getItem(backupKey);
+          if(existing!==null&&existing!==backup)throw new Error('backup-conflict');
+          if(existing===null)storage.setItem(backupKey,backup);
+          if(storage.getItem(backupKey)!==backup)throw new Error('backup-unconfirmed');
+        }catch(e){error='이번 기록의 복구본을 보관하지 못해 취소하지 않았어요. 다시 시도해주세요.';return false;}
+        timer=null;if(persist(true))return true;timer=previous;return false;
+      },
       save:async function(){
         if(busy||!fresh()||!timer||timer.phase!=='save')return false;
         var valid=D.validatePages(timer.startPage,endPage,book.pageCount||100000),seconds=Math.floor(D.elapsed(timer,now())/1000);
@@ -173,7 +226,7 @@
   function bind(){
     event('[data-at-close]',function(){if(!active.state().busy)close(true);});
     event('[data-at-toggle]',function(){prepare();Promise.resolve(active.toggle()).then(render);render();});
-    event('[data-at-save-cancel]',function(){if(!active.state().busy)close(true);});
+    event('[data-at-save-cancel]',function(){if(active.discard())close(true);else render();});
     event('[data-at-done]',function(){active.done();countdownOpen=false;closeNotice();render();});
     event('[data-at-resume]',function(){prepare();Promise.resolve(active.resume()).then(render);render();});
     event('[data-at-countdown]',function(){countdownOpen=!countdownOpen;render();});
@@ -187,7 +240,7 @@
     event('[data-at-countdown-save]',function(){var duration=D.countdownDuration(dialog.querySelector('[data-at-hours]').value,dialog.querySelector('[data-at-mins]').value);if(!duration){dialog.querySelector('[data-at-error]').textContent='1분에서 23시간 59분 사이로 설정해주세요.';return;}prepare();active.setCountdown(duration);countdownOpen=false;render();});
     event('[data-at-clear]',function(){active.clearCountdown();countdownOpen=false;closeNotice();render();});
 
-    event('[data-at-discard]',function(){if(root.confirm('이번 독서를 취소할까요? 저장한 이전 기록은 유지돼요.')&&active.discard()){close(true);}});
+    event('[data-at-discard]',function(){if(root.confirm('이번 독서를 취소할까요? 저장한 이전 기록은 유지돼요.')){if(active.discard())close(true);else render();}});
     event('[data-at-finish]',function(e){active.setComplete(e.currentTarget.dataset.atFinish==='true');render();});
     event('[data-at-step]',function(e){active.setPage(active.state().endPage+Number(e.currentTarget.dataset.atStep));render();});
     var page=dialog.querySelector('#archive-reading-page'),range=dialog.querySelector('[data-at-page-range]');
@@ -236,5 +289,5 @@
     root.document.body.appendChild(dialog);render();dialog.showModal();historyOpen('archive-reading-timer',function(){close(true);},function(){return !active||!active.state().busy;});
     if(ticker)root.clearInterval(ticker);ticker=root.setInterval(tick,500);tick();return true;
   }
-  return {open:open,close:function(){close(true);},reset:reset,pauseOthers:pauseOthers,createController:createController,storageKey:key};
+  return {open:open,close:function(){close(true);},reset:reset,pauseOthers:pauseOthers,createController:createController,storageKey:key,cancelledStorageKey:cancelledKey,restoreCancelled:restoreCancelled};
 });

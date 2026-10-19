@@ -188,7 +188,7 @@
       if(!reg||!current())return false;sessionRegistration=reg;
       var actions=view.data.note?[{action:'open',title:'타이머 보기'}]:[{action:view.data.running?'pause':'resume',title:view.data.running?'일시정지':'시작'},{action:'finish',title:'끝내기'}];
       var maximum=root.Notification&&root.Notification.maxActions;if(typeof maximum==='number'&&Number.isFinite(maximum))actions=actions.slice(0,Math.max(0,maximum));
-      return reg.showNotification(view.title,{body:view.body,tag:SESSION_TAG,icon:'/covers/notification-'+view.data.bookId+'.png',image:'/covers/notification-expanded-'+view.data.bookId+'.png',badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:Number.isSafeInteger(view.timestamp)?view.timestamp:Date.now(),actions:actions,data:view.data}).then(function(){
+      return reg.showNotification(view.title,{body:view.body,tag:SESSION_TAG,icon:'/covers/notification-'+view.data.bookId+'.png',badge:'/covers/growell-notification-badge-96.png',requireInteraction:true,renotify:false,silent:true,timestamp:Number.isSafeInteger(view.timestamp)?view.timestamp:Date.now(),actions:actions,data:view.data}).then(function(){
         if(current())return true;
         if(typeof reg.getNotifications==='function')return reg.getNotifications({tag:SESSION_TAG}).then(function(list){list.forEach(function(item){if(item.data&&item.data.ownerKey===view.data.ownerKey&&item.data.revision===view.data.revision)item.close();});return false;});
         return false;

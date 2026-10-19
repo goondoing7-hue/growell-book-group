@@ -4271,6 +4271,76 @@ function tickReadingTimer(){
   document.querySelectorAll('[data-reading-countdown-ring]').forEach(function(el){el.setAttribute('stroke-dashoffset',((1-(ratio||0))*100).toFixed(3));});
   document.querySelectorAll('[data-reading-status]').forEach(function(el){el.textContent=readingTimer.running?(readingTimer.goalReached?'목표 달성 · 계속 읽는 중':'읽고 있는 중…'):'잠시 멈춤';});
 }
+function cancelledReadingTimerStorageKey(owner,timerId,at){return 'growell_reading_timer_cancelled_v1:'+encodeURIComponent(owner)+':'+encodeURIComponent(timerId)+':'+at;}
+function cancelCurrentReadingTimer(){
+  if(!readingNotificationGuard)return withReadingNotificationMutation(cancelCurrentReadingTimer);
+  if(refreshReadingTimerFromStorage()){render();return false;}
+  if(!SESSION||!readingTimer||readingTimer.userId!==SESSION.userId)return false;
+  if(readingSaveBusy||readingSaveAttempt){showToast('저장 결과 확인이 필요해 이번 기록을 보관했어요. 다시 저장해 확인해주세요.',true);return false;}
+  if(readingNoteReturn){showToast('작성 중인 노트를 마친 뒤 타이머에서 취소해주세요.',true);return false;}
+  var session=SESSION,epoch=saveSessionEpoch,timerId=readingTimer.id;
+  if(!confirm('이번 독서를 취소할까요? 이번에 읽은 시간은 독서 기록에 저장하지 않아요. 저장한 이전 기록은 그대로 유지돼요.'))return false;
+  if(SESSION!==session||saveSessionEpoch!==epoch||!readingTimer||readingTimer.id!==timerId||refreshReadingTimerFromStorage()){render();return false;}
+  var cancelledAt=Date.now(),activeSnapshot;
+  function failed(){showToast('취소 상태를 확인하지 못했어요. 이번 독서는 그대로 보관했으니 다시 시도해주세요.',true);render();return false;}
+  function clearCurrent(){
+    if(SESSION!==session||saveSessionEpoch!==epoch||!readingTimer||readingTimer.id!==timerId||readingSaveBusy||readingSaveAttempt||refreshReadingTimerFromStorage()||readingTimerStorageSnapshot!==activeSnapshot)return failed();
+    var before=captureReadingTimerState(),guarded=readingNotificationGuard;readingNotificationGuard=true;var cleared;
+    try{cleared=commitReadingTimerState(null);}finally{readingNotificationGuard=guarded;}
+    if(!cleared)return failed();
+    try{
+      if(localStorage.getItem(readingTimerStorageKey(session.userId))!==readingTimerStorageSnapshot){applyReadingTimerState(before);readingTimerStorageSnapshot=activeSnapshot;refreshReadingTimerFromStorage();return failed();}
+    }catch(error){applyReadingTimerState(before);readingTimerStorageSnapshot=activeSnapshot;readingTimerStorageWritable=false;readingTimerMemoryWarning=true;return failed();}
+    closeReadingHomeDialog();readingHomeReturn=false;readingCountdownOpen=false;readingSaveError=false;readingSaveFailure='';render();showToast('이번 독서를 취소했어요. 이전에 저장한 기록은 그대로예요.');return true;
+  }
+  try{
+    if(!persistReadingTimer())throw new Error('cancel-storage');
+    // Only this unsaved session is archived. Other books and authored notes
+    // remain in their existing stores and are never copied or cleared here.
+    var original=Object.assign({v:3},captureReadingTimerState()),recovery=JSON.parse(JSON.stringify(original));
+    recovery.timer=GrowellReadingTimer.pause(recovery.timer,cancelledAt);recovery.notification=null;recovery.notificationArchiveBlocked=true;
+    var backup={v:1,cancelledAt:cancelledAt,sourceKey:readingTimerStorageKey(session.userId),sourceRaw:JSON.stringify(original),recoveryRaw:JSON.stringify(recovery)};
+    var key=cancelledReadingTimerStorageKey(session.userId,timerId,cancelledAt),serialized=JSON.stringify(backup),previous=localStorage.getItem(key);
+    if(previous!==null&&previous!==serialized)throw new Error('cancel-backup-conflict');
+    if(previous===null)localStorage.setItem(key,serialized);
+    if(localStorage.getItem(key)!==serialized)throw new Error('cancel-backup-unverified');
+    activeSnapshot=readingTimerStorageSnapshot;
+  }catch(error){return failed();}
+  if(readingNotificationCheckpoint&&readingNotificationAvailable()){
+    var view=readingNotificationView(),api=typeof GrowellReadingNotificationState!=='undefined'&&GrowellReadingNotificationState;
+    if(!view||!api)return failed();
+    return readingNotificationRequest({type:'read',identity:view.data}).then(function(current){
+      if(!current.ok)throw new Error('cancel-notification');
+      if(!current.state)return {ok:true};
+      if(!api.valid(current.state)||current.state.ownerKey!==view.data.ownerKey||current.state.timerId!==timerId||current.state.bookId!==view.data.bookId)throw new Error('cancel-notification');
+      if(current.state.generation!==readingNotificationCheckpoint.generation||current.state.journal.length||!current.state.revoked&&(!readingNotificationLease||current.state.held!==readingNotificationLease))throw new Error('cancel-notification-changed');
+      return readingNotificationRequest({type:'revoke',identity:current.state,expected:api.head(current.state)}).then(function(revoked){
+        if(!revoked.ok||!api.valid(revoked.state)||!api.same(revoked.state,current.state)||!revoked.state.revoked)throw new Error('cancel-notification');
+        return revoked;
+      });
+    }).then(clearCurrent).catch(failed);
+  }
+  return clearCurrent();
+}
+// Explicit, local-only recovery of one cancelled session. Never replace an
+// active timer, another parked book, a saved log or an uncertain save attempt.
+// The backup key is retained after recovery so the source remains recoverable.
+function restoreCancelledReadingTimer(backupKey){
+  if(!readingNotificationGuard)return withReadingNotificationMutation(function(){return restoreCancelledReadingTimer(backupKey);});
+  if(refreshReadingTimerFromStorage()||!SESSION||readingTimer||readingSaveBusy||readingSaveAttempt||!readingDataReady())return false;
+  if(typeof backupKey!=='string'||backupKey.indexOf('growell_reading_timer_cancelled_v1:'+encodeURIComponent(SESSION.userId)+':')!==0)return false;
+  try{
+    var raw=localStorage.getItem(backupKey),backup=JSON.parse(raw||'null');
+    if(!backup||backup.v!==1||!Number.isSafeInteger(backup.cancelledAt)||backup.cancelledAt<0||backup.sourceKey!==readingTimerStorageKey(SESSION.userId)||typeof backup.sourceRaw!=='string'||typeof backup.recoveryRaw!=='string')return false;
+    var envelope=JSON.parse(backup.recoveryRaw);if(!envelope||envelope.v!==3)return false;
+    var state=restoreReadingTimerState(envelope,SESSION.userId,false);
+    if(!state||state.timer.running||state.attempt||state.noteReturn||backupKey!==cancelledReadingTimerStorageKey(SESSION.userId,state.timer.id,backup.cancelledAt)||readingParkedSessions[state.timer.bookId]||STATE.readingLogs[state.timer.id])return false;
+    state.notification=null;state.notificationArchiveBlocked=true;
+    if(!commitReadingTimerState(state))return false;
+    render();return true;
+  }catch(error){return false;}
+}
+if(typeof window!=='undefined')window.GrowellReadingTimerRecovery=Object.freeze({restoreCancelled:restoreCancelledReadingTimer});
 function bindReadingTimerEvents(){
   var app=document.getElementById('app');
   function on(id,fn){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){if((id==='btn-reading-toggle-pause'&&readingTimer&&!readingTimer.running||id==='btn-reading-save-back')&&typeof GrowellTimerAlerts!=='undefined'&&GrowellTimerAlerts.notificationStatus().permission==='default')GrowellTimerAlerts.enableNotifications().then(function(){readingNotificationLast='';syncReadingSessionNotification();});withReadingNotificationMutation(function(){if(refreshReadingTimerFromStorage()){render();return;}return fn(e);});});}
@@ -4282,18 +4352,13 @@ function bindReadingTimerEvents(){
     next.timer=readingTimer.running?GrowellReadingTimer.pause(readingTimer,Date.now()):GrowellReadingTimer.resume(readingTimer,Date.now());
     if(!commitReadingTimerState(next))showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();
   });
-  on('btn-reading-cancel',function(){
-    if(!readingTimer || readingSaveBusy || readingSaveAttempt)return;
-    if(!confirm('이번 독서를 취소할까요? 저장한 이전 기록은 유지되지만, 이번에 읽은 시간은 남지 않아요.'))return;
-    if(!commitReadingTimerState(null)){showToast('취소 상태를 보관하지 못했어요. 다시 시도해주세요.',true);render();return;}
-    closeReadingHomeDialog();readingHomeReturn=false;readingCountdownOpen=false;render();
-  });
+  on('btn-reading-cancel',cancelCurrentReadingTimer);
   on('btn-reading-done',function(){
     if(!readingTimer||readingSaveBusy)return;
     var next=captureReadingTimerState();next.timer=GrowellReadingTimer.pause(readingTimer,Date.now());next.timer.phase='save';next.noteReturn=null;
     if(commitReadingTimerState(next))readingCountdownOpen=false;else showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();
   });
-  on('btn-reading-save-cancel',function(){if(readingSaveBusy)return;closeReadingHomeDialog();render();});
+  on('btn-reading-save-cancel',cancelCurrentReadingTimer);
   on('btn-reading-save-back',function(){
     if(!readingTimer || readingSaveAttempt||readingSaveBusy)return;
     if(!pauseArchiveReadingBeforeSharedStart())return;

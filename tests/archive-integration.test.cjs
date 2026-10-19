@@ -6,6 +6,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const domain=require('../archiveDomain.js');
 const privateCrypto=require('../privateCrypto.js');
+const ArchiveTimer=require('../archiveTimer.js');
 const source=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 function section(start,end){const a=source.indexOf(start),b=source.indexOf(end,a);assert.ok(a>=0&&b>a,start);return source.slice(a,b);}
 function deferred(){let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};}
@@ -169,6 +170,26 @@ test('timer saves cannot erase a remote note appended after the dialog snapshot'
   assert.equal(h.db[id].data,encrypted.data);assert.equal(h.c.STATE.privateEntries[id].data,row.entry.data);
   const stored=domain.decode((await privateCrypto.read(h.c.mapPrivateEntryRow(h.db[id]),h.passwordKey)).text);
   assert.equal(stored.notes[0].text,'다른 기기에서 작성한 기록');assert.equal(stored.readingSessions.length,0);
+});
+
+test('archive save-dialog discard never calls encrypted storage or changes previously saved notes, progress or reading sessions',async()=>{
+  const h=await harness(),initial={...book(),status:'reading',totalPages:200,currentPage:25,notes:[{id:'existing-note',text:'이미 저장한 원문과 사진은 그대로',photo:'',createdAt:1000}],readingSessions:[{id:'saved-session',startPage:0,endPage:25,seconds:60,createdAt:2000}]};
+  await h.adapter.save(null,initial,'arc_cancel');const entryId=domain.recordId('owner','arc_cancel'),beforeDb=clone(h.db),beforeState=clone(h.c.STATE.privateEntries),requestCount=h.requests.length;
+  const values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),get length(){return values.size;},key:index=>[...values.keys()][index]??null};let now=3000,saves=0;
+  const options={ownerId:'owner',book:{id:entryId,title:initial.title,currentPage:25,pageCount:200},storage,now:()=>now,adapter:{getOwnerId:()=>h.c.SESSION.userId,saveSession:async()=>{saves++;throw Error('Cancel must not call this');}}};
+  const timer=ArchiveTimer.createController(options);now=13000;timer.done();timer.setPage(70);const id=timer.state().timer.id;assert.equal(timer.discard(),true);
+  assert.equal(saves,0);assert.equal(h.requests.length,requestCount);assert.deepEqual(h.db,beforeDb);assert.deepEqual(clone(h.c.STATE.privateEntries),beforeState);assert.equal(await timer.save(),false);
+  const backup=JSON.parse(storage.getItem(ArchiveTimer.cancelledStorageKey('owner',entryId,id,13000)));assert.equal(JSON.parse(backup.recoveryRaw).endPage,70);assert.equal(JSON.parse(backup.recoveryRaw).timer.elapsedMs,10000);
+  const [saved]=await h.adapter.read([h.c.STATE.privateEntries[entryId]]);assert.equal(saved.book.currentPage,25);assert.equal(saved.book.notes[0].text,initial.notes[0].text);assert.equal(saved.book.readingSessions.length,1);assert.equal(saved.entry.createdAt,beforeState[entryId].createdAt);
+});
+
+test('an archive timer cannot discard a remotely committed save whose acknowledgement was lost and exact retry preserves all prior content',async()=>{
+  const h=await harness(),initial={...book(),status:'reading',totalPages:200,currentPage:10,notes:[{id:'kept',text:'원래 독서 생각',createdAt:1000}]};await h.adapter.save(null,initial,'arc_uncertain_cancel');
+  const entryId=domain.recordId('owner','arc_uncertain_cancel'),values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value),get length(){return values.size;},key:index=>[...values.keys()][index]??null};let now=1000,lose=true;const writes=[];
+  const options={ownerId:'owner',book:{id:entryId,title:initial.title,currentPage:10,pageCount:200},storage,now:()=>now,adapter:{getOwnerId:()=>h.c.SESSION.userId,saveSession:async(_book,session,meta)=>{writes.push(clone(session));const [latest]=await h.adapter.read([h.c.STATE.privateEntries[entryId]]);await h.adapter.save(latest,domain.addReadingSession(latest.book,session,meta));if(lose)throw Error('synthetic lost acknowledgement');}}};
+  const timer=ArchiveTimer.createController(options);now=61000;timer.done();timer.setPage(25);assert.equal(await timer.save(),false);const original=storage.getItem(ArchiveTimer.storageKey('owner',entryId)),frozen=timer.state().attempt,committed=clone(h.db);
+  assert.equal(timer.discard(),false);assert.equal(storage.getItem(ArchiveTimer.storageKey('owner',entryId)),original);assert.deepEqual(h.db,committed);assert.deepEqual(timer.state().attempt,frozen);assert.equal([...values.keys()].some(key=>key.startsWith('growell_archive_timer_cancelled_v1:')),false);
+  lose=false;now=1000000;assert.ok(await timer.save());assert.deepEqual(writes[0],writes[1]);const [saved]=await h.adapter.read([h.c.STATE.privateEntries[entryId]]);assert.equal(saved.book.readingSessions.length,1);assert.equal(saved.book.readingSessions[0].seconds,60);assert.equal(saved.book.currentPage,25);assert.equal(saved.book.notes[0].text,'원래 독서 생각');assert.equal(h.requests.some(request=>request.operation==='delete'),false);
 });
 
 test('account, key and session-generation changes abort an archive save before any request',async()=>{
