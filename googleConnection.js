@@ -112,7 +112,7 @@
       });
     }
     function request(service,action,payload){
-      if(services.indexOf(service)<0||['configure','sync'].indexOf(action)<0)return Promise.reject(fail('invalid_action'));
+      if(services.indexOf(service)<0||['configure','sync','disconnect'].indexOf(action)<0)return Promise.reject(fail('invalid_action'));
       if(service==='mail'&&action!=='configure')return Promise.reject(fail('invalid_action'));
       if(service==='mail')return Promise.resolve().then(function(){guard();return clients.drive.request('mail-configure',{enabled:payload&&payload.enabled});}).then(function(value){guard();return value;});
       return Promise.resolve().then(function(){guard();return clients[service].request(action,payload);}).then(function(value){guard();return value;});
@@ -120,14 +120,14 @@
     function connect(){return Promise.resolve().then(function(){guard();return clients.drive.request('connect');}).then(function(value){guard();return value;});}
     return {load:load,request:request,connect:connect,dispose:function(){disposed=true;googleServices.forEach(function(service){clients[service].dispose();});}};
   }
-  function cardHtml(service,title,intro,label){
+  function cardHtml(service,title,intro,label,admin){
     return '<section class="google-connection-card'+(service==='mail'?' google-connection-card-mail':'')+'" aria-labelledby="google-'+service+'-title"><div class="google-connection-card-head"><h3 id="google-'+service+'-title">'+title+'</h3><button type="button" data-google-'+service+'-details hidden>자세히 보기</button></div>'+
       '<p class="google-connection-card-intro">'+intro+'</p><p class="google-connection-state" data-google-'+service+'-status role="status" aria-live="polite">상태를 확인하고 있어요…</p>'+
       '<p class="google-connection-card-account" data-google-'+service+'-email hidden></p><div data-google-'+service+'-connected hidden>'+
       (service==='drive'?'<a class="google-connection-folder" data-google-drive-folder target="_blank" rel="noopener noreferrer" hidden>GROWELL 백업 <span aria-hidden="true">↗</span></a>':'')+
-      '<dl class="google-connection-last"><dt>'+(service==='drive'?'마지막 백업':service==='mail'?'최근 발송':'최근 반영')+'</dt><dd data-google-'+service+'-last></dd></dl>'+
+      '<dl class="google-connection-last"'+(!admin&&service!=='drive'?' hidden':'')+'><dt>'+(service==='drive'?'마지막 백업':service==='mail'?'최근 발송':'최근 반영')+'</dt><dd data-google-'+service+'-last></dd></dl>'+
       '<label class="google-connection-toggle"><span>'+label+'</span><input type="checkbox" role="switch" data-google-'+service+'-enabled></label>'+
-      (service==='mail'?'<p class="google-connection-mail-note">최초 연결 시 최신 기록을 한 번 보내며, 이후 새로 공개된 기록마다 한 번씩 보내요. 이미 보낸 기록을 수정해도 다시 보내지 않아요.</p>':'<button type="button" class="google-connection-sync" data-google-'+service+'-sync>'+(service==='drive'?'지금 백업':'지금 반영')+'</button>')+'</div></section>';
+      (service==='mail'?'<p class="google-connection-mail-note"'+(!admin?' hidden':'')+'>최초 연결 시 최신 기록을 한 번 보내며, 이후 새로 공개된 기록마다 한 번씩 보내요. 이미 보낸 기록을 수정해도 다시 보내지 않아요.</p>':'<button type="button" class="google-connection-sync" data-google-'+service+'-sync>'+(service==='drive'?'지금 백업':'지금 반영')+'</button><button type="button" class="google-connection-disconnect" data-google-'+service+'-disconnect>연결 해제</button><div class="google-connection-confirm" data-google-'+service+'-confirm hidden><p>이 연결을 해제할까요? 저장한 기록과 이미 만들어진 '+(service==='drive'?'백업 파일':'일정')+'은 삭제되지 않아요.</p><div><button type="button" data-google-'+service+'-cancel>취소</button><button type="button" data-google-'+service+'-confirm-yes>연결 해제</button></div></div>')+'</div></section>';
   }
   function close(restore){
     var view=active;if(!view)return;active=null;clearTimeout(view.timer);root.document.removeEventListener('visibilitychange',view.visibility);view.client.dispose();
@@ -140,29 +140,41 @@
   function open(options){
     if(!root.document||!Drive||!Calendar||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function'||!options.isCurrent())return;
     close(false);
-    var node=root.document.createElement('dialog');node.className='google-connection-dialog';node.setAttribute('aria-labelledby','google-connection-title');
-    node.innerHTML='<header class="google-connection-head"><div><span>계정 연결과 기기 알림을 한곳에서</span><h2 id="google-connection-title">연동</h2></div><button type="button" data-google-close aria-label="연동 닫기">×</button></header>'+
-      '<div class="google-connection-body"><p class="google-connection-intro">내 Google 계정으로 기록을 백업하고, 모임 일정을 확인하며, 모임 기록 PDF를 이메일로 받아요.</p>'+
+    var admin=options.isAdmin===true,node=root.document.createElement('dialog');node.className='google-connection-dialog';node.setAttribute('aria-labelledby','google-connection-title');
+    node.innerHTML='<header class="google-connection-head"><div><span>내 알림과 계정 연결을 관리해요</span><h2 id="google-connection-title">설정</h2></div><button type="button" data-google-close aria-label="설정 닫기">×</button></header>'+
+      '<div class="google-connection-tabs" role="tablist" aria-label="설정 항목"><button type="button" id="settings-notifications-tab" role="tab" aria-controls="settings-notifications-panel" data-settings-notifications-tab>알림</button><button type="button" id="settings-connections-tab" role="tab" aria-controls="settings-connections-panel" data-settings-connections-tab>연동</button></div>'+
+      '<div class="google-connection-body" data-settings-scroll><section id="settings-notifications-panel" role="tabpanel" aria-labelledby="settings-notifications-tab" data-settings-notifications-panel><section data-google-push></section>'+
+      '<section class="google-connection-alert-help" aria-labelledby="settings-alert-help-title"><h3 id="settings-alert-help-title">알림 소리와 표시 방식</h3><p>알림의 소리와 화면 표시는 휴대폰에서 설정해요.</p><details><summary>갤럭시 · 삼성 리마인더</summary><p>삼성 리마인더에서 GROWELL 습관을 열고, 스피커 모양의 알림 유형을 눌러 <strong>강하게</strong>를 선택한 뒤 저장해주세요. 화면 전체 알림과 긴 알림 소리를 사용하는 설정이에요.</p><p>이 설정은 휴대폰에서 직접 선택해야 해요. GROWELL 웹 푸시 알림의 소리를 바꾸는 설정과는 달라요.</p></details><details><summary>아이폰 · 애플 미리 알림</summary><p>iOS 26.2 이상의 <strong>긴급</strong> 알람은 iCloud 미리 알림에서 사용할 수 있어요. 현재 GROWELL의 Microsoft 계정 목록에는 자동 적용할 수 없어요.</p><p>일반 알림 소리와 표시는 아이폰 <strong>설정 → 알림 → 미리 알림</strong>에서 확인해주세요.</p></details></section></section>'+
+      '<section id="settings-connections-panel" role="tabpanel" aria-labelledby="settings-connections-tab" data-settings-connections-panel hidden><p class="google-connection-intro">Google 계정을 연결하면 기록 백업·모임 일정·PDF 이메일을 함께 사용할 수 있어요.</p>'+
       '<p class="google-connection-summary" data-google-summary role="status" aria-live="polite">Google 연결 상태를 확인하고 있어요…</p><p class="google-connection-return" data-google-return hidden></p>'+
       '<p class="google-connection-account" data-google-account hidden></p><button type="button" class="google-connection-primary" data-google-connect hidden>Google 계정 연결</button>'+
       '<p class="google-connection-consent" data-google-consent hidden>Google에서 백업과 캘린더 권한을 함께 허용해주세요. 기존에 한 가지만 연결했다면 한 번 다시 연결하면 돼요.</p>'+
-      '<div class="google-connection-cards">'+cardHtml('drive','Google Drive 백업','저장한 내 기록을 GROWELL 백업 폴더에 보관해요.','자동 백업')+cardHtml('calendar','모임 일정 · Google 캘린더','모임 날짜·시간·장소·읽을 범위를 내 기본 캘린더에 담아요.','모임 일정 자동 반영')+cardHtml('mail','모임 기록 PDF 이메일','운영자가 공개한 모임 기록을 연결한 Google 이메일로 받아요.','PDF 이메일 자동 발송')+'</div>'+
+      '<div class="google-connection-cards">'+cardHtml('drive','Google Drive 백업','저장한 내 기록을 GROWELL 백업 폴더에 보관해요.','자동 백업',admin)+cardHtml('calendar','모임 일정 · Google 캘린더','모임 날짜·시간·장소·읽을 범위를 내 기본 캘린더에 담아요.','모임 일정 자동 반영',admin)+cardHtml('mail','모임 기록 PDF 이메일','공개된 모임 기록과 해당 회차의 회원 공개 통찰을 Google 이메일로 받아요.','PDF 이메일 자동 발송',admin)+'</div>'+
       '<section class="google-connection-reminder" data-google-reminder hidden><h3>삼성 리마인더 · 애플 미리 알림</h3><p>이 화면에서 이어서 연결할 수 있어요. 습관 알림은 Microsoft 계정을 한 번 더 연결하고 휴대폰에서 같은 계정의 GROWELL 목록을 설정해주세요.</p><button type="button" data-google-reminder-open>습관 알림 연결·관리</button></section>'+
-      '<section data-google-push></section>'+
-      '<button type="button" class="google-connection-refresh" data-google-refresh>Google 연결 상태 새로고침</button><p class="google-connection-pause">자동 백업·모임 일정·PDF 이메일은 각각 잠시 끌 수 있어요.</p>'+
-      '<details class="google-connection-scope"><summary>백업·일정·PDF에 담기는 내용</summary><p>백업에는 서버에 저장한 내 기록·습관·자료·독서 아카이브가 담겨요. 작성 중인 초안과 외부 첨부파일 원본은 포함하지 않아요.</p><p>모임 일정에는 운영자가 저장한 날짜·시간·장소·읽을 범위와 안내가 담겨요. Google에서 고친 내용은 GROWELL에 반영되지 않아요.</p><p>이메일 PDF에는 운영자가 공개한 모임 기록과 같은 책·해당 회차에 회원이 공개한 통찰이 함께 담겨요. 나의 공간의 개인 기록과 공개하지 않은 글은 포함하지 않아요. 이메일을 연결해도 내 메일함을 읽거나 내 계정으로 메일을 보내는 권한은 요청하지 않아요.</p><p>개인 기록의 열쇠는 백업에 포함되지 않아요. <a href="#/profile/edit" data-google-recovery>프로필 수정에서 복구 파일을 따로 보관해주세요.</a></p></details></div>';
+      '<button type="button" class="google-connection-refresh" data-google-refresh'+(!admin?' hidden':'')+'>Google 연결 상태 새로고침</button><p class="google-connection-pause">자동 백업·모임 일정·PDF 이메일은 각각 잠시 끌 수 있어요.</p>'+
+      '<details class="google-connection-scope" data-google-scope'+(!admin?' hidden':'')+'><summary>백업·일정·PDF 상세 안내</summary><p>백업에는 서버에 저장한 내 기록·습관·자료·독서 아카이브가 담겨요. 작성 중인 초안과 외부 첨부파일 원본은 포함하지 않아요.</p><p>모임 일정에는 운영자가 저장한 날짜·시간·장소·읽을 범위와 안내가 담겨요. Google에서 고친 내용은 GROWELL에 반영되지 않아요.</p><p>이메일 PDF에는 운영자가 공개한 모임 기록과 같은 책·해당 회차에 회원이 공개한 통찰이 함께 담겨요. 나의 공간의 개인 기록과 공개하지 않은 글은 포함하지 않아요. 이메일을 연결해도 내 메일함을 읽거나 내 계정으로 메일을 보내는 권한은 요청하지 않아요.</p></details><p class="google-connection-recovery">개인 기록의 복구 파일은 <a href="#/profile/edit" data-google-recovery>프로필 수정에서 따로 보관해주세요.</a></p></section></div>';
     root.document.body.appendChild(node);
     var view={node:node,options:options,entries:null,busy:false,timer:null,polls:0};
     function current(){return active===view&&options.isCurrent();}
     view.client=createClient({isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});active=view;
-    if(root.GrowellWebPush&&typeof root.GrowellWebPush.mount==='function')view.push=root.GrowellWebPush.mount(node.querySelector('[data-google-push]'),{isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});
+    if(root.GrowellWebPush&&typeof root.GrowellWebPush.mount==='function')view.push=root.GrowellWebPush.mount(node.querySelector('[data-google-push]'),{memberKey:options.memberKey,isAdmin:admin,isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});
     function q(selector){return node.querySelector(selector);}
+    function selectTab(tab,focus){
+      if(!current())return;var next=tab==='connections'?'connections':'notifications',changed=view.tab!==next;view.tab=next;
+      ['notifications','connections'].forEach(function(name){var selected=view.tab===name,button=q('[data-settings-'+name+'-tab]');button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;q('[data-settings-'+name+'-panel]').hidden=!selected;if(selected&&focus)button.focus({preventScroll:true});});
+      if(changed)q('[data-settings-scroll]').scrollTop=0;
+    }
     function controls(){
       var summary=summaryView(view.entries);node.setAttribute('aria-busy',String(view.busy));
       q('[data-google-connect]').disabled=view.busy||!summary.canConnect;q('[data-google-refresh]').disabled=view.busy;
       services.forEach(function(service){var entry=view.entries&&view.entries[service],status=entry&&entry.status;
         q('[data-google-'+service+'-enabled]').disabled=view.busy||!status||!status.connected||!!entry.error;
-        if(service!=='mail')q('[data-google-'+service+'-sync]').disabled=view.busy||!status||!status.connected||status.busy||!!entry.error;
+        if(service!=='mail'){
+          q('[data-google-'+service+'-sync]').disabled=view.busy||!status||!status.connected||status.busy||!!entry.error;
+          q('[data-google-'+service+'-disconnect]').disabled=view.busy||!status||!status.connected||!!entry.error;
+          q('[data-google-'+service+'-confirm-yes]').disabled=view.busy;
+          q('[data-google-'+service+'-cancel]').disabled=view.busy;
+        }
         q('[data-google-'+service+'-details]').disabled=view.busy;
       });q('[data-google-reminder-open]').disabled=view.busy;
     }
@@ -178,6 +190,7 @@
         state.textContent=entry&&entry.error?message(service,entry.error):status?stateText(service,status):'상태를 확인하고 있어요…';state.classList.toggle('is-error',!!(entry&&entry.error||status&&status.errorCode));
         email.hidden=(service!=='mail'&&summary.sameAccount)||!status||!status.connected||!status.accountEmail;email.textContent=status&&status.accountEmail||'';
         q('[data-google-'+service+'-connected]').hidden=!status||!status.connected;enabled.checked=!!(status&&status.enabled);
+        if(service!=='mail'&&(!status||!status.connected))q('[data-google-'+service+'-confirm]').hidden=true;
         var stamp=status&&(service==='drive'?status.lastBackedUpAt:service==='mail'?status.lastSentAt:status.lastSyncedAt);q('[data-google-'+service+'-last]').textContent=stamp?new Date(stamp).toLocaleString('ko-KR',{hour12:false}):service==='drive'?'아직 백업 전':service==='mail'?'아직 발송 전':'날짜와 시간이 확정되면 등록돼요';
         if(service==='drive'){var folder=q('[data-google-drive-folder]'),url=status&&status.connected?Drive.folderUrl(status.folderUrl):'';folder.hidden=!url;if(url)folder.href=url;else folder.removeAttribute('href');}
       });controls();
@@ -205,18 +218,24 @@
     }
     q('[data-google-close]').onclick=function(){close();};node.addEventListener('cancel',function(event){event.preventDefault();close();});
     node.addEventListener('click',function(event){if(event.target!==node)return;var r=node.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();});
-    q('[data-google-connect]').onclick=connect;q('[data-google-refresh]').onclick=function(){view.polls=0;load(true);};q('[data-google-recovery]').onclick=function(){close(false);};
+    ['notifications','connections'].forEach(function(name){var button=q('[data-settings-'+name+'-tab]');button.onclick=function(){selectTab(name);};button.addEventListener('keydown',function(event){if(['ArrowLeft','ArrowRight','Home','End'].indexOf(event.key)<0)return;event.preventDefault();selectTab(event.key==='Home'?'notifications':event.key==='End'?'connections':name==='notifications'?'connections':'notifications',true);});});
+    q('[data-google-connect]').onclick=connect;q('[data-google-refresh]').onclick=function(){if(admin){view.polls=0;load(true);}};q('[data-google-recovery]').onclick=function(){close(false);};
     services.forEach(function(service){
       q('[data-google-'+service+'-enabled]').onchange=function(){change(service,'configure',{enabled:this.checked});};
-      if(service!=='mail')q('[data-google-'+service+'-sync]').onclick=function(){change(service,'sync',{});};
-      var callback=service==='mail'?null:options[service==='drive'?'onDriveDetails':'onCalendarDetails'],button=q('[data-google-'+service+'-details]');button.hidden=typeof callback!=='function';
-      button.onclick=function(){if(current()&&!view.busy&&typeof callback==='function'){close(false);callback();}};
+      if(service!=='mail'){
+        q('[data-google-'+service+'-sync]').onclick=function(){change(service,'sync',{});};
+        q('[data-google-'+service+'-disconnect]').onclick=function(){if(current()&&!view.busy){q('[data-google-'+service+'-confirm]').hidden=false;q('[data-google-'+service+'-cancel]').focus({preventScroll:true});}};
+        q('[data-google-'+service+'-cancel]').onclick=function(){if(current()&&!view.busy){q('[data-google-'+service+'-confirm]').hidden=true;q('[data-google-'+service+'-disconnect]').focus({preventScroll:true});}};
+        q('[data-google-'+service+'-confirm-yes]').onclick=function(){change(service,'disconnect',{});};
+      }
+      var callback=service==='mail'?null:options[service==='drive'?'onDriveDetails':'onCalendarDetails'],button=q('[data-google-'+service+'-details]');button.hidden=!admin||typeof callback!=='function';
+      button.onclick=function(){if(admin&&current()&&!view.busy&&typeof callback==='function'){close(false);callback();}};
     });
     q('[data-google-reminder]').hidden=typeof options.onReminderSettings!=='function';
     q('[data-google-reminder-open]').onclick=function(){if(current()&&!view.busy&&typeof options.onReminderSettings==='function'){close(false);options.onReminderSettings();}};
     if(options.connectionResult==='partial'){q('[data-google-return]').hidden=false;q('[data-google-return]').textContent='일부 Google 연결을 완료하지 못했어요. 아래 상태를 확인하고 Google 계정을 다시 연결해주세요.';}
     view.visibility=function(){if(!options.isCurrent()){close(false);return;}if(current()&&!root.document.hidden){view.polls=0;load(false);}};root.document.addEventListener('visibilitychange',view.visibility);
-    node.showModal();q('[data-google-close]').focus({preventScroll:true});if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('google-connection',{close:function(){close();}});draw();load(true);
+    selectTab(options.connectionResult||options.tab==='connections'?'connections':'notifications');node.showModal();q('[data-google-close]').focus({preventScroll:true});if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('google-connection',{close:function(){close();}});draw();load(true);
   }
   if(root.addEventListener){root.addEventListener('hashchange',refresh);root.addEventListener('pagehide',function(){close(false);});}
   return {open:open,close:close,refresh:refresh,createClient:createClient,statusView:statusView,summaryView:summaryView,message:message,stateText:stateText};

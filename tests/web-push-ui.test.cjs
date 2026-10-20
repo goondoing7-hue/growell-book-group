@@ -9,35 +9,38 @@ const key=Buffer.concat([Buffer.from([4]),Buffer.alloc(64,9)]).toString('base64u
 const json=value=>JSON.parse(JSON.stringify(value));
 function harness(options={}){
   const calls={prompts:0,registrations:[],requests:[],subscriptions:0,unsubscribe:0,tokens:0,changes:[],localNotifications:[]};
-  let current=true,backendActive=!!options.subscribed,prefs={posts:options.posts!==false,dailyVerse:options.dailyVerse!==false};
+  let current=true,backendActive=!!options.subscribed,prefs={posts:options.posts!==false,dailyVerse:options.dailyVerse!==false},backendEndpoint='https://push.example.test/private-endpoint';
   const notification={permission:options.permission||'default',requestPermission(){calls.prompts++;notification.permission=options.answer||'granted';return Promise.resolve(notification.permission);}};
-  const subscription={endpoint:'https://push.example.test/private-endpoint',expirationTime:null,toJSON(){return {endpoint:this.endpoint,expirationTime:null,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};},unsubscribe(){calls.unsubscribe++;activeSubscription=null;return options.unsubscribeError?Promise.reject(Error('device error')):Promise.resolve(true);}};
-  let activeSubscription=options.subscribed||options.existing?subscription:null;
+  const native=options.native||{};function createSubscription(endpoint,expirationTime=null){return {endpoint,expirationTime,toJSON(){return {endpoint:this.endpoint,expirationTime:this.expirationTime,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};},unsubscribe(){calls.unsubscribe++;if(options.unsubscribeError)return Promise.reject(Error('device error'));if(options.unsubscribeFalse)return Promise.resolve(false);if(!options.keepNative)native.value=null;if(options.onUnsubscribe)options.onUnsubscribe();return Promise.resolve(true);}};}
+  const subscription=createSubscription('https://push.example.test/private-endpoint',options.expirationTime??null);
+  if(!('value' in native))native.value=options.subscribed||options.existing||options.inactive?subscription:null;
+  const memory=options.memory||new Map(),storage={get length(){if(options.storageReadFailure)throw Error('storage blocked');return memory.size;},key:i=>[...memory.keys()][i]??null,getItem:name=>{if(options.storageReadFailure)throw Error('storage blocked');return memory.get(name)??null;},setItem:(name,value)=>{if(options.storageFailure)throw Error('storage blocked');if(!options.storageNoop)memory.set(name,value);},removeItem:name=>memory.delete(name)};
   const registration={scope:'https://growell-book.vercel.app/',active:{state:'activated',scriptURL:'https://growell-book.vercel.app/timer-alert-sw.js'},
     showNotification(title,settings){calls.localNotifications.push({title,settings});return options.localError?Promise.reject(Error('PRIVATE_DEVICE_FAILURE')):Promise.resolve();},
-    pushManager:{getSubscription(){return options.subscriptionDeferred||Promise.resolve(activeSubscription);},subscribe(settings){calls.subscriptions++;calls.subscribeSettings=settings;activeSubscription=subscription;return Promise.resolve(subscription);}}};
+    pushManager:{getSubscription(){return options.subscriptionDeferred||Promise.resolve(native.value);},subscribe(settings){calls.subscriptions++;calls.subscribeSettings=settings;if(options.nativeSubscribeError)return Promise.reject(Error('native failed'));native.value=options.freshEndpoint?createSubscription(options.freshEndpoint):subscription;return Promise.resolve(native.value);}}};
   async function fetch(url,settings){
     const body=JSON.parse(settings.body);calls.requests.push({url,settings,body});
+    if(options.onFetch)options.onFetch(body);
     if(options.fetchDeferred&&body.action===options.fetchDeferredAction)return options.fetchDeferred;
     if(options.networkError)throw Error('PRIVATE_NETWORK_BODY');
     if(options.failure===body.action)return {ok:false,status:503,json:async()=>({error:options.errorCode||'unavailable',detail:'PRIVATE_ERROR_DETAIL'})};
     let data;
     if(body.action==='config')data={configured:options.configured!==false,publicKey:options.badKey||key};
-    else if(body.action==='status')data={configured:true,subscription:backendActive?{active:true,preferences:prefs,lastSentAt:options.lastSentAt}:null};
-    else if(body.action==='subscribe'){backendActive=true;prefs=body.preferences;data={ok:true};}
+    else if(body.action==='status')data={configured:true,subscription:body.endpoint===backendEndpoint&&(backendActive||options.inactive)?{active:backendActive,preferences:prefs,lastSentAt:options.lastSentAt,lastError:backendActive?null:options.lastError??'subscription-expired'}:null};
+    else if(body.action==='subscribe'){backendActive=true;backendEndpoint=body.subscription.endpoint;prefs=options.serverPrefs||body.preferences;data={ok:true};}
     else if(body.action==='preferences'){prefs=body.preferences;data={ok:true};}
     else if(body.action==='unsubscribe'){backendActive=false;data={ok:true};}
     else data={ok:true};
     return {ok:true,status:200,json:async()=>data};
   }
-  const c={Promise,Date,Math,JSON,Array,Number,Object,Set,Uint8Array,AbortController,URL,
+  const c={Promise,Date,Math,JSON,Array,Number,Object,Set,Uint8Array,AbortController,URL,crypto:require('node:crypto').webcrypto,localStorage:storage,
     setTimeout:options.fastTimers?(fn,delay)=>setTimeout(fn,Math.min(delay,10)):setTimeout,clearTimeout,
     atob:value=>Buffer.from(value,'base64').toString('binary'),isSecureContext:!options.insecure,Notification:options.unsupported?undefined:notification,PushManager:options.unsupported?undefined:function(){},
     location:{origin:'https://growell-book.vercel.app'},matchMedia:()=>({matches:!!options.standalone}),navigator:{userAgent:options.ios?'iPhone':'Windows',platform:options.ipad?'MacIntel':'Win32',maxTouchPoints:options.ipad?5:0,
       standalone:!!options.standalone,serviceWorker:{getRegistration(){calls.getRegistration=(calls.getRegistration||0)+1;return options.registrationDeferred||Promise.resolve(registration);},register(url,settings){calls.registrations.push({url,settings});return options.registerError?Promise.reject(Error('device registration')):Promise.resolve(registration);}}},fetch};
   vm.createContext(c);vm.runInContext(source,c);
-  const api=c.GrowellWebPush,adapter={isCurrent:()=>current,getAccessToken:()=>{calls.tokens++;return Promise.resolve('PRIVATE_BEARER_TOKEN');},onChange:value=>calls.changes.push(json(value))};
-  return {api,c,calls,notification,subscription,registration,adapter,controller:api.createController(adapter),endSession(){current=false;},setCurrent(value){current=value;}};
+  const api=c.GrowellWebPush,adapter={memberKey:options.memberKey||'SYNTHETIC_MEMBER',isCurrent:()=>current,getAccessToken:()=>{calls.tokens++;return Promise.resolve('PRIVATE_BEARER_TOKEN');},onChange:value=>calls.changes.push(json(value))};
+  return {api,c,calls,notification,subscription,registration,adapter,options,memory,native,controller:api.createController(adapter),endSession(){current=false;},setCurrent(value){current=value;}};
 }
 test('opening settings only checks the current device and never asks permission or subscribes',async()=>{
   const h=harness();await h.controller.refresh();
@@ -139,7 +142,7 @@ test('malformed server timestamps are omitted and server acceptance is not label
 });
 test('enabling waits for an installing replacement instead of accepting a still-active old timer worker',async()=>{
   const h=harness({permission:'granted'});await h.controller.refresh();let listener,removed=0;
-  const replacement={state:'installing',addEventListener(name,fn){assert.equal(name,'statechange');listener=fn;},removeEventListener(name,fn){if(fn===listener)removed++;}};
+  const replacement={state:'installing',scriptURL:'https://growell-book.vercel.app/timer-alert-sw.js',addEventListener(name,fn){assert.equal(name,'statechange');listener=fn;},removeEventListener(name,fn){if(fn===listener)removed++;}};
   h.registration.installing=replacement;const pending=h.controller.enable();await new Promise(setImmediate);
   assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(r=>r.body.action==='subscribe'),false);
   replacement.state='activated';h.registration.active=replacement;h.registration.installing=null;listener();
@@ -206,19 +209,100 @@ test('a stalled session check and unavailable browser storage leave settings ret
   h.c.navigator.serviceWorker.getRegistration=()=>{throw Error('storage blocked');};
   assert.equal(await h.api.detach(h.adapter),false);
 });
-test('the mounted settings expose only clear per-device controls and confirmed preferences',async()=>{
-  const h=harness({subscribed:true,permission:'granted',posts:false,lastSentAt:'2026-10-17T01:23:45Z'});const nodes=new Map();
+function mountHarness(options={},mode={}){
+  const h=harness(options),nodes=new Map();
   const container={classList:{add(){}},setAttribute(){},set innerHTML(value){this.markup=value;for(const match of value.matchAll(/data-push-[a-z]+/g)){
     if(!nodes.has(match[0]))nodes.set(match[0],{hidden:false,disabled:false,checked:false,textContent:'',classList:{toggle(){}}});
-  }},querySelector(selector){return nodes.get(selector.slice(1,-1));},querySelectorAll(selectors){return selectors.split(',').map(selector=>this.querySelector(selector));}};
-  const view=h.api.mount(container,h.adapter);await new Promise(setImmediate);
+  }},querySelector(selector){return nodes.get(selector.slice(1,-1));},querySelectorAll(selectors){return selectors.split(',').map(selector=>this.querySelector(selector)).filter(Boolean);}};
+  const view=h.api.mount(container,Object.assign({},h.adapter,mode));return {h,nodes,container,view};
+}
+test('the administrator settings expose clear per-device controls, diagnostics and confirmed preferences',async()=>{
+  const {h,nodes,container,view}=mountHarness({subscribed:true,permission:'granted',posts:false,lastSentAt:'2026-10-17T01:23:45Z'},{isAdmin:true});await new Promise(setImmediate);
   assert.match(container.markup,/이 기기에서 알림 받기/);assert.match(container.markup,/테스트 알림 보내기/);
-  assert.match(container.markup,/기기 알림 표시 확인/);assert.match(nodes.get('data-push-last').textContent,/최근 서버 발송:.*2026.*기기 수신 확인과는 달라요/);
+  assert.match(container.markup,/기기 알림 표시 확인/);assert.match(nodes.get('data-push-last').textContent,/최근 전체 알림 발송:.*2026.*기기 수신 확인과는 달라요/);
   assert.match(container.markup,/새 나눔·자료 알림/);assert.match(container.markup,/나눔과 자료실의 새 글/);assert.match(container.markup,/한국 시간 오전 9시/);
   assert.equal(nodes.get('data-push-enable').hidden,true);assert.equal(nodes.get('data-push-settings').hidden,false);
   assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
   assert.doesNotMatch(container.markup+JSON.stringify([...nodes.values()]),/PRIVATE_|private-endpoint|push\.example/);
   const before=h.calls.requests.length;view.destroy();await nodes.get('data-push-refresh').onclick().catch(()=>{});assert.equal(h.calls.requests.length,before);
+});
+test('ordinary member settings retain one test and recovery controls while omitting administrator diagnostics',async()=>{
+  for(const isAdmin of [undefined,false,'true',1]){
+    const {h,nodes,container,view}=mountHarness({subscribed:true,permission:'granted',posts:false},{isAdmin});await new Promise(setImmediate);
+    assert.match(container.markup,/테스트 알림 보내기/);assert.doesNotMatch(container.markup,/기기 알림 표시 확인|1분 뒤 알림 확인|최근 전체 알림 발송|data-push-local|data-push-delayed|data-push-last/);
+    assert.equal(nodes.get('data-push-settings').hidden,false);assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
+    assert.equal(await nodes.get('data-push-test').onclick(),true);assert.equal(h.calls.requests.at(-1).body.action,'test');assert.equal(typeof nodes.get('data-push-disable').onclick,'function');view.destroy();
+  }
+});
+test('an expired own subscription displays its reconnect action outside the hidden connected settings',async()=>{
+  const {h,nodes,container,view}=mountHarness({inactive:true,permission:'granted',posts:false,dailyVerse:false});await new Promise(setImmediate);
+  assert.equal(nodes.get('data-push-settings').hidden,true);assert.equal(nodes.get('data-push-enable').hidden,false);assert.equal(nodes.get('data-push-enable').textContent,'다시 연결하기');assert.equal(nodes.get('data-push-reconnect').hidden,false);
+  assert.match(nodes.get('data-push-reconnect').textContent,/연결이 만료.*기존 수신 설정은 유지/);assert.ok(container.markup.indexOf('data-push-reconnect')<container.markup.indexOf('data-push-settings'));assert.equal(h.calls.unsubscribe,0);assert.equal(h.calls.subscriptions,0);view.destroy();
+});
+test('expired own devices renew only on explicit click and keep both disabled preferences on a different endpoint',async()=>{
+  const h=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/fresh-device'});
+  await h.controller.refresh();await h.controller.refresh();assert.equal(h.calls.unsubscribe,0);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);
+  assert.equal(h.controller.snapshot().expired,true);assert.equal(h.controller.snapshot().subscribed,false);assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});
+  assert.equal(await h.controller.enable(),true);assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);assert.equal(h.calls.prompts,0);
+  const request=h.calls.requests.find(call=>call.body.action==='subscribe');assert.equal(request.body.subscription.endpoint,'https://push.example.test/fresh-device');assert.notEqual(request.body.subscription.endpoint,h.subscription.endpoint);assert.deepEqual(request.body.preferences,{posts:false,dailyVerse:false});
+  assert.equal(h.controller.snapshot().subscribed,true);assert.equal(h.controller.snapshot().reconnectRequired,false);assert.equal(h.controller.snapshot().expired,false);assert.equal(h.memory.size,0);assert.match(h.controller.snapshot().notice,/다시 연결.*수신 설정은 그대로/);
+});
+test('native expiration renews even when the server last knew it as active while healthy refreshes never rotate',async()=>{
+  const expired=harness({subscribed:true,permission:'granted',expirationTime:Date.now()-1,posts:false,freshEndpoint:'https://push.example.test/renewed-native'});await expired.controller.refresh();assert.equal(expired.controller.snapshot().subscribed,false);assert.equal(expired.controller.snapshot().expired,true);
+  assert.equal(await expired.controller.enable(),true);assert.equal(expired.calls.unsubscribe,1);assert.deepEqual(expired.calls.requests.find(call=>call.body.action==='subscribe').body.preferences,{posts:false,dailyVerse:true});
+  const healthy=harness({subscribed:true,permission:'granted',expirationTime:Date.now()+86400000});for(let i=0;i<3;i++)await healthy.controller.refresh();assert.equal(healthy.controller.snapshot().subscribed,true);assert.equal(healthy.calls.unsubscribe,0);assert.equal(healthy.calls.subscriptions,0);assert.equal(healthy.calls.requests.some(call=>['subscribe','preferences'].includes(call.body.action)),false);
+});
+test('reconnection must verify preference backup and exact unsubscribe before issuing a fresh native or server subscription',async()=>{
+  for(const boundary of [{storageFailure:true},{storageNoop:true},{storageReadFailure:true},{unsubscribeError:true},{unsubscribeFalse:true},{keepNative:true}]){
+    const h=harness(Object.assign({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/new'},boundary));await h.controller.refresh();
+    assert.equal(await h.controller.enable(),false,JSON.stringify(boundary));assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);assert.equal(h.native.value,h.subscription);
+    if(boundary.storageFailure||boundary.storageNoop||boundary.storageReadFailure)assert.equal(h.calls.unsubscribe,0);
+    assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});assert.equal(h.controller.snapshot().busy,false);
+  }
+});
+test('reconnection rejects a different worker or a changed native endpoint without touching either device',async()=>{
+  for(const alter of [h=>{h.registration.scope='https://growell-book.vercel.app/other/';},h=>{h.registration.active.scriptURL='https://growell-book.vercel.app/unrelated.js';},h=>{h.native.value={endpoint:'https://push.example.test/other-account'};}]){
+    const h=harness({inactive:true,permission:'granted',posts:false});await h.controller.refresh();alter(h);assert.equal(await h.controller.enable(),false);assert.equal(h.calls.unsubscribe,0);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);
+  }
+});
+test('session replacement during exact old unsubscribe prevents creation or registration for the next account',async()=>{
+  const h=harness({inactive:true,permission:'granted',posts:false});await h.controller.refresh();h.options.onUnsubscribe=()=>h.endSession();assert.equal(await h.controller.enable(),false);
+  assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);assert.equal(h.memory.size,1);
+  const other=harness({permission:'granted',memberKey:'ANOTHER_SYNTHETIC_MEMBER',memory:h.memory,native:h.native});await other.controller.refresh();assert.deepEqual(json(other.controller.snapshot().preferences),{posts:true,dailyVerse:true});assert.equal(other.controller.snapshot().reconnectRequired,false);assert.equal(other.calls.subscriptions,0);
+});
+test('a fresh endpoint whose server save fails retains OFF choices through refresh and reload until confirmed retry',async()=>{
+  const h=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/fresh-unregistered',failure:'subscribe'});await h.controller.refresh();assert.equal(await h.controller.enable(),false);
+  assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);assert.equal(h.memory.size,1);assert.equal(h.native.value.endpoint,'https://push.example.test/fresh-unregistered');
+  const [savedKey,savedRaw]=[...h.memory][0];assert.match(savedKey,/^growell_push_repair_v1:[a-f0-9]+-[a-f0-9]+:\d+-[a-f0-9]{32}$/);assert.deepEqual(JSON.parse(savedRaw),{posts:false,dailyVerse:false});assert.doesNotMatch(savedKey+savedRaw,/SYNTHETIC_MEMBER|PRIVATE|endpoint|push\.example|TOKEN|AUTH/);
+  await h.controller.refresh();assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);h.controller.destroy();
+  const reload=harness({permission:'granted',native:h.native,memory:h.memory});await reload.controller.refresh();assert.equal(reload.controller.snapshot().subscribed,false);assert.equal(reload.controller.snapshot().reconnectRequired,true);assert.deepEqual(json(reload.controller.snapshot().preferences),{posts:false,dailyVerse:false});
+  assert.equal(await reload.controller.enable(),true);assert.equal(reload.calls.subscriptions,0);assert.equal(reload.calls.unsubscribe,0);assert.deepEqual(reload.calls.requests.find(call=>call.body.action==='subscribe').body.preferences,{posts:false,dailyVerse:false});assert.equal(reload.memory.size,0);
+});
+test('failed repair followed by unreadable or malformed durable choices fails closed before any device or server change',async()=>{
+  const initial=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/new-endpoint',failure:'subscribe'});await initial.controller.refresh();await initial.controller.enable();initial.controller.destroy();
+  for(const mode of ['blocked','malformed']){
+    const memory=new Map(initial.memory);if(mode==='malformed')memory.set([...memory.keys()][0],'{not-json');
+    const h=harness({permission:'granted',native:initial.native,memory,storageReadFailure:mode==='blocked'});await h.controller.refresh();assert.equal(await h.controller.enable(),false);assert.equal(h.calls.unsubscribe,0);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);assert.equal(h.native.value.endpoint,'https://push.example.test/new-endpoint');assert.equal(memory.size,1);
+  }
+});
+test('pending OFF choices prevent confirmed ON settings from hiding the repair and are restored before success',async()=>{
+  const first=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,failure:'subscribe'});await first.controller.refresh();await first.controller.enable();first.controller.destroy();
+  const h=harness({subscribed:true,permission:'granted',memory:first.memory,native:first.native,serverPrefs:{posts:true,dailyVerse:true}});await h.controller.refresh();assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.controller.snapshot().reconnectRequired,true);assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});
+  assert.equal(await h.controller.enable(),true);assert.deepEqual(h.calls.requests.find(call=>call.body.action==='preferences').body.preferences,{posts:false,dailyVerse:false});assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});assert.equal(h.memory.size,0);
+});
+test('reconnection cleanup cannot erase a newer pending preference generation created during registration',async()=>{
+  const h=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/fresh-generation'});await h.controller.refresh();let newKey;
+  h.options.onFetch=body=>{if(body.action==='subscribe'){const prefix=[...h.memory.keys()][0].split(':').slice(0,2).join(':')+':';newKey=prefix+'9999999999999-'+'a'.repeat(32);h.memory.set(newKey,JSON.stringify({posts:false,dailyVerse:false}));}};
+  assert.equal(await h.controller.enable(),true);assert.equal(h.memory.size,1);assert.equal(h.memory.has(newKey),true);assert.deepEqual(JSON.parse(h.memory.get(newKey)),{posts:false,dailyVerse:false});
+});
+test('a newer OFF generation arriving after registration is preserved and cannot be declared connected with ON settings',async()=>{
+  const h=harness({inactive:true,permission:'granted',freshEndpoint:'https://push.example.test/fresh-conflict'});await h.controller.refresh();let newKey;
+  h.options.onFetch=body=>{if(body.action==='subscribe'){const prefix=[...h.memory.keys()][0].split(':').slice(0,2).join(':')+':';newKey=prefix+'9999999999999-'+'b'.repeat(32);h.memory.set(newKey,JSON.stringify({posts:false,dailyVerse:false}));}};
+  assert.equal(await h.controller.enable(),false);assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.memory.has(newKey),true);assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});
+});
+test('a native endpoint replaced during server confirmation is not reported as a completed connection',async()=>{
+  const h=harness({inactive:true,permission:'granted',posts:false,freshEndpoint:'https://push.example.test/new'});await h.controller.refresh();h.options.onFetch=body=>{if(body.action==='subscribe')h.native.value={endpoint:'https://push.example.test/later-account'};};
+  assert.equal(await h.controller.enable(),false);assert.equal(h.controller.snapshot().errorCode,'device_changed');assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.controller.snapshot().reconnectRequired,true);assert.equal(h.memory.size,1);assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.requests.some(call=>call.body.endpoint==='https://push.example.test/later-account'),false);
 });
 function workerHarness(windows=[]){
   const events={},notifications=[],opened=[],c={URL,Promise,self:{location:{origin:'https://growell-book.vercel.app'},addEventListener:(name,fn)=>events[name]=fn,

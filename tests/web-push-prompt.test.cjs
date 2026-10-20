@@ -27,13 +27,14 @@ function harness(options={}){
   const storage=options.storage||new Map(),dialogs=[],events={},calls={prompts:0,requests:[],subscribe:0,history:[]};
   let current=true,present=options.canPresent!==false,active=!!options.subscribed,clock=Date.parse('2026-10-17T00:00:00Z');
   const subscription={endpoint:'https://push.example.invalid/PRIVATE_DEVICE',toJSON(){return {endpoint:this.endpoint,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};}};
-  const reg={active:{state:'activated'},pushManager:{getSubscription:async()=>options.existing||active?subscription:null,subscribe:async()=>{calls.subscribe++;return subscription;}}};
+  let native=options.existing||active?subscription:null;
+  const reg={scope:origin+'/',active:{state:'activated',scriptURL:origin+'/timer-alert-sw.js'},showNotification:async()=>{},pushManager:{getSubscription:async()=>native,subscribe:async()=>{calls.subscribe++;native=subscription;return subscription;}}};
   const permission={permission:options.permission||'default',requestPermission(){calls.prompts++;permission.permission=options.answer||'granted';return Promise.resolve(permission.permission);}};
   const document={activeElement:new Element('button'),body:{appendChild(node){dialogs.push(node);}},createElement:tag=>new Element(tag),querySelector(){return options.otherModal||dialogs.find(dialog=>dialog.open&&!dialog.removed)||null;}};
   const timers=[],c={document,URL,Promise,Date,Math,JSON,Object,Array,Number,Set,Uint8Array,AbortController,setTimeout:options.manualArrival?(fn,delay)=>{if(delay===800){timers.push(fn);return -timers.length;}return setTimeout(fn,delay);}:(fn,delay)=>setTimeout(fn,delay===800?0:delay),clearTimeout:id=>{if(id<0)timers[-id-1]=null;else clearTimeout(id);},isSecureContext:!options.insecure,
     atob:value=>Buffer.from(value,'base64').toString('binary'),location:{origin},PushManager:options.unsupported?undefined:function(){},Notification:options.unsupported?undefined:permission,
     matchMedia:()=>({matches:!!options.standalone}),navigator:{userAgent:options.ios?'iPhone':'Windows',standalone:!!options.standalone,serviceWorker:{getRegistration:async()=>reg,register:async()=>reg}},
-    localStorage:{getItem(name){if(options.storageBlocked)throw Error('blocked');return storage.get(name)||null;},setItem(name,value){if(options.storageBlocked)throw Error('blocked');storage.set(name,value);}},
+    crypto:require('node:crypto').webcrypto,localStorage:{get length(){if(options.storageBlocked)throw Error('blocked');return storage.size;},key:index=>[...storage.keys()][index]??null,getItem(name){if(options.storageBlocked)throw Error('blocked');return storage.get(name)||null;},setItem(name,value){if(options.storageBlocked)throw Error('blocked');storage.set(name,value);},removeItem:name=>storage.delete(name)},
     addEventListener(name,fn){(events[name]||=[]).push(fn);},removeEventListener(name,fn){events[name]=(events[name]||[]).filter(value=>value!==fn);},
     GrowellPopupHistory:{open(name,settings){calls.history.push(['open',name]);calls.historyClose=settings.close;},closed(name){calls.history.push(['close',name]);}},
     fetch:async(url,settings)=>{
@@ -50,7 +51,7 @@ function harness(options={}){
 }
 test('an eligible returning member sees a single explanation without automatic permission or subscription',async()=>{
   const h=harness();assert.equal(await h.manager.maybeShow(h.adapter),true);assert.equal(h.dialogs.length,1);assert.equal(h.node.open,true);
-  assert.match(h.node.html,/새로운 나눔/);assert.match(h.node.html,/매일 오전 9시 말씀/);assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscribe,0);
+  assert.match(h.node.html,/새로운 나눔/);assert.match(h.node.html,/매일 오전 9시 말씀/);assert.match(h.node.html,/프로필 → 설정 → 알림/);assert.doesNotMatch(h.node.html,/프로필 → 연동/);assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscribe,0);
   assert.equal(await h.manager.maybeShow(h.adapter),false);assert.equal(h.dialogs.length,1);assert.doesNotMatch(h.node.html,/PRIVATE_MEMBER|PRIVATE_DEVICE|PRIVATE_KEY/);h.manager.destroy();
 });
 test('the explicit enable button preserves the synchronous permission gesture and then closes on confirmed connection',async()=>{
@@ -68,7 +69,7 @@ test('connected, denied, unsupported, insecure and unconfigured devices do not g
   }
 });
 test('iOS outside the home screen receives installation guidance without any permission or server request',async()=>{
-  const h=harness({ios:true,unsupported:true});assert.equal(await h.manager.maybeShow(h.adapter),true);assert.match(h.node.html,/Safari.*홈 화면에 추가/s);
+  const h=harness({ios:true,unsupported:true});assert.equal(await h.manager.maybeShow(h.adapter),true);assert.match(h.node.html,/Safari.*홈 화면에 추가/s);assert.match(h.node.html,/프로필 → 설정 → 알림/);
   assert.equal('[data-push-prompt-enable]' in h.node.nodes,false);assert.equal(h.calls.prompts,0);assert.equal(h.calls.requests.length,0);h.manager.destroy();
 });
 test('later, close, Escape and browser Back snooze for seven days with only hashed key and timestamp stored',async()=>{

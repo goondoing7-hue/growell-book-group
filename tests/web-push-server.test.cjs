@@ -63,6 +63,35 @@ test('status, preference update, test and disconnect are fenced by verified prof
   assert.equal(f.state.stored,null);
 });
 
+test('an expired owned device returns inactive status and confirmed preferences without exposing its identity or subscription',async()=>{
+  for(const preferences of [{posts:false,dailyVerse:true},{posts:true,dailyVerse:false},{posts:false,dailyVerse:false}]){
+    const f=fixture();
+    f.store.configure=async(profile,operation,payload)=>{
+      assert.deepEqual(profile,PROFILE);assert.equal(operation,'status');assert.deepEqual(payload,{fingerprint:D.hash(SUB.endpoint)});
+      return{connected:false,deviceId:JOB,newPosts:preferences.posts,dailyVerse:preferences.dailyVerse,lastSentAt:'2026-10-20T00:00:09Z',lastError:'subscription-expired',subscription_cipher:'PRIVATE_CIPHER',owner_id:PROFILE.id,auth_user_id:AUTH,endpoint:SUB.endpoint,keys:SUB.keys};
+    };
+    const response=await invoke(f.handler,{body:{action:'status',endpoint:SUB.endpoint}});
+    assert.equal(response.headers.status,200);
+    assert.deepEqual(response.body,{configured:true,subscription:{active:false,preferences,lastSentAt:'2026-10-20T00:00:09Z',lastError:'subscription-expired'}});
+    for(const privateValue of [JOB,PROFILE.id,AUTH,SUB.endpoint,SUB.keys.auth,SUB.keys.p256dh,'PRIVATE_CIPHER'])assert.equal(JSON.stringify(response.body).includes(privateValue),false);
+    assert.equal(f.state.sends.length,0);
+  }
+  assert.equal(S.safeError({code:'subscription-expired'}),'subscription-expired');
+});
+
+test('inactive status requires the RPC ownership marker and never invents an expiration for an explicit disconnect',()=>{
+  const own={connected:false,deviceId:JOB,newPosts:false,dailyVerse:true,lastSentAt:null,lastError:null};
+  assert.deepEqual(S.statusResult(CONFIG,own),{configured:true,subscription:{active:false,preferences:{posts:false,dailyVerse:true},lastSentAt:null,lastError:null}});
+  for(const value of [null,{},
+    {...own,deviceId:null},{...own,deviceId:undefined},{...own,deviceId:'PRIVATE_FOREIGN_DEVICE'},
+    {...own,newPosts:undefined},{...own,newPosts:'false'},{...own,dailyVerse:undefined},{...own,dailyVerse:1},
+    {...own,connected:undefined},{...own,deviceId:null,newPosts:true,dailyVerse:true,lastError:'subscription-expired'}]){
+    assert.deepEqual(S.statusResult(CONFIG,value),{configured:true,subscription:null});
+  }
+  const hidden=S.statusResult(CONFIG,{...own,lastSentAt:'PRIVATE_INVALID_DATE',lastError:'PRIVATE_DATABASE_ERROR'});
+  assert.equal(hidden.subscription.lastSentAt,null);assert.equal(hidden.subscription.lastError,'service-unavailable');assert.doesNotMatch(JSON.stringify(hidden),/PRIVATE_/);
+});
+
 test('one-minute background test is queued for the verified device without sending from the member request',async()=>{
   const f=fixture();f.state.stored={new_posts:true,daily_verse:true};
   const response=await invoke(f.handler,{body:{action:'test',endpoint:SUB.endpoint,delaySeconds:60}});

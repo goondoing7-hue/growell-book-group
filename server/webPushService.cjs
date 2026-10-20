@@ -9,7 +9,7 @@ const BOOKS=new Set(['emotion','thought','body','action']);
 const BOOK_TITLES=Object.freeze({emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'});
 const ID=/^[A-Za-z0-9_-]{1,100}$/;
 const MAX_BODY_BYTES=12000;
-const SAFE_CODES=new Set(['not-configured','authentication-required','membership-required','same-origin-required','invalid-request','subscription-invalid','connection-required','service-unavailable','rate-limited','push-unavailable','subscription-gone','push-rate-limited','push-rejected','push-uncertain']);
+const SAFE_CODES=new Set(['not-configured','authentication-required','membership-required','same-origin-required','invalid-request','subscription-invalid','subscription-expired','connection-required','service-unavailable','rate-limited','push-unavailable','subscription-gone','push-rate-limited','push-rejected','push-uncertain']);
 function safeError(error){return SAFE_CODES.has(error?.code)?error.code:'service-unavailable';}
 function getConfig(env=process.env){
   let key;try{key=Buffer.from(env.GROWELL_SYNC_KEY||'','base64');}catch(_){key=Buffer.alloc(0);}
@@ -54,8 +54,12 @@ function createStore(config,request){
 function context(owner,auth,fingerprint){return 'web-push:'+owner+':'+auth+':'+fingerprint;}
 function fingerprint(endpoint){P.endpointUrl(endpoint);return D.hash(endpoint);}
 function statusResult(config,value){
-  if(!value||value.connected!==true)return {configured:config.configured,subscription:null};
-  return{configured:config.configured,subscription:{active:true,preferences:{posts:value.newPosts===true,dailyVerse:value.dailyVerse===true},lastSentAt:typeof value.lastSentAt==='string'&&Number.isFinite(Date.parse(value.lastSentAt))?value.lastSentAt:null,lastError:value.lastError?safeError({code:value.lastError}):null}};
+  // The ownership-fenced RPC returns a device ID only for the verified owner's
+  // device. Missing/foreign devices also carry default preferences, so those
+  // booleans alone must never expose an inactive subscription.
+  const ownedInactive=value?.connected===false&&UUID.test(value.deviceId||'')&&typeof value.newPosts==='boolean'&&typeof value.dailyVerse==='boolean';
+  if(!value||(value.connected!==true&&!ownedInactive))return {configured:config.configured,subscription:null};
+  return{configured:config.configured,subscription:{active:value.connected===true,preferences:{posts:value.newPosts===true,dailyVerse:value.dailyVerse===true},lastSentAt:typeof value.lastSentAt==='string'&&Number.isFinite(Date.parse(value.lastSentAt))?value.lastSentAt:null,lastError:value.lastError?safeError({code:value.lastError}):null}};
 }
 function preferences(value){
   if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==2||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean')throw new D.BackupError('invalid-request',400);

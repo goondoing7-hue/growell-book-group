@@ -3,6 +3,7 @@ const test=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
+const vm=require('node:vm');
 const backup=require('../driveBackup.js');
 const origin='https://growell-book.vercel.app';
 const response=(data={configured:true,connected:false},extra={})=>({ok:true,status:200,json:async()=>data,...extra});
@@ -140,8 +141,30 @@ test('profile entry, callback and logout wire the same account-scoped dialog',()
   const header=html.slice(html.indexOf('function headerHtml('),html.indexOf('function headerHtml(')+6000);
   assert.ok(header.indexOf('id="btn-profile-drive-backup"')>header.indexOf('id="btn-goto-profile-edit"'));
   assert.ok(header.indexOf('id="btn-profile-drive-backup"')<header.indexOf('id="btn-logout"'));
-  assert.match(html,/function openDriveBackup\(trigger\)[\s\S]*?SESSION===session&&saveSessionEpoch===epoch&&location\.href===route/);
+  assert.match(html,/function openDriveBackup\(trigger,returnSettings\)[\s\S]*?SESSION===session&&saveSessionEpoch===epoch&&location\.href===route/);
   assert.match(html,/function clearMemberSession\(\)[\s\S]*?GrowellDriveBackup\.close\(false\)/);
   assert.match(html,/function handleDriveBackupReturn\(\)[\s\S]*?if\(!SESSION\)return;[\s\S]*?searchParams\.delete\('drive-backup'\)/);
   assert.match(html,/bindEvents\(route\);[\s\S]*?handleDriveBackupReturn\(\)/);
+});
+
+test('Drive details return to settings connections only for the captured session, epoch and route',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),start=html.indexOf('function openDriveBackup('),end=html.indexOf('function handleDriveBackupReturn()',start);
+  assert.ok(start>=0&&end>start);const source=html.slice(start,end);
+  function fixture(returnSettings){
+    let adapter;const calls=[],trigger={isConnected:true,offsetParent:{},focus(){calls.push(['focus']);}};
+    const c={SESSION:{userId:'fixture-member'},saveSessionEpoch:9,location:{href:origin+'/#/book/emotion/share'},
+      GrowellDriveBackup:{open(options){adapter=options;}},openGoogleConnection(...args){calls.push(['settings',...args]);},
+      habitSyncAccessToken(session,epoch){calls.push(['token',session.userId,epoch]);return 'SYNTHETIC_CURRENT_TOKEN';},document:{getElementById(){throw Error('unexpected fallback focus');}}};
+    vm.createContext(c);vm.runInContext(source,c);c.openDriveBackup(trigger,returnSettings);return {c,calls,trigger,adapter};
+  }
+  for(const returnSettings of [false,true]){
+    const current=fixture(returnSettings);assert.equal(current.adapter.isCurrent(),true);assert.equal(current.adapter.getAccessToken(),'SYNTHETIC_CURRENT_TOKEN');
+    assert.deepEqual(current.calls.shift(),['token','fixture-member',9]);current.adapter.restoreFocus();
+    assert.deepEqual(current.calls,returnSettings?[['settings',current.trigger,'','connections']]:[['focus']]);
+    for(const change of ['session','epoch','route']){
+      const stale=fixture(returnSettings);
+      if(change==='session')stale.c.SESSION={userId:'other-member'};else if(change==='epoch')stale.c.saveSessionEpoch++;else stale.c.location.href=origin+'/#/archive';
+      assert.equal(stale.adapter.isCurrent(),false,change);stale.adapter.restoreFocus();assert.deepEqual(stale.calls,[],change+' cannot refocus or reopen former-member settings');
+    }
+  }
 });

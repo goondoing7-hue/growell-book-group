@@ -23,7 +23,11 @@ test('signed-in header orders theme, archive and profile, and puts logout last i
     assert.ok(beforeMenu.indexOf('id="btn-theme"')<beforeMenu.indexOf('header-archive-link'));assert.ok(beforeMenu.indexOf('header-archive-link')<beforeMenu.indexOf('id="btn-profile-toggle"'));
     assert.match(beforeMenu,/<a class="icon-btn header-archive-link is-active" href="#\/archive" aria-label="아카이브" title="아카이브" aria-current="page">/);assert.match(beforeMenu,/id="btn-profile-toggle"[^>]+aria-controls="profile-dropdown"/);assert.match(beforeMenu,/avatar.jpg/);assert.doesNotMatch(beforeMenu,/로그아웃|btn-logout|btn-delete-account/);
     const menu=top.slice(top.indexOf('<div class="profile-dropdown"'));assert.match(menu,/id="profile-dropdown" hidden/);assert.match(menu,/href="#\/archive" id="btn-profile-archive">아카이브/);assert.match(menu,/href="#\/profile\/edit"/);assert.doesNotMatch(menu,/계정 삭제|btn-delete-account/);assert.match(menu,/내 &lt;별명&gt;/);
-    const items=[...menu.matchAll(/<(?:a|button) class="profile-dropdown-item[^>]*>([^<]*)<\/(?:a|button)>/g)].map(match=>match[1]);assert.equal(items.at(-1),'로그아웃');assert.equal((html.match(/id="btn-logout"/g)||[]).length,1);assert.ok(items.includes(admin?'가입자 목록':'운영자 코드 입력'));
+    const items=[...menu.matchAll(/<(?:a|button) class="profile-dropdown-item[^>]*>([^<]*)<\/(?:a|button)>/g)].map(match=>match[1]);
+    assert.deepEqual(items,admin?['아카이브','프로필 수정','설정','가입자 목록','로그아웃']:['아카이브','프로필 수정','설정','로그아웃']);
+    assert.equal((html.match(/id="btn-logout"/g)||[]).length,1);assert.match(menu,/id="btn-profile-drive-backup"[^>]*aria-haspopup="dialog">설정<\/button>/);
+    assert.doesNotMatch(menu,/btn-grant-admin|운영자 코드 입력/);
+    if(admin)assert.match(menu,/href="#\/admin\/users">가입자 목록<\/a>/);else assert.doesNotMatch(menu,/가입자 목록|#\/admin\/users/);
   }
 });
 

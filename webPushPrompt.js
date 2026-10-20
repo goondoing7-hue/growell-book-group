@@ -39,8 +39,8 @@
       if(!canPresent(job))return false;
       var install=state.iosNeedsInstall,node=root.document.createElement('dialog');node.className='web-push-prompt';node.setAttribute('aria-labelledby','web-push-prompt-title');
       node.innerHTML='<header class="web-push-prompt-head"><h2 id="web-push-prompt-title">'+(install?'홈 화면에서 알림을 받아요':'GROWELL 알림을 받아볼까요?')+'</h2><button type="button" data-push-prompt-close aria-label="알림 안내 닫기">×</button></header>'+
-        '<div class="web-push-prompt-body">'+(install?'<p>아이폰·아이패드는 Safari에서 GROWELL을 <strong>홈 화면에 추가</strong>한 뒤 알림을 켤 수 있어요.</p><ol><li>Safari의 공유 메뉴에서 홈 화면에 추가를 선택해요.</li><li>홈 화면의 GROWELL 아이콘을 열어요.</li><li>프로필 → 연동 → 푸시 알림에서 알림을 허용해요.</li></ol><p class="web-push-note">iOS·iPadOS 16.4 이상이 필요해요. 지금은 알림 권한을 요청하지 않아요.</p>':
-          '<p>이 기기에서 새 나눔·자료와 오늘의 말씀을 놓치지 않고 확인해요.</p><ul><li><strong>새로운 나눔·자료</strong><span>나눔과 자료실의 새 글을 받아요. 내가 쓴 글과 글 수정은 제외해요.</span></li><li><strong>매일 오전 9시 말씀</strong><span>한국 시간 기준으로 보내요.</span></li></ul><p class="web-push-note">다음 화면에서 브라우저 알림을 허용해주세요. 알림 종류는 프로필 → 연동에서 각각 바꿀 수 있어요.</p>')+
+        '<div class="web-push-prompt-body">'+(install?'<p>아이폰·아이패드는 Safari에서 GROWELL을 <strong>홈 화면에 추가</strong>한 뒤 알림을 켤 수 있어요.</p><ol><li>Safari의 공유 메뉴에서 홈 화면에 추가를 선택해요.</li><li>홈 화면의 GROWELL 아이콘을 열어요.</li><li>프로필 → 설정 → 알림에서 알림을 허용해요.</li></ol><p class="web-push-note">iOS·iPadOS 16.4 이상이 필요해요. 지금은 알림 권한을 요청하지 않아요.</p>':
+          '<p>이 기기에서 새 나눔·자료와 오늘의 말씀을 놓치지 않고 확인해요.</p><ul><li><strong>새로운 나눔·자료</strong><span>나눔과 자료실의 새 글을 받아요. 내가 쓴 글과 글 수정은 제외해요.</span></li><li><strong>매일 오전 9시 말씀</strong><span>한국 시간 기준으로 보내요.</span></li></ul><p class="web-push-note">다음 화면에서 브라우저 알림을 허용해주세요. 알림 종류는 프로필 → 설정 → 알림에서 각각 바꿀 수 있어요.</p>')+
           '<p class="web-push-prompt-status" data-push-prompt-status role="status" aria-live="polite"></p><div class="web-push-prompt-actions">'+(install?'':'<button type="button" class="web-push-primary" data-push-prompt-enable>알림 받기</button>')+'<button type="button" class="web-push-prompt-later" data-push-prompt-later>나중에</button></div><p class="web-push-note">나중에를 누르면 7일 동안 이 안내를 쉬어요.</p></div>';
       var view={job:job,node:node,controller:controller,previous:root.document.activeElement,install:install};active=view;
       function current(){return active===view&&valid(job);}
@@ -72,7 +72,7 @@
       if(pending){if(pending.key===key&&valid(pending))return pending.promise;generation++;cancel(pending);pending=null;}
       var job={key:key,generation:generation,options:options,draw:null};
       if(snoozed(key)||!canPresent(job))return Promise.resolve(false);
-      var controller=Push.createController({isCurrent:function(){return valid(job);},getAccessToken:options.getAccessToken,onChange:function(state){if(job.draw)job.draw(state);}});job.controller=controller;pending=job;
+      var controller=Push.createController({memberKey:options.memberKey,isCurrent:function(){return valid(job);},getAccessToken:options.getAccessToken,onChange:function(state){if(job.draw)job.draw(state);}});job.controller=controller;pending=job;
       job.promise=controller.refresh().then(function(ok){
         if(!valid(job))return false;var state=controller.snapshot();
         if(!ok||state.errorCode||!state.loaded){retryAt[key]=now()+45000;return false;}

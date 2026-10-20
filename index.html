@@ -4480,10 +4480,10 @@ function headerHtml(route){
         '<div class="profile-dropdown-sep"></div>' +
         '<a class="profile-dropdown-item" href="#/archive" id="btn-profile-archive">아카이브</a>' +
         '<a class="profile-dropdown-item" href="#/profile/edit" id="btn-goto-profile-edit">프로필 수정</a>' +
-        '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">연동</button>' +
+        '<button class="profile-dropdown-item" id="btn-profile-drive-backup" type="button" aria-haspopup="dialog">설정</button>' +
         (admin
           ? '<a class="profile-dropdown-item" href="#/admin/users">가입자 목록</a>'
-          : '<button class="profile-dropdown-item" id="btn-grant-admin" type="button">운영자 코드 입력</button>') +
+          : '') +
         '<div class="profile-dropdown-sep"></div><button class="profile-dropdown-item" id="btn-logout" type="button">로그아웃</button>' +
       '</div>' +
     '</div>';
@@ -6401,20 +6401,20 @@ function handleHabitSyncReturn(){
   openHabitReminder(null,trigger);
   if(result!=='connected')showToast(result==='cancelled'?'연결을 취소했어요.':'계정을 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
 }
-function openMeetingCalendar(trigger){
+function openMeetingCalendar(trigger,returnSettings){
   if(!SESSION||typeof GrowellMeetingCalendar==='undefined')return;
   var session=SESSION,epoch=saveSessionEpoch,route=location.href;
   function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
-  GrowellMeetingCalendar.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},onConnectGoogle:function(){GrowellMeetingCalendar.close(false);openGoogleConnection(trigger);},restoreFocus:function(){if(!current())return;var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});}});
+  GrowellMeetingCalendar.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},onConnectGoogle:function(){GrowellMeetingCalendar.close(false);openGoogleConnection(trigger,'','connections');},restoreFocus:function(){if(!current())return;if(returnSettings){openGoogleConnection(trigger,'','connections');return;}var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});}});
 }
-function openGoogleConnection(trigger,result){
+function openGoogleConnection(trigger,result,tab){
   if(!SESSION)return;
   if(typeof GrowellGoogleConnection==='undefined'){showToast('Google 연결 화면을 불러오지 못했어요. 새로고침 후 다시 열어주세요.',true);return;}
   var session=SESSION,epoch=saveSessionEpoch,route=location.href;
   function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
   if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.close(false);
   if(typeof GrowellMeetingCalendar!=='undefined')GrowellMeetingCalendar.close(false);
-  GrowellGoogleConnection.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},connectionResult:result||'',beforeConnect:function(){
+  GrowellGoogleConnection.open({memberKey:session.userId,isAdmin:isAdmin()===true,tab:result||tab==='connections'?'connections':'notifications',isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},connectionResult:result||'',beforeConnect:function(){
     captureComposerDraft();
     function pendingDraft(){return Object.keys(composerDrafts).some(function(key){return composerDrafts[key].userId===session.userId&&composerDrafts[key].unsaved;});}
     return new Promise(function(resolve,reject){var started=Date.now();function check(){
@@ -6425,7 +6425,7 @@ function openGoogleConnection(trigger,result){
       resolve();
     }check();});
   },
-    onDriveDetails:function(){if(current())openDriveBackup(trigger);},onCalendarDetails:function(){if(current())openMeetingCalendar(trigger);},
+    onDriveDetails:function(){if(current()&&isAdmin())openDriveBackup(trigger,true);},onCalendarDetails:function(){if(current()&&isAdmin())openMeetingCalendar(trigger,true);},
     onReminderSettings:function(){if(current())openHabitReminder(null,trigger);},
     restoreFocus:function(){if(!current())return;var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});}});
 }
@@ -6443,15 +6443,16 @@ function handleMeetingCalendarReturn(){
   var url=new URL(location.href),result=url.searchParams.get('meeting-calendar');
   if(['connected','error','failed','cancelled'].indexOf(result)<0)return;
   url.searchParams.delete('meeting-calendar');history.replaceState(history.state,'',url.href);
-  openMeetingCalendar(document.getElementById('btn-home-meeting-calendar')||document.getElementById('btn-profile-toggle'));
+  openGoogleConnection(document.getElementById('btn-home-meeting-calendar')||document.getElementById('btn-profile-toggle'),result,'connections');
   if(result!=='connected')showToast(result==='cancelled'?'Google 연결을 취소했어요.':'Google 캘린더를 연결하지 못했어요. 다시 시도해주세요.',result!=='cancelled');
 }
-function openDriveBackup(trigger){
+function openDriveBackup(trigger,returnSettings){
   if(!SESSION||typeof GrowellDriveBackup==='undefined')return;
   var session=SESSION,epoch=saveSessionEpoch,route=location.href;
   function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
-  GrowellDriveBackup.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},onConnectGoogle:function(){GrowellDriveBackup.close(false);openGoogleConnection(trigger);},restoreFocus:function(){
+  GrowellDriveBackup.open({isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},onConnectGoogle:function(){GrowellDriveBackup.close(false);openGoogleConnection(trigger,'','connections');},restoreFocus:function(){
     if(!current())return;
+    if(returnSettings){openGoogleConnection(trigger,'','connections');return;}
     var target=trigger&&trigger.isConnected&&trigger.offsetParent!==null?trigger:document.getElementById('btn-profile-toggle');
     if(target)target.focus({preventScroll:true});
   }});
@@ -8219,7 +8220,7 @@ function bindEvents(route){
   });
 
   /* home: 모임 안내 편집 (admin) */
-  ['btn-home-meeting-calendar','btn-profile-meeting-calendar'].forEach(function(id){var trigger=document.getElementById(id);if(trigger)trigger.addEventListener('click',function(){var menu=document.getElementById('profile-dropdown'),toggle=document.getElementById('btn-profile-toggle');if(menu)menu.hidden=true;if(toggle)toggle.setAttribute('aria-expanded','false');openGoogleConnection(trigger);});});
+  ['btn-home-meeting-calendar','btn-profile-meeting-calendar'].forEach(function(id){var trigger=document.getElementById(id);if(trigger)trigger.addEventListener('click',function(){var menu=document.getElementById('profile-dropdown'),toggle=document.getElementById('btn-profile-toggle');if(menu)menu.hidden=true;if(toggle)toggle.setAttribute('aria-expanded','false');openGoogleConnection(trigger,'','connections');});});
   var editAnnounceBtn = document.getElementById('btn-edit-announcement');
   if(editAnnounceBtn) editAnnounceBtn.addEventListener('click', function(){ if(!canEditAnnouncement()||announcementSaveBusy)return; announcementEditDraft=JSON.parse(JSON.stringify(STATE.announcement)); editingAnnouncement = true; render(); });
   var closeAnnounceBtn = document.getElementById('btn-close-announcement');

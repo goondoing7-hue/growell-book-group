@@ -67,7 +67,9 @@ test('configure and sync keep service controls independent and strip arbitrary p
   assert.deepEqual(box.calls.map(call=>[call.url,JSON.parse(call.options.body)]),[
     ['/api/drive-backup?action=configure',{enabled:false}],['/api/meeting-calendar?action=configure',{enabled:true}],['/api/meeting-calendar?action=sync',{}]
   ]);
-  for(const [service,action] of [['drive','disconnect'],['calendar','connect'],['__proto__','configure'],['drive','worker']])await assert.rejects(box.client.request(service,action,{}),{code:'invalid_action'});
+  await box.client.request('drive','disconnect',{records:'PRIVATE_RECORD'});await box.client.request('calendar','disconnect',{userId:'PRIVATE_OWNER'});
+  assert.deepEqual(box.calls.slice(-2).map(call=>[call.url,JSON.parse(call.options.body)]),[['/api/drive-backup?action=disconnect',{}],['/api/meeting-calendar?action=disconnect',{}]]);
+  for(const [service,action] of [['mail','disconnect'],['calendar','connect'],['__proto__','configure'],['drive','worker']])await assert.rejects(box.client.request(service,action,{}),{code:'invalid_action'});
   box.client.dispose();
 });
 
@@ -90,7 +92,7 @@ class Element {
   set innerHTML(html){this.html=html;this.nodes={};for(const [,tag,attributes] of html.matchAll(/<([a-z]+)\b([^>]*)>/g)){const attrs=[...attributes.matchAll(/\b(data-[a-z-]+)(?:="[^"]*")?/g)];if(!attrs.length)continue;const node=new Element(tag);node.hidden=/\bhidden\b/.test(attributes);for(const [,attr] of attrs)this.nodes['['+attr+']']=node;}}
   get innerHTML(){return this.html;}
   querySelector(selector){assert.ok(this.nodes[selector],'fixture selector '+selector);return this.nodes[selector];}
-  querySelectorAll(selectors){return selectors.split(',').map(selector=>this.querySelector(selector));}
+  querySelectorAll(selectors){return selectors.split(',').map(selector=>this.nodes[selector]).filter(Boolean);}
   setAttribute(name,value){this.attributes[name]=value;}
   removeAttribute(name){delete this.attributes[name];if(name==='href')this.href='';}
   addEventListener(type,listener){(this.events[type]||=[]).push(listener);}
@@ -207,8 +209,8 @@ test('closing the dialog aborts late loads, removes observers and restores focus
   answer.resolve(response(joint({drive:connected({accountEmail:'OLD_MEMBER@example.invalid'})})));await flush();assert.doesNotMatch(box.node.html+box.q('[data-google-summary]').textContent,/OLD_MEMBER/);box.close();assert.equal(restored,1);
 });
 
-test('details open only after disposing the unified dialog',async()=>{
-  let opened=false;const box=uiHarness({options:{onCalendarDetails(){opened=true;assert.equal(box.node.removed,true);assert.equal(box.documentEvents.visibilitychange.length,0);}}});await flush();
+test('administrator details open only after disposing the unified dialog',async()=>{
+  let opened=false;const box=uiHarness({options:{isAdmin:true,onCalendarDetails(){opened=true;assert.equal(box.node.removed,true);assert.equal(box.documentEvents.visibilitychange.length,0);}}});await flush();
   assert.equal(box.q('[data-google-drive-details]').hidden,true);assert.equal(box.q('[data-google-calendar-details]').hidden,false);box.q('[data-google-calendar-details]').onclick();assert.equal(opened,true);box.close();
 });
 
@@ -230,7 +232,7 @@ test('push preferences remain usable while Google services are still loading',as
     return url.endsWith('action=config')?response({configured:true}):google.promise;
   }}});await flush();
   const push=box.q('[data-google-push]'),q=selector=>push.querySelector(selector);
-  assert.match(box.node.html,/<h2 id="google-connection-title">연동<\/h2>/);
+  assert.match(box.node.html,/<h2 id="google-connection-title">설정<\/h2>/);
   assert.equal(box.q('[data-google-drive-enabled]').disabled,true,'Google status is still loading');
   assert.equal(q('[data-push-settings]').hidden,false);assert.equal(q('[data-push-posts]').disabled,false);
   assert.equal(q('[data-push-posts]').checked,false);assert.equal(q('[data-push-verse]').checked,true);
@@ -243,7 +245,7 @@ test('push preferences remain usable while Google services are still loading',as
 
 test('Google connection failures do not block independently authenticated push settings',async()=>{
   const fixture=pushBrowser(),requests=[];
-  const box=uiHarness({webPush:true,root:{...fixture.root,fetch:async(url,settings)=>{
+  const box=uiHarness({webPush:true,options:{isAdmin:true},root:{...fixture.root,fetch:async(url,settings)=>{
     requests.push(url);if(url==='/api/web-push')return response(JSON.parse(settings.body).action==='config'?{configured:true,publicKey:fixture.key}:{configured:true,subscription:{active:true,preferences:{posts:true,dailyVerse:true}}});
     throw Error('PRIVATE_GOOGLE_FAILURE');
   }}});await flush();
@@ -278,4 +280,94 @@ test('replacing the member invalidates the push adapter and closes all connectio
   assert.equal(signal.aborted,true);assert.equal(box.node.removed,true);assert.equal(box.documentEvents.visibilitychange.length,0);
   answer.resolve(response({configured:true,subscription:{active:true,preferences:{posts:false,dailyVerse:false}}}));await flush();
   assert.equal(box.q('[data-google-push]').querySelector('[data-push-settings]').hidden,true);box.close();
+});
+
+test('settings defaults to notifications and switches tabs without changing saved connection choices',async()=>{
+  const box=uiHarness();await flush();
+  assert.match(box.node.html,/<h2 id="google-connection-title">설정<\/h2>/);
+  assert.equal(box.q('[data-settings-notifications-panel]').hidden,false);assert.equal(box.q('[data-settings-connections-panel]').hidden,true);
+  assert.equal(box.q('[data-settings-notifications-tab]').attributes['aria-selected'],'true');assert.equal(box.q('[data-settings-notifications-tab]').tabIndex,0);
+  const before=box.calls.length;box.q('[data-settings-connections-tab]').onclick();
+  assert.equal(box.q('[data-settings-connections-panel]').hidden,false);assert.equal(box.q('[data-settings-notifications-panel]').hidden,true);
+  assert.equal(box.q('[data-google-drive-enabled]').checked,true);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);
+  box.q('[data-settings-notifications-tab]').onclick();assert.equal(box.calls.length,before,'tab selection has no write or connection side effect');
+  assert.equal(box.q('[data-google-mail-enabled]').checked,true);box.close();
+});
+
+test('switching settings tabs resets the shared scroll position while the same tab and status reload preserve it',async()=>{
+  const box=uiHarness({options:{isAdmin:true}});await flush();const scroll=box.q('[data-settings-scroll]');
+  scroll.scrollTop=240;box.q('[data-settings-notifications-tab]').onclick();assert.equal(scroll.scrollTop,240);
+  box.q('[data-google-refresh]').onclick();await flush();assert.equal(scroll.scrollTop,240);
+  box.q('[data-settings-connections-tab]').onclick();assert.equal(scroll.scrollTop,0);
+  scroll.scrollTop=360;box.q('[data-settings-connections-tab]').onclick();assert.equal(scroll.scrollTop,360);
+  box.q('[data-settings-notifications-tab]').onclick();assert.equal(scroll.scrollTop,0);box.close();
+});
+
+test('home or OAuth connection entry selects connections and tab keys keep one selected focus target',async()=>{
+  for(const options of [{tab:'connections'},{connectionResult:'connected'},{tab:'notifications',connectionResult:'partial'}]){
+    const box=uiHarness({options});await flush();assert.equal(box.q('[data-settings-connections-panel]').hidden,false);
+    let prevented=false;box.q('[data-settings-connections-tab]').events.keydown[0]({key:'Home',preventDefault(){prevented=true;}});
+    assert.equal(prevented,true);assert.equal(box.q('[data-settings-notifications-panel]').hidden,false);assert.equal(box.q('[data-settings-notifications-tab]').focused,true);
+    assert.equal(box.q('[data-settings-connections-tab]').tabIndex,-1);box.close();
+  }
+});
+
+test('ordinary members retain essential connections but cannot open administrator details or diagnostics',async()=>{
+  let opened=0;const box=uiHarness({options:{onDriveDetails(){opened++;},onCalendarDetails(){opened++;},onReminderSettings(){opened++;}}});await flush();
+  for(const service of ['drive','calendar']){
+    assert.equal(box.q('[data-google-'+service+'-details]').hidden,true);
+    box.q('[data-google-'+service+'-details]').onclick();assert.equal(opened,0,'a synthetic click cannot run an administrator callback');
+    assert.equal(box.q('[data-google-'+service+'-enabled]').disabled,false);assert.equal(box.q('[data-google-'+service+'-disconnect]').disabled,false);
+  }
+  assert.equal(box.q('[data-google-scope]').hidden,true);assert.equal(box.q('[data-google-refresh]').hidden,true);
+  const before=box.calls.length;box.q('[data-google-refresh]').onclick();await flush();assert.equal(box.calls.length,before);
+  assert.equal(box.q('[data-google-mail-enabled]').disabled,false);assert.equal(box.q('[data-google-reminder]').hidden,false);
+  assert.match(box.node.html,/삼성 리마인더에서 GROWELL 습관을 열고/);assert.match(box.node.html,/iOS 26\.2/);assert.match(box.node.html,/Microsoft 계정 목록에는 자동 적용할 수 없어요/);
+  assert.doesNotMatch(box.node.html,/<select\b|importance.*high|알림 강도.*<input/);box.close();
+  const admin=uiHarness({options:{isAdmin:true,onDriveDetails(){},onCalendarDetails(){}}});await flush();
+  assert.equal(admin.q('[data-google-scope]').hidden,false);assert.equal(admin.q('[data-google-refresh]').hidden,false);
+  assert.equal(admin.q('[data-google-drive-details]').hidden,false);assert.equal(admin.q('[data-google-calendar-details]').hidden,false);admin.close();
+});
+
+test('member disconnection requires its own confirmation and uses only the chosen existing service API',async()=>{
+  const requests=[];let driveConnected=true;const box=uiHarness({options:{tab:'connections'},root:{fetch:async(url,settings)=>{
+    requests.push({url,settings});
+    if(url.endsWith('action=config'))return response({configured:true});
+    if(url.endsWith('action=disconnect')){assert.equal(url,'/api/drive-backup?action=disconnect');assert.deepEqual(JSON.parse(settings.body),{});driveConnected=false;return response({ok:true});}
+    return response(joint({drive:connected({connected:driveConnected,enabled:driveConnected})}));
+  }}});await flush();const before=requests.length;
+  box.q('[data-google-drive-disconnect]').onclick();assert.equal(box.q('[data-google-drive-confirm]').hidden,false);assert.equal(requests.length,before);
+  box.q('[data-google-drive-cancel]').onclick();assert.equal(box.q('[data-google-drive-confirm]').hidden,true);assert.equal(requests.length,before);
+  box.q('[data-google-drive-disconnect]').onclick();box.q('[data-google-drive-confirm-yes]').onclick();await flush();
+  assert.equal(box.q('[data-google-drive-connected]').hidden,true);assert.equal(box.q('[data-google-drive-confirm]').hidden,true);
+  assert.equal(box.q('[data-google-calendar-connected]').hidden,false);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);
+  assert.equal(requests.filter(call=>call.url.endsWith('action=disconnect')).length,1);assert.match(box.node.html,/저장한 기록과 이미 만들어진 백업 파일은 삭제되지 않아요/);box.close();
+});
+
+test('settings passes the verified member and strict administrator flag into the push pane',async()=>{
+  for(const isAdmin of [false,true,'true',undefined]){
+    let adapter;const box=uiHarness({options:{memberKey:'fixture-member-key',isAdmin},root:{GrowellWebPush:{mount(container,options){adapter=options;return{destroy(){}};}}}});await flush();
+    assert.equal(adapter.memberKey,'fixture-member-key');assert.equal(adapter.isAdmin,isAdmin===true);assert.equal(adapter.isCurrent(),true);
+    box.setCurrent(false);assert.equal(adapter.isCurrent(),false);box.close();
+  }
+});
+
+test('the actual profile adapter opens notifications by default and keeps OAuth, home and administrator detail returns on connections',()=>{
+  const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+  const begin=html.indexOf('function openGoogleConnection('),end=html.indexOf('function handleGoogleConnectionReturn()',begin);assert.ok(begin>0&&end>begin);
+  let captured,administrator=false;const calls=[],session={userId:'fixture-member'};
+  const root={SESSION:session,saveSessionEpoch:7,location:{href:origin+'/#/'},isAdmin:()=>administrator,
+    GrowellGoogleConnection:{open(options){captured=options;}},GrowellDriveBackup:{close(){}},GrowellMeetingCalendar:{close(){}},
+    openDriveBackup(...args){calls.push(['drive',...args]);},openMeetingCalendar(...args){calls.push(['calendar',...args]);},openHabitReminder(...args){calls.push(['habit',...args]);},
+    habitSyncAccessToken:async()=> 'SYNTHETIC_MEMBER_TOKEN'};
+  vm.createContext(root);vm.runInContext(html.slice(begin,end),root);
+  root.openGoogleConnection('profile-trigger');assert.equal(captured.tab,'notifications');assert.equal(captured.isAdmin,false);assert.equal(captured.memberKey,session.userId);
+  captured.onDriveDetails();captured.onCalendarDetails();assert.deepEqual(calls,[]);
+  captured.onReminderSettings();assert.deepEqual(calls,[['habit',null,'profile-trigger']]);
+  root.openGoogleConnection('home-trigger','','connections');assert.equal(captured.tab,'connections');
+  root.openGoogleConnection('profile-trigger','partial');assert.equal(captured.tab,'connections');assert.equal(captured.connectionResult,'partial');
+  administrator=true;root.openGoogleConnection('admin-trigger');captured.onDriveDetails();captured.onCalendarDetails();assert.deepEqual(calls.slice(-2),[['drive','admin-trigger',true],['calendar','admin-trigger',true]]);
+  root.SESSION={userId:'other-member'};captured.onDriveDetails();assert.equal(calls.length,3);assert.equal(captured.isCurrent(),false);
+  assert.match(html,/id="btn-profile-drive-backup"[^>]*>설정<\/button>/);assert.doesNotMatch(html,/id="btn-grant-admin"[^>]*>운영자 코드 입력<\/button>/);
+  assert.match(html,/openGoogleConnection\(trigger,'','connections'\)/);
 });

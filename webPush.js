@@ -36,6 +36,9 @@
     if(code==='timeout')return '응답이 늦어지고 있어요. 연결 상태를 새로고침해주세요.';
     if(code==='device_display_failed')return '기기 알림을 표시하지 못했어요. 브라우저의 사이트 알림과 갤럭시 설정의 해당 브라우저·GROWELL 알림 허용을 확인해주세요.';
     if(code==='worker_unavailable')return '이 기기의 알림 연결을 새로 확인해야 해요. 상태를 새로고침하거나 이 기기 알림을 껐다가 다시 연결해주세요.';
+    if(code==='subscription_expired')return '이 기기의 알림 연결이 만료됐어요. 다시 연결하기를 눌러 새 연결을 만들어주세요.';
+    if(code==='reconnect_failed')return '알림을 다시 연결하지 못했어요. 기존 수신 설정은 보관했으니 상태를 새로고침한 뒤 다시 시도해주세요.';
+    if(code==='device_changed')return '이 기기의 알림 연결이 다른 화면에서 바뀌었어요. 상태를 새로고침한 뒤 다시 눌러주세요.';
     return '알림 설정을 확인하지 못했어요. 인터넷 연결을 확인하고 다시 시도해주세요.';
   }
   function createClient(options){
@@ -62,18 +65,41 @@
     if(!raw||typeof raw.configured!=='boolean')throw fail('unavailable');
     if(raw.subscription!=null&&(!raw.subscription||typeof raw.subscription.active!=='boolean'||!raw.subscription.preferences||typeof raw.subscription.preferences.posts!=='boolean'||typeof raw.subscription.preferences.dailyVerse!=='boolean'))throw fail('unavailable');
     var stamp=raw.subscription&&typeof raw.subscription.lastSentAt==='string'?Date.parse(raw.subscription.lastSentAt):NaN;
-    return {configured:raw.configured,subscribed:!!(raw.subscription&&raw.subscription.active),lastSentAt:Number.isFinite(stamp)?new Date(stamp).toISOString():'',preferences:raw.subscription?{posts:raw.subscription.preferences.posts,dailyVerse:raw.subscription.preferences.dailyVerse}:{posts:true,dailyVerse:true}};
+    return {configured:raw.configured,subscribed:!!(raw.subscription&&raw.subscription.active),inactive:!!raw.subscription&&!raw.subscription.active,expired:!!raw.subscription&&raw.subscription.lastError==='subscription-expired',hasPreferences:!!raw.subscription,lastSentAt:Number.isFinite(stamp)?new Date(stamp).toISOString():'',preferences:raw.subscription?{posts:raw.subscription.preferences.posts,dailyVerse:raw.subscription.preferences.dailyVerse}:{posts:true,dailyVerse:true}};
   }
   function createController(options){
-    options=options||{};var ownEpoch=epoch,disposed=false,key='',subscription=null;
-    var state=Object.assign(support(),{configured:null,subscribed:false,preferences:{posts:true,dailyVerse:true},lastSentAt:'',busy:false,loaded:false,errorCode:'',notice:''});
+    options=options||{};var ownEpoch=epoch,disposed=false,key='',subscription=null,inactiveEndpoint='',pendingSeen=[],pendingInvalid=false;
+    var state=Object.assign(support(),{configured:null,subscribed:false,inactive:false,expired:false,reconnectRequired:false,preferences:{posts:true,dailyVerse:true},lastSentAt:'',busy:false,loaded:false,errorCode:'',notice:''});
     function current(){return !disposed&&epoch===ownEpoch&&options.isCurrent();}
     function guard(){if(!current())throw fail('session_changed');}
     var client=createClient({getAccessToken:options.getAccessToken,isCurrent:current,fetch:options.fetch||root.fetch.bind(root)});
     function emit(){if(current()&&options.onChange)options.onChange(snapshot());}
     function snapshot(){return Object.assign({},state,{preferences:Object.assign({},state.preferences)});}
     function device(){guard();return bounded(root.navigator.serviceWorker.getRegistration('/'),12000).then(function(reg){guard();return reg&&reg.pushManager?bounded(reg.pushManager.getSubscription(),12000):null;});}
-    function apply(raw){var parsed=subscriptionStatus(raw);state.configured=parsed.configured;state.subscribed=parsed.subscribed;state.preferences=parsed.preferences;state.lastSentAt=parsed.lastSentAt;}
+    function expired(value){return !!value&&typeof value.expirationTime==='number'&&Number.isFinite(value.expirationTime)&&value.expirationTime<=Date.now();}
+    function pendingPrefix(){
+      var member=options.memberKey;if(typeof member!=='string'||!member||member.length>320)return '';
+      var a=2166136261,b=3339675911;for(var i=0;i<member.length;i++){a=Math.imul(a^member.charCodeAt(i),16777619);b=Math.imul(b^member.charCodeAt(i),2246822519);}
+      return 'growell_push_repair_v1:'+(a>>>0).toString(16)+'-'+(b>>>0).toString(16)+':';
+    }
+    function pendingPreferences(){
+      var prefix=pendingPrefix(),result={posts:true,dailyVerse:true};pendingInvalid=false;if(!prefix)return null;var found=false;pendingSeen=[];
+      try{var storage=root.localStorage;for(var i=0;i<storage.length;i++){var name=storage.key(i);if(typeof name!=='string'||name.indexOf(prefix)!==0)continue;var raw=storage.getItem(name);if(typeof raw!=='string'||raw.length>80){pendingInvalid=true;continue;}var value;try{value=JSON.parse(raw);}catch(error){pendingInvalid=true;continue;}if(!value||Object.keys(value).length!==2||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean'){pendingInvalid=true;continue;}
+        result.posts=result.posts&&value.posts;result.dailyVerse=result.dailyVerse&&value.dailyVerse;found=true;pendingSeen.push({key:name,raw:raw});}
+      }catch(error){pendingInvalid=true;return null;}return found?result:null;
+    }
+    function preservePreferences(value){
+      var prefix=pendingPrefix();if(!prefix)throw fail('reconnect_failed');
+      try{var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);var name=prefix+Date.now()+'-'+Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join(''),raw=JSON.stringify({posts:value.posts,dailyVerse:value.dailyVerse}),storage=root.localStorage;
+        if(storage.getItem(name)!==null)throw fail('reconnect_failed');storage.setItem(name,raw);if(storage.getItem(name)!==raw)throw fail('reconnect_failed');pendingSeen.push({key:name,raw:raw});
+      }catch(error){throw fail('reconnect_failed');}
+    }
+    function clearPending(items){if(!current())return;try{items.forEach(function(item){if(root.localStorage.getItem(item.key)===item.raw)root.localStorage.removeItem(item.key);});}catch(error){}}
+    function apply(raw){var parsed=subscriptionStatus(raw),pending=pendingPreferences(),conflict=!!pending&&parsed.subscribed&&(!pending.posts&&parsed.preferences.posts||!pending.dailyVerse&&parsed.preferences.dailyVerse);state.configured=parsed.configured;state.inactive=parsed.inactive;state.expired=parsed.expired||expired(subscription);state.reconnectRequired=parsed.inactive||state.expired||!!pending||pendingInvalid;state.subscribed=parsed.subscribed&&!state.expired&&!conflict;state.preferences=parsed.hasPreferences?parsed.preferences:state.preferences;if(pending)state.preferences={posts:state.preferences.posts&&pending.posts,dailyVerse:state.preferences.dailyVerse&&pending.dailyVerse};state.lastSentAt=parsed.lastSentAt;inactiveEndpoint=parsed.inactive&&subscription?subscription.endpoint:'';}
+    function exactRegistration(reg){var base=root.location&&root.location.origin,scope,script;
+      try{scope=new URL(reg.scope);script=new URL(reg.active.scriptURL);}catch(error){throw fail('worker_unavailable');}
+      if(!base||scope.origin!==base||scope.pathname!=='/'||scope.search||scope.hash||script.origin!==base||script.pathname!=='/timer-alert-sw.js'||script.search||script.hash||reg.active.state!=='activated'||!reg.pushManager||typeof reg.showNotification!=='function')throw fail('worker_unavailable');
+    }
     function activated(reg){
       // A still-active timer worker may predate push support. Await its replacement when one is installing/waiting.
       return new Promise(function(resolve,reject){
@@ -101,7 +127,7 @@
     });}
     function enable(){
       if(!current()||state.busy)return Promise.resolve(false);
-      Object.assign(state,support());var permission;
+      Object.assign(state,support());var permission,expectedEndpoint=subscription?subscription.endpoint:null,desired=Object.assign({},state.preferences),renewed=state.reconnectRequired,regForEnable,pendingForEnable=[];
       if(!state.supported)permission=Promise.reject(fail('unsupported'));
       else if(state.iosNeedsInstall)permission=Promise.reject(fail('install_required'));
       else if(!state.loaded||!state.configured||!key)permission=Promise.reject(fail('not_configured'));
@@ -117,9 +143,21 @@
         return bounded(root.navigator.serviceWorker.register('/timer-alert-sw.js',{scope:'/',updateViaCache:'none'}),15000);
       }).then(function(reg){
         guard();return (typeof reg.update==='function'?bounded(reg.update(),15000):Promise.resolve()).then(function(){guard();return activated(reg);});
-      }).then(function(reg){guard();return bounded(reg.pushManager.getSubscription(),12000).then(function(existing){guard();return existing||bounded(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKey(key)}),15000);});})
-        .then(function(value){guard();subscription=value;return client.request('subscribe',{subscription:value.toJSON(),preferences:Object.assign({},state.preferences)});})
-        .then(function(){guard();return client.request('status',{endpoint:subscription.endpoint});}).then(function(raw){apply(raw);state.notice='이 기기에서 알림을 받을 수 있어요.';});});
+      }).then(function(reg){guard();exactRegistration(reg);regForEnable=reg;return bounded(reg.pushManager.getSubscription(),12000).then(function(existing){
+        guard();if((existing?existing.endpoint:null)!==expectedEndpoint)throw fail('device_changed');
+        var pending=pendingPreferences();if(pendingInvalid)throw fail('reconnect_failed');if(pending){desired.posts=desired.posts&&pending.posts;desired.dailyVerse=desired.dailyVerse&&pending.dailyVerse;}
+        var repair=!!existing&&(existing.endpoint===inactiveEndpoint||expired(existing));
+        function subscribe(){guard();return bounded(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKey(key)}),15000);}
+        if(!existing){if(state.reconnectRequired||pending)preservePreferences(desired);return subscribe();}
+        if(!repair)return existing;
+        preservePreferences(desired);state.subscribed=false;renewed=true;
+        return bounded(existing.unsubscribe(),12000).then(function(removed){guard();if(removed!==true)throw fail('reconnect_failed');return bounded(reg.pushManager.getSubscription(),12000);}).then(function(remaining){guard();if(remaining)throw fail(remaining.endpoint===expectedEndpoint?'reconnect_failed':'device_changed');subscription=null;inactiveEndpoint='';return subscribe();});
+      });})
+        .then(function(value){guard();if(!value||expired(value))throw fail('reconnect_failed');subscription=value;return bounded(regForEnable.pushManager.getSubscription(),12000).then(function(actual){guard();if(!actual||actual.endpoint!==value.endpoint)throw fail('device_changed');pendingForEnable=pendingSeen.slice();return client.request('subscribe',{subscription:value.toJSON(),preferences:desired});});})
+        .then(function(){guard();return client.request('status',{endpoint:subscription.endpoint});}).then(function(raw){
+          apply(raw);var confirmed=subscriptionStatus(raw);if(!confirmed.subscribed||expired(subscription))throw fail('reconnect_failed');
+          if(!desired.posts&&confirmed.preferences.posts||!desired.dailyVerse&&confirmed.preferences.dailyVerse)return client.request('preferences',{endpoint:subscription.endpoint,preferences:desired}).then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(function(value){apply(value);var checked=subscriptionStatus(value);if(!state.subscribed||!desired.posts&&checked.preferences.posts||!desired.dailyVerse&&checked.preferences.dailyVerse)throw fail('reconnect_failed');});
+        }).then(function(){guard();if(!state.subscribed)throw fail('reconnect_failed');return bounded(regForEnable.pushManager.getSubscription(),12000);}).then(function(actual){guard();if(!actual||!subscription||actual.endpoint!==subscription.endpoint){state.subscribed=false;state.reconnectRequired=true;throw fail('device_changed');}clearPending(pendingForEnable);state.reconnectRequired=false;state.inactive=false;state.expired=false;state.notice=renewed?'이 기기의 알림을 다시 연결했어요. 수신 설정은 그대로 유지했어요.':'이 기기에서 알림을 받을 수 있어요.';});});
     }
     function preferences(value){return run(function(){
       if(!state.subscribed||!subscription)throw fail('subscription_required');
@@ -130,16 +168,12 @@
     function testingRegistration(local){
       if(!state.subscribed||!subscription)throw fail('subscription_required');
       if(support().permission!=='granted')throw fail('permission_denied');
-      function exact(reg){var base=root.location&&root.location.origin,scope,script;
-        try{scope=new URL(reg.scope);script=new URL(reg.active.scriptURL);}catch(error){throw fail('worker_unavailable');}
-        if(!base||scope.origin!==base||scope.pathname!=='/'||scope.search||scope.hash||script.origin!==base||script.pathname!=='/timer-alert-sw.js'||script.search||script.hash||reg.active.state!=='activated'||typeof reg.showNotification!=='function')throw fail('worker_unavailable');
-      }
       return bounded(root.navigator.serviceWorker.getRegistration('/'),10000).then(function(reg){
-        guard();exact(reg);
+        guard();exactRegistration(reg);
         // Refresh the public worker script even for devices connected before this release.
         var updated=typeof reg.update==='function'?bounded(reg.update(),8000):Promise.resolve();
         if(local)updated=updated.catch(function(){guard();return null;}); // Local display remains useful offline.
-        return updated.then(function(){guard();return activated(reg);}).then(function(){guard();exact(reg);return reg;});
+        return updated.then(function(){guard();return activated(reg);}).then(function(){guard();exactRegistration(reg);return reg;});
       }).then(function(reg){return bounded(reg.pushManager.getSubscription(),10000).then(function(value){
           guard();if(!value||value.endpoint!==subscription.endpoint)throw fail('worker_unavailable');
           if(support().permission!=='granted')throw fail('permission_denied');
@@ -160,25 +194,29 @@
   }
   function mount(container,options){
     if(!container||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function')return null;
+    var diagnostics=options.isAdmin===true;
     container.classList.add('web-push-section');container.innerHTML='<h3>푸시 알림</h3><p class="web-push-intro">GROWELL을 열지 않아도 새 나눔·자료와 오늘의 말씀을 받아요. 알림을 받을 기기마다 한 번씩 허용해주세요.</p>'+
       '<p data-push-status class="web-push-status" role="status" aria-live="polite">알림 상태를 확인하고 있어요…</p><p data-push-install class="web-push-note" hidden>아이폰·아이패드는 Safari에서 GROWELL을 홈 화면에 추가한 뒤, 홈 화면 아이콘으로 열어 알림을 허용해주세요. iOS·iPadOS 16.4 이상이 필요해요.</p>'+
+      '<p data-push-reconnect class="web-push-note" hidden>이 기기의 알림 연결을 다시 확인해야 해요. 다시 연결하기를 눌러주세요. 기존 수신 설정은 유지해요.</p>'+
       '<button type="button" class="web-push-primary" data-push-enable>이 기기에서 알림 받기</button>'+
       '<div data-push-settings hidden><label class="web-push-toggle"><span>새 나눔·자료 알림<small>나눔과 자료실의 새 글을 받아요. 내가 쓴 글과 글 수정은 제외해요.</small></span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔·자료 알림"></label>'+
       '<label class="web-push-toggle"><span>매일 오전 9시 말씀<small>한국 시간 오전 9시에 발송해요.</small></span><input type="checkbox" role="switch" data-push-verse aria-label="매일 오전 9시 말씀"></label>'+
-      '<button type="button" class="web-push-secondary" data-push-local>기기 알림 표시 확인</button><button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button><button type="button" class="web-push-secondary" data-push-delayed>1분 뒤 알림 확인</button><p class="web-push-note" data-push-last>최근 서버 발송: 아직 없어요. 기기 수신 확인과는 달라요.</p><button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
+      (diagnostics?'<button type="button" class="web-push-secondary" data-push-local>기기 알림 표시 확인</button>':'')+'<button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button>'+(diagnostics?'<button type="button" class="web-push-secondary" data-push-delayed>1분 뒤 알림 확인</button><p class="web-push-note" data-push-last>최근 전체 알림 발송: 아직 없어요. 기기 수신 확인과는 달라요.</p>':'')+'<button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
       '<button type="button" class="web-push-text" data-push-refresh>상태 새로고침</button><p class="web-push-note">인터넷 연결·집중 모드·기기 설정에 따라 알림이 늦거나 표시되지 않을 수 있어요.</p>';
     function q(selector){return container.querySelector(selector);}
-    var controller=createController({getAccessToken:options.getAccessToken,isCurrent:options.isCurrent,fetch:options.fetch,onChange:function(state){
+    var controller=createController({memberKey:options.memberKey,getAccessToken:options.getAccessToken,isCurrent:options.isCurrent,fetch:options.fetch,onChange:function(state){
       var reason=!state.supported?'unsupported':state.iosNeedsInstall?'install_required':state.permission==='denied'?'permission_denied':state.errorCode;
       var text=reason?message({code:reason}):state.notice||(!state.loaded?'알림 상태를 확인하고 있어요…':!state.configured?message({code:'not_configured'}):state.subscribed?'이 기기에 알림이 연결되어 있어요.':'아직 이 기기의 알림을 연결하지 않았어요.');
       q('[data-push-status]').textContent=text;q('[data-push-status]').classList.toggle('is-error',!!state.errorCode);
       q('[data-push-install]').hidden=!state.iosNeedsInstall;q('[data-push-enable]').hidden=state.subscribed||!state.supported||state.iosNeedsInstall;
+      q('[data-push-enable]').textContent=state.reconnectRequired?'다시 연결하기':'이 기기에서 알림 받기';q('[data-push-reconnect]').hidden=!state.reconnectRequired;
+      q('[data-push-reconnect]').textContent=state.expired?'이 기기의 알림 연결이 만료됐어요. 다시 연결하기를 눌러주세요. 기존 수신 설정은 유지해요.':'이 기기의 알림 연결을 다시 확인해야 해요. 다시 연결하기를 눌러주세요. 기존 수신 설정은 유지해요.';
       q('[data-push-enable]').disabled=state.busy||!state.loaded||!state.configured||state.permission==='denied';
       q('[data-push-settings]').hidden=!state.subscribed;q('[data-push-posts]').checked=state.preferences.posts;q('[data-push-verse]').checked=state.preferences.dailyVerse;
-      q('[data-push-last]').textContent='최근 서버 발송: '+(state.lastSentAt?new Date(state.lastSentAt).toLocaleString('ko-KR',{hour12:false}):'아직 없어요')+' · 기기 수신 확인과는 달라요.';
+      if(diagnostics)q('[data-push-last]').textContent='최근 전체 알림 발송: '+(state.lastSentAt?new Date(state.lastSentAt).toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}):'아직 없어요')+' · 기기 수신 확인과는 달라요.';
       container.setAttribute('aria-busy',String(state.busy));container.querySelectorAll('[data-push-posts],[data-push-verse],[data-push-test],[data-push-local],[data-push-delayed],[data-push-disable],[data-push-refresh]').forEach(function(control){control.disabled=state.busy;});
     }});
-    q('[data-push-enable]').onclick=controller.enable;q('[data-push-test]').onclick=controller.test;q('[data-push-local]').onclick=controller.localTest;q('[data-push-delayed]').onclick=controller.testDelayed;q('[data-push-disable]').onclick=controller.disable;q('[data-push-refresh]').onclick=controller.refresh;
+    q('[data-push-enable]').onclick=controller.enable;q('[data-push-test]').onclick=controller.test;if(diagnostics){q('[data-push-local]').onclick=controller.localTest;q('[data-push-delayed]').onclick=controller.testDelayed;}q('[data-push-disable]').onclick=controller.disable;q('[data-push-refresh]').onclick=controller.refresh;
     function change(){controller.preferences({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked});}
     q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;
     var view={refresh:controller.refresh,destroy:function(){controller.destroy();views.delete(view);}};views.add(view);controller.refresh();return view;
