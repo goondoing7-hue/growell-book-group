@@ -7,6 +7,8 @@ const path=require('node:path');
 const {PGlite}=require('@electric-sql/pglite');
 const migration=fs.readFileSync(path.join(__dirname,'../server/meeting-calendar.sql'),'utf8');
 const scheduler=fs.readFileSync(path.join(__dirname,'../server/meeting-calendar-schedule.sql'),'utf8');
+const consentPatch=fs.readFileSync(path.join(__dirname,'../server/google-toggle-consent.sql'),'utf8');
+function configureDefinition(source){const start=source.indexOf('create or replace function public.growell_meeting_calendar_configure('),end=source.indexOf('$function$;',start);assert.ok(start>=0&&end>start);return source.slice(start,end+'$function$;'.length).replace(/\r\n/g,'\n');}
 const AUTH='11111111-1111-4111-8111-111111111111';
 const OTHER_AUTH='22222222-2222-4222-8222-222222222222';
 const GEN='33333333-3333-4333-8333-333333333333';
@@ -35,6 +37,8 @@ describe('Per-member Google Calendar SQL preservation and durability',()=>{
       grant select,insert,update,delete on all tables in schema public to service_role;
       grant select,insert,update on public.announcement to authenticated;`);
     await db.exec(migration);
+    assert.equal(configureDefinition(consentPatch),configureDefinition(migration),'standalone production patch must match the canonical configure function');
+    await db.exec(configureDefinition(consentPatch));
   });
   beforeEach(async()=>{
     await db.exec('reset role;truncate public.profiles cascade;truncate public.announcement;truncate public.growell_meeting_calendar_schedules cascade');
@@ -68,6 +72,32 @@ describe('Per-member Google Calendar SQL preservation and durability',()=>{
     "update public.announcement set next_calendar_date=$1,next_calendar_start=$2,next_calendar_end=$3 where book_id='global'",[date,start,end]));
   const jobPayload=(work,index=0)=>({schedule_id:work.jobs[index].schedule_id,revision:work.jobs[index].revision});
   const succeed=(work,index=0)=>apply(work,'success',{...jobPayload(work,index),event_id:EVENT});
+
+  test('first OAuth OFF creates no current-meeting job and later ON catches up without changing authored content',async()=>{
+    await schedule();const original=await announcement();
+    await configure('connect',{generation:GEN,token_cipher:TOKEN,account_id:'google-account',account_email:'test@example.invalid',enabled:false});
+    assert.equal((await connection()).enabled,false);assert.deepEqual(await jobs(),[]);assert.deepEqual(await claim(),[]);
+    await connect(NEXT_GEN);assert.equal((await connection()).enabled,false);assert.deepEqual(await jobs('owner',NEXT_GEN),[]);assert.deepEqual(await claim(),[]);
+    await configure('settings',{enabled:true});assert.equal((await jobs('owner',NEXT_GEN)).length,1);
+    await configure('settings',{enabled:true});assert.equal((await jobs('owner',NEXT_GEN))[0].revision,1,'retrying ON does not queue a duplicate revision');
+    assert.equal((await claim()).length,1);assert.deepEqual(await announcement(),original);
+  });
+  test('explicit OAuth choices override existing state and malformed choices cannot enroll a calendar',async()=>{
+    const input={generation:GEN,token_cipher:TOKEN,account_id:'google-account',account_email:'test@example.invalid'};
+    for(const key of ['enabled','default_enabled'])for(const value of [null,'false',0,{},[]])await assert.rejects(configure('connect',{...input,[key]:value}),codeIs('22023'));
+    assert.equal(await connection(),undefined);await schedule();await configure('connect',{...input,enabled:true});
+    await configure('connect',{...input,generation:NEXT_GEN,enabled:false});assert.equal((await connection()).enabled,false);assert.deepEqual(await claim(),[]);
+    await configure('connect',{...input,generation:THIRD_GEN,enabled:true});assert.equal((await connection()).enabled,true);assert.equal((await claim()).length,1);
+  });
+  test('unselected Calendar preserves latest ON or OFF under the row lock while new connections default OFF',async()=>{
+    await schedule();const original=await announcement(),input={token_cipher:TOKEN,account_id:'google-account',account_email:'test@example.invalid',default_enabled:false};
+    assert.equal((await configure('connect',{...input,generation:GEN})).enabled,false);assert.deepEqual(await jobs(),[]);
+    await configure('settings',{enabled:true});
+    assert.equal((await configure('connect',{...input,generation:NEXT_GEN})).enabled,true,'a newer ON choice is not replaced by the initial false default');
+    await configure('settings',{enabled:false});
+    assert.equal((await configure('connect',{...input,generation:THIRD_GEN})).enabled,false,'a newer OFF choice is not turned on by unrelated consent');
+    assert.deepEqual(await claim(),[]);assert.deepEqual(await announcement(),original);
+  });
 
   test('installation and reinstallation preserve all authored content and do not enroll anyone',async()=>{
     await db.query("insert into public.posts values('p','owner','original full HTML','answer1','answer2','answer3',123)");
@@ -202,6 +232,10 @@ describe('Per-member Google Calendar SQL preservation and durability',()=>{
     await schedule();await connect();const work=(await claim())[0];await succeed(work);await apply(work,'release');await configure('disconnect');
     assert.equal((await connection()).token_cipher,null);assert.equal((await jobs()).length,1);
     await connect(NEXT_GEN);const restored=(await jobs('owner',NEXT_GEN))[0];assert.equal(restored.event_id,EVENT);assert.equal(restored.event_created,true);assert.equal(restored.synced_revision,1);
+    assert.equal((await connection()).enabled,false,'reconnecting without an explicit ON preserves the paused preference');assert.deepEqual(await claim(),[]);
+    await configure('settings',{enabled:true});
+    assert.deepEqual(await claim(),[],'an unchanged already-synced meeting is not sent again on resume');
+    await db.query("update public.announcement set next_place='다시 확인한 교육관' where book_id='global'");
     const next=(await claim())[0];assert.equal(next.jobs[0].event_id,EVENT);assert.equal(next.jobs[0].revision,2);await apply(next,'release');
     assert.equal((await jobs('owner',GEN))[0].event_id,EVENT,'old delivery receipt is retained');
   });
@@ -226,7 +260,7 @@ describe('Per-member Google Calendar SQL preservation and durability',()=>{
     await schedule();await connect();const work=(await claim())[0];await apply(work,'created',{...jobPayload(work),event_id:EVENT});
     await db.query("update public.profiles set auth_user_id=$1::uuid where id='owner'",[THIRD_GEN]);
     assert.deepEqual(await apply(work,'guard',jobPayload(work)),{applied:false});await assert.rejects(configure('sync'),codeIs('42501'));
-    await connect(NEXT_GEN,'google-account','owner',THIRD_GEN);assert.equal((await jobs('owner',NEXT_GEN))[0].event_id,null);
+    await configure('connect',{generation:NEXT_GEN,token_cipher:TOKEN,account_id:'google-account',account_email:'test@example.invalid',enabled:true},'owner',THIRD_GEN);assert.equal((await jobs('owner',NEXT_GEN))[0].event_id,null);
   });
 
   test('OAuth states are bounded, owner-bound, short-lived and atomically consumed once',async()=>{

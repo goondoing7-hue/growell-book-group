@@ -5287,16 +5287,25 @@ function loginFormHtml(){
     '<button class="btn btn-primary btn-block" style="margin-top:18px" id="btn-do-login" type="button">로그인</button>' +
     '<button type="button" class="btn btn-ghost btn-block btn-sm" style="margin-top:8px" id="link-forgot-password">비밀번호를 잊으셨나요?</button>';
 }
+function googleProviderIconHtml(){
+  /* Google's official HTML button configurator: https://developers.google.com/identity/branding-guidelines */
+  return '<svg class="auth-provider-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="20" height="20" aria-hidden="true" focusable="false">'+
+    '<path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>'+
+    '<path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>'+
+    '<path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>'+
+    '<path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>'+
+    '<path fill="none" d="M0 0h48v48H0z"/></svg>';
+}
 function googleLoginStatusHtml(){
   if(!GOOGLE_LOGIN_VISIBLE)return '';
   var enabled=oauthProviders.state==='ready'&&oauthProviders.google;
-  return '<div class="auth-provider-list" data-oauth-providers data-oauth-login aria-label="연결한 Google 계정으로 로그인"><button class="auth-provider" data-oauth-provider="google" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>Google로 로그인'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button><p class="auth-provider-note">기존 회원 계정에서 Google 로그인을 연결한 뒤 사용할 수 있어요. 처음 연결은 아이디 로그인 후 프로필 → 설정 → 연동에서 해주세요.</p></div>';
+  return '<div class="auth-provider-list" data-oauth-providers data-oauth-login aria-label="연결한 Google 계정으로 로그인"><button class="auth-provider auth-provider-google" data-oauth-provider="google" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>'+googleProviderIconHtml()+'Google로 로그인'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button><p class="auth-provider-note">기존 회원 계정에서 Google 로그인을 연결한 뒤 사용할 수 있어요. 처음 연결은 아이디 로그인 후 프로필 → 설정 → 연동에서 해주세요.</p></div>';
 }
 function socialSignupStatusHtml(){
   if(!SOCIAL_AUTH_VISIBLE)return '';
   return '<div class="auth-provider-list" data-oauth-providers aria-label="간편 로그인">'+['google','kakao'].map(function(provider){
     var enabled=oauthProviders.state==='ready'&&oauthProviders[provider];
-    return '<button class="auth-provider'+(provider==='kakao'?' auth-provider-kakao':'')+'" data-oauth-provider="'+provider+'" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>'+(provider==='google'?'Google':'카카오')+'로 계속하기'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button>';
+    return '<button class="auth-provider'+(provider==='kakao'?' auth-provider-kakao':' auth-provider-google')+'" data-oauth-provider="'+provider+'" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>'+(provider==='google'?googleProviderIconHtml():'')+(provider==='google'?'Google':'카카오')+'로 계속하기'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button>';
   }).join('')+'<p class="auth-provider-note">'+(oauthProviders.google||oauthProviders.kakao?'처음이면 간편 가입으로, 이미 가입했다면 로그인으로 이어져요.':'간편 가입 연결을 준비하고 있어요. 회원가입도 이용할 수 있어요.')+'</p></div>';
 }
 function profilePhotoPickerHtml(prefix, avatar){
@@ -6586,7 +6595,11 @@ function openGoogleConnection(trigger,result,tab){
   function current(){return SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
   if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.close(false);
   if(typeof GrowellMeetingCalendar!=='undefined')GrowellMeetingCalendar.close(false);
-  GrowellGoogleConnection.open({memberKey:session.userId,isAdmin:isAdmin()===true,tab:result||tab==='connections'?'connections':'notifications',isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},connectionResult:result||'',beforeConnect:function(){
+  GrowellGoogleConnection.open({compact:true,memberKey:session.userId,isAdmin:isAdmin()===true,tab:result||tab==='connections'?'connections':'notifications',isCurrent:current,getAccessToken:function(){return habitSyncAccessToken(session,epoch);},getGoogleLoginState:async function(){
+    var profile=STATE.users[session.userId],verified=await sb.auth.getUser();
+    if(!current()||!profile||STATE.users[session.userId]!==profile||verified.error||!verified.data||!verified.data.user||verified.data.user.id!==profile.authUserId)throw new Error('session_changed');
+    return googleMemberIdentity(verified.data.user);
+  },connectionResult:result||'',beforeConnect:function(){
     captureComposerDraft();
     function pendingDraft(){return Object.keys(composerDrafts).some(function(key){return composerDrafts[key].userId===session.userId&&composerDrafts[key].unsaved;});}
     return new Promise(function(resolve,reject){var started=Date.now();function check(){

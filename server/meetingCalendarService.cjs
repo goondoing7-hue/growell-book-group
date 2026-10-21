@@ -2,10 +2,11 @@
 const crypto=require('node:crypto');
 const D=require('./meetingCalendarDomain.cjs');
 const {createProvider}=require('./meetingCalendarProvider.cjs');
+const Google=require('./googleConnectionService.cjs');
 const COOKIE='__Host-growell-meeting-calendar';
 const MAX_BYTES=1024*1024;
 const CODES=new Set(['not-configured','authentication-required','membership-required','invalid-request','invalid-schedule','connection-required','service-unavailable','rate-limited',
-  'calendar-busy','calendar-stale','calendar-deferred','calendar-too-large','oauth-state-invalid','oauth-cancelled','consent-required','identity-invalid','connection-key-invalid','reconnect-required',
+  'calendar-busy','calendar-stale','calendar-deferred','calendar-too-large','oauth-state-invalid','oauth-cancelled','consent-required','identity-invalid','google-account-mismatch','connection-key-invalid','reconnect-required',
   'calendar-remote-missing','calendar-remote-conflict','calendar-version-conflict','calendar-event-unsafe','calendar-permission-denied','calendar-unavailable','calendar-response-invalid']);
 function safeError(error){return CODES.has(error?.code)?error.code:'service-unavailable';}
 function createTransport(fetchImpl=globalThis.fetch) {
@@ -64,6 +65,7 @@ function safeConnection(c,jobs=[],now=Date.now()) {
 function createService(options={}) {
   const config=options.config||D.getConfig(),now=options.now||Date.now,request=options.request||createTransport(options.fetch);
   const store=options.store||createStore(config,request),providerFactory=options.providerFactory||(deadline=>createProvider(config,{fetch:options.fetch,now,deadline}));
+  const loginAccounts=new WeakMap();
   const callbackRedirect=state=>config.origin+'/?meeting-calendar='+state+'#/';
   const oauthContext=(owner,stateHash)=>'oauth:'+owner+':'+stateHash;
   function requireConfigured(){if(!config.configured)throw new D.CalendarError('not-configured');}
@@ -75,7 +77,20 @@ function createService(options={}) {
     requireConfigured();const match=/^Bearer ([A-Za-z0-9._~-]{1,16000})$/.exec(req.headers.authorization||'');
     if(!match)throw new D.CalendarError('authentication-required',401);
     const user=await request(config.database+'/auth/v1/user',{headers:{apikey:config.serviceKey,Authorization:'Bearer '+match[1]}},'auth');
-    if(!D.UUID.test(user?.id||''))throw new D.CalendarError('authentication-required',401);return approved(user.id);
+    if(!D.UUID.test(user?.id||''))throw new D.CalendarError('authentication-required',401);
+    const profile=await approved(user.id);
+    try{loginAccounts.set(profile,Google.verifiedGoogleAccount(user,user.id));}catch(error){throw new D.CalendarError(error.code||'authentication-required',error.status||401);}
+    return profile;
+  }
+  async function loginAccount(profile){
+    try{return loginAccounts.has(profile)?loginAccounts.get(profile):await Google.loadGoogleAccount({config,request,authId:profile.auth_user_id});}
+    catch(error){throw new D.CalendarError(error.code||'service-unavailable',error.status||503);}
+  }
+  async function ensureGoogleAccount(profile){
+    const expected=await loginAccount(profile);if(!expected)return;
+    const connection=await store.connection(profile.id);
+    if(connection&&(connection.owner_id!==profile.id||connection.auth_user_id!==profile.auth_user_id))throw new D.CalendarError('membership-required',403);
+    if(connection?.token_cipher&&!D.equal(connection.account_id,expected))throw new D.CalendarError('google-account-mismatch',409);
   }
   async function status(profile) {
     const c=await store.connection(profile.id);
@@ -85,8 +100,9 @@ function createService(options={}) {
     return safeConnection(c,jobs,now());
   }
   async function connect(profile) {
+    const expectedAccount=await loginAccount(profile);
     requireConfigured();const state=crypto.randomBytes(32).toString('base64url'),verifier=crypto.randomBytes(48).toString('base64url'),stateHash=D.hash(state);
-    await store.oauth('put',{state_hash:stateHash,owner_id:profile.id,auth_user_id:profile.auth_user_id,verifier_cipher:D.seal({verifier},config.key,oauthContext(profile.id,stateHash)),expires_at:new Date(now()+600000).toISOString()});
+    await store.oauth('put',{state_hash:stateHash,owner_id:profile.id,auth_user_id:profile.auth_user_id,verifier_cipher:D.seal({verifier,expectedAccount},config.key,oauthContext(profile.id,stateHash)),expires_at:new Date(now()+600000).toISOString()});
     return {url:D.authorizationUrl(config,{state,verifier}),cookie:COOKIE+'='+state+'; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600'};
   }
   async function callback(query,cookies) {
@@ -96,10 +112,17 @@ function createService(options={}) {
     if(!pending||!Number.isFinite(Date.parse(pending.expires_at))||Date.parse(pending.expires_at)<=now())throw new D.CalendarError('oauth-state-invalid',400);
     await approved(pending.auth_user_id,pending.owner_id);
     if(query.get('error')||!query.get('code')||query.get('code').length>4096)throw new D.CalendarError('oauth-cancelled',400);
-    const {verifier}=D.unseal(pending.verifier_cipher,config.key,oauthContext(pending.owner_id,D.hash(state)));
+    const {verifier,expectedAccount}=D.unseal(pending.verifier_cipher,config.key,oauthContext(pending.owner_id,D.hash(state)));
+    if(expectedAccount!==undefined&&expectedAccount!==null&&(typeof expectedAccount!=='string'||!/^[a-f0-9]{64}$/.test(expectedAccount)))throw new D.CalendarError('oauth-state-invalid',400);
+    const currentAccount=await loginAccount({auth_user_id:pending.auth_user_id});
+    if(expectedAccount&&!D.equal(expectedAccount,currentAccount))throw new D.CalendarError('google-account-mismatch',409);
     const provider=providerFactory(now()+35000),tokens=await provider.exchange({code:query.get('code'),verifier});
     if(!tokens.refreshToken)throw new D.CalendarError('consent-required',403);
-    const identity=await provider.identity(tokens.accessToken),generation=crypto.randomUUID();await approved(pending.auth_user_id,pending.owner_id);
+    const identity=await provider.identity(tokens.accessToken),generation=crypto.randomUUID();
+    if((currentAccount||expectedAccount)&&!D.equal(D.hash(identity.subject),currentAccount||expectedAccount))throw new D.CalendarError('google-account-mismatch',409);
+    const finalAccount=await loginAccount({auth_user_id:pending.auth_user_id});
+    if(!D.equal(currentAccount||'',finalAccount||''))throw new D.CalendarError('google-account-mismatch',409);
+    await approved(pending.auth_user_id,pending.owner_id);
     await store.configure(pending.owner_id,pending.auth_user_id,'connect',{generation,account_id:D.hash(identity.subject),account_email:identity.email,
       token_cipher:D.seal({refreshToken:tokens.refreshToken,scope:tokens.scope},config.key,D.tokenContext(pending.owner_id,generation))});
     return callbackRedirect('connected');
@@ -144,9 +167,9 @@ function createService(options={}) {
     return {processed};
   }
   async function mutate(profile,action,body) {
-    if(action==='configure'){if(typeof body.enabled!=='boolean')throw new D.CalendarError('invalid-request',400);await store.configure(profile.id,profile.auth_user_id,'settings',{enabled:body.enabled});}
+    if(action==='configure'){if(typeof body.enabled!=='boolean')throw new D.CalendarError('invalid-request',400);if(body.enabled)await ensureGoogleAccount(profile);await store.configure(profile.id,profile.auth_user_id,'settings',{enabled:body.enabled});}
     else if(action==='disconnect')await store.configure(profile.id,profile.auth_user_id,'disconnect');
-    else if(action==='sync'){await store.configure(profile.id,profile.auth_user_id,'sync');await run(profile.id);}
+    else if(action==='sync'){await ensureGoogleAccount(profile);await store.configure(profile.id,profile.auth_user_id,'sync');await run(profile.id);}
     else throw new D.CalendarError('invalid-request',400);
     return status(profile);
   }

@@ -28,6 +28,9 @@
       if(action==='configure'||action==='mail-configure'){
         if(!payload||typeof payload.enabled!=='boolean')return Promise.reject(failure('invalid_settings'));
         body={enabled:payload.enabled};
+      }else if(action==='connect'&&payload&&Object.prototype.hasOwnProperty.call(payload,'service')){
+        if(['drive','calendar','mail'].indexOf(payload.service)<0)return Promise.reject(failure('invalid_settings'));
+        body={service:payload.service};
       }else if(method==='POST')body={};
       if(method==='POST'&&writing)return Promise.reject(failure('busy'));
       if(method==='POST')writing=true;
@@ -57,6 +60,7 @@
     if(['setup_required','not_configured'].indexOf(code)>=0)return 'Google Drive 백업을 준비하고 있어요. 서비스 연결 설정이 완료되면 사용할 수 있어요.';
     if(['reconnect_required','connection_expired','invalid_grant'].indexOf(code)>=0)return 'Google 연결을 다시 확인해야 해요. 계정을 다시 연결해주세요.';
     if(code==='connection_required')return 'Google 계정을 먼저 연결해주세요.';
+    if(code==='google_account_mismatch')return '로그인한 Google 계정으로 사용 권한을 다시 허용해주세요.';
     if(['drive_quota_exceeded','storage_full','quota_exceeded','backup_storage_full'].indexOf(code)>=0)return 'Google Drive의 저장 공간을 확인한 뒤 다시 백업해주세요.';
     if(['folder_not_private','shared_folder','backup_folder_unsafe','backup_file_unsafe'].indexOf(code)>=0)return '백업 파일과 폴더는 나만 볼 수 있어야 해요. 공유를 해제하고 GROWELL 백업 폴더를 내 드라이브의 최상위로 옮겨주세요.';
     if(['remote_missing','folder_missing','backup_remote_missing'].indexOf(code)>=0)return '백업 파일이나 폴더를 찾지 못했어요. Drive 휴지통에서 복원하고 GROWELL 백업 폴더를 내 드라이브의 최상위에 놓아주세요.';

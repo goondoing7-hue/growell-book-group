@@ -48,6 +48,14 @@ test('unsupported actions and malformed settings never reach auth or network',as
   assert.equal(box.tokenReads,0);assert.deepEqual(box.calls,[]);
 });
 
+test('compact Google consent sends only the selected service and rejects unknown switch targets',async()=>{
+  const box=harness();
+  for(const service of ['drive','calendar','mail']){await box.client.request('connect',{service,owner:'PRIVATE_OWNER',subject:'PRIVATE_SUB',enabled:true});assert.deepEqual(JSON.parse(box.calls.at(-1).options.body),{service});}
+  const count=box.calls.length;
+  for(const service of ['__proto__','unknown',null,undefined,{},true])await rejectsCode(box.client.request('connect',{service}),'invalid_settings');
+  assert.equal(box.calls.length,count);
+});
+
 test('logged-out or switched users cannot send requests with a previous identity',async()=>{
   const token=deferred(),box=harness({getAccessToken:()=>token.promise});
   const pending=box.client.request('sync');await flush();box.setCurrent(false);token.resolve('PREVIOUS_USER_TOKEN');

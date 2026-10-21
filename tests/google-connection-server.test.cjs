@@ -14,8 +14,8 @@ const CONFIG = Drive.getConfig({GROWELL_GOOGLE_CLIENT_ID: 'fixture-client', GROW
 const TOKENS = {accessToken: 'fixture-access', refreshToken: 'fixture-refresh', scope: Drive.GOOGLE_SCOPES};
 const IDENTITY = {subject: 'fixture-google-account', email: 'member@example.test'};
 
-function fixture({scope = Drive.GOOGLE_SCOPES, driveFailure, calendarFailure, mailFailure} = {}) {
-  const state = {pending: null, member: structuredClone(PROFILE), calls: [], writes: [], exchange: 0};
+function fixture({scope = Drive.GOOGLE_SCOPES, driveFailure, calendarFailure, mailFailure, authUser} = {}) {
+  const state = {pending: null, member: structuredClone(PROFILE), calls: [], writes: [], exchange: 0, authUser:authUser || {id:AUTH,identities:[]}, authReads:[]};
   const configure = (name, failure) => async (owner, auth, operation, payload) => {
     state.calls.push({name, owner, auth, operation, payload});
     if (failure) throw failure;
@@ -37,7 +37,7 @@ function fixture({scope = Drive.GOOGLE_SCOPES, driveFailure, calendarFailure, ma
   }};
   const provider = {exchange: async () => { state.exchange++; return {...TOKENS, scope}; }, identity: async () => IDENTITY};
   const service = Service.createService({config: CONFIG, store: driveStore, calendarStore, mailStore, providerFactory: () => provider,
-    now: () => NOW, request: async () => ({id: AUTH})});
+    now: () => NOW, request: async url => {state.authReads.push(url);return structuredClone(state.authUser);}});
   return {state, service, driveStore, calendarStore, mailStore, provider};
 }
 
@@ -226,7 +226,7 @@ test('mail enrollment follows both grants, derives recipient only on the server,
   assert.equal(value.mail.connected,null);assert.equal(value.mail.unavailable,true);
   assert.equal(JSON.stringify(value).includes('private mail database detail'),false);
   const missing=fixture({mailFailure:new Drive.BackupError('not-configured')});
-  assert.deepEqual((await missing.service.googleStatus(PROFILE)).mail,{configured:false});
+  assert.deepEqual((await missing.service.googleStatus(PROFILE)).mail,{configured:false,loginAccountMatches:null});
 });
 
 test('mail settings are owner authenticated, enabled-only and never change either Google token store', async () => {
@@ -253,4 +253,101 @@ test('only a missing mail RPC maps to setup state, temporary or unrelated lookup
     const transport=Service.createTransport(async()=>new Response(JSON.stringify({code:dbCode,message:'private detail'}),{status:404}));
     await assert.rejects(transport(url),{code:expected});
   }
+});
+
+const linkedUser = (subject=IDENTITY.subject) => ({id:AUTH,identities:[{provider:'email',identity_data:{}},{provider:'google',provider_id:subject,identity_data:{sub:subject,email:'display-can-change@example.test'}}]});
+async function finishStart(f,start) {
+  const state=new URL(start.url).searchParams.get('state');
+  return f.service.callback(new URLSearchParams({state,code:'fixture-code'}),Service.COOKIE+'='+state);
+}
+
+test('a compact switch grant creates both token stores but enables only the requested service',async()=>{
+  for(const service of ['drive','calendar','mail']) {
+    const f=fixture();f.state.drive=null;f.state.calendar=null;f.state.mail={...f.state.mail,connected:false,enabled:false};
+    const start=await f.service.connect(PROFILE,true,service);
+    const state=new URL(start.url).searchParams.get('state');
+    const sealed=Drive.unseal(f.state.pending.verifier_cipher,CONFIG.key,'drive-backup-oauth:'+PROFILE.id+':'+Drive.hash(state));
+    assert.deepEqual(sealed.desiredEnabled,{drive:service==='drive',calendar:service==='calendar',mail:service==='mail'});
+    assert.equal(sealed.service,service);assert.equal(JSON.stringify(f.state.pending).includes('desiredEnabled'),false);
+    assert.equal(await finishStart(f,start),CONFIG.origin+'/?google-connection=connected#/');
+    for(const write of f.state.writes){assert.equal(write.payload.enabled,write.name===service?true:undefined);assert.equal(write.payload.default_enabled,write.name===service?undefined:false);}
+    assert.deepEqual(f.state.calls.at(-1),{name:'mail',owner:PROFILE.id,auth:AUTH,operation:'connect',payload:service==='mail'?{enabled:true}:{default_enabled:false}});
+  }
+});
+
+test('reconsent delegates unselected preferences to locked SQL whether another tab changed OFF to ON or ON to OFF',async()=>{
+  for(const latest of [true,false]){
+    const f=fixture();f.state.drive.enabled=!latest;f.state.mail.enabled=false;
+    const start=await f.service.connect(PROFILE,true,'mail');
+    f.state.drive.enabled=latest;f.state.calendar.enabled=latest;
+    await finishStart(f,start);
+    for(const write of f.state.writes){assert.equal(Object.hasOwn(write.payload,'enabled'),false);assert.equal(write.payload.default_enabled,false);}
+    assert.deepEqual(f.state.calls.at(-1).payload,{enabled:true});
+  }
+});
+
+test('a different service that was ON delegates its latest preference to locked SQL instead of forcing it back ON',async()=>{
+  const f=fixture(),start=await f.service.connect(PROFILE,true,'drive');
+  await finishStart(f,start);
+  assert.equal(f.state.writes.find(value=>value.name==='drive').payload.enabled,true);
+  assert.equal(Object.hasOwn(f.state.writes.find(value=>value.name==='calendar').payload,'enabled'),false);
+  assert.equal(f.state.writes.find(value=>value.name==='calendar').payload.default_enabled,false);
+  assert.deepEqual(f.state.calls.at(-1).payload,{default_enabled:false});
+});
+
+test('compact intent rejects unknown service, unavailable preferences and cancellation without connector writes',async()=>{
+  const f=fixture();await assert.rejects(f.service.connect(PROFILE,true,'__proto__'),{code:'invalid-request'});assert.equal(f.state.pending,null);
+  const unavailable=fixture();unavailable.calendarStore.connection=async()=>{throw new Drive.BackupError('service-unavailable');};
+  await assert.rejects(unavailable.service.connect(PROFILE,true,'drive'),{code:'service-unavailable'});assert.equal(unavailable.state.pending,null);
+  const cancel=fixture(),start=await cancel.service.connect(PROFILE,true,'drive'),state=new URL(start.url).searchParams.get('state');
+  await assert.rejects(cancel.service.callback(new URLSearchParams({state,error:'access_denied'}),Service.COOKIE+'='+state),{code:'oauth-cancelled'});
+  assert.equal(cancel.state.exchange,0);assert.equal(cancel.state.writes.length,0);assert.deepEqual(cancel.state.calls,[]);
+});
+
+test('linked Google consent is bound to the verified subject, never browser email or metadata',async()=>{
+  const f=fixture({authUser:linkedUser()}),start=await f.service.connect(PROFILE,true,'drive');
+  await finishStart(f,start);assert.equal(f.state.writes.length,2);
+  assert.ok(f.state.authReads.every(url=>url===CONFIG.database+'/auth/v1/admin/users/'+AUTH));
+  const value=await f.service.googleStatus(PROFILE);
+  assert.equal(value.googleLoginLinked,true);assert.equal(value.loginAccountMatches,true);
+  assert.equal(value.drive.loginAccountMatches,true);assert.equal(value.calendar.loginAccountMatches,true);assert.equal(value.mail.loginAccountMatches,true);
+  assert.equal(JSON.stringify(value).includes(IDENTITY.subject),false);
+  const forged=fixture({authUser:{id:AUTH,identities:[],user_metadata:{sub:IDENTITY.subject,provider:'google'}}});
+  assert.equal((await forged.service.googleStatus(PROFILE)).googleLoginLinked,false);
+});
+
+test('wrong or changed Google accounts are rejected before any connection or mail enrollment writes',async()=>{
+  for(const changed of ['consented-account','login-during-consent','login-during-exchange']) {
+    const f=fixture({authUser:linkedUser()}),start=await f.service.connect(PROFILE,true,'mail');
+    if(changed==='consented-account')f.provider.identity=async()=>({subject:'another-google-account',email:IDENTITY.email});
+    if(changed==='login-during-consent')f.state.authUser=linkedUser('changed-google-identity');
+    if(changed==='login-during-exchange')f.provider.identity=async()=>{f.state.authUser=linkedUser('changed-google-identity');return IDENTITY;};
+    await assert.rejects(finishStart(f,start),{code:'google-account-mismatch'});
+    assert.equal(f.state.writes.length,0);assert.deepEqual(f.state.calls,[]);
+    if(changed==='login-during-consent')assert.equal(f.state.exchange,0);
+  }
+});
+
+test('subject checks fail closed for malformed Auth identities and preserve actual enabled state on mismatch',async()=>{
+  for(const authUser of [{id:AUTH},{id:'different-auth',identities:[]},{id:AUTH,identities:[{provider:'google',identity_data:{}}]},
+    {id:AUTH,identities:[{provider:'google',provider_id:'different',identity_data:{sub:IDENTITY.subject}}]}]) {
+    const f=fixture({authUser});await assert.rejects(f.service.connect(PROFILE,true,'drive'));assert.equal(f.state.pending,null);assert.equal(f.state.writes.length,0);
+  }
+  const f=fixture({authUser:linkedUser()});f.state.drive.account_id=Drive.hash('old-explicitly-connected-google');
+  const status=await f.service.googleStatus(PROFILE);
+  assert.equal(status.drive.enabled,true);assert.equal(status.drive.loginAccountMatches,false);assert.equal(status.calendar.loginAccountMatches,true);
+  assert.equal(status.loginAccountMatches,false);
+  await assert.rejects(f.service.mutate(PROFILE,'configure',{enabled:true}),{code:'google-account-mismatch'});
+  await assert.rejects(f.service.mutate(PROFILE,'sync',{}),{code:'google-account-mismatch'});
+  await assert.rejects(f.service.mutate(PROFILE,'mail-configure',{enabled:true}),{code:'google-account-mismatch'});
+  assert.equal(f.state.writes.length,0);assert.deepEqual(f.state.calls,[]);
+  await f.service.mutate(PROFILE,'configure',{enabled:false});
+  assert.deepEqual(f.state.calls.at(-1),{name:'drive',owner:PROFILE.id,auth:AUTH,operation:'settings',payload:{enabled:false}});
+});
+
+test('HTTP compact connect accepts only a service name and never caller-supplied account or intent settings',async()=>{
+  const f=fixture({authUser:linkedUser()}),handler=Service.createHandler({service:f.service});
+  async function invoke(body){const res={setHeader(){},end(value){this.body=JSON.parse(value);}};await handler({method:'POST',url:'/api/drive-backup?action=connect',body,headers:{authorization:'Bearer fixture.jwt',origin:CONFIG.origin,'content-type':'application/json'}},res);return res;}
+  assert.equal((await invoke({service:'calendar'})).statusCode,200);
+  for(const body of [{service:'unknown'},{service:null},{service:'drive',desiredEnabled:{mail:true}},{service:'drive',subject:IDENTITY.subject},{service:'drive',email:'another@example.test'}])assert.equal((await invoke(body)).statusCode,400);
 });

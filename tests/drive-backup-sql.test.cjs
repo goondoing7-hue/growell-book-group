@@ -9,6 +9,8 @@ const S=require('../server/driveBackupService.cjs');
 const D=require('../server/driveBackupDomain.cjs');
 const migration=fs.readFileSync(path.join(__dirname,'../server/drive-backup.sql'),'utf8');
 const schedule=fs.readFileSync(path.join(__dirname,'../server/drive-backup-schedule.sql'),'utf8');
+const consentPatch=fs.readFileSync(path.join(__dirname,'../server/google-toggle-consent.sql'),'utf8');
+function configureDefinition(source){const start=source.indexOf('create or replace function public.growell_drive_backup_configure('),end=source.indexOf('$function$;',start);assert.ok(start>=0&&end>start);return source.slice(start,end+'$function$;'.length).replace(/\r\n/g,'\n');}
 const AUTH='11111111-1111-4111-8111-111111111111';
 const OTHER_AUTH='22222222-2222-4222-8222-222222222222';
 const GEN='33333333-3333-4333-8333-333333333333';
@@ -44,6 +46,8 @@ describe('Google Drive backup PostgreSQL durability and privacy',()=>{
       grant select,insert,update,delete on all tables in schema public to service_role;
       grant insert,update,delete on public.private_entries,public.habits,public.material_notes,public.posts,public.comments,public.worksheets,public.reading_logs,public.reading_meta to authenticated;`);
     await db.exec(migration);
+    assert.equal(configureDefinition(consentPatch),configureDefinition(migration),'standalone production patch must match the canonical configure function');
+    await db.exec(configureDefinition(consentPatch));
   });
   beforeEach(async()=>{
     await db.exec('reset role;truncate public.profiles cascade');
@@ -74,6 +78,29 @@ describe('Google Drive backup PostgreSQL durability and privacy',()=>{
   const snapshot=job=>asRole('service_role',()=>rpc('snapshot',[job.connection.owner_id,job.connection.generation,job.connection.lease_token]));
   const oauth=(op,payload)=>asRole('service_role',()=>rpc('oauth',[op,payload]));
   const connection=(owner='owner')=>db.query('select * from public.growell_drive_backup_connections where owner_id=$1',[owner]).then(r=>r.rows[0]);
+  test('explicit OAuth OFF is atomic and legacy reconnect preserves OFF until a direct ON choice',async()=>{
+    const input={generation:GEN,token_cipher:TOKEN,account_id:'google-sub-hash',account_email:'test@example.invalid',enabled:false};
+    const original=(await db.query('select * from public.profiles order by id')).rows;
+    const paused=await configure('connect',input);assert.equal(paused.enabled,false);assert.deepEqual(await claim(),[]);
+    await connect(NEXT_GEN);assert.equal((await connection()).enabled,false);assert.deepEqual(await claim(),[]);
+    await configure('connect',{...input,generation:GEN,account_id:'other-google-account'});assert.equal((await connection()).enabled,false);assert.deepEqual(await claim(),[]);
+    await configure('connect',{...input,generation:NEXT_GEN,account_id:'other-google-account',enabled:true});assert.equal((await connection()).enabled,true);assert.equal((await claim()).length,1);
+    assert.deepEqual((await db.query('select * from public.profiles order by id')).rows,original);
+  });
+  test('non-boolean OAuth choices fail before storing any credentials',async()=>{
+    for(const key of ['enabled','default_enabled'])for(const value of [null,'false',0,{},[]])await assert.rejects(configure('connect',{
+      generation:GEN,token_cipher:TOKEN,account_id:'google-sub-hash',[key]:value}),codeIs('22023'));
+    assert.equal(await connection(),undefined);assert.deepEqual(await claim(),[]);
+  });
+  test('unselected Drive defaults OFF only on first connection and preserves newer ON and OFF choices during consent',async()=>{
+    const input={token_cipher:TOKEN,account_id:'google-sub-hash',account_email:'test@example.invalid',default_enabled:false};
+    assert.equal((await configure('connect',{...input,generation:GEN})).enabled,false);assert.deepEqual(await claim(),[]);
+    await configure('settings',{enabled:true});
+    assert.equal((await configure('connect',{...input,generation:NEXT_GEN})).enabled,true,'another tab turned ON while consent was open');
+    await configure('settings',{enabled:false});
+    assert.equal((await configure('connect',{...input,generation:GEN})).enabled,false,'another tab turned OFF while consent was open');assert.deepEqual(await claim(),[]);
+    assert.equal((await configure('connect',{...input,generation:NEXT_GEN,enabled:true})).enabled,true,'an explicit selected-service choice overrides only its own default');
+  });
   const insert=(source,id='one',owner='owner')=>{
     assert.ok(SOURCES.includes(source));
     return db.query('insert into public.'+source+'('+ (source==='reading_meta'?'book_id':'id')+',user_id) values($1,$2)',[id,owner]);
@@ -90,8 +117,8 @@ describe('Google Drive backup PostgreSQL durability and privacy',()=>{
     const request=async(raw,options={})=>{
       const url=new URL(raw);assert.equal(url.origin,config.database);
       if(url.pathname==='/auth/v1/user'){
-        if(options.headers.Authorization==='Bearer valid-owner-session')return {id:AUTH};
-        if(options.headers.Authorization==='Bearer valid-other-session')return {id:OTHER_AUTH};
+        if(options.headers.Authorization==='Bearer valid-owner-session')return {id:AUTH,identities:[]};
+        if(options.headers.Authorization==='Bearer valid-other-session')return {id:OTHER_AUTH,identities:[]};
         throw new D.BackupError('authentication-required',401);
       }
       assert.equal(options.headers.Authorization,'Bearer '+config.serviceKey);

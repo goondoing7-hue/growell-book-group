@@ -63,7 +63,9 @@ test('Google entry is existing-link login only while Kakao and social signup rem
   assert.equal(c.socialSignupStatusHtml(),'');
   for(const mode of ['login','signup']){
     c.authMode=mode;const markup=c.loginHtml();
-    if(mode==='login'){assert.match(markup,/Google로 로그인/);assert.match(markup,/기존 회원 계정에서 Google 로그인을 연결/);assert.doesNotMatch(markup,/data-oauth-provider="kakao"/);}
+    if(mode==='login'){assert.match(markup,/Google로 로그인/);assert.match(markup,/기존 회원 계정에서 Google 로그인을 연결/);assert.doesNotMatch(markup,/data-oauth-provider="kakao"/);
+      assert.match(markup,/<svg class="auth-provider-icon"[^>]*aria-hidden="true"[^>]*focusable="false"/);
+      for(const color of ['#EA4335','#4285F4','#FBBC05','#34A853'])assert.ok(markup.includes('fill="'+color+'"'));}
     else assert.doesNotMatch(markup,/data-oauth-provider|Google|카카오/);
     assert.match(markup,/>회원가입<\/button>/);
     assert.match(markup,mode==='login'?/id="li-pw"/:/id="su-pw"/);

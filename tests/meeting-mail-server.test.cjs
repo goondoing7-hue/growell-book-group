@@ -10,7 +10,7 @@ const SNAPSHOT={applied:true,recipient:'member@example.test',record:{id:JOB,book
   insights:[{authorName:'공개 이름',date:'2026-10-10T10:00:00.000Z',q1:'소감',q2:'배움',q3:'실천',email:'PRIVATE EMAIL MUST NOT PASS',privateEntries:['PRIVATE']}],content_hash:'a'.repeat(64)};
 function fixture(options={}){const calls=[],auth=[];let content;
   const service=Mail.createService({config:CONFIG,store:{configure:async(...args)=>{calls.push(['configure',...args]);return options.status||RAW;},apply:async(...args)=>{calls.push(['apply',...args]);return options.snapshot||SNAPSHOT;}},
-    authService:{authenticate:async req=>{auth.push(req.headers.authorization);if(req.headers.authorization!=='Bearer fixture-user')throw new D.BackupError('authentication-required',401);return PROFILE;}},
+    authService:{authenticate:async req=>{auth.push(req.headers.authorization);if(req.headers.authorization!=='Bearer fixture-user')throw new D.BackupError('authentication-required',401);return PROFILE;},ensureGoogleAccount:async(...args)=>{if(options.accountFailure)throw options.accountFailure;calls.push(['account',...args]);}},
     pdfFactory:async data=>{content=data;if(options.pdfFailure)throw new Error('SECRET PROVIDER DETAILS');return options.pdfBuffer||Buffer.from('%PDF-'+'.'.repeat(120));}});
   return{service,calls,auth,content:()=>content,handler:Mail.createHandler({service})};}
 async function invoke(handler,action,{method='POST',body={},authorization='Bearer fixture-user',origin=CONFIG.origin,type='application/json'}={}){const headers={};let data;
@@ -21,6 +21,13 @@ test('member mail status and toggle use authenticated owner and never return ser
   const res=await invoke(f.handler,'status',{method:'GET'});assert.equal(res.headers.status,200);assert.deepEqual(res.body,Mail.safeStatus(RAW));
   assert.equal(JSON.stringify(res.body).includes('SECRET'),false);assert.deepEqual(f.calls[0],['configure','owner',AUTH,'status',{}]);
   const toggled=await invoke(f.handler,'configure',{body:{enabled:false}});assert.equal(toggled.headers.status,200);assert.deepEqual(f.calls[1],['configure','owner',AUTH,'settings',{enabled:false}]);
+});
+
+test('the alternate mail toggle also checks the linked Google account before enabling, but always permits pause',async()=>{
+  const f=fixture({accountFailure:new D.BackupError('google-account-mismatch',409)});
+  assert.equal((await invoke(f.handler,'configure',{body:{enabled:true}})).headers.status,409);assert.deepEqual(f.calls,[]);
+  assert.equal((await invoke(f.handler,'configure',{body:{enabled:false}})).headers.status,200);
+  assert.deepEqual(f.calls,[['configure','owner',AUTH,'settings',{enabled:false}]]);
 });
 test('arbitrary recipient, owner, resend and account identity cannot be supplied by a member',async()=>{
   const f=fixture();for(const body of [{enabled:true,owner:'other'},{enabled:true,recipient:'victim@example.test'},{enabled:true,account_id:'foreign'},{resend:true},{}]){const result=await invoke(f.handler,'configure',{body});assert.equal(result.headers.status,400);}

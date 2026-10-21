@@ -73,7 +73,7 @@ const PUBLISH_FILES = Object.freeze([
   'api/meeting-record-pdf.js', 'server/meetingRecordDownloadService.cjs',
   'api/meeting-record-mail.js', 'server/meetingMailService.cjs', 'server/meetingRecordPdf.cjs', 'server/meeting-record-email-worker.ts', 'server/meeting-mail.sql', 'server/meeting-mail-activate.sql', 'server/meeting-mail-schedule.sql', 'server/MEETING_MAIL_SETUP.md',
   'server/fonts/Pretendard-Regular.otf', 'server/fonts/Pretendard-Bold.otf', 'server/fonts/NotoEmoji.ttf', 'server/fonts/OFL.txt', 'server/fonts/NotoEmoji-OFL.txt', 'server/fonts/README.md',
-  'server/googleConnectionService.cjs',
+  'server/googleConnectionService.cjs', 'server/google-toggle-consent.sql',
   'api/meeting-calendar.js', 'server/meetingCalendarDomain.cjs', 'server/meetingCalendarProvider.cjs', 'server/meetingCalendarService.cjs', 'server/meeting-calendar.sql', 'server/meeting-calendar-schedule.sql', 'server/MEETING_CALENDAR_SETUP.md',
   'server/meeting-records.sql', 'server/meeting-records-next-preparation.sql', 'server/meeting-records-verification.sql',
   'api/drive-backup.js', 'server/driveBackupDomain.cjs', 'server/driveBackupProvider.cjs', 'server/driveBackupService.cjs', 'server/drive-backup.sql', 'server/drive-backup-schedule.sql', 'server/DRIVE_BACKUP_SETUP.md',

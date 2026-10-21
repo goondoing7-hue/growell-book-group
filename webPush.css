@@ -16,6 +16,10 @@
 .web-push-note{margin:9px 0 0;color:var(--ink-soft,#6a7a70);font-size:11px;line-height:1.8}
 .web-push-section :is(button,input):disabled{opacity:.5;cursor:default}
 .web-push-section :is(button,input):focus-visible{outline:2px solid var(--primary,var(--accent,#3b634e));outline-offset:3px}
+.web-push-section.web-push-compact{margin:0;padding:0;border:0;border-radius:0;background:transparent}
+.web-push-compact .web-push-toggle{box-sizing:border-box;min-height:58px;padding:15px 0;font-size:14px}
+.web-push-compact .web-push-toggle:first-of-type{border-top:0}
+.web-push-compact .web-push-status{margin:8px 0 0;padding:9px 11px;font-size:12px;line-height:1.6}
 @media(max-width:620px){.web-push-section{padding:16px}.web-push-toggle{font-size:13px}.web-push-primary,.web-push-secondary{min-height:46px}}
 @media(prefers-reduced-motion:reduce){.web-push-toggle input,.web-push-toggle input::after{transition:none}}
 .web-push-prompt{box-sizing:border-box;inset:0;width:calc(100% - 32px);max-width:460px;max-height:88vh;max-height:88dvh;margin:auto;padding:0;overflow:auto;border:1px solid var(--line,#dde5dd);border-radius:23px;background:var(--surface,#fff);color:var(--ink,#26372c);box-shadow:0 20px 70px #20372b33;font:inherit}

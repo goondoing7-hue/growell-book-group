@@ -39,7 +39,7 @@ function fixture() {
     allocateIds:async()=>['folder-fixture','file-fixture'],
     writeBackup:async args=>{await args.beforeWrite();assert.equal(c.folder_id,args.folderId);assert.equal(c.file_id,args.fileId);await args.onCreated({folderCreated:true,fileCreated:true});state.uploads.push(JSON.parse(args.content));return {folderCreated:true,fileCreated:true};}
   };
-  const service=S.createService({config,store,providerFactory:()=>provider,now:()=>NOW,request:async()=>({id:AUTH})});
+  const service=S.createService({config,store,providerFactory:()=>provider,now:()=>NOW,request:async()=>({id:AUTH,identities:[]})});
   return {state,store,provider,service};
 }
 async function invoke(handler,request={}) {

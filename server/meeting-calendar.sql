@@ -220,7 +220,7 @@ $function$;
 create or replace function public.growell_meeting_calendar_configure(p_owner text,p_auth uuid,p_operation text,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path=''
 as $function$
-declare connection public.growell_meeting_calendar_connections%rowtype; next_generation uuid; same_account boolean;
+declare connection public.growell_meeting_calendar_connections%rowtype; next_generation uuid; same_account boolean; next_enabled boolean;
 begin
   perform 1 from public.profiles p where p.id=p_owner and p.auth_user_id=p_auth
     and p.approval_status='approved' and p.is_deleted=false for share;
@@ -230,6 +230,11 @@ begin
   select * into connection from public.growell_meeting_calendar_connections where owner_id=p_owner for update;
   if found and connection.lease_until>clock_timestamp() then raise exception 'Connector busy; retry' using errcode='40001';end if;
   if p_operation='connect' then
+    if (p_payload?'enabled' and jsonb_typeof(p_payload->'enabled') is distinct from 'boolean')
+      or (p_payload?'default_enabled' and jsonb_typeof(p_payload->'default_enabled') is distinct from 'boolean') then
+      raise exception 'Invalid connection settings' using errcode='22023';end if;
+    next_enabled:=case when p_payload?'enabled' then (p_payload->>'enabled')::boolean
+      else coalesce(connection.enabled,(p_payload->>'default_enabled')::boolean,true) end;
     next_generation:=(p_payload->>'generation')::uuid;
     if next_generation is null or next_generation=connection.generation
       or exists(select 1 from public.growell_meeting_calendar_jobs where owner_id=p_owner and generation=next_generation)
@@ -238,10 +243,10 @@ begin
       or char_length(coalesce(p_payload->>'account_email',''))>320 then
       raise exception 'Invalid connection' using errcode='22023';end if;
     same_account:=coalesce(connection.account_id=p_payload->>'account_id' and connection.auth_user_id=p_auth,false);
-    insert into public.growell_meeting_calendar_connections(owner_id,auth_user_id,generation,delivery_generation,token_cipher,account_id,account_email,connected_at)
-      values(p_owner,p_auth,next_generation,next_generation,p_payload->>'token_cipher',p_payload->>'account_id',p_payload->>'account_email',clock_timestamp())
+    insert into public.growell_meeting_calendar_connections(owner_id,auth_user_id,generation,delivery_generation,token_cipher,account_id,account_email,connected_at,enabled)
+      values(p_owner,p_auth,next_generation,next_generation,p_payload->>'token_cipher',p_payload->>'account_id',p_payload->>'account_email',clock_timestamp(),next_enabled)
       on conflict(owner_id) do update set auth_user_id=excluded.auth_user_id,generation=excluded.generation,delivery_generation=excluded.delivery_generation,
-        token_cipher=excluded.token_cipher,account_id=excluded.account_id,account_email=excluded.account_email,enabled=true,
+        token_cipher=excluded.token_cipher,account_id=excluded.account_id,account_email=excluded.account_email,enabled=excluded.enabled,
         manual_requested=false,connected_at=excluded.connected_at,last_synced_at=case when same_account then public.growell_meeting_calendar_connections.last_synced_at end,
         last_attempt_at=null,next_sync_at=clock_timestamp(),error_code=null,attempts=0,lease_token=null,lease_until=null;
     if same_account then
@@ -249,11 +254,13 @@ begin
         select owner_id,schedule_id,next_generation,desired,revision,synced_revision,event_id,event_created,last_synced_at,last_error
           from public.growell_meeting_calendar_jobs where owner_id=p_owner and generation=coalesce(connection.delivery_generation,connection.generation);
     end if;
-    insert into public.growell_meeting_calendar_jobs(owner_id,schedule_id,generation,desired)
-      select p_owner,s.schedule_id,next_generation,s.desired from public.growell_meeting_calendar_schedules s
-      join public.announcement a on a.book_id='global' and a.calendar_schedule_id=s.schedule_id
-      on conflict(owner_id,schedule_id,generation) do update set desired=excluded.desired,
-        revision=public.growell_meeting_calendar_jobs.revision+1,last_error=null,next_sync_at=clock_timestamp();
+    if next_enabled then
+      insert into public.growell_meeting_calendar_jobs(owner_id,schedule_id,generation,desired)
+        select p_owner,s.schedule_id,next_generation,s.desired from public.growell_meeting_calendar_schedules s
+        join public.announcement a on a.book_id='global' and a.calendar_schedule_id=s.schedule_id
+        on conflict(owner_id,schedule_id,generation) do update set desired=excluded.desired,
+          revision=public.growell_meeting_calendar_jobs.revision+1,last_error=null,next_sync_at=clock_timestamp();
+    end if;
   elsif p_operation='disconnect' then
     -- Existing Google events and GROWELL records remain intact.
     update public.growell_meeting_calendar_connections set token_cipher=null,generation=gen_random_uuid(),enabled=false,
@@ -266,6 +273,17 @@ begin
       if not(p_payload ? 'enabled') or jsonb_typeof(p_payload->'enabled')<>'boolean' then raise exception 'Invalid settings' using errcode='22023';end if;
       update public.growell_meeting_calendar_connections set enabled=(p_payload->>'enabled')::boolean,manual_requested=false,
         next_sync_at=clock_timestamp(),error_code=null where owner_id=p_owner;
+      if (p_payload->>'enabled')::boolean then
+        -- A first connection can be paused before any meeting is queued. An
+        -- explicit later ON catches up only the current meeting, preserving
+        -- any known remote event identity and all historical jobs.
+        insert into public.growell_meeting_calendar_jobs(owner_id,schedule_id,generation,desired)
+          select p_owner,s.schedule_id,connection.generation,s.desired from public.growell_meeting_calendar_schedules s
+          join public.announcement a on a.book_id='global' and a.calendar_schedule_id=s.schedule_id
+          on conflict(owner_id,schedule_id,generation) do update set desired=excluded.desired,
+            revision=public.growell_meeting_calendar_jobs.revision+1,last_error=null,next_sync_at=clock_timestamp()
+            where public.growell_meeting_calendar_jobs.desired is distinct from excluded.desired;
+      end if;
     else
       update public.growell_meeting_calendar_connections set manual_requested=true,next_sync_at=clock_timestamp(),error_code=null where owner_id=p_owner;
       update public.growell_meeting_calendar_jobs set revision=revision+1,last_error=null,next_sync_at=clock_timestamp()

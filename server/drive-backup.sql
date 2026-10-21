@@ -190,7 +190,7 @@ $function$;
 create or replace function public.growell_drive_backup_configure(p_owner text,p_auth uuid,p_operation text,p_payload jsonb)
 returns jsonb language plpgsql security definer set search_path=''
 as $function$
-declare connection public.growell_drive_backup_connections%rowtype; next_generation uuid; same_account boolean;
+declare connection public.growell_drive_backup_connections%rowtype; next_generation uuid; same_account boolean; next_enabled boolean;
 begin
   perform 1 from public.profiles p where p.id=p_owner and p.auth_user_id=p_auth
     and p.approval_status='approved' and p.is_deleted=false for share;
@@ -200,16 +200,25 @@ begin
   select * into connection from public.growell_drive_backup_connections where owner_id=p_owner for update;
   if found and connection.lease_until>clock_timestamp() then raise exception 'Connector busy; retry' using errcode='40001';end if;
   if p_operation='connect' then
+    if (p_payload?'enabled' and jsonb_typeof(p_payload->'enabled') is distinct from 'boolean')
+      or (p_payload?'default_enabled' and jsonb_typeof(p_payload->'default_enabled') is distinct from 'boolean') then
+      raise exception 'Invalid connection settings' using errcode='22023';end if;
+    -- Only the selected service sends an explicit choice. An unselected service
+    -- supplies a first-connection default while preserving the latest ON/OFF
+    -- held by this row lock, including another tab's choice during consent.
+    -- Older callbacks omit both fields and keep their first-connection ON default.
+    next_enabled:=case when p_payload?'enabled' then (p_payload->>'enabled')::boolean
+      else coalesce(connection.enabled,(p_payload->>'default_enabled')::boolean,true) end;
     next_generation:=(p_payload->>'generation')::uuid;
     if next_generation is null or next_generation=connection.generation
       or char_length(coalesce(p_payload->>'token_cipher','')) not between 16 and 65536
       or char_length(coalesce(p_payload->>'account_id','')) not between 1 and 512
       or char_length(coalesce(p_payload->>'account_email',''))>320 then raise exception 'Invalid connection' using errcode='22023';end if;
     same_account:=coalesce(connection.account_id=p_payload->>'account_id',false);
-    insert into public.growell_drive_backup_connections(owner_id,auth_user_id,generation,token_cipher,account_id,account_email,connected_at)
-      values(p_owner,p_auth,next_generation,p_payload->>'token_cipher',p_payload->>'account_id',p_payload->>'account_email',clock_timestamp())
+    insert into public.growell_drive_backup_connections(owner_id,auth_user_id,generation,token_cipher,account_id,account_email,connected_at,enabled)
+      values(p_owner,p_auth,next_generation,p_payload->>'token_cipher',p_payload->>'account_id',p_payload->>'account_email',clock_timestamp(),next_enabled)
       on conflict(owner_id) do update set auth_user_id=excluded.auth_user_id,generation=excluded.generation,
-        token_cipher=excluded.token_cipher,account_id=excluded.account_id,account_email=excluded.account_email,enabled=true,
+        token_cipher=excluded.token_cipher,account_id=excluded.account_id,account_email=excluded.account_email,enabled=excluded.enabled,
         manual_requested=false,dirty_revision=public.growell_drive_backup_connections.dirty_revision+1,
         synced_revision=case when same_account then public.growell_drive_backup_connections.synced_revision else 0 end,
         snapshot_revision=null,folder_id=case when same_account then public.growell_drive_backup_connections.folder_id end,

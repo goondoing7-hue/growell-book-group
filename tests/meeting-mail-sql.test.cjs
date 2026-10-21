@@ -6,6 +6,8 @@ const path=require('node:path');
 const {PGlite}=require('@electric-sql/pglite');
 const sql=fs.readFileSync(path.join(__dirname,'../server/meeting-mail.sql'),'utf8');
 const activate=fs.readFileSync(path.join(__dirname,'../server/meeting-mail-activate.sql'),'utf8');
+const consentPatch=fs.readFileSync(path.join(__dirname,'../server/google-toggle-consent.sql'),'utf8');
+function configureDefinition(source){const start=source.indexOf('create or replace function public.growell_meeting_mail_configure('),end=source.indexOf('$function$;',start);assert.ok(start>=0&&end>start);return source.slice(start,end+'$function$;'.length).replace(/\r\n/g,'\n');}
 const AUTH='11111111-1111-4111-8111-111111111111',OTHER='22222222-2222-4222-8222-222222222222';
 const R1='33333333-3333-4333-8333-333333333333',R2='44444444-4444-4444-8444-444444444444',R3='55555555-5555-4555-8555-555555555555';
 const codeIs=code=>error=>error.code===code;
@@ -27,6 +29,8 @@ describe('Automatic meeting PDF mail SQL preserves authored records and delivery
       create schema vault;create table vault.decrypted_secrets(name text,decrypted_secret text);
       insert into vault.decrypted_secrets values('growell_habit_sync_worker_secret','synthetic-worker-secret-not-an-operating-credential');`);
     await db.exec(sql);
+    assert.equal(configureDefinition(consentPatch),configureDefinition(sql),'standalone production patch must match the canonical configure function');
+    await db.exec(configureDefinition(consentPatch));
   });
   beforeEach(async()=>{
     await db.exec('reset role;truncate public.growell_meeting_mail_jobs,public.growell_meeting_mail_subscriptions,public.growell_meeting_records,public.material_notes,public.posts,public.private_entries,public.growell_drive_backup_connections,public.growell_meeting_calendar_connections,public.profiles,public.book_locks');
@@ -50,6 +54,27 @@ describe('Automatic meeting PDF mail SQL preserves authored records and delivery
       values($1::uuid,$2,$3,$4::date,'내용 중심 모임 기록','[{"id":"balance","summary":"균형 살피기","detail":"보존해야 하는 전체 모임 내용이다."}]',
       '[{"id":"emotion","word":"감정","meaning":"몸과 마음의 신호이다."}]','{"date":"","time":"","place":"교육관","reading":"3장","sharing":"통찰 정리","habit":"작은 실천"}',array['material'],$5,'operator')`,[id,book,round,date,status]);
   }
+  test('initial OAuth OFF queues no mail and existing OFF survives omitted reconnect until an explicit ON choice',async()=>{
+    const originals=(await db.query('select * from public.growell_meeting_records order by id')).rows;
+    assert.equal((await configure('connect',{enabled:false})).enabled,false);assert.deepEqual(await rows(),[]);assert.deepEqual(await claim(),[]);
+    assert.equal((await configure()).enabled,false);assert.deepEqual(await rows(),[]);
+    const enabled=await configure('connect',{enabled:true});assert.equal(enabled.enabled,true);assert.equal(enabled.pendingCount,1);
+    const firstRows=await rows();assert.equal((await configure('connect',{enabled:false})).enabled,false);assert.deepEqual(await claim(),[]);assert.deepEqual(await rows(),firstRows);
+    assert.deepEqual((await db.query('select * from public.growell_meeting_records order by id')).rows,originals);
+  });
+  test('non-boolean OAuth mail choices and extra recipient fields cannot create subscriptions',async()=>{
+    for(const key of ['enabled','default_enabled'])for(const value of [null,'false',0,{},[]])await assert.rejects(configure('connect',{[key]:value}),codeIs('22023'));
+    await assert.rejects(configure('connect',{enabled:false,account_email:'other@example.invalid'}),codeIs('22023'));
+    assert.equal((await db.query('select count(*)::int as n from public.growell_meeting_mail_subscriptions')).rows[0].n,0);assert.deepEqual(await rows(),[]);
+  });
+  test('unselected mail defaults OFF once and retains a newer ON or OFF without replacing receipts',async()=>{
+    assert.equal((await configure('connect',{default_enabled:false})).enabled,false);assert.deepEqual(await rows(),[]);
+    await configure('settings',{enabled:true});const queued=await rows();
+    assert.equal((await configure('connect',{default_enabled:false})).enabled,true,'newer ON survives an unrelated service consent');
+    await configure('settings',{enabled:false});
+    assert.equal((await configure('connect',{default_enabled:false})).enabled,false,'newer OFF also survives');assert.deepEqual(await claim(),[]);assert.deepEqual(await rows(),queued);
+    assert.equal((await configure('connect',{enabled:true,default_enabled:false})).enabled,true,'selected-service ON has explicit precedence');
+  });
   test('installation and repeat installation never enroll members or modify authored data',async()=>{
     await db.exec("insert into public.posts(id,user_id,html,q1,q2,q3) values('p','other','PUBLIC STORY MUST NOT ENTER PDF','q1','q2','q3');insert into public.private_entries values('e','owner','ENCRYPTED PRIVATE DATA');insert into public.material_notes values('material','emotion','operator','자료 제목','COMPLETE MATERIAL BODY');");
     const before={};for(const table of ['profiles','growell_meeting_records','posts','private_entries','material_notes','growell_drive_backup_connections','growell_meeting_calendar_connections'])before[table]=(await db.query('select * from public.'+table)).rows;

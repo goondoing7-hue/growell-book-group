@@ -234,6 +234,73 @@ test('ordinary member settings retain one test and recovery controls while omitt
     assert.equal(await nodes.get('data-push-test').onclick(),true);assert.equal(h.calls.requests.at(-1).body.action,'test');assert.equal(typeof nodes.get('data-push-disable').onclick,'function');view.destroy();
   }
 });
+test('compact settings expose only three notification switches for members and administrators',async()=>{
+  for(const isAdmin of [false,true]){
+    const {h,nodes,container,view}=mountHarness({subscribed:true,permission:'granted',posts:false},{compact:true,isAdmin});await new Promise(setImmediate);
+    assert.equal((container.markup.match(/role="switch"/g)||[]).length,3);
+    assert.match(container.markup,/이 기기 알림/);assert.match(container.markup,/새 나눔·자료 알림/);assert.match(container.markup,/매일 오전 9시 말씀/);
+    assert.doesNotMatch(container.markup,/<button|<h3|<small|설명|받아요|확인하고|테스트|새로고침|data-push-(?:enable|disable|refresh|test|local|delayed|last|install|reconnect)/);
+    assert.equal(nodes.get('data-push-device').checked,true);assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
+    assert.equal(nodes.get('data-push-status').hidden,true);assert.equal(nodes.get('data-push-status').textContent,'');
+    assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscriptions,0);view.destroy();
+  }
+});
+test('compact device ON requests permission in the original gesture and waits for confirmed subscription',async()=>{
+  const {h,nodes,view}=mountHarness({}, {compact:true});await new Promise(setImmediate);
+  assert.equal(nodes.get('data-push-device').checked,false);assert.equal(nodes.get('data-push-device').disabled,false);
+  assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-posts').disabled,true);
+  const tokens=h.calls.tokens;nodes.get('data-push-device').checked=true;
+  const enabled=nodes.get('data-push-device').onchange();
+  assert.equal(h.calls.prompts,1);assert.equal(h.calls.tokens,tokens);
+  assert.equal(nodes.get('data-push-device').checked,false,'unconfirmed ON is reverted while permission and registration are pending');
+  assert.equal(nodes.get('data-push-device').disabled,true);
+  assert.equal(await enabled,true);
+  assert.equal(nodes.get('data-push-device').checked,true);assert.equal(nodes.get('data-push-posts').checked,true);assert.equal(nodes.get('data-push-verse').checked,true);
+  assert.equal(nodes.get('data-push-status').hidden,true);view.destroy();
+});
+test('compact ON failure remains OFF with only an actionable error and no diagnostics',async()=>{
+  for(const options of [{answer:'denied'},{failure:'subscribe'}]){
+    const {h,nodes,container,view}=mountHarness(options,{compact:true,isAdmin:true});await new Promise(setImmediate);
+    nodes.get('data-push-device').checked=true;assert.equal(await nodes.get('data-push-device').onchange(),false);
+    assert.equal(nodes.get('data-push-device').checked,false);assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-posts').disabled,true);
+    assert.equal(nodes.get('data-push-status').hidden,false);assert.match(nodes.get('data-push-status').textContent,/허용해주세요|다시 시도/);
+    assert.doesNotMatch(container.markup+nodes.get('data-push-status').textContent,/PRIVATE_|private-endpoint|push\.example|테스트|새로고침/);
+    if(options.answer==='denied')assert.equal(h.calls.subscriptions,0);view.destroy();
+  }
+});
+test('compact topic switches and device OFF preserve confirmed preferences across reconnection',async()=>{
+  const {h,nodes,view}=mountHarness({subscribed:true,permission:'granted'},{compact:true});await new Promise(setImmediate);
+  nodes.get('data-push-posts').checked=false;assert.equal(await nodes.get('data-push-posts').onchange(),true);
+  assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
+  const change=h.calls.requests.find(call=>call.body.action==='preferences');assert.deepEqual(json(change.body.preferences),{posts:false,dailyVerse:true});
+  nodes.get('data-push-device').checked=false;assert.equal(await nodes.get('data-push-device').onchange(),true);
+  assert.equal(nodes.get('data-push-device').checked,false);assert.equal(nodes.get('data-push-verse').checked,false);assert.equal(nodes.get('data-push-verse').disabled,true);assert.equal(h.calls.unsubscribe,1);
+  nodes.get('data-push-device').checked=true;assert.equal(await nodes.get('data-push-device').onchange(),true);
+  assert.equal(nodes.get('data-push-device').checked,true);assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
+  assert.equal(h.calls.prompts,0);view.destroy();
+});
+test('compact preference failures restore confirmed switches and disabled views cannot use a prior session',async()=>{
+  const {h,nodes,view}=mountHarness({subscribed:true,permission:'granted',failure:'preferences'},{compact:true});await new Promise(setImmediate);
+  nodes.get('data-push-posts').checked=false;assert.equal(await nodes.get('data-push-posts').onchange(),false);assert.equal(nodes.get('data-push-posts').checked,true);
+  assert.equal(nodes.get('data-push-status').hidden,false);
+  const before=h.calls.requests.length;view.destroy();nodes.get('data-push-device').checked=false;await assert.rejects(nodes.get('data-push-device').onchange(),error=>error.code==='session_changed');assert.equal(h.calls.requests.length,before);
+});
+test('compact device ON repairs an expired connection without reviving disabled topic preferences',async()=>{
+  const {h,nodes,container,view}=mountHarness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/compact-repaired'},{compact:true});await new Promise(setImmediate);
+  assert.equal(nodes.get('data-push-device').checked,false);assert.equal(nodes.get('data-push-device').disabled,false);assert.equal(nodes.get('data-push-status').hidden,true);
+  assert.doesNotMatch(container.markup,/다시 연결하기|연결이 만료|테스트|새로고침/);
+  assert.equal(h.calls.unsubscribe,0);nodes.get('data-push-device').checked=true;assert.equal(await nodes.get('data-push-device').onchange(),true);
+  assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);
+  assert.equal(nodes.get('data-push-device').checked,true);assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,false);view.destroy();
+});
+test('compact unavailable devices retain OFF switches without asking permission or exposing long instructions',async()=>{
+  for(const options of [{unsupported:true},{ios:true},{permission:'denied'}]){
+    const {h,nodes,container,view}=mountHarness(options,{compact:true});await new Promise(setImmediate);
+    assert.equal(nodes.get('data-push-device').checked,false);assert.equal(nodes.get('data-push-posts').disabled,true);assert.equal(nodes.get('data-push-verse').disabled,true);
+    assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscriptions,0);assert.equal(nodes.get('data-push-status').hidden,false);
+    assert.ok(nodes.get('data-push-status').textContent.length<45);assert.doesNotMatch(container.markup,/Safari|16\.4|알림을 받을 기기마다|집중 모드|발송|새로고침/);view.destroy();
+  }
+});
 test('an expired own subscription displays its reconnect action outside the hidden connected settings',async()=>{
   const {h,nodes,container,view}=mountHarness({inactive:true,permission:'granted',posts:false,dailyVerse:false});await new Promise(setImmediate);
   assert.equal(nodes.get('data-push-settings').hidden,true);assert.equal(nodes.get('data-push-enable').hidden,false);assert.equal(nodes.get('data-push-enable').textContent,'다시 연결하기');assert.equal(nodes.get('data-push-reconnect').hidden,false);

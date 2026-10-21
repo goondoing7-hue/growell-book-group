@@ -192,8 +192,49 @@
     });}
     return {refresh:refresh,enable:enable,preferences:preferences,test:test,testDelayed:testDelayed,localTest:localTest,disable:disable,snapshot:snapshot,destroy:function(){disposed=true;client.dispose();}};
   }
+  function compactMessage(code){
+    code=typeof code==='string'?code.replace(/-/g,'_'):'';
+    if(code==='permission_denied')return '브라우저 설정에서 알림을 허용해주세요.';
+    if(code==='permission_dismissed')return '알림을 받으려면 다시 켜서 허용해주세요.';
+    if(code==='install_required')return '홈 화면에 추가한 GROWELL에서 켜주세요.';
+    if(code==='unsupported')return '지원하는 최신 브라우저에서 켜주세요.';
+    if(/^(auth_required|unauthorized|invalid_session|session_changed|membership_required)$/.test(code))return '로그인 상태를 확인하고 다시 켜주세요.';
+    if(/^(not_configured|setup_required|push_not_configured)$/.test(code))return '알림 연결을 준비하고 있어요.';
+    if(/^(rate_limited|too_many_requests)$/.test(code))return '잠시 후 다시 켜주세요.';
+    return '설정을 적용하지 못했어요. 연결을 확인하고 다시 시도해주세요.';
+  }
+  function mountCompact(container,options){
+    container.classList.add('web-push-section','web-push-compact');
+    container.innerHTML='<label class="web-push-toggle"><span>이 기기 알림</span><input type="checkbox" role="switch" data-push-device aria-label="이 기기 알림"></label>'+
+      '<label class="web-push-toggle"><span>새 나눔·자료 알림</span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔·자료 알림"></label>'+
+      '<label class="web-push-toggle"><span>매일 오전 9시 말씀</span><input type="checkbox" role="switch" data-push-verse aria-label="매일 오전 9시 말씀"></label>'+
+      '<p data-push-status class="web-push-status" role="status" aria-live="polite" hidden></p>';
+    function q(selector){return container.querySelector(selector);}
+    var controller=createController({memberKey:options.memberKey,getAccessToken:options.getAccessToken,isCurrent:options.isCurrent,fetch:options.fetch,onChange:function(state){
+      var connected=state.loaded&&state.configured&&state.subscribed&&state.permission==='granted';
+      q('[data-push-device]').checked=!!connected;
+      q('[data-push-device]').disabled=state.busy||!state.loaded||!state.configured;
+      q('[data-push-posts]').checked=!!connected&&state.preferences.posts;
+      q('[data-push-verse]').checked=!!connected&&state.preferences.dailyVerse;
+      q('[data-push-posts]').disabled=state.busy||!connected;
+      q('[data-push-verse]').disabled=state.busy||!connected;
+      var reason=!state.supported?'unsupported':state.iosNeedsInstall?'install_required':state.permission==='denied'?'permission_denied':state.errorCode;
+      if(!reason&&state.loaded&&state.configured===false)reason='not_configured';
+      var status=q('[data-push-status]');status.textContent=reason?compactMessage(reason):'';status.hidden=!reason;status.classList.toggle('is-error',!!reason);
+      container.setAttribute('aria-busy',String(state.busy));
+    }});
+    q('[data-push-device]').onchange=function(){
+      // Call enable directly from the switch gesture so native permission does
+      // not lose user activation. The controller publishes only confirmed state.
+      return q('[data-push-device]').checked?controller.enable():controller.disable();
+    };
+    function change(){return controller.preferences({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked});}
+    q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;
+    var view={refresh:controller.refresh,destroy:function(){controller.destroy();views.delete(view);}};views.add(view);controller.refresh();return view;
+  }
   function mount(container,options){
     if(!container||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function')return null;
+    if(options.compact===true)return mountCompact(container,options);
     var diagnostics=options.isAdmin===true;
     container.classList.add('web-push-section');container.innerHTML='<h3>푸시 알림</h3><p class="web-push-intro">GROWELL을 열지 않아도 새 나눔·자료와 오늘의 말씀을 받아요. 알림을 받을 기기마다 한 번씩 허용해주세요.</p>'+
       '<p data-push-status class="web-push-status" role="status" aria-live="polite">알림 상태를 확인하고 있어요…</p><p data-push-install class="web-push-note" hidden>아이폰·아이패드는 Safari에서 GROWELL을 홈 화면에 추가한 뒤, 홈 화면 아이콘으로 열어 알림을 허용해주세요. iOS·iPadOS 16.4 이상이 필요해요.</p>'+

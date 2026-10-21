@@ -5,24 +5,25 @@
   'use strict';
   var active=null,services=['drive','calendar','mail'],googleServices=['drive','calendar'];
   function fail(code){var error=new Error(code);error.code=code;return error;}
+  function loginMatch(status,value){if(value&&typeof value.loginAccountMatches==='boolean')status.loginAccountMatches=value.loginAccountMatches;return status;}
   function statusView(service,value){
-    if(service==='drive')return Drive.statusView(value);
+    if(service==='drive')return loginMatch(Drive.statusView(value),value);
     if(service==='mail'){
       if(!value||typeof value.configured!=='boolean'||(value.configured&&typeof value.connected!=='boolean'))throw fail('unavailable');
       var mailed=typeof value.lastSentAt==='string'?Date.parse(value.lastSentAt):NaN;
-      return {configured:value.configured,connected:value.configured&&value.connected===true,enabled:value.configured&&value.connected===true&&value.enabled===true,
+      return loginMatch({configured:value.configured,connected:value.configured&&value.connected===true,enabled:value.configured&&value.connected===true&&value.enabled===true,
         accountEmail:typeof value.accountEmail==='string'?value.accountEmail.slice(0,320):'',lastSentAt:Number.isFinite(mailed)?new Date(mailed).toISOString():'',
         latestStatus:typeof value.latestStatus==='string'&&/^(none|pending|sending|sent|uncertain|failed|paused|cancelled)$/.test(value.latestStatus)?value.latestStatus:'',
         pending:typeof value.pendingCount==='number'&&Number.isFinite(value.pendingCount)&&value.pendingCount>0,busy:value.busy===true,
-        errorCode:typeof value.errorCode==='string'&&/^[a-z_-]{1,60}$/.test(value.errorCode)?value.errorCode:''};
+        errorCode:typeof value.errorCode==='string'&&/^[a-z_-]{1,60}$/.test(value.errorCode)?value.errorCode:''},value);
     }
     if(service!=='calendar'||!value||typeof value.configured!=='boolean'||(value.configured&&typeof value.connected!=='boolean'))throw fail('unavailable');
     var stamp=typeof value.lastSyncedAt==='string'?Date.parse(value.lastSyncedAt):NaN;
-    return {configured:value.configured,connected:value.connected===true,enabled:value.enabled===true,
+    return loginMatch({configured:value.configured,connected:value.connected===true,enabled:value.enabled===true,
       accountEmail:typeof value.accountEmail==='string'?value.accountEmail.slice(0,320):'',
       lastSyncedAt:Number.isFinite(stamp)?new Date(stamp).toISOString():'',
       pending:value.pending===true||(typeof value.pendingCount==='number'&&value.pendingCount>0),busy:value.busy===true,
-      errorCode:typeof value.errorCode==='string'&&/^[a-z_-]{1,60}$/.test(value.errorCode)?value.errorCode:''};
+      errorCode:typeof value.errorCode==='string'&&/^[a-z_-]{1,60}$/.test(value.errorCode)?value.errorCode:''},value);
   }
   function reconnectRequired(status){return !!(status&&/reconnect|invalid_grant|connection_expired|permission/.test(status.errorCode));}
   function summaryView(entries){
@@ -91,7 +92,7 @@
     function jointStatus(){
       return clients.drive.request('google-status').then(function(value){
         guard();if(typeof value.configured!=='boolean'||(value.sameAccount!==null&&typeof value.sameAccount!=='boolean'))throw fail('unavailable');
-        var entries={configured:value.configured,sameAccount:value.sameAccount};services.forEach(function(service){
+        var entries={configured:value.configured,sameAccount:value.sameAccount,loginAccountMatches:typeof value.loginAccountMatches==='boolean'?value.loginAccountMatches:null};services.forEach(function(service){
           var child=value[service];try{
             if(!child||child.unavailable===true)throw fail(child&&typeof child.errorCode==='string'&&/^[a-z_-]{1,60}$/.test(child.errorCode)?child.errorCode:'unavailable');
             entries[service]={status:statusView(service,child),error:null};
@@ -117,7 +118,7 @@
       if(service==='mail')return Promise.resolve().then(function(){guard();return clients.drive.request('mail-configure',{enabled:payload&&payload.enabled});}).then(function(value){guard();return value;});
       return Promise.resolve().then(function(){guard();return clients[service].request(action,payload);}).then(function(value){guard();return value;});
     }
-    function connect(){return Promise.resolve().then(function(){guard();return clients.drive.request('connect');}).then(function(value){guard();return value;});}
+    function connect(service){return Promise.resolve().then(function(){guard();if(service!==undefined&&services.indexOf(service)<0)throw fail('invalid_action');return clients.drive.request('connect',service?{service:service}:undefined);}).then(function(value){guard();return value;});}
     return {load:load,request:request,connect:connect,dispose:function(){disposed=true;googleServices.forEach(function(service){clients[service].dispose();});}};
   }
   function cardHtml(service,title,intro,label,admin){
@@ -137,8 +138,68 @@
     if(restore!==false&&view.options.restoreFocus)view.options.restoreFocus();
   }
   function refresh(){if(active&&!active.options.isCurrent())close(false);}
+  function openCompact(options){
+    close(false);
+    var node=root.document.createElement('dialog');node.className='google-connection-dialog google-connection-compact';node.setAttribute('aria-labelledby','google-connection-title');
+    node.innerHTML='<header class="google-connection-head"><h2 id="google-connection-title">설정</h2><button type="button" data-google-close aria-label="설정 닫기">×</button></header>'+
+      '<div class="google-connection-tabs" role="tablist" aria-label="설정 항목"><button type="button" id="settings-notifications-tab" role="tab" aria-controls="settings-notifications-panel" data-settings-notifications-tab>알림</button><button type="button" id="settings-connections-tab" role="tab" aria-controls="settings-connections-panel" data-settings-connections-tab>연동</button></div>'+
+      '<div class="google-connection-body" data-settings-scroll><section id="settings-notifications-panel" role="tabpanel" aria-labelledby="settings-notifications-tab" data-settings-notifications-panel><section data-google-push></section></section>'+
+      '<section id="settings-connections-panel" role="tabpanel" aria-labelledby="settings-connections-tab" data-settings-connections-panel hidden><button type="button" class="google-connection-login-entry" data-google-login-open hidden>Google 로그인 연결</button><p class="google-connection-compact-error" role="status" aria-live="polite" data-google-error hidden></p>'+
+      services.map(function(service){var title=service==='drive'?'Google Drive 백업':service==='calendar'?'Google 캘린더':'모임 기록 PDF 이메일';return '<section class="google-connection-compact-row"><label class="google-connection-toggle"><span>'+title+'</span><input type="checkbox" role="switch" aria-label="'+title+'" data-google-'+service+'-enabled></label><p class="google-connection-compact-error" data-google-'+service+'-error role="status" aria-live="polite" hidden></p></section>';}).join('')+'</section></div>';
+    root.document.body.appendChild(node);
+    var view={node:node,options:options,entries:null,busy:false,timer:null,polls:0,loginKnown:false};
+    function current(){return active===view&&options.isCurrent();}
+    function q(selector){return node.querySelector(selector);}
+    view.client=createClient({isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});active=view;
+    if(root.GrowellWebPush&&typeof root.GrowellWebPush.mount==='function')view.push=root.GrowellWebPush.mount(q('[data-google-push]'),{compact:true,memberKey:options.memberKey,isAdmin:options.isAdmin===true,isCurrent:current,getAccessToken:options.getAccessToken,fetch:root.fetch.bind(root)});
+    function needsConsent(service){
+      var entry=view.entries&&view.entries[service],status=entry&&!entry.error&&entry.status;
+      return !!(status&&(!status.connected||reconnectRequired(status)||status.loginAccountMatches===false));
+    }
+    function enabledState(service){var e=view.entries&&view.entries[service],s=e&&e.status;return !!(s&&s.connected&&s.enabled);}
+    function controls(){
+      node.setAttribute('aria-busy',String(view.busy));
+      services.forEach(function(service){var entry=view.entries&&view.entries[service],s=entry&&entry.status;var control=q('[data-google-'+service+'-enabled]');control.checked=enabledState(service);control.disabled=view.busy||!s||!!entry.error||!s.configured||!control.checked&&needsConsent(service)&&!summaryView(view.entries).canConnect;});
+      q('[data-google-login-open]').disabled=view.busy;
+    }
+    function draw(){
+      if(!current())return;
+      services.forEach(function(service){var e=view.entries&&view.entries[service],s=e&&e.status,p=q('[data-google-'+service+'-error]');p.hidden=!e||!e.error&&(!s||s.configured)&&(!s||!reconnectRequired(s))&&(!s||!s.errorCode)&&(!s||s.loginAccountMatches!==false);p.textContent=e&&e.error?'다시 열어주세요.':s&&!s.configured?'설정 준비 중':s&&s.loginAccountMatches===false?'로그인 계정 확인 필요':s&&reconnectRequired(s)?'권한 확인 필요':s&&s.errorCode?'설정 확인 필요':'';});
+      controls();
+    }
+    function setError(text){if(!current())return;var p=q('[data-google-error]');p.textContent=text||'';p.hidden=!text;}
+    function busy(value){view.busy=value;controls();}
+    function poll(){clearTimeout(view.timer);var pending=services.some(function(service){var e=view.entries&&view.entries[service],s=e&&!e.error&&e.status;return s&&s.enabled&&(s.pending||s.busy)&&!s.errorCode;});if(current()&&pending&&view.polls<6)view.timer=setTimeout(function(){if(current()&&!root.document.hidden){view.polls++;load(false);}},5000);}
+    function load(initial){
+      if(!current()||view.busy)return;busy(true);
+      view.client.load(initial).then(function(entries){if(current()){view.entries=entries;draw();}}).catch(function(error){if(current()){view.entries={drive:{status:null,error:error},calendar:{status:null,error:error},mail:{status:null,error:error}};draw();}}).finally(function(){if(current()){busy(false);poll();}});
+    }
+    function change(service,value){
+      if(!current()||view.busy)return;clearTimeout(view.timer);view.polls=0;setError('');busy(true);
+      view.client.request(service,'configure',{enabled:value}).then(function(){return view.client.load(false);}).then(function(entries){if(current()){view.entries=entries;draw();}}).catch(function(){if(current())setError('저장하지 못했어요. 다시 시도해주세요.');}).finally(function(){if(current()){busy(false);poll();}});
+    }
+    function connect(service){
+      if(!current()||view.busy||!summaryView(view.entries).canConnect)return;clearTimeout(view.timer);setError('');busy(true);
+      Promise.resolve().then(function(){return options.beforeConnect?options.beforeConnect():undefined;}).then(function(){if(!current())throw fail('session_changed');return view.client.connect(service);}).then(function(result){
+        if(!current())return;var url=Drive.authorizationUrl(result.url,root.location.origin);if(!url)throw fail('unavailable');root.location.assign(url);
+      }).catch(function(error){if(current())setError(error&&error.code==='draft_not_saved'?'작성 중인 글을 먼저 저장해주세요.':'설정을 완료하지 못했어요. 다시 켜주세요.');}).finally(function(){if(current()){busy(false);poll();}});
+    }
+    function selectTab(tab,focus){
+      if(!current())return;view.tab=tab==='connections'?'connections':'notifications';['notifications','connections'].forEach(function(name){var selected=view.tab===name,button=q('[data-settings-'+name+'-tab]');button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;q('[data-settings-'+name+'-panel]').hidden=!selected;if(selected&&focus)button.focus({preventScroll:true});});q('[data-settings-scroll]').scrollTop=0;
+    }
+    q('[data-google-close]').onclick=function(){close();};node.addEventListener('cancel',function(event){event.preventDefault();close();});
+    node.addEventListener('click',function(event){if(event.target!==node)return;var r=node.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)close();});
+    ['notifications','connections'].forEach(function(name){var button=q('[data-settings-'+name+'-tab]');button.onclick=function(){selectTab(name);};button.addEventListener('keydown',function(event){if(['ArrowLeft','ArrowRight','Home','End'].indexOf(event.key)<0)return;event.preventDefault();selectTab(event.key==='Home'?'notifications':event.key==='End'?'connections':name==='notifications'?'connections':'notifications',true);});});
+    services.forEach(function(service){q('[data-google-'+service+'-enabled]').onchange=function(){var value=this.checked;this.checked=enabledState(service);if(!current()||view.busy||this.disabled)return;if(value&&needsConsent(service))connect(service);else change(service,value);};});
+    q('[data-google-login-open]').onclick=function(){if(current()&&!view.busy&&typeof options.onGoogleLoginSettings==='function'){close(false);options.onGoogleLoginSettings();}};
+    if(typeof options.getGoogleLoginState==='function')Promise.resolve().then(function(){return options.getGoogleLoginState();}).then(function(linked){if(current()&&typeof linked==='boolean'){view.loginKnown=true;q('[data-google-login-open]').hidden=linked||typeof options.onGoogleLoginSettings!=='function';}}).catch(function(){if(current())setError('로그인 상태를 확인하지 못했어요. 다시 열어주세요.');});
+    if(options.connectionResult&&options.connectionResult!=='connected')setError(options.connectionResult==='cancelled'?'취소했어요.':'설정을 완료하지 못했어요. 다시 켜주세요.');
+    view.visibility=function(){if(!options.isCurrent()){close(false);return;}if(current()&&!root.document.hidden){view.polls=0;load(false);}};root.document.addEventListener('visibilitychange',view.visibility);
+    selectTab(options.connectionResult||options.tab==='connections'?'connections':'notifications');node.showModal();q('[data-google-close]').focus({preventScroll:true});if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('google-connection',{close:function(){close();}});draw();load(true);
+  }
   function open(options){
     if(!root.document||!Drive||!Calendar||!options||typeof options.isCurrent!=='function'||typeof options.getAccessToken!=='function'||!options.isCurrent())return;
+    if(options.compact===true)return openCompact(options);
     close(false);
     var admin=options.isAdmin===true,node=root.document.createElement('dialog');node.className='google-connection-dialog';node.setAttribute('aria-labelledby','google-connection-title');
     node.innerHTML='<header class="google-connection-head"><div><span>내 알림과 계정 연결을 관리해요</span><h2 id="google-connection-title">설정</h2></div><button type="button" data-google-close aria-label="설정 닫기">×</button></header>'+

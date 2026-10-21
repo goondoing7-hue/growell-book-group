@@ -5,10 +5,10 @@ const S=require('../server/meetingCalendarService.cjs'),D=require('../server/mee
 const NOW=Date.parse('2026-10-11T00:00:00Z'),AUTH='11111111-1111-4111-8111-111111111111',GEN='22222222-2222-4222-8222-222222222222',SCHEDULE='33333333-3333-4333-8333-333333333333';
 const profile={id:'fixture-member',auth_user_id:AUTH,approval_status:'approved',is_deleted:false};
 const config=D.getConfig({GROWELL_GOOGLE_CLIENT_ID:'fixture-client',GROWELL_GOOGLE_CLIENT_SECRET:'fixture-secret',GROWELL_SYNC_KEY:Buffer.alloc(32,8).toString('base64'),SUPABASE_SERVICE_ROLE_KEY:'fixture-service',CRON_SECRET:'fixture-cron'});
-function fixture() {
+function fixture(options={}) {
   const c={owner_id:profile.id,auth_user_id:AUTH,generation:GEN,token_cipher:D.seal({refreshToken:'fixture-refresh',scope:D.SCOPES},config.key,D.tokenContext(profile.id,GEN)),account_id:'fixture-account',account_email:'fixture@example.test',enabled:true,lease_token:'lease',lease_until:new Date(NOW+90000).toISOString()};
   const job={owner_id:profile.id,generation:GEN,schedule_id:SCHEDULE,revision:2,synced_revision:0,event_created:false,desired:{schedule_id:SCHEDULE,meeting_date:'2026-10-24',start_time:'13:30',end_time:'15:00',place:'교육관',book_id:'emotion',meeting_no:'2',chapter:'3장',reading_range:'80~120쪽'}};
-  const state={c,job,member:structuredClone(profile),valid:true,operations:[],writes:[],oauth:null};
+  const state={c,job,member:structuredClone(profile),valid:true,operations:[],writes:[],oauth:null,authUser:options.authUser||{id:AUTH,identities:[]}};
   const store={
     profile:async()=>state.member,connection:async()=>c,jobs:async()=>[structuredClone(job)],
     claim:async()=>state.valid&&c.token_cipher&&(c.enabled||c.manual_requested)?[{connection:structuredClone(c),jobs:[structuredClone(job)]}]:[],
@@ -25,13 +25,27 @@ function fixture() {
     oauth:async(op,payload)=>{if(op==='put'){state.oauth=payload;return {};}const saved=state.oauth;state.oauth=null;return saved;}
   };
   const provider={exchange:async()=>({accessToken:'fixture-access',refreshToken:'fixture-refresh',scope:D.SCOPES}),identity:async()=>({subject:'fixture-google-subject',email:'fixture@example.test'}),refresh:async p=>({accessToken:'fixture-access',refreshToken:p.refreshToken,scope:p.scope}),writeEvent:async args=>{await args.beforeWrite();await args.onCreated();state.writes.push(args.event);return {id:args.event.id};}};
-  const service=S.createService({config,store,providerFactory:()=>provider,now:()=>NOW,request:async()=>({id:AUTH})});return {state,store,provider,service};
+  const service=S.createService({config,store,providerFactory:()=>provider,now:()=>NOW,request:async()=>structuredClone(state.authUser)});return {state,store,provider,service};
 }
 async function invoke(handler,request={}) {
   const response={headers:{},setHeader(key,value){this.headers[key.toLowerCase()]=value;},end(text=''){this.text=text;}};
   await handler({method:'GET',url:'/api/meeting-calendar?action=status',headers:{authorization:'Bearer fixture.jwt'},...request},response);if(response.text.startsWith('{'))response.body=JSON.parse(response.text);return response;
 }
 const post=(action,body={})=>({method:'POST',url:'/api/meeting-calendar?action='+action,body,headers:{authorization:'Bearer fixture.jwt',origin:config.origin,'content-type':'application/json'}});
+test('the separate Calendar API checks the login Google account before ON or manual sync and always permits OFF',async()=>{
+  const f=fixture({authUser:{id:AUTH,identities:[{provider:'google',identity_data:{sub:'login-google-subject'}}]}});
+  await assert.rejects(f.service.mutate(profile,'configure',{enabled:true}),{code:'google-account-mismatch'});
+  await assert.rejects(f.service.mutate(profile,'sync',{}),{code:'google-account-mismatch'});
+  assert.deepEqual(f.state.operations,[]);
+  await f.service.mutate(profile,'configure',{enabled:false});assert.equal(f.state.c.enabled,false);
+  assert.deepEqual(f.state.operations[0],['configure','settings',{enabled:false}]);
+});
+test('legacy Calendar OAuth cannot store a different account after login Google identity is linked',async()=>{
+  const f=fixture({authUser:{id:AUTH,identities:[{provider:'google',identity_data:{sub:'login-google-subject'}}]}});
+  const start=await f.service.connect(profile),state=new URL(start.url).searchParams.get('state');
+  await assert.rejects(f.service.callback(new URLSearchParams({state,code:'fixture-code'}),S.COOKIE+'='+state),{code:'google-account-mismatch'});
+  assert.deepEqual(f.state.operations,[]);
+});
 test('Member status contains connection progress without credentials, private identifiers or event content',async()=>{
   const f=fixture(),value=await f.service.status(profile);assert.equal(value.connected,true);assert.equal(value.pendingCount,1);assert.equal(value.syncedCount,0);
   for(const key of ['token_cipher','account_id','generation','owner_id','auth_user_id','lease_token','jobs','event_id'])assert.equal(value[key],undefined);
@@ -45,7 +59,7 @@ test('Background workers claim five members and release untouched leases when th
   const f=fixture();let clock=NOW,limit;
   f.store.claim=async(owner,count)=>{limit=count;return Array.from({length:3},()=>({connection:structuredClone(f.state.c),jobs:[structuredClone(f.state.job)]}));};
   const write=f.provider.writeEvent;f.provider.writeEvent=async args=>{await write(args);clock=NOW+34000;};
-  const service=S.createService({config,store:f.store,providerFactory:()=>f.provider,now:()=>clock,request:async()=>({id:AUTH})});
+  const service=S.createService({config,store:f.store,providerFactory:()=>f.provider,now:()=>clock,request:async()=>({id:AUTH,identities:[]})});
   const result=await service.run();assert.equal(limit,5);assert.equal(result.processed,1);assert.equal(f.state.writes.length,1);assert.equal(f.state.operations.filter(([op])=>op==='release').length,3);
 });
 test('A rescheduled meeting retains the same remote ID and does not touch source records',async()=>{

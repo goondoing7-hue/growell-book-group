@@ -108,6 +108,7 @@ function uiHarness(extra={}){
   const root={document,URL,Promise,Date,setTimeout,clearTimeout,AbortController,GrowellDriveBackup:Drive,GrowellMeetingCalendar:Calendar,
     fetch:async(url,options)=>{calls.push({url,options});return response(url.endsWith('action=config')?{configured:true}:joint());},
     location:{origin,assign(url){navigation.push(url);}},addEventListener(){},GrowellPopupHistory:{open(id){history.push('open:'+id);},closed(id){history.push('close:'+id);}},...extra.root};
+  if(extra.root&&extra.root.fetch){const fetchOverride=extra.root.fetch;root.fetch=async(url,options)=>{calls.push({url,options});return fetchOverride(url,options);};}
   vm.createContext(root);if(extra.webPush)vm.runInContext(fs.readFileSync(path.join(__dirname,'../webPush.js'),'utf8'),root);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../googleConnection.js'),'utf8'),root);
   const options={isCurrent:()=>current,getAccessToken:async()=> 'SYNTHETIC_MEMBER_TOKEN',...extra.options};root.GrowellGoogleConnection.open(options);
@@ -185,6 +186,66 @@ test('Google login settings are available to ordinary members without starting t
 test('Google login entry stays hidden without its adapter and cannot open after the member changes',async()=>{
   const unavailable=uiHarness();await flush();assert.equal(unavailable.q('[data-google-login]').hidden,true);unavailable.close();
   let opened=0;const box=uiHarness({options:{onGoogleLoginSettings(){opened++;}}});await flush();box.setCurrent(false);box.q('[data-google-login-open]').onclick();assert.equal(opened,0);assert.equal(box.node.removed,undefined);box.close();
+});
+
+test('compact settings show only service switches after verified Google login, for members and admins',async()=>{
+  for(const isAdmin of [false,true]){
+    let pushOptions;const box=uiHarness({options:{compact:true,isAdmin,getGoogleLoginState:async()=>true,onGoogleLoginSettings(){throw Error('already linked');}},root:{GrowellWebPush:{mount(node,options){pushOptions=options;return {destroy(){}};}}}});await flush();
+    assert.equal(box.q('[data-google-login-open]').hidden,true);assert.equal(pushOptions.compact,true);
+    for(const service of ['drive','calendar','mail'])assert.equal(box.q('[data-google-'+service+'-enabled]').checked,true);
+    assert.doesNotMatch(box.node.html,/지금 백업|지금 반영|자세히 보기|연결 해제|자동 백업·|백업·일정·PDF 상세|알림 소리와|data-google-connect|data-google-reminder/);
+    assert.equal(box.q('[data-google-error]').hidden,true);box.close();
+  }
+});
+
+test('compact settings retain the initial Google login entry only for a verified unlinked member',async()=>{
+  let opened=0;const box=uiHarness({options:{compact:true,getGoogleLoginState:async()=>false,onGoogleLoginSettings(){opened++;}}});await flush();
+  assert.equal(box.q('[data-google-login-open]').hidden,false);box.q('[data-google-login-open]').onclick();assert.equal(opened,1);assert.equal(box.node.removed,true);assert.equal(box.calls.some(call=>call.url.endsWith('action=connect')),false);box.close();
+});
+
+test('a compact service OFF saves only its own preference and waits for confirmed state',async()=>{
+  let drive=true;const answer=deferred();const box=uiHarness({options:{compact:true},root:{fetch:async(url,settings)=>{
+    if(url.endsWith('action=config'))return response({configured:true});
+    if(url.endsWith('action=configure')){assert.equal(url,'/api/drive-backup?action=configure');assert.deepEqual(JSON.parse(settings.body),{enabled:false});await answer.promise;drive=false;return response({ok:true});}
+    return response(joint({drive:connected({enabled:drive})}));
+  }}});await flush();const toggle=box.q('[data-google-drive-enabled]');toggle.checked=false;toggle.onchange();await flush();
+  assert.equal(toggle.checked,true);assert.equal(toggle.disabled,true);answer.resolve();await flush();assert.equal(toggle.checked,false);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);assert.equal(box.q('[data-google-mail-enabled]').checked,true);box.close();
+});
+
+test('compact OFF failure preserves the last confirmed preference and shows a short error',async()=>{
+  const box=uiHarness({options:{compact:true},root:{fetch:async(url)=>response(url.endsWith('action=config')?{configured:true}:url.endsWith('action=configure')?{error:'unavailable'}:joint(),url.endsWith('action=configure')?{ok:false,status:503}:{})}});await flush();
+  const toggle=box.q('[data-google-calendar-enabled]');toggle.checked=false;toggle.onchange();await flush();assert.equal(toggle.checked,true);assert.equal(box.q('[data-google-error]').hidden,false);assert.equal(box.q('[data-google-error]').textContent,'저장하지 못했어요. 다시 시도해주세요.');box.close();
+});
+
+test('first compact ON requests consent for only the selected service without displaying success early',async()=>{
+  const target='https://accounts.google.com/o/oauth2/v2/auth?redirect_uri='+encodeURIComponent(origin+'/api/drive-backup'),answer=deferred();
+  const box=uiHarness({options:{compact:true},root:{fetch:async(url)=>{
+    if(url.endsWith('action=config'))return response({configured:true});if(url.endsWith('action=connect'))return answer.promise;
+    return response(joint({drive:connected({connected:false,enabled:false}),calendar:connected({connected:false,enabled:false}),mail:connected({connected:false,enabled:false}),sameAccount:false,connected:false}));
+  }}});await flush();const toggle=box.q('[data-google-mail-enabled]');assert.equal(toggle.disabled,false);toggle.checked=true;toggle.onchange();await flush();
+  assert.equal(toggle.checked,false);assert.equal(box.navigation.length,0);const connect=box.calls.find(call=>call.url.endsWith('action=connect'));assert.deepEqual(JSON.parse(connect.options.body),{service:'mail'});
+  assert.equal(box.calls.some(call=>call.url.endsWith('action=configure')||call.url.endsWith('action=mail-configure')),false);
+  answer.resolve(response({url:target}));await flush();assert.deepEqual(box.navigation,[target]);box.close();
+});
+
+test('compact mismatched Google accounts require consent while a matching service remains enabled',async()=>{
+  const target='https://accounts.google.com/o/oauth2/v2/auth?redirect_uri='+encodeURIComponent(origin+'/api/drive-backup');
+  const box=uiHarness({options:{compact:true},root:{fetch:async(url)=>response(url.endsWith('action=config')?{configured:true}:url.endsWith('action=connect')?{url:target}:joint({drive:connected({enabled:false,loginAccountMatches:false}),calendar:connected({loginAccountMatches:true}),mail:connected({enabled:false,loginAccountMatches:false}),sameAccount:false,loginAccountMatches:false}))}});await flush();
+  assert.equal(box.q('[data-google-drive-enabled]').checked,false);assert.equal(box.q('[data-google-calendar-enabled]').checked,true);
+  const toggle=box.q('[data-google-drive-enabled]');toggle.checked=true;toggle.onchange();await flush();assert.deepEqual(box.navigation,[target]);assert.deepEqual(JSON.parse(box.calls.find(call=>call.url.endsWith('action=connect')).options.body),{service:'drive'});box.close();
+});
+
+test('compact mismatch does not pretend an existing enabled connection was stopped',async()=>{
+  const box=uiHarness({options:{compact:true},root:{fetch:async(url)=>response(url.endsWith('action=config')?{configured:true}:joint({drive:connected({loginAccountMatches:false})}))}});await flush();
+  assert.equal(box.q('[data-google-drive-enabled]').checked,true);assert.equal(box.q('[data-google-drive-error]').hidden,false);assert.equal(box.q('[data-google-drive-error]').textContent,'로그인 계정 확인 필요');assert.equal(box.calls.some(call=>call.url.endsWith('action=configure')),false);box.close();
+});
+
+test('compact unavailable status never writes disabled defaults or accepts a late former-member result',async()=>{
+  const first=uiHarness({options:{compact:true},root:{fetch:async(url)=>response(url.endsWith('action=config')?{configured:true}:{error:'unavailable'},url.endsWith('action=config')?{}:{ok:false,status:503})}});await flush();
+  for(const service of ['drive','calendar','mail'])assert.equal(first.q('[data-google-'+service+'-enabled]').disabled,true);assert.equal(first.calls.some(call=>call.url.endsWith('action=configure')),false);first.close();
+  const answer=deferred(),target='https://accounts.google.com/o/oauth2/v2/auth?redirect_uri='+encodeURIComponent(origin+'/api/drive-backup');
+  const box=uiHarness({options:{compact:true},root:{fetch:async(url)=>url.endsWith('action=connect')?answer.promise:response(url.endsWith('action=config')?{configured:true}:joint({drive:connected({connected:false,enabled:false})}))}});await flush();
+  const toggle=box.q('[data-google-drive-enabled]');toggle.checked=true;toggle.onchange();await flush();box.setCurrent(false);answer.resolve(response({url:target}));await flush();assert.equal(box.navigation.length,0);box.close();
 });
 
 test('failed checkbox saves roll back the displayed setting and preserve the other service',async()=>{

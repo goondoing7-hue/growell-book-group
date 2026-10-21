@@ -3,7 +3,7 @@
 const D = require('./driveBackupDomain.cjs');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BOOKS = Object.freeze({emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'});
-const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','connection-required','invalid-request','service-unavailable','rate-limited','pdf-unavailable','record-changed','pdf-module-missing','pdf-font-asset-missing','pdf-glyph-unsupported','pdf-layout-overflow','pdf-content-invalid','pdf-render-unavailable']);
+const SAFE_CODES = new Set(['not-configured','authentication-required','membership-required','connection-required','google-account-mismatch','invalid-request','service-unavailable','rate-limited','pdf-unavailable','record-changed','pdf-module-missing','pdf-font-asset-missing','pdf-glyph-unsupported','pdf-layout-overflow','pdf-content-invalid','pdf-render-unavailable']);
 function safeError(error) { return SAFE_CODES.has(error?.code) ? error.code : 'service-unavailable'; }
 function pdfFailure(error) {
   // Fixed diagnostics only. No original text, paths, addresses or provider
@@ -40,6 +40,7 @@ function createService(options={}) {
   const status=async profile=>safeStatus(await store.configure(profile.id,profile.auth_user_id,'status',{}));
   async function configure(profile,body) {
     if (!body || typeof body.enabled!=='boolean' || Object.keys(body).some(key=>key!=='enabled')) throw new D.BackupError('invalid-request',400);
+    if (body.enabled) await authService.ensureGoogleAccount(profile,'mail');
     return safeStatus(await store.configure(profile.id,profile.auth_user_id,'settings',{enabled:body.enabled}));
   }
   async function pdf(body) {

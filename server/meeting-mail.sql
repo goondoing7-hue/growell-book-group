@@ -89,7 +89,7 @@ create or replace function public.growell_meeting_mail_configure(p_owner text,p_
 returns jsonb language plpgsql security definer set search_path=''
 as $function$
 declare subscription public.growell_meeting_mail_subscriptions%rowtype; drive_row public.growell_drive_backup_connections%rowtype;
-  current_record uuid; same_account boolean; connected boolean; pending integer; sent integer; review integer; latest text;
+  current_record uuid; same_account boolean; connected boolean; pending integer; sent integer; review integer; latest text; next_enabled boolean;
 begin
   perform 1 from public.profiles where id=p_owner and auth_user_id=p_auth and approval_status='approved' and is_deleted=false for share;
   if not found then raise exception 'Approved membership required' using errcode='42501';end if;
@@ -97,19 +97,24 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('growell_meeting_mail:'||p_owner,0));
   select * into subscription from public.growell_meeting_mail_subscriptions where owner_id=p_owner for update;
   if p_operation='connect' then
-    if p_payload<>'{}'::jsonb then raise exception 'Recipient cannot be supplied' using errcode='22023';end if;
+    if (p_payload?'enabled' and jsonb_typeof(p_payload->'enabled') is distinct from 'boolean')
+      or (p_payload?'default_enabled' and jsonb_typeof(p_payload->'default_enabled') is distinct from 'boolean')
+      or exists(select 1 from jsonb_object_keys(p_payload) k where k not in ('enabled','default_enabled')) then
+      raise exception 'Recipient cannot be supplied' using errcode='22023';end if;
+    next_enabled:=case when p_payload?'enabled' then (p_payload->>'enabled')::boolean
+      else coalesce(subscription.enabled,(p_payload->>'default_enabled')::boolean,true) end;
     select * into drive_row from public.growell_drive_backup_connections where owner_id=p_owner and auth_user_id=p_auth;
     if drive_row.owner_id is null or coalesce(char_length(drive_row.account_email),0) not between 3 and 254
       or drive_row.account_email ~ '[[:space:][:cntrl:]]' or drive_row.account_email !~ '^[^@]+@[^@]+\.[^@]+$'
       or not public.growell_meeting_mail_eligible(p_owner,p_auth,drive_row.account_id,lower(drive_row.account_email)) then
       raise exception 'Unified Google connection required' using errcode='55000';end if;
     same_account:=coalesce(subscription.account_id=drive_row.account_id and subscription.account_email=lower(drive_row.account_email) and subscription.auth_user_id=p_auth,false);
-    insert into public.growell_meeting_mail_subscriptions(owner_id,auth_user_id,account_id,account_email)
-      values(p_owner,p_auth,drive_row.account_id,lower(drive_row.account_email))
+    insert into public.growell_meeting_mail_subscriptions(owner_id,auth_user_id,account_id,account_email,enabled)
+      values(p_owner,p_auth,drive_row.account_id,lower(drive_row.account_email),next_enabled)
       on conflict(owner_id) do update set auth_user_id=excluded.auth_user_id,generation=gen_random_uuid(),account_id=excluded.account_id,
-        -- OFF is an owner preference, including when changing Google accounts.
-        -- Only the first-ever subscription uses the table's ON default.
-        account_email=excluded.account_email,enabled=growell_meeting_mail_subscriptions.enabled,
+        -- Explicit connect choices apply before enqueueing; an omitted choice
+        -- preserves the owner's preference even when changing Google accounts.
+        account_email=excluded.account_email,enabled=excluded.enabled,
         last_sent_at=case when same_account then growell_meeting_mail_subscriptions.last_sent_at else null end,
         updated_at=clock_timestamp(),last_error=null returning * into subscription;
   elsif p_operation='settings' then
