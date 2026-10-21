@@ -19,10 +19,10 @@
   function newSalt(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),function(x){return x.toString(16).padStart(2,'0');}).join('');}
   function checkPassword(password){if(typeof password!=='string'||password.length<8||password.length>1024)throw new Error('개인 기록 비밀번호는 8자 이상으로 입력해주세요.');}
   function aad(id){return enc.encode(FORMAT+'/'+owner(id));}
-  async function passwordKey(password,salt){
+  async function passwordKey(password,salt,extractable){
     checkPassword(password);
     var base=await crypto.subtle.importKey('raw',enc.encode(password),{name:'PBKDF2'},false,['deriveKey']);
-    return crypto.subtle.deriveKey({name:'PBKDF2',salt:saltBytes(salt),iterations:ITERATIONS,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+    return crypto.subtle.deriveKey({name:'PBKDF2',salt:saltBytes(salt),iterations:ITERATIONS,hash:'SHA-256'},base,{name:'AES-GCM',length:256},extractable===true,['encrypt','decrypt']);
   }
   function validateEnvelope(envelope,authUserId){
     var id=owner(authUserId);
@@ -49,5 +49,19 @@
     if(!value||value.format!==FORMAT||value.owner!==owner(authUserId)||bytes(value.key).length!==32)throw new Error('개인 기록 열쇠가 이 계정과 일치하지 않아요.');
     return value.key;
   }
-  return {newSalt:newSalt,createVault:createVault,unlockVault:unlockVault,validateEnvelope:validateEnvelope};
+  async function verifyLinkedKey(password,salt,authUserId,existingKeyB64){
+    // A linked password member keeps the exact original record key. Never mint a
+    // random replacement when their password/key relationship is unavailable.
+    owner(authUserId);var expected=bytes(existingKeyB64);
+    if(expected.length!==32)throw new Error('기존 개인 기록 열쇠를 확인할 수 없어요.');
+    var derived=new Uint8Array(await crypto.subtle.exportKey('raw',await passwordKey(password,salt,true)));
+    var difference=0;for(var i=0;i<32;i++)difference|=derived[i]^expected[i];
+    if(difference)throw new Error('현재 비밀번호와 개인 기록 열쇠가 일치하지 않아요. 기존 아이디로 다시 로그인해주세요.');
+    return true;
+  }
+  async function createLinkedVault(password,salt,authUserId,existingKeyB64){
+    await verifyLinkedKey(password,salt,authUserId,existingKeyB64);
+    return createVault(password,newSalt(),authUserId,existingKeyB64);
+  }
+  return {newSalt:newSalt,createVault:createVault,createLinkedVault:createLinkedVault,verifyLinkedKey:verifyLinkedKey,unlockVault:unlockVault,validateEnvelope:validateEnvelope};
 });

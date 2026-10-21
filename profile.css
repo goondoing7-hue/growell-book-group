@@ -1,4 +1,13 @@
 .auth-wrap{max-width:460px;}
+.google-login-settings{width:min(92vw,520px);max-height:88dvh;box-sizing:border-box;overflow:auto;padding:24px;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);font:inherit;}
+.google-login-settings::backdrop{background:rgba(20,40,30,.45);}
+.google-login-settings-head{display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.google-login-settings-head h2{margin:0;font-size:23px;}
+.google-login-settings .sub{line-height:1.7;font-size:15px;}
+.google-login-settings input{width:100%;box-sizing:border-box;min-height:46px;font:inherit;font-size:16px;}
+.google-login-settings .btn-block{margin-top:18px;min-height:46px;}
+.google-login-settings [hidden]{display:none!important;}
+@media(max-width:480px){.google-login-settings{padding:20px 18px;}}
 .auth-card h2{font-size:23px;font-weight:750;}
 .auth-card .sub{font-size:15px;line-height:1.7;}
 .auth-card input{font-size:16px;min-height:46px;}

@@ -14,6 +14,20 @@ create table if not exists public.growell_oauth_vaults (
 alter table public.growell_oauth_vaults enable row level security;
 revoke all on public.growell_oauth_vaults from public, anon, authenticated;
 
+-- Encrypted pre-rotation wrappers are retained for owner-assisted recovery.
+-- No client role can list/read/write this history, including administrators.
+-- BEGIN EXISTING_MEMBER_GOOGLE_LINK_HISTORY
+create table if not exists public.growell_oauth_vault_history (
+  id uuid primary key default gen_random_uuid(),
+  auth_user_id uuid not null references auth.users(id) on delete cascade,
+  profile_id text not null references public.profiles(id) on delete cascade,
+  envelope jsonb not null check (jsonb_typeof(envelope)='object'),
+  replaced_at bigint not null default ((extract(epoch from now())*1000)::bigint)
+);
+alter table public.growell_oauth_vault_history enable row level security;
+revoke all on public.growell_oauth_vault_history from public,anon,authenticated;
+-- END EXISTING_MEMBER_GOOGLE_LINK_HISTORY
+
 create or replace function public.growell_oauth_profile()
 returns jsonb language plpgsql security definer set search_path = ''
 as $function$
@@ -34,7 +48,9 @@ begin
     'status',case when member_envelope is null then 'legacy' else 'ready' end,
     'profile',jsonb_build_object('id',member_profile.id,'auth_user_id',member_profile.auth_user_id,'login_id',member_profile.login_id,
       'name',member_profile.name,'is_admin',member_profile.is_admin,'avatar_url',member_profile.avatar_url,
-      'pbkdf2_salt',member_profile.pbkdf2_salt,'created_at',member_profile.created_at,'is_deleted',member_profile.is_deleted),
+      'pbkdf2_salt',member_profile.pbkdf2_salt,'created_at',member_profile.created_at,'is_deleted',member_profile.is_deleted,
+      'approval_status',to_jsonb(member_profile)->'approval_status','approved_at',to_jsonb(member_profile)->'approved_at',
+      'approved_by',to_jsonb(member_profile)->'approved_by'),
     'envelope',member_envelope
   );
 end;
@@ -96,6 +112,161 @@ end;
 $function$;
 revoke all on function public.growell_oauth_register(text,text,jsonb) from public, anon;
 grant execute on function public.growell_oauth_register(text,text,jsonb) to authenticated;
+
+-- Existing password members prepare an additional login before leaving for
+-- Google's linkIdentity redirect. Only an encrypted wrapper of their ALREADY
+-- OPEN private-space key is accepted. This never creates/merges a profile,
+-- changes a password/salt, replaces a vault, or touches any member content.
+-- The client must unlock the RETURNED envelope and compare the original key
+-- before invoking linkIdentity; the server cannot inspect encrypted key bytes.
+-- BEGIN EXISTING_MEMBER_GOOGLE_LINK_FUNCTIONS
+create or replace function public.growell_oauth_link_prepare(p_envelope jsonb)
+returns jsonb language plpgsql security definer set search_path = ''
+as $function$
+declare
+  member_auth_id uuid := auth.uid();
+  member_profile public.profiles%rowtype;
+  stored_vault public.growell_oauth_vaults%rowtype;
+  claims jsonb := auth.jwt();
+  session_text text;
+  now_epoch numeric := extract(epoch from now());
+  iv_bytes bytea;
+  cipher_bytes bytea;
+begin
+  if member_auth_id is null or coalesce(claims->>'is_anonymous','false')<>'false' then
+    raise exception 'authentication_required' using errcode='42501';
+  end if;
+  session_text := claims->>'session_id';
+  if session_text is null or session_text !~* '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' then
+    raise exception 'current_session_required' using errcode='42501';
+  end if;
+  if not exists(select 1 from auth.sessions s where s.id=session_text::uuid and s.user_id=member_auth_id) then
+    raise exception 'current_session_required' using errcode='42501';
+  end if;
+  -- Use only signed Auth claims, never caller-supplied user_metadata. Refreshing
+  -- an old token does not make an old password AMR timestamp recent again.
+  if jsonb_typeof(claims->'amr') is distinct from 'array' then
+    raise exception 'recent_password_authentication_required' using errcode='42501';
+  end if;
+  if not exists(select 1 from jsonb_array_elements(claims->'amr') method
+    where method->>'method'='password'
+      and case when coalesce(method->>'timestamp','') ~ '^[0-9]{1,12}$'
+        then (method->>'timestamp')::numeric between now_epoch-600 and now_epoch+60
+        else false end) then
+    raise exception 'recent_password_authentication_required' using errcode='42501';
+  end if;
+  if not exists(select 1 from auth.identities i where i.user_id=member_auth_id and i.provider='email') then
+    raise exception 'password_identity_required' using errcode='42501';
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(member_auth_id::text,0));
+  select * into member_profile from public.profiles where auth_user_id=member_auth_id for update;
+  if not found or member_profile.is_deleted
+     or to_jsonb(member_profile)->>'approval_status' is distinct from 'approved' then
+    raise exception 'approved_member_required' using errcode='42501';
+  end if;
+  if jsonb_typeof(p_envelope) is distinct from 'object'
+     or octet_length(p_envelope::text)>8192
+     or p_envelope->>'format' is distinct from 'growell-oauth-vault-v1'
+     or p_envelope->'version' is distinct from '1'::jsonb
+     or p_envelope->>'owner' is distinct from member_auth_id::text
+     or p_envelope - array['format','version','owner','kdf','iv','data']::text[] <> '{}'::jsonb
+     or jsonb_typeof(p_envelope->'kdf') is distinct from 'object'
+     or (p_envelope->'kdf') - array['name','hash','iterations','salt']::text[] <> '{}'::jsonb
+     or p_envelope#>>'{kdf,name}' is distinct from 'PBKDF2'
+     or p_envelope#>>'{kdf,hash}' is distinct from 'SHA-256'
+     or p_envelope#>'{kdf,iterations}' is distinct from '150000'::jsonb
+     or coalesce(p_envelope#>>'{kdf,salt}','') !~ '^[a-f0-9]{32}$'
+     or coalesce(p_envelope->>'iv','') !~ '^[A-Za-z0-9+/]+={0,2}$'
+     or coalesce(p_envelope->>'data','') !~ '^[A-Za-z0-9+/]+={0,2}$'
+  then raise exception 'invalid_private_key_envelope' using errcode='22023'; end if;
+  begin
+    iv_bytes:=pg_catalog.decode(p_envelope->>'iv','base64');
+    cipher_bytes:=pg_catalog.decode(p_envelope->>'data','base64');
+  exception when others then raise exception 'invalid_private_key_encoding' using errcode='22023';
+  end;
+  if octet_length(iv_bytes)<>12 or octet_length(cipher_bytes) not between 17 and 3072 then
+    raise exception 'invalid_private_key_size' using errcode='22023';
+  end if;
+  select * into stored_vault from public.growell_oauth_vaults where auth_user_id=member_auth_id;
+  if found then
+    if stored_vault.profile_id is distinct from member_profile.id then
+      raise exception 'private_key_owner_mismatch' using errcode='42501';
+    end if;
+    -- Immutable first write: a retry, another tab, or an Auth redirect can never
+    -- replace an earlier private key wrapper with newly generated key material.
+    return jsonb_build_object('status','prepared','profile',jsonb_build_object(
+      'id',member_profile.id,'auth_user_id',member_profile.auth_user_id,'login_id',member_profile.login_id,
+      'name',member_profile.name,'is_admin',member_profile.is_admin,'avatar_url',member_profile.avatar_url,
+      'pbkdf2_salt',member_profile.pbkdf2_salt,'created_at',member_profile.created_at,'is_deleted',member_profile.is_deleted,
+      'approval_status',to_jsonb(member_profile)->'approval_status','approved_at',to_jsonb(member_profile)->'approved_at',
+      'approved_by',to_jsonb(member_profile)->'approved_by'),'envelope',stored_vault.envelope);
+  end if;
+  insert into public.growell_oauth_vaults(auth_user_id,profile_id,envelope)
+  values(member_auth_id,member_profile.id,p_envelope);
+  return jsonb_build_object('status','prepared','profile',jsonb_build_object(
+    'id',member_profile.id,'auth_user_id',member_profile.auth_user_id,'login_id',member_profile.login_id,
+    'name',member_profile.name,'is_admin',member_profile.is_admin,'avatar_url',member_profile.avatar_url,
+    'pbkdf2_salt',member_profile.pbkdf2_salt,'created_at',member_profile.created_at,'is_deleted',member_profile.is_deleted,
+    'approval_status',to_jsonb(member_profile)->'approval_status','approved_at',to_jsonb(member_profile)->'approved_at',
+    'approved_by',to_jsonb(member_profile)->'approved_by'),'envelope',p_envelope);
+end;
+$function$;
+revoke all on function public.growell_oauth_link_prepare(jsonb) from public,anon,authenticated,service_role;
+grant execute on function public.growell_oauth_link_prepare(jsonb) to authenticated;
+
+-- Password/private-record recovery may change the currently verified private
+-- key. Rewrap it only after recovery succeeded, with exact previous-envelope
+-- CAS and retained encrypted history. Never use this to invent a replacement
+-- key when recovery/unlock failed. The caller verifies key equality locally.
+create or replace function public.growell_oauth_link_rotate(p_expected_envelope jsonb,p_envelope jsonb)
+returns jsonb language plpgsql security definer set search_path = ''
+as $function$
+declare
+  prepared jsonb;
+  stored_vault public.growell_oauth_vaults%rowtype;
+begin
+  if jsonb_typeof(p_expected_envelope) is distinct from 'object' then
+    raise exception 'previous_private_key_envelope_required' using errcode='22023';
+  end if;
+  -- Includes all owner, approval, live-session, fresh-password and strict new
+  -- ciphertext validation, and holds the same owner/profile transaction locks.
+  prepared:=public.growell_oauth_link_prepare(p_envelope);
+  select * into stored_vault from public.growell_oauth_vaults where auth_user_id=auth.uid() for update;
+  if not found or stored_vault.profile_id is distinct from prepared#>>'{profile,id}' then
+    raise exception 'private_key_owner_mismatch' using errcode='42501';
+  end if;
+  if stored_vault.envelope=p_envelope then return prepared; end if;
+  if stored_vault.envelope is distinct from p_expected_envelope then
+    raise exception 'private_key_envelope_changed' using errcode='40001';
+  end if;
+  insert into public.growell_oauth_vault_history(auth_user_id,profile_id,envelope)
+  values(stored_vault.auth_user_id,stored_vault.profile_id,stored_vault.envelope);
+  update public.growell_oauth_vaults set envelope=p_envelope
+  where auth_user_id=stored_vault.auth_user_id and profile_id=stored_vault.profile_id
+    and envelope=p_expected_envelope;
+  if not found then raise exception 'private_key_envelope_changed' using errcode='40001'; end if;
+  return jsonb_set(prepared,'{envelope}',p_envelope);
+end;
+$function$;
+revoke all on function public.growell_oauth_link_rotate(jsonb,jsonb) from public,anon,authenticated,service_role;
+grant execute on function public.growell_oauth_link_rotate(jsonb,jsonb) to authenticated;
+
+-- Optional Before User Created Auth hook. Activate only after verifying there
+-- is no existing signup hook to replace. New Google Auth users must first join
+-- through GROWELL's existing approval flow, then explicitly link their account.
+-- Existing user login/linkIdentity does not create a user and is unaffected.
+-- This stateless hook reads Auth-supplied app_metadata, not user_metadata.
+create or replace function public.growell_before_user_created(event jsonb)
+returns jsonb language sql immutable security invoker set search_path = ''
+as $function$
+  select case when lower(event#>>'{user,app_metadata,provider}')='google'
+    then jsonb_build_object('error',jsonb_build_object('http_code',403,
+      'message','기존 GROWELL 아이디로 로그인한 뒤 설정에서 Google 로그인을 연결해주세요.'))
+    else '{}'::jsonb end;
+$function$;
+revoke all on function public.growell_before_user_created(jsonb) from public,anon,authenticated,service_role;
+grant execute on function public.growell_before_user_created(jsonb) to supabase_auth_admin;
+-- END EXISTING_MEMBER_GOOGLE_LINK_FUNCTIONS
 
 commit;
 

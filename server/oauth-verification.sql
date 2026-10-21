@@ -167,3 +167,107 @@ $verify$;
 
 select current_setting('growell.oauth_verification_result')::jsonb as oauth_verification;
 rollback;
+
+-- BEGIN EXISTING_MEMBER_GOOGLE_LINK_VERIFICATION
+-- Standalone current-schema verification for existing-member linking. Run only
+-- this section after the link functions/history DDL. The older social-signup
+-- verification above targets the pre-photo-approval registration interface.
+-- This section inserts ONLY random synthetic Auth/profile/session rows and
+-- deliberately rolls them back. No real member or member-content row is read.
+begin;
+do $verify_link$
+declare
+  member_id uuid:=gen_random_uuid();
+  session_id uuid:=gen_random_uuid();
+  profile_id text;
+  before_profile jsonb;
+  first_envelope jsonb;
+  next_envelope jsonb;
+  response jsonb;
+  result jsonb;
+  blocked boolean;
+  failure_message text;
+  failure_code text;
+begin
+  begin
+    perform set_config('request.jwt.claim.sub','',true);
+    perform set_config('request.jwt.claims','{}',true);
+    insert into auth.users(id) values(member_id);
+    insert into auth.sessions(id,user_id) values(session_id,member_id);
+    insert into auth.identities(provider_id,user_id,identity_data,provider)
+    values(member_id::text,member_id,jsonb_build_object('sub',member_id::text),'email');
+    insert into public.profiles(auth_user_id,login_id,name,pbkdf2_salt,avatar_url)
+    values(member_id,'qa_link_rollback_'||replace(member_id::text,'-',''),'연결 롤백 검증',repeat('c',32),
+      'https://example.invalid/growell-synthetic-profile.png') returning id into profile_id;
+    -- Current signup trigger intentionally makes every applicant pending. Only
+    -- owner maintenance without an end-user JWT approves this synthetic row.
+    update public.profiles set approval_status='approved' where id=profile_id;
+    select to_jsonb(p) into before_profile from public.profiles p where id=profile_id;
+    perform set_config('request.jwt.claim.sub',member_id::text,true);
+    perform set_config('request.jwt.claims',jsonb_build_object('sub',member_id::text,'role','authenticated',
+      'is_anonymous',false,'session_id',session_id::text,'amr',jsonb_build_array(jsonb_build_object(
+        'method','password','timestamp',floor(extract(epoch from now())))))::text,true);
+    first_envelope:=jsonb_build_object('format','growell-oauth-vault-v1','version',1,'owner',member_id::text,
+      'kdf',jsonb_build_object('name','PBKDF2','hash','SHA-256','iterations',150000,'salt',repeat('a',32)),
+      'iv',encode(repeat('i',12)::bytea,'base64'),
+      'data',translate(encode(repeat('x',96)::bytea,'base64'),E'\n\r',''));
+    response:=public.growell_oauth_link_prepare(first_envelope);
+    if response->>'status' is distinct from 'prepared'
+       or response#>>'{profile,id}' is distinct from profile_id
+       or response->'envelope' is distinct from first_envelope then raise exception 'FAIL prepare result'; end if;
+    if public.growell_oauth_link_prepare(first_envelope) is distinct from response then
+      raise exception 'FAIL immutable prepare retry'; end if;
+    blocked:=false;
+    begin perform public.growell_oauth_profile(); exception when insufficient_privilege then blocked:=true; end;
+    if not blocked then raise exception 'FAIL prepare created social access before linking'; end if;
+    insert into auth.identities(provider_id,user_id,identity_data,provider)
+    values(member_id::text,member_id,jsonb_build_object('sub',member_id::text),'google');
+    response:=public.growell_oauth_profile();
+    if response->>'status' is distinct from 'ready'
+       or response#>>'{profile,id}' is distinct from profile_id
+       or response->'envelope' is distinct from first_envelope then raise exception 'FAIL same-member Google lookup'; end if;
+    next_envelope:=jsonb_set(first_envelope,'{data}',to_jsonb(translate(encode(repeat('y',96)::bytea,'base64'),E'\n\r','')));
+    response:=public.growell_oauth_link_rotate(first_envelope,next_envelope);
+    if response->'envelope' is distinct from next_envelope then raise exception 'FAIL CAS rotation'; end if;
+    if public.growell_oauth_link_rotate(first_envelope,next_envelope) is distinct from response then
+      raise exception 'FAIL CAS retry idempotence'; end if;
+    blocked:=false;
+    begin perform public.growell_oauth_link_rotate(first_envelope,jsonb_set(first_envelope,'{data}',
+      to_jsonb(translate(encode(repeat('z',96)::bytea,'base64'),E'\n\r',''))));
+    exception when serialization_failure then blocked:=true; end;
+    if not blocked then raise exception 'FAIL stale CAS accepted'; end if;
+    if (select count(*) from public.growell_oauth_vault_history where auth_user_id=member_id)<>1
+       or not exists(select 1 from public.growell_oauth_vault_history where auth_user_id=member_id and envelope=first_envelope) then
+      raise exception 'FAIL encrypted previous wrapper not retained'; end if;
+    if (select to_jsonb(p) from public.profiles p where id=profile_id) is distinct from before_profile then
+      raise exception 'FAIL profile id/login/salt/approval changed'; end if;
+    if has_function_privilege('anon','public.growell_oauth_link_prepare(jsonb)','EXECUTE')
+       or has_function_privilege('anon','public.growell_oauth_link_rotate(jsonb,jsonb)','EXECUTE')
+       or has_function_privilege('authenticated','public.growell_before_user_created(jsonb)','EXECUTE')
+       or has_table_privilege('authenticated','public.growell_oauth_vault_history','SELECT,INSERT,UPDATE,DELETE') then
+      raise exception 'FAIL client vault/history/hook privileges'; end if;
+    if public.growell_before_user_created('{"user":{"app_metadata":{"provider":"google"}}}')#>>'{error,http_code}' is distinct from '403'
+       or public.growell_before_user_created('{"user":{"app_metadata":{"provider":"email"},"user_metadata":{"provider":"google"}}}') is distinct from '{}'::jsonb then
+      raise exception 'FAIL stateless Google signup hook'; end if;
+    raise exception 'GROWELL_LINK_VERIFICATION_SUCCESS_ROLLBACK' using errcode='GW002';
+  exception
+    when sqlstate 'GW002' then result:=jsonb_build_object('ok',true,'checks',
+      'owner/password/session/approval prepare, same UUID Google lookup, immutable retry, CAS retry/conflict, encrypted history, unchanged profile, client privilege denial, stateless signup hook');
+    when others then
+      get stacked diagnostics failure_message=message_text,failure_code=returned_sqlstate;
+      result:=jsonb_build_object('ok',false,'error',failure_message,'sqlstate',failure_code);
+  end;
+  if exists(select 1 from auth.users where id=member_id)
+     or exists(select 1 from auth.sessions where id=session_id)
+     or exists(select 1 from auth.identities where user_id=member_id)
+     or exists(select 1 from public.profiles where auth_user_id=member_id)
+     or exists(select 1 from public.growell_oauth_vaults where auth_user_id=member_id)
+     or exists(select 1 from public.growell_oauth_vault_history where auth_user_id=member_id) then
+    result:=jsonb_build_object('ok',false,'error','Synthetic link row rollback verification failed');
+  else result:=result||jsonb_build_object('synthetic_rows_remaining',0); end if;
+  perform set_config('growell.oauth_link_verification_result',result::text,true);
+end;
+$verify_link$;
+select current_setting('growell.oauth_link_verification_result')::jsonb as oauth_link_verification;
+rollback;
+-- END EXISTING_MEMBER_GOOGLE_LINK_VERIFICATION

@@ -48,3 +48,20 @@ test('rewrapping a supplied private key changes only the password envelope',asyn
   assert.notEqual(updated.envelope.data,made.envelope.data);
   assert.equal(await oauth.unlockVault('another-password',updated.envelope,owner),made.keyB64);
 });
+async function nativeKey(passwordValue,saltValue){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(passwordValue),'PBKDF2',false,['deriveBits']);
+  return Buffer.from(await crypto.subtle.deriveBits({name:'PBKDF2',salt:Buffer.from(saltValue,'hex'),iterations:150000,hash:'SHA-256'},base,256)).toString('base64');
+}
+test('existing password member linking preserves the exact key with an independent wrapping salt',async()=>{
+  const existingKey=await nativeKey(password,salt),made=await oauth.createLinkedVault(password,salt,owner,existingKey);
+  assert.equal(made.keyB64,existingKey);assert.notEqual(made.envelope.kdf.salt,salt);
+  assert.equal(await oauth.unlockVault(password,made.envelope,owner),existingKey);
+  assert.equal(await oauth.verifyLinkedKey(password,salt,owner,existingKey),true);
+  assert.ok(!JSON.stringify(made.envelope).includes(existingKey));
+});
+test('linking refuses mismatched password or original key instead of generating a replacement',async()=>{
+  const existingKey=await nativeKey(password,salt);
+  await assert.rejects(oauth.createLinkedVault('another-current-password',salt,owner,existingKey),/열쇠가 일치/);
+  await assert.rejects(oauth.createLinkedVault(password,salt,owner,Buffer.alloc(32,7).toString('base64')),/열쇠가 일치/);
+  await assert.rejects(oauth.createLinkedVault(password,salt,owner,Buffer.alloc(16).toString('base64')),/기존 개인 기록/);
+});

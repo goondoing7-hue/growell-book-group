@@ -1,5 +1,15 @@
 # GROWELL 가입·관리자·프로필 운영 상태
 
+## 2026-10-21 기존 회원의 Google 로그인 연결
+
+프로필 → 설정 → 연동 → Google 로그인 설정에서 기존 회원이 현재 GROWELL 비밀번호로 재인증한 뒤 Google identity를 같은 Auth UUID에 연결합니다. 회원 ID·login ID·프로필 salt·작성 원문과 기존 아이디 로그인은 유지합니다. 키 보관함에는 현재 개인 기록 키를 별도 salt와 현재 비밀번호로 감싼 암호문만 보관합니다. 원문 비밀번호·키를 RPC나 Google로 전송하지 않습니다. 새 기기의 Google 로그인은 현재 GROWELL 비밀번호로 개인 기록을 열며, 일반 회원의 힌트·복구 흐름을 그대로 유지합니다.
+
+운영에는 `server/oauth-members.sql`의 `EXISTING_MEMBER_GOOGLE_LINK_HISTORY`와 `EXISTING_MEMBER_GOOGLE_LINK_FUNCTIONS` 마커 두 구간만 추가했습니다. 기존 `growell_oauth_profile`·`growell_oauth_register`의 승인 적용 버전은 교체하지 않았습니다. `growell_oauth_link_prepare`는 본인·승인·활성 Auth 세션·10분 내 비밀번호 AMR을 검증하고 최초 보관함을 덮어쓰지 않습니다. `growell_oauth_link_rotate`는 복구 성공 후 이전 암호문과 정확히 일치할 때만 교체하고 이전 암호문을 클라이언트 접근이 차단된 이력에 보관합니다. 같은 결과 재시도는 멱등이며 충돌은 실패합니다.
+
+Google 제공자와 Allow manual linking은 이미 활성화되어 있어 자격 증명을 재등록하지 않았습니다. 기존 Auth Hooks가 없는 것을 확인한 뒤 Before User Created에 `public.growell_before_user_created`를 활성화했습니다. 이 후크는 Auth가 제공한 app_metadata의 Google 신규 사용자 생성만 거절하며, 기존 Google 로그인·본인 identity 연결과 일반 아이디 가입은 유지합니다. 미연결 계정으로 먼저 Google 로그인을 시도해 별도 Auth 계정이 생성되는 것을 막습니다. 클라이언트는 새 Google 계정에 GROWELL 프로필을 자동 등록하거나 이메일·별명으로 기존 회원을 합치지 않습니다.
+
+운영 스키마에서 기존 회원 연결 전용 롤백 검증은 `ok: true`, 임시 잔여 행 0개를 확인했습니다. 실제 회원 비밀번호·힌트 답변·암호화 키나 글 본문은 검증에 사용하지 않았습니다. 일반 회원·비로그인·서비스 역할의 실행 권한과 이력 테이블 접근 차단을 별도로 확인했습니다. 보안 Advisor의 [인증 RPC 점검](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)은 본인 전용 보관함 RPC의 의도된 호출이며, 함수 내부의 소유·승인·세션·최근 비밀번호 인증 조건을 검토했습니다. 이력 테이블은 직접 접근을 허용하는 정책을 만들지 않았습니다. 실제 회원이 처음 연결하는 Google 동의·비밀번호 입력과 이후 새 기기 로그인은 회원 본인이 진행해야 합니다. 아래 2026-09-23 소셜 신규 가입 기록은 당시 구현 이력이며, 현재 공개 로그인은 기존 회원의 Google 연결용입니다.
+
 2026-09-23 기준 운영 Supabase에서 Google·카카오 제공자를 활성화했다. 일반 아이디 가입도 유지한다. **Google 공개 게시를 완료하고 ‘프로덕션 단계’ 표시를 확인했다.** 제공자 설정, 서버 회원 연결, 실제 서비스 배포와 제공자 동의를 거친 가입 검증은 구분한다.
 
 ## 지금 연결된 기능
@@ -24,7 +34,7 @@
 | --- | --- |
 | Google·카카오의 인증 콜백 | `https://oxaeecawijnetwmvggjs.supabase.co/auth/v1/callback` |
 | Supabase Site URL | `https://growell-book.vercel.app` |
-| Supabase Redirect URLs | `https://growell-book.vercel.app/` 한 개 |
+| GROWELL의 Supabase Redirect URL | `https://growell-book.vercel.app/` (기존 다른 복귀 주소는 이번 변경에서 수정하지 않음) |
 
 앱은 Supabase의 현재 제공자 설정을 읽어 사용 가능한 버튼을 활성화한다. 설정 조회 실패 시 연결 확인을 안내하며 임의로 로그인 성공을 표시하지 않는다.
 

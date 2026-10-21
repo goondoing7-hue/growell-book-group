@@ -145,7 +145,7 @@
       '<div class="google-connection-tabs" role="tablist" aria-label="설정 항목"><button type="button" id="settings-notifications-tab" role="tab" aria-controls="settings-notifications-panel" data-settings-notifications-tab>알림</button><button type="button" id="settings-connections-tab" role="tab" aria-controls="settings-connections-panel" data-settings-connections-tab>연동</button></div>'+
       '<div class="google-connection-body" data-settings-scroll><section id="settings-notifications-panel" role="tabpanel" aria-labelledby="settings-notifications-tab" data-settings-notifications-panel><section data-google-push></section>'+
       '<section class="google-connection-alert-help" aria-labelledby="settings-alert-help-title"><h3 id="settings-alert-help-title">알림 소리와 표시 방식</h3><p>알림의 소리와 화면 표시는 휴대폰에서 설정해요.</p><details><summary>갤럭시 · 삼성 리마인더</summary><p>삼성 리마인더에서 GROWELL 습관을 열고, 스피커 모양의 알림 유형을 눌러 <strong>강하게</strong>를 선택한 뒤 저장해주세요. 화면 전체 알림과 긴 알림 소리를 사용하는 설정이에요.</p><p>이 설정은 휴대폰에서 직접 선택해야 해요. GROWELL 웹 푸시 알림의 소리를 바꾸는 설정과는 달라요.</p></details><details><summary>아이폰 · 애플 미리 알림</summary><p>iOS 26.2 이상의 <strong>긴급</strong> 알람은 iCloud 미리 알림에서 사용할 수 있어요. 현재 GROWELL의 Microsoft 계정 목록에는 자동 적용할 수 없어요.</p><p>일반 알림 소리와 표시는 아이폰 <strong>설정 → 알림 → 미리 알림</strong>에서 확인해주세요.</p></details></section></section>'+
-      '<section id="settings-connections-panel" role="tabpanel" aria-labelledby="settings-connections-tab" data-settings-connections-panel hidden><p class="google-connection-intro">Google 계정을 연결하면 기록 백업·모임 일정·PDF 이메일을 함께 사용할 수 있어요.</p>'+
+      '<section id="settings-connections-panel" role="tabpanel" aria-labelledby="settings-connections-tab" data-settings-connections-panel hidden><section class="google-connection-reminder google-connection-login" data-google-login hidden aria-labelledby="settings-google-login-title"><h3 id="settings-google-login-title">로그인 방법</h3><p>지금 회원 계정에 Google 로그인을 연결해요. 기존 아이디 로그인과 작성한 기록은 그대로 이어가요.</p><button type="button" data-google-login-open>Google 로그인 설정</button></section><p class="google-connection-intro">아래 Google 연결은 기록 백업·모임 일정·PDF 이메일을 위한 설정이에요.</p>'+
       '<p class="google-connection-summary" data-google-summary role="status" aria-live="polite">Google 연결 상태를 확인하고 있어요…</p><p class="google-connection-return" data-google-return hidden></p>'+
       '<p class="google-connection-account" data-google-account hidden></p><button type="button" class="google-connection-primary" data-google-connect hidden>Google 계정 연결</button>'+
       '<p class="google-connection-consent" data-google-consent hidden>Google에서 백업과 캘린더 권한을 함께 허용해주세요. 기존에 한 가지만 연결했다면 한 번 다시 연결하면 돼요.</p>'+
@@ -176,7 +176,7 @@
           q('[data-google-'+service+'-cancel]').disabled=view.busy;
         }
         q('[data-google-'+service+'-details]').disabled=view.busy;
-      });q('[data-google-reminder-open]').disabled=view.busy;
+      });q('[data-google-reminder-open]').disabled=view.busy;q('[data-google-login-open]').disabled=view.busy;
     }
     function busy(value){view.busy=value;controls();}
     function draw(){
@@ -233,6 +233,8 @@
     });
     q('[data-google-reminder]').hidden=typeof options.onReminderSettings!=='function';
     q('[data-google-reminder-open]').onclick=function(){if(current()&&!view.busy&&typeof options.onReminderSettings==='function'){close(false);options.onReminderSettings();}};
+    q('[data-google-login]').hidden=typeof options.onGoogleLoginSettings!=='function';
+    q('[data-google-login-open]').onclick=function(){if(current()&&!view.busy&&typeof options.onGoogleLoginSettings==='function'){close(false);options.onGoogleLoginSettings();}};
     if(options.connectionResult==='partial'){q('[data-google-return]').hidden=false;q('[data-google-return]').textContent='일부 Google 연결을 완료하지 못했어요. 아래 상태를 확인하고 Google 계정을 다시 연결해주세요.';}
     view.visibility=function(){if(!options.isCurrent()){close(false);return;}if(current()&&!root.document.hidden){view.polls=0;load(false);}};root.document.addEventListener('visibilitychange',view.visibility);
     selectTab(options.connectionResult||options.tab==='connections'?'connections':'notifications');node.showModal();q('[data-google-close]').focus({preventScroll:true});if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('google-connection',{close:function(){close();}});draw();load(true);

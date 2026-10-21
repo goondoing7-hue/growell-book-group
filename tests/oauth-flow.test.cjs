@@ -7,14 +7,15 @@ const profile={id:'u-social',auth_user_id:authId,login_id:'social_test',name:'�
 const user={id:authId,identities:[{provider:'google'}],app_metadata:{providers:['google']}};
 function section(a,b){const start=html.indexOf(a),end=html.indexOf(b,start);assert.ok(start>=0&&end>start);return html.slice(start,end);}
 function harness(options={}){
-  const memory=options.memory||new Map(),sessionMemory=new Map(),authUser=options.user||user,calls=[],logs=[],nodes={},listeners={},timers=new Map();let timerId=0;
+  const memory=options.memory||new Map(),sessionMemory=options.sessionMemory||new Map(),authUser=options.user||user,calls=[],logs=[],nodes={},listeners={},timers=new Map();let timerId=0;
   const url=new URL(options.href||'https://app.example/'),c={Promise,URL,URLSearchParams,JSON,Date,
     setTimeout(callback,delay=0){if(delay<1000)return setTimeout(callback,delay);const id={id:++timerId};timers.set(id,{callback,delay});return id;},
     clearTimeout(id){if(!timers.delete(id))clearTimeout(id);},
-    console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,
+    console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,crypto:require('node:crypto').webcrypto,
     STATE:{users:{},posts:{},comments:{},privateEntries:{},habits:{},readingMeta:{},readingLogs:{},worksheets:{},materialNotes:{}},SESSION:null,
     authFlowEpoch:0,saveSessionEpoch:0,sharedPostsLoadState:'idle',BOOTING:true,BOOT_FAILED:false,
     GrowellOAuth:OAuth,GrowellMemberAccess:MemberAccess,GrowellPasswordHint:require('../passwordHint.js'),keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
+    loginEmailFor:id=>id+'@growell.local',editingAnnouncement:false,composerDraftPending:0,composerDrafts:{},saving:false,activeSave:null,saveQueue:[],captureComposerDraft(){calls.push(['draft-capture']);},
     location:{href:url.href,hash:url.hash||'#/',pathname:url.pathname,search:url.search,assign(url){calls.push(['redirect',url]);}},
     history:{replaceState(a,b,value){calls.push(['clean-url',value]);const next=new URL(value,c.location.href);Object.assign(c.location,{href:next.href,hash:next.hash,pathname:next.pathname,search:next.search});}},
     localStorage:{getItem:key=>memory.get(key)||null,setItem:(key,value)=>memory.set(key,value),removeItem:key=>memory.delete(key)},
@@ -32,6 +33,8 @@ function harness(options={}){
       getUser:async()=>{calls.push(['verify-user']);return options.getUser?options.getUser():options.invalidAuth?{error:new Error('expired')}:{data:{user:authUser},error:null};},
       onAuthStateChange(callback){c.authCallback=callback;return {data:{subscription:{unsubscribe(){}}}};},
       exchangeCodeForSession:async code=>{calls.push(['exchange',code]);return {error:null};},
+      signInWithPassword:async input=>{calls.push(['password-auth',input]);return options.passwordAuth?options.passwordAuth(input):{data:{user:authUser},error:null};},
+      linkIdentity:async input=>{calls.push(['link-identity',input]);return options.linkIdentity?options.linkIdentity(input):{data:{url:'https://accounts.google.com/o/oauth2/v2/auth?opaque=authorization'},error:null};},
       signOut:async()=>{calls.push(['signout']);return {};},
       signInWithOAuth:async input=>{calls.push(['oauth',input]);return {data:{url:'https://project.supabase.co/auth/v1/authorize?provider='+input.provider}};}
     },from(table){const query={select(){return query;},eq(key,value){calls.push(['read',table,key,value]);return query;},maybeSingle:async()=>options.getProfile?options.getProfile():({data:options.profile===undefined?profile:options.profile,error:null})};return query;},
@@ -41,30 +44,31 @@ function harness(options={}){
   vm.createContext(c);
   vm.runInContext(section('/* ---------------- OAuth login and private-space unlock ---------------- */','/* ---------------- render: login ---------------- */'),c);
   vm.runInContext(section('function bootApp(){','function currentUser(){'),c);
-  return {c,memory,calls,nodes,logs,timers,listeners,
+  return {c,memory,sessionMemory,calls,nodes,logs,timers,listeners,
     dispatch(type,target='window'){for(const callback of listeners[target+':'+type]||[])callback({type});},
     async fireTimer(){const entry=timers.entries().next().value;assert.ok(entry,'a retry should be scheduled');timers.delete(entry[0]);await entry[1].callback();await settle();return entry[1].delay;}};
 }
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 async function settle(){await new Promise(resolve=>setTimeout(resolve,5));}
 async function cacheMember(h,extra={}){const keyB64=await Private.exportKey(await Private.newKey());const saved=JSON.stringify({userId:profile.id,name:'old name',keyB64,authKind:'password',...extra});h.memory.set('growell_session',saved);return {keyB64,saved};}
-test('hidden social entry points make no provider probe or launch and leave only native login and signup',async()=>{
+test('Google entry is existing-link login only while Kakao and social signup remain hidden',async()=>{
   const {c,calls}=harness({guest:true});
   vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
   vm.runInContext(section('function signupFormHtml(){','function forgotPasswordFormHtml('),c);
   c.profilePhotoPickerHtml=()=>'';c.pendingSignupAvatar=null;
   await c.loadOAuthProviderSettings();
   c.oauthProviders={state:'ready',google:true,kakao:true};
-  for(const provider of ['google','kakao'])await c.startOAuth(provider);
+  await c.startOAuth('kakao');
   assert.equal(c.SOCIAL_AUTH_VISIBLE,false);
   assert.equal(c.socialSignupStatusHtml(),'');
   for(const mode of ['login','signup']){
     c.authMode=mode;const markup=c.loginHtml();
-    assert.doesNotMatch(markup,/data-oauth-provider|간편|Google|카카오|일반 회원가입|auth-email-heading/);
+    if(mode==='login'){assert.match(markup,/Google로 로그인/);assert.match(markup,/기존 회원 계정에서 Google 로그인을 연결/);assert.doesNotMatch(markup,/data-oauth-provider="kakao"/);}
+    else assert.doesNotMatch(markup,/data-oauth-provider|Google|카카오/);
     assert.match(markup,/>회원가입<\/button>/);
     assert.match(markup,mode==='login'?/id="li-pw"/:/id="su-pw"/);
   }
-  assert.ok(!calls.some(call=>['provider-settings','oauth','redirect','signout','clear'].includes(call[0])));
+  assert.ok(!calls.some(call=>['oauth','redirect','signout','clear'].includes(call[0])));
 });
 
 test('choosing another authentication form clears only the previous status message',()=>{
@@ -103,7 +107,7 @@ test('native login restores from persistent storage in a fresh app with no tab s
   assert.equal(fresh.c.SESSION.keyB64,keyB64);
   assert.equal(fresh.c.SESSION.name,profile.name);
   assert.ok(fresh.calls.some(call=>call[0]==='load-member'));
-  assert.ok(!fresh.calls.some(call=>['oauth','provider-settings','signout'].includes(call[0])));
+  assert.ok(!fresh.calls.some(call=>['oauth','signout'].includes(call[0])));
 });
 test('returned and thrown session refresh failures preserve the private key and offer connection retry',async()=>{
   for(const thrown of [false,true]){
@@ -305,7 +309,7 @@ test('provider failures show a safe connection message and discard descriptions 
 });
 test('new social member sends only an encrypted vault, then unlocks the returned envelope',async()=>{
   let payload;const {c,calls}=harness({rpc:async(name,args)=>{payload=args;return {data:{status:'ready',profile,envelope:args.p_envelope}};}});
-  c.oauthPending={status:'new',authUserId:authId};
+  c.SOCIAL_AUTH_VISIBLE=true;c.oauthPending={status:'new',authUserId:authId};
   assert.equal(await c.completeOAuthMember('회원','private-password','private-password'),true);
   assert.equal(c.SESSION.authKind,'oauth');assert.ok(!JSON.stringify(payload).includes('private-password'));assert.ok(!JSON.stringify(payload).includes(c.SESSION.keyB64));assert.ok(calls.some(v=>v[0]==='load-member'));
 });
@@ -350,6 +354,7 @@ test('Kakao overrides provider scope to nickname only while Google keeps its ori
 
 test('verified provider metadata suggests an escaped bounded nickname without replacing an existing profile or granting roles',async()=>{
   const {c}=harness();
+  c.SOCIAL_AUTH_VISIBLE=true;
   vm.runInContext(section('function esc(s){','function nlToBr('),c);
   for(const [metadata,expected] of [
     [{preferred_username:'  책친구  ',full_name:'다른 이름'},'책친구'],
@@ -369,4 +374,144 @@ test('verified provider metadata suggests an escaped bounded nickname without re
   c.sb.rpc=async()=>({data:{status:'legacy',profile,envelope:null}});
   await c.prepareOAuthMember({...user,user_metadata:{preferred_username:'바뀌면 안 됨',is_admin:true}},c.authFlowEpoch);
   assert.equal(c.oauthPending.name,profile.name);assert.equal(c.oauthPending.profile.is_admin,false);
+});
+
+const nativeUser={id:authId,identities:[{provider:'email'}],app_metadata:{providers:['email']}};
+const linkedUser={...nativeUser,identities:[{provider:'email'},{provider:'google'}],app_metadata:{providers:['email','google']}};
+const memberPassword='member-current-password';
+async function nativeMaterial(passwordValue=memberPassword,saltValue=profile.pbkdf2_salt){
+  const crypt=require('node:crypto').webcrypto,base=await crypt.subtle.importKey('raw',new TextEncoder().encode(passwordValue),'PBKDF2',false,['deriveBits']);
+  return Buffer.from(await crypt.subtle.deriveBits({name:'PBKDF2',salt:Buffer.from(saltValue,'hex'),iterations:150000,hash:'SHA-256'},base,256)).toString('base64');
+}
+async function linkingHarness(options={}){
+  const h=harness({user:nativeUser,rpc:async(name,args)=>({data:{status:'prepared',profile,envelope:args.p_envelope},error:null}),...options});
+  h.c.SESSION={userId:profile.id,name:profile.name,keyB64:await nativeMaterial(),authKind:'password'};
+  h.c.STATE.users[profile.id]=h.c.mapProfileRow(profile);
+  h.c.STATE.privateEntries.note={id:'note-preserve',data:'existing-ciphertext'};
+  return h;
+}
+test('new Google identities never register a member while social signup is disabled',async()=>{
+  const h=harness();h.c.oauthPending={status:'new',authUserId:authId};
+  assert.equal(await h.c.completeOAuthMember('ignored',memberPassword,memberPassword),false);
+  assert.ok(!h.calls.some(call=>call[0]==='rpc'||call[0]==='load-member'));
+  assert.match(h.c.oauthMemberHtml(),/기존 회원 계정에서 연결/);assert.doesNotMatch(h.c.oauthMemberHtml(),/id="oauth-password"|가입하고 시작/);
+});
+test('existing member linking reauthenticates and saves only an encrypted exact-key vault before redirect',async()=>{
+  const h=await linkingHarness(),before=JSON.stringify(h.c.STATE),material=h.c.SESSION.keyB64;
+  assert.equal((await h.c.connectExistingGoogleLogin(memberPassword,()=>true)).redirected,true);
+  const sequence=h.calls.map(call=>call[0]);assert.ok(sequence.indexOf('password-auth')<sequence.indexOf('rpc'));assert.ok(sequence.indexOf('rpc')<sequence.indexOf('link-identity'));assert.ok(sequence.indexOf('link-identity')<sequence.indexOf('redirect'));
+  const request=h.calls.find(call=>call[0]==='rpc');assert.equal(request[1],'growell_oauth_link_prepare');
+  assert.equal(await OAuth.unlockVault(memberPassword,request[2].p_envelope,authId),material);
+  assert.doesNotMatch(JSON.stringify(request[2]),new RegExp(memberPassword));assert.ok(!JSON.stringify(request[2]).includes(material));
+  const marker=JSON.parse(h.sessionMemory.get('growell_google_login_link_v1'));assert.deepEqual(Object.keys(marker).sort(),['authUserId','createdAt','nonce','profileId']);
+  assert.ok(!JSON.stringify(marker).includes(material));assert.ok(!JSON.stringify(marker).includes(memberPassword));
+  const input=h.calls.find(call=>call[0]==='link-identity')[1];assert.equal(input.provider,'google');assert.equal(new URL(input.options.redirectTo).searchParams.get('google-login-link'),marker.nonce);
+  assert.equal(JSON.stringify(h.c.STATE),before);assert.equal(h.c.SESSION.keyB64,material);
+});
+test('incorrect password, changed profile, changed session key and unsaved edits stop before linking',async()=>{
+  for(const failure of ['password','profile','key','draft']){
+    const h=await linkingHarness(failure==='password'?{passwordAuth:async()=>({error:{code:'invalid_credentials'}})}:failure==='profile'?{profile:{...profile,id:'another-profile'}}:{});
+    if(failure==='key')h.c.SESSION.keyB64=Buffer.alloc(32,9).toString('base64');
+    if(failure==='draft')h.c.composerDrafts.unsaved={userId:profile.id,unsaved:true};
+    const before=JSON.stringify(h.c.STATE);
+    await assert.rejects(h.c.connectExistingGoogleLogin(memberPassword,()=>true));
+    assert.ok(!h.calls.some(call=>['link-identity','redirect'].includes(call[0])),failure);
+    assert.equal(JSON.stringify(h.c.STATE),before,failure);
+    if(failure==='password'||failure==='draft')assert.ok(!h.calls.some(call=>call[0]==='rpc'));
+  }
+});
+test('storage failure and an identity collision cannot redirect or create or merge profiles',async()=>{
+  for(const failure of ['storage','identity']){
+    const h=await linkingHarness(failure==='identity'?{linkIdentity:async()=>({error:{code:'identity_already_exists'}})}:{}),before=JSON.stringify(h.c.STATE);
+    if(failure==='storage')h.c.sessionStorage.setItem=()=>{throw new Error('storage denied');};
+    await assert.rejects(h.c.connectExistingGoogleLogin(memberPassword,()=>true));
+    assert.ok(!h.calls.some(call=>call[0]==='redirect'));
+    assert.ok(!h.calls.some(call=>call[0]==='rpc'&&call[1]==='growell_oauth_register'));
+    assert.equal(JSON.stringify(h.c.STATE),before);
+    if(failure==='storage')assert.ok(!h.calls.some(call=>call[0]==='link-identity'));
+  }
+});
+test('a fresh current-password proof repairs an old vault using exact-envelope CAS and preserves all content',async()=>{
+  const old=await OAuth.createVault('old-record-password',OAuth.newSalt(),authId),rpc=[];
+  const h=await linkingHarness({user:linkedUser,rpc:async(name,args)=>{rpc.push([name,args]);return name==='growell_oauth_link_prepare'?{data:{status:'prepared',profile,envelope:old.envelope}}:{data:{status:'prepared',profile,envelope:args.p_envelope}};}});
+  const before=JSON.stringify(h.c.STATE),material=h.c.SESSION.keyB64;
+  assert.equal((await h.c.connectExistingGoogleLogin(memberPassword,()=>true)).connected,true);
+  assert.deepEqual(rpc.map(value=>value[0]),['growell_oauth_link_prepare','growell_oauth_link_rotate']);
+  assert.deepEqual(rpc[1][1].p_expected_envelope,old.envelope);
+  assert.equal(await OAuth.unlockVault(memberPassword,rpc[1][1].p_envelope,authId),material);
+  assert.ok(!h.calls.some(call=>call[0]==='link-identity'||call[0]==='redirect'));
+  assert.equal(JSON.stringify(h.c.STATE),before);
+});
+test('an old password cannot open a stale Google vault after native password reset',async()=>{
+  const oldPassword='outdated-record-password',old=await OAuth.createVault(oldPassword,OAuth.newSalt(),authId,await nativeMaterial(oldPassword));
+  const h=harness({user:linkedUser,passwordAuth:async()=>({error:{code:'invalid_credentials'}})});
+  h.c.oauthPending={status:'ready',authUserId:authId,profile,envelope:old.envelope};
+  assert.equal(await h.c.completeOAuthMember('',oldPassword,''),false);assert.equal(h.c.SESSION,null);
+  assert.ok(h.calls.some(call=>call[0]==='password-auth'));
+  assert.ok(!h.calls.some(call=>call[0]==='load-member'));assert.match(h.c.oauthMessage,/현재 GROWELL 비밀번호/);
+});
+test('linked password members keep their password account kind and original key after Google login',async()=>{
+  const material=await nativeMaterial(),vault=await OAuth.createLinkedVault(memberPassword,profile.pbkdf2_salt,authId,material),h=harness({user:linkedUser});
+  h.c.oauthPending={status:'ready',authUserId:authId,profile,envelope:vault.envelope};
+  assert.equal(await h.c.completeOAuthMember('',memberPassword,''),true);
+  assert.equal(h.c.SESSION.authKind,'password');assert.equal(h.c.SESSION.keyB64,material);assert.equal(h.c.SESSION.userId,profile.id);
+  assert.ok(h.calls.some(call=>call[0]==='load-member'));
+});
+test('link callback requires a single matching nonce, a live marker and the exact original member identity',async()=>{
+  const nonce='a'.repeat(32),marker={authUserId:authId,profileId:profile.id,nonce,createdAt:Date.now()};
+  for(const failure of ['missing','duplicate','expired','other-user','other-profile','no-google']){
+    const suffix=failure==='missing'?'?code=one':'?code=one&google-login-link='+nonce+(failure==='duplicate'?'&google-login-link='+nonce:'');
+    const sessionMemory=new Map([['growell_google_login_link_v1',JSON.stringify({...marker,createdAt:failure==='expired'?Date.now()-16*60*1000:Date.now()})]]);
+    const h=harness({sessionMemory,href:'https://app.example/'+suffix,user:failure==='other-user'?{...linkedUser,id:'99999999-2222-3333-4444-555555555555'}:failure==='no-google'?nativeUser:linkedUser,profile:failure==='other-profile'?{...profile,id:'not-original'}:profile});
+    await assert.rejects(h.c.finishOAuthCallback());
+    assert.ok(!h.calls.some(call=>call[0]==='load-member'));
+    assert.ok(h.calls.some(call=>call[0]==='clean-url'&&!call[1].includes('google-login-link')));
+    if(['missing','duplicate','expired'].includes(failure))assert.ok(!h.calls.some(call=>call[0]==='exchange'),failure);
+  }
+});
+test('a valid link callback verifies Google and the original profile without replacing the cached member key',async()=>{
+  const nonce='b'.repeat(32),marker={authUserId:authId,profileId:profile.id,nonce,createdAt:Date.now()},sessionMemory=new Map([['growell_google_login_link_v1',JSON.stringify(marker)]]);
+  const h=harness({user:linkedUser,sessionMemory,href:'https://app.example/?code=one&google-login-link='+nonce}),cached=await cacheMember(h);
+  await h.c.bootApp();assert.equal(h.c.SESSION.userId,profile.id);assert.equal(h.c.SESSION.keyB64,cached.keyB64);assert.equal(h.c.SESSION.authKind,'password');
+  assert.equal(h.calls.filter(call=>call[0]==='exchange').length,1);assert.equal(sessionMemory.has('growell_google_login_link_v1'),false);
+  assert.ok(!h.calls.some(call=>call[0]==='rpc'&&call[1]==='growell_oauth_register'));
+});
+test('password login vault synchronization retains the record key and CAS failure never changes member content',async()=>{
+  for(const failed of [false,true]){
+    const old=await OAuth.createVault('previous-password',OAuth.newSalt(),authId),h=await linkingHarness({user:linkedUser,rpc:async(name,args)=>name==='growell_oauth_link_prepare'?{data:{status:'prepared',profile,envelope:old.envelope}}:failed?{error:{code:'conflict'}}:{data:{status:'prepared',profile,envelope:args.p_envelope}}});
+    const before=JSON.stringify(h.c.STATE),material=h.c.SESSION.keyB64;
+    if(failed)await assert.rejects(h.c.syncGoogleLoginAfterPassword(memberPassword,()=>{}));
+    else assert.equal(await h.c.syncGoogleLoginAfterPassword(memberPassword,()=>{}),true);
+    assert.equal(h.c.SESSION.keyB64,material);assert.equal(JSON.stringify(h.c.STATE),before);
+    assert.ok(h.calls.some(call=>call[0]==='rpc'&&call[1]==='growell_oauth_link_rotate'));
+    assert.ok(!h.calls.some(call=>call[0]==='link-identity'||call[0]==='redirect'));
+  }
+  const h=await linkingHarness();assert.equal(await h.c.syncGoogleLoginAfterPassword(memberPassword,()=>{}),true);
+  assert.ok(!h.calls.some(call=>call[0]==='rpc'),'ordinary members without Google do not get a vault implicitly');
+});
+test('a cancelled callback cannot sign out a newer session or remove a newer link marker',async()=>{
+  const nonce='c'.repeat(32),marker={authUserId:authId,profileId:profile.id,nonce,createdAt:Date.now()},sessionMemory=new Map([['growell_google_login_link_v1',JSON.stringify(marker)]]),pending=deferred();
+  const h=harness({sessionMemory,user:linkedUser,href:'https://app.example/?code=one&google-login-link='+nonce,getUser:()=>pending.promise});
+  const callback=h.c.finishOAuthCallback();await settle();h.c.authFlowEpoch++;
+  const newer={...marker,nonce:'d'.repeat(32)};sessionMemory.set('growell_google_login_link_v1',JSON.stringify(newer));
+  pending.resolve({data:{user:linkedUser},error:null});await assert.rejects(callback,/auth-flow-cancelled/);
+  assert.equal(sessionMemory.get('growell_google_login_link_v1'),JSON.stringify(newer));
+  assert.ok(!h.calls.some(call=>call[0]==='signout'||call[0]==='read'||call[0]==='load-member'));
+});
+test('expired or corrupted pending link markers reject nonce-free callbacks before exchanging a code',async()=>{
+  for(const raw of [JSON.stringify({authUserId:authId,profileId:profile.id,nonce:'e'.repeat(32),createdAt:Date.now()-16*60*1000}),'{corrupted']){
+    const sessionMemory=new Map([['growell_google_login_link_v1',raw]]),h=harness({sessionMemory,href:'https://app.example/?code=one'});
+    await assert.rejects(h.c.finishOAuthCallback(),/oauth-link-mismatch/);
+    assert.ok(!h.calls.some(call=>['exchange','verify-user','read','load-member'].includes(call[0])));
+    assert.ok(h.calls.some(call=>call[0]==='clean-url'&&!call[1].includes('code=')));
+  }
+  const ordinary=harness({href:'https://app.example/?code=normal-login'});
+  await ordinary.c.finishOAuthCallback();assert.equal(ordinary.calls.filter(call=>call[0]==='exchange').length,1);
+});
+test('unreadable pending-link storage stops a callback without removing the cached record key',async()=>{
+  const h=harness({href:'https://app.example/?code=one'}),cached=await cacheMember(h);
+  h.c.sessionStorage.getItem=()=>{throw new Error('storage unavailable');};
+  await assert.rejects(h.c.finishOAuthCallback(),/oauth-link-mismatch/);
+  assert.ok(!h.calls.some(call=>call[0]==='exchange'||call[0]==='signout'||call[0]==='read'));
+  assert.equal(h.memory.get('growell_session'),cached.saved);
 });

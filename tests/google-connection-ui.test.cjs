@@ -176,6 +176,17 @@ test('Microsoft reminder settings close the Google dialog without triggering Goo
   box.q('[data-google-reminder-open]').onclick();assert.equal(opened,1);assert.equal(box.calls.some(call=>call.url.endsWith('action=connect')),false);assert.equal(box.navigation.length,0);box.close();
 });
 
+test('Google login settings are available to ordinary members without starting the backup OAuth flow',async()=>{
+  let opened=0;const box=uiHarness({options:{onGoogleLoginSettings(){opened++;assert.equal(box.node.removed,true);assert.equal(box.documentEvents.visibilitychange.length,0);}}});await flush();
+  assert.equal(box.q('[data-google-login]').hidden,false);assert.match(box.node.html,/Google 로그인 설정/);assert.match(box.node.html,/기존 아이디 로그인과 작성한 기록은 그대로/);
+  box.q('[data-google-login-open]').onclick();assert.equal(opened,1);assert.equal(box.calls.some(call=>call.url.endsWith('action=connect')),false);assert.equal(box.navigation.length,0);box.close();
+});
+
+test('Google login entry stays hidden without its adapter and cannot open after the member changes',async()=>{
+  const unavailable=uiHarness();await flush();assert.equal(unavailable.q('[data-google-login]').hidden,true);unavailable.close();
+  let opened=0;const box=uiHarness({options:{onGoogleLoginSettings(){opened++;}}});await flush();box.setCurrent(false);box.q('[data-google-login-open]').onclick();assert.equal(opened,0);assert.equal(box.node.removed,undefined);box.close();
+});
+
 test('failed checkbox saves roll back the displayed setting and preserve the other service',async()=>{
   const box=uiHarness({root:{fetch:async(url)=>response(url.endsWith('action=config')?{configured:true}:url.includes('action=configure')?{error:'unavailable'}:joint(),url.includes('action=configure')?{ok:false,status:503}:{})}});await flush();
   const enabled=box.q('[data-google-drive-enabled]');enabled.checked=false;enabled.onchange();await flush();
