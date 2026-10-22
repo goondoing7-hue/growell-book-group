@@ -190,8 +190,8 @@ test('Google login entry stays hidden without its adapter and cannot open after 
 
 test('compact settings show only service switches after verified Google login, for members and admins',async()=>{
   for(const isAdmin of [false,true]){
-    let pushOptions;const box=uiHarness({options:{compact:true,isAdmin,getGoogleLoginState:async()=>true,onGoogleLoginSettings(){throw Error('already linked');}},root:{GrowellWebPush:{mount(node,options){pushOptions=options;return {destroy(){}};}}}});await flush();
-    assert.equal(box.q('[data-google-login-open]').hidden,true);assert.equal(pushOptions.compact,true);
+    let pushOptions;const box=uiHarness({options:{compact:true,isAdmin,getGoogleLoginState:async()=>true,onGoogleLoginSettings(){throw Error('already linked');},onGoogleLoginTransfer(){throw Error('already linked');}},root:{GrowellWebPush:{mount(node,options){pushOptions=options;return {destroy(){}};}}}});await flush();
+    assert.equal(box.q('[data-google-login-open]').hidden,true);assert.equal(box.q('[data-google-login-transfer-open]').hidden,true);assert.equal(pushOptions.compact,true);
     for(const service of ['drive','calendar','mail'])assert.equal(box.q('[data-google-'+service+'-enabled]').checked,true);
     assert.doesNotMatch(box.node.html,/지금 백업|지금 반영|자세히 보기|연결 해제|자동 백업·|백업·일정·PDF 상세|알림 소리와|data-google-connect|data-google-reminder/);
     assert.equal(box.q('[data-google-error]').hidden,true);box.close();
@@ -201,6 +201,24 @@ test('compact settings show only service switches after verified Google login, f
 test('compact settings retain the initial Google login entry only for a verified unlinked member',async()=>{
   let opened=0;const box=uiHarness({options:{compact:true,getGoogleLoginState:async()=>false,onGoogleLoginSettings(){opened++;}}});await flush();
   assert.equal(box.q('[data-google-login-open]').hidden,false);box.q('[data-google-login-open]').onclick();assert.equal(opened,1);assert.equal(box.node.removed,true);assert.equal(box.calls.some(call=>call.url.endsWith('action=connect')),false);box.close();
+});
+
+test('verified unlinked members can open the existing-Google ownership flow without service consent or writes',async()=>{
+  let opened=0;const box=uiHarness({options:{compact:true,getGoogleLoginState:async()=>false,onGoogleLoginSettings(){},onGoogleLoginTransfer(){opened++;}}});await flush();
+  const entry=box.q('[data-google-login-transfer-open]');assert.equal(entry.hidden,false);assert.equal(entry.disabled,false);
+  entry.onclick();assert.equal(opened,1);assert.equal(box.node.removed,true);assert.equal(box.navigation.length,0);assert.equal(box.calls.some(call=>call.options.method==='POST'),false);
+  entry.onclick();assert.equal(opened,1);box.close();
+  const absent=uiHarness({options:{compact:true,getGoogleLoginState:async()=>false,onGoogleLoginSettings(){}}});await flush();assert.equal(absent.q('[data-google-login-transfer-open]').hidden,true);absent.close();
+});
+
+test('a verified pending transfer keeps its recovery entry after Google is linked',async()=>{
+  let opened=0,checks=0;const box=uiHarness({options:{compact:true,getGoogleLoginState:async()=>true,getGoogleLoginTransferState:async()=>{checks++;return true;},onGoogleLoginTransfer(){opened++;}}});await flush();
+  assert.equal(checks,1);assert.equal(box.q('[data-google-login-open]').hidden,true);const entry=box.q('[data-google-login-transfer-open]');assert.equal(entry.hidden,false);assert.equal(entry.textContent,'Google 연결 마무리하기');entry.onclick();assert.equal(opened,1);assert.equal(box.node.removed,true);assert.equal(box.calls.some(call=>call.options.method==='POST'),false);box.close();
+  const complete=uiHarness({options:{compact:true,getGoogleLoginState:async()=>true,getGoogleLoginTransferState:async()=>false,onGoogleLoginTransfer(){}}});await flush();assert.equal(complete.q('[data-google-login-transfer-open]').hidden,true);complete.close();
+});
+
+test('a late pending-transfer result cannot expose recovery for a changed member',async()=>{
+  const pending=deferred();const box=uiHarness({options:{compact:true,getGoogleLoginState:async()=>true,getGoogleLoginTransferState:()=>pending.promise,onGoogleLoginTransfer(){throw Error('stale');}}});await flush();box.setCurrent(false);pending.resolve(true);await flush();assert.equal(box.q('[data-google-login-transfer-open]').hidden,true);box.close();
 });
 
 test('a compact service OFF saves only its own preference and waits for confirmed state',async()=>{

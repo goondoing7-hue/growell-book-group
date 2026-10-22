@@ -7,6 +7,16 @@
 .google-login-settings input{width:100%;box-sizing:border-box;min-height:46px;font:inherit;font-size:16px;}
 .google-login-settings .btn-block{margin-top:18px;min-height:46px;}
 .google-login-settings [hidden]{display:none!important;}
+.google-login-transfer{width:min(92vw,540px);max-height:88dvh;box-sizing:border-box;overflow:auto;padding:24px;border:1px solid var(--line);border-radius:22px;background:var(--surface);color:var(--ink);font:inherit;}
+.google-login-transfer::backdrop{background:rgba(20,40,30,.45);}
+.google-login-transfer-head{display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.google-login-transfer-head h2{margin:0;font-size:23px;}
+.google-login-transfer-body,.google-login-transfer .sub{font-size:15px;line-height:1.75;}
+.google-login-transfer-account{margin:18px 0;padding:16px;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;color:var(--ink);overflow-wrap:anywhere;}
+.google-login-transfer-actions{display:grid;gap:10px;margin-top:22px;}
+.google-login-transfer .btn-block{min-height:46px;white-space:normal;line-height:1.45;}
+.google-login-transfer [hidden]{display:none!important;}
+@media(max-width:480px){.google-login-transfer{padding:20px 18px;}.google-login-transfer-head h2{font-size:21px;}}
 @media(max-width:480px){.google-login-settings{padding:20px 18px;}}
 .auth-card h2{font-size:23px;font-weight:750;}
 .auth-card .sub{font-size:15px;line-height:1.7;}

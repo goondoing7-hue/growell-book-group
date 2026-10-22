@@ -38,6 +38,7 @@
 .google-connection-compact .google-connection-toggle input::after{width:20px;height:20px}
 .google-connection-compact .google-connection-toggle input:checked::after{transform:translateX(18px)}
 .google-connection-login-entry{width:100%;min-height:48px;margin:12px 0 5px;padding:10px 14px;border:1px solid var(--line,#dde5dd);border-radius:12px;background:var(--surface,#fff);color:var(--ink,#26372c);font:inherit;font-size:14px;cursor:pointer}
+.google-connection-login-transfer-entry{display:block;width:100%;min-height:44px;margin:0 0 9px;padding:8px 12px;border:0;border-radius:10px;background:transparent;color:var(--primary,var(--accent,#3b634e));font:inherit;font-size:13px;line-height:1.55;cursor:pointer}
 .google-connection-compact-error{margin:4px 0 12px;color:var(--danger,#a74442);font-size:12px;line-height:1.6}
 .google-connection-card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .google-connection-card h3{margin:0;font-size:14px;font-weight:600;line-height:1.6}

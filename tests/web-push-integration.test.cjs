@@ -85,7 +85,7 @@ test('automatic invitation waits for editors, dialogs, loading and active inputs
 });
 test('all approved login paths mark the session and render checks only after restoring existing editors',()=>{
   assert.ok(html.indexOf('src="webPushPrompt.js"')>html.indexOf('src="webPush.js"'));
-  for(const [start,end]of [['function restoreMemberSession(){','function retryMemberSession('],['function doLogin(','function doLogout('],['async function completeOAuthMember(','async function cancelOAuth(']]){
+  for(const [start,end]of [['function restoreMemberSession(','function retryMemberSession('],['function doLogin(','function doLogout('],['async function completeOAuthMember(','async function cancelOAuth(']]){
     const source=section(start,end);assert.ok(source.indexOf('markMemberPushPromptSession()')>source.indexOf('GrowellMemberAccess.approved('));
   }
   const render=section('function render(){','function restoreDraftIfAny(');

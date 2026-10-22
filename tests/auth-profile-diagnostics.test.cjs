@@ -21,7 +21,7 @@ test('arbitrary values and thrown logging getters cannot disclose data or change
   assert.equal(JSON.stringify(h.logs).includes('PRIVATE'),false);
 });
 test('both profile failure paths keep original control flow and invoke only the safe helper',()=>{
-  const restore=section('function restoreMemberSession(){','function retryMemberSession('),login=section('function doLogin(','function doLogout(');
+  const restore=section('function restoreMemberSession(','function retryMemberSession('),login=section('function doLogin(','function doLogout(');
   assert.match(restore,/reportProfileReadFailure\('restore',profileResult\);\s*throw memberSessionFailure\(null,false\);/);
   assert.match(login,/reportProfileReadFailure\('login',profRes\);\s*throw new Error\('profile-not-found'\);/);
   assert.doesNotMatch(helper,/localStorage|sessionStorage|fetch\(|signOut\(|SESSION\s*=|\.message|\.details|\.hint|\.data|Authorization/);

@@ -14,7 +14,7 @@ function harness(options={}){
     console:Object.fromEntries(['log','info','warn','error','debug'].map(method=>[method,(...args)=>logs.push(args)])),Uint8Array,atob,crypto:require('node:crypto').webcrypto,
     STATE:{users:{},posts:{},comments:{},privateEntries:{},habits:{},readingMeta:{},readingLogs:{},worksheets:{},materialNotes:{}},SESSION:null,
     authFlowEpoch:0,saveSessionEpoch:0,sharedPostsLoadState:'idle',BOOTING:true,BOOT_FAILED:false,
-    GrowellOAuth:OAuth,GrowellMemberAccess:MemberAccess,GrowellPasswordHint:require('../passwordHint.js'),keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
+    GrowellOAuth:OAuth,GrowellMemberAccess:MemberAccess,GrowellPasswordHint:require('../passwordHint.js'),GrowellGoogleLoginTransfer:options.transfer,keyFromB64:Private.importKey,SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'public-test-key',authMode:'login',
     loginEmailFor:id=>id+'@growell.local',deriveKey:async(passwordValue,saltValue)=>Private.importKey(await nativeMaterial(passwordValue,saltValue)),keyToB64:Private.exportKey,editingAnnouncement:false,composerDraftPending:0,composerDrafts:{},saving:false,activeSave:null,saveQueue:[],captureComposerDraft(){calls.push(['draft-capture']);},
     location:{href:url.href,hash:url.hash||'#/',pathname:url.pathname,search:url.search,assign(url){calls.push(['redirect',url]);}},
     history:{replaceState(a,b,value){calls.push(['clean-url',value]);const next=new URL(value,c.location.href);Object.assign(c.location,{href:next.href,hash:next.hash,pathname:next.pathname,search:next.search});}},
@@ -40,6 +40,7 @@ function harness(options={}){
     },from(table){const query={select(){return query;},eq(key,value){calls.push(['read',table,key,value]);return query;},maybeSingle:async()=>options.getProfile?options.getProfile():({data:options.profile===undefined?profile:options.profile,error:null})};return query;},
     rpc:async(name,args)=>{calls.push(['rpc',name,args]);if(options.rpc)return options.rpc(name,args);return {data:{status:'new',profile:null,envelope:null}};}}
   };
+  if(options.createProofClient)c.supabase={createClient:(url,key,config)=>{calls.push(['proof-client-config',config]);return options.createProofClient();}};
   c.window=c;
   vm.createContext(c);
   vm.runInContext(section('/* ---------------- OAuth login and private-space unlock ---------------- */','/* ---------------- render: login ---------------- */'),c);
@@ -50,6 +51,7 @@ function harness(options={}){
 }
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 async function settle(){await new Promise(resolve=>setTimeout(resolve,5));}
+async function until(check){for(let n=0;n<100;n++){if(check())return;await settle();}assert.ok(check(),'the pending UI action should settle');}
 async function cacheMember(h,extra={}){const keyB64=await Private.exportKey(await Private.newKey());const saved=JSON.stringify({userId:profile.id,name:'old name',keyB64,authKind:'password',...extra});h.memory.set('growell_session',saved);return {keyB64,saved};}
 test('Google entry is existing-link login only while Kakao and social signup remain hidden',async()=>{
   const {c,calls}=harness({guest:true});
@@ -309,6 +311,75 @@ test('provider failures show a safe connection message and discard descriptions 
     assert.equal(logs.length,0);assert.equal(memory.size,0);
   }
 });
+test('callback collisions use fixed wording for allowlisted codes or one exact legacy message only',async()=>{
+  for(const suffix of [
+    '?error=server_error&error_code=identity_already_exists&error_description=private-provider-detail',
+    '#error=invalid_request&error_code=email_exists&error_description=private-provider-detail',
+    '?error=server_error&error_description='+encodeURIComponent('Identity is already linked to another user')
+  ]){
+    const h=harness({href:'https://app.example/'+suffix});await h.c.bootApp();
+    assert.match(h.c.oauthMessage,/선택한 Google 계정은 이미 로그인 계정에 연결/);assert.doesNotMatch(h.c.oauthMessage,/다른 회원|다른 사용자/);
+    assert.equal(h.c.SESSION,null);assert.ok(!h.calls.some(call=>['get-session','verify-user','exchange','read','rpc','load-member'].includes(call[0])));
+    assert.doesNotMatch(JSON.stringify(h.calls)+JSON.stringify(h.logs)+h.c.oauthMessage,/private-provider-detail|Identity is already linked|identity_already_exists|email_exists/);assert.equal(h.memory.size,0);
+  }
+  for(const description of ['prefix Identity is already linked to another user','Identity is already linked to another user\n','<img src=x onerror=alert(1)>','identity_already_exists','other-person@example.com']){
+    const h=harness({href:'https://app.example/?error=server_error&error_description='+encodeURIComponent(description)});await h.c.bootApp();
+    assert.equal(h.c.oauthMessage,'간편 로그인 서비스에 연결하지 못했어요. 잠시 후 다시 시도해주세요.');assert.equal(h.logs.length,0);
+    assert.ok(!JSON.stringify(h.calls).includes(description));
+  }
+});
+
+async function failedManualLinkHarness(options={}){
+  const nonce='f'.repeat(32),failure=options.failure||'error=server_error&error_code=identity_already_exists&error_description=private-provider-detail';
+  const h=harness({user:nativeUser,...options,href:'https://app.example/?'+failure+'&google-login-link='+nonce}),cached=await cacheMember(h);
+  const marker={authUserId:authId,profileId:profile.id,profileSalt:profile.pbkdf2_salt,keyDigest:await h.c.googleLinkKeyDigest(cached.keyB64),nonce,createdAt:Date.now()};
+  h.sessionMemory.set('growell_google_login_link_v1',JSON.stringify(marker));return {...h,cached,marker};
+}
+test('a proven manual-link failure or cancellation restores the original ID session and reports its safe status',async()=>{
+  for(const failure of ['error=server_error&error_code=identity_already_exists&error_description=private-provider-detail','error=server_error&error_description='+encodeURIComponent('Identity is already linked to another user'),'error=access_denied&error_code=access_denied&error_description=private-provider-detail']){
+    const h=await failedManualLinkHarness({failure});await h.c.bootApp();
+    assert.equal(h.c.SESSION.userId,profile.id);assert.equal(h.c.SESSION.keyB64,h.cached.keyB64);assert.equal(h.c.SESSION.authKind,'password');assert.equal(h.memory.get('growell_session'),h.cached.saved);
+    assert.ok(h.calls.some(call=>call[0]==='toast'&&(/이미 로그인 계정/.test(call[1])||/취소/.test(call[1]))));assert.equal(h.calls.filter(call=>call[0]==='load-member').length,1);
+    assert.ok(!h.calls.some(call=>['exchange','rpc','password-auth','link-identity','signout'].includes(call[0])));assert.equal(h.sessionMemory.has('growell_google_login_link_v1'),false);
+    assert.doesNotMatch(JSON.stringify(h.calls)+JSON.stringify(h.logs)+h.c.oauthMessage,/private-provider-detail|Identity is already linked/);
+  }
+});
+test('manual-link failure cannot restore without matching nonce, key, native identity and approved original profile',async()=>{
+  for(const failure of ['no-marker','expired','no-nonce','duplicate-nonce','bad-digest','old-marker','wrong-cache-owner','wrong-key','wrong-session','wrong-user','non-native-email','no-email-identity','pending','deleted','wrong-profile','changed-salt']){
+    const h=await failedManualLinkHarness();
+    if(failure==='no-marker')h.sessionMemory.clear();
+    if(failure==='expired')h.marker.createdAt-=16*60*1000;
+    if(failure==='bad-digest')h.marker.keyDigest='0'.repeat(64);
+    if(failure==='old-marker')delete h.marker.keyDigest;
+    if(['expired','bad-digest','old-marker'].includes(failure))h.sessionMemory.set('growell_google_login_link_v1',JSON.stringify(h.marker));
+    if(failure==='no-nonce')h.c.location.href=h.c.location.href.replace(/&google-login-link=[^&]+/,'');
+    if(failure==='duplicate-nonce')h.c.location.href+='&google-login-link='+h.marker.nonce;
+    if(failure==='wrong-cache-owner'||failure==='wrong-key')h.memory.set('growell_session',JSON.stringify({userId:failure==='wrong-cache-owner'?'other-profile':profile.id,keyB64:failure==='wrong-key'?Buffer.alloc(32,9).toString('base64'):h.cached.keyB64}));
+    if(failure==='wrong-session')h.c.sb.auth.getSession=async()=>({data:{session:{user:{...nativeUser,id:'other-auth'}}}});
+    if(failure==='wrong-user')h.c.sb.auth.getUser=async()=>({data:{user:{...nativeUser,id:'other-auth'}}});
+    if(failure==='non-native-email')h.c.sb.auth.getUser=async()=>({data:{user:{...nativeUser,email:'other@example.com'}}});
+    if(failure==='no-email-identity')h.c.sb.auth.getUser=async()=>({data:{user}});
+    if(['pending','deleted','wrong-profile','changed-salt'].includes(failure))h.c.sb.from=()=>{const query={select(){return query;},eq(){return query;},maybeSingle:async()=>({data:{...profile,...failure==='pending'?{approval_status:'pending'}:failure==='deleted'?{is_deleted:true}:failure==='wrong-profile'?{id:'other-profile'}:{pbkdf2_salt:'a'.repeat(32)}}})};return query;};
+    const saved=h.memory.get('growell_session');await h.c.bootApp();assert.equal(h.c.SESSION,null,failure);assert.equal(h.memory.get('growell_session'),saved,failure);assert.equal(h.timers.size,0,failure);
+    assert.ok(!h.calls.some(call=>['load-member','exchange','rpc','password-auth','link-identity','signout'].includes(call[0])),failure);
+  }
+});
+test('manual-link recovery repeats owner checks and ignores late responses after a newer login flow',async()=>{
+  for(const failure of ['late-owner','session-between-checks','cache-between-checks','profile-unavailable']){
+    const pending=deferred(),h=await failedManualLinkHarness({getUser:()=>pending.promise});const boot=h.c.bootApp();await settle();
+    if(failure==='late-owner'){
+      h.c.authFlowEpoch++;h.c.SESSION={userId:'next-member',keyB64:'next-key'};h.memory.set('growell_session','next-cache');h.sessionMemory.set('growell_google_login_link_v1',JSON.stringify({...h.marker,nonce:'a'.repeat(32)}));
+    }
+    if(failure==='session-between-checks')h.c.sb.auth.getSession=async()=>({data:{session:{user:{...nativeUser,id:'other-auth'}}}});
+    if(failure==='cache-between-checks')h.memory.set('growell_session','newer-cache');
+    if(failure==='profile-unavailable')h.c.sb.from=()=>{const query={select(){return query;},eq(){return query;},maybeSingle:async()=>({data:null,error:{status:503}})};return query;};
+    const saved=h.memory.get('growell_session');pending.resolve({data:{user:nativeUser}});await boot;
+    assert.equal(h.memory.get('growell_session'),saved,failure);assert.equal(h.c.SESSION&&h.c.SESSION.userId,failure==='late-owner'?'next-member':null,failure);
+    assert.ok(!h.calls.some(call=>['load-member','exchange','rpc','password-auth','signout'].includes(call[0])),failure);assert.equal(h.timers.size,0,failure);
+    if(failure==='late-owner')assert.equal(JSON.parse(h.sessionMemory.get('growell_google_login_link_v1')).nonce,'a'.repeat(32));
+  }
+});
+
 test('new social member sends only an encrypted vault, then unlocks the returned envelope',async()=>{
   let payload;const {c,calls}=harness({rpc:async(name,args)=>{payload=args;return {data:{status:'ready',profile,envelope:args.p_envelope}};}});
   c.SOCIAL_AUTH_VISIBLE=true;c.oauthPending={status:'new',authUserId:authId};
@@ -637,7 +708,7 @@ test('native first unlock blocks wrong passwords, changed profiles, and conflict
 function mockGoogleLoginDialog(h){
   const dialogs=[];h.c.document.body={appendChild(node){dialogs.push(node);}};
   h.c.document.createElement=function(tag){assert.equal(tag,'dialog');const controls=new Map(),listeners={};return {
-    attributes:{},setAttribute(name,value){this.attributes[name]=value;},set innerHTML(value){this.markup=value;for(const [token] of value.matchAll(/data-google-login-[a-z]+/g))controls.set(token,{hidden:false,disabled:false,textContent:'',focus(){}});},
+    attributes:{},setAttribute(name,value){this.attributes[name]=value;},set innerHTML(value){this.markup=value;for(const [token] of value.matchAll(/data-(?:google-login-[a-z]+|transfer-[a-z]+)/g))controls.set(token,{hidden:false,disabled:false,textContent:'',focus(){}});},
     querySelector(selector){return controls.get(selector.slice(1,-1))||null;},addEventListener(name,fn){listeners[name]=fn;},showModal(){this.open=true;},close(){this.open=false;},remove(){this.removed=true;},listeners
   };};return dialogs;
 }
@@ -660,7 +731,106 @@ test('no-password dialog failures offer retry and close while an already linked 
   const failed=await linkingHarness({getUser:async()=>({error:{status:503}})}),dialogs=mockGoogleLoginDialog(failed);
   failed.c.openGoogleLoginSettings(null,false);await settle();assert.equal(dialogs[0].querySelector('[data-google-login-retry]').hidden,false);
   assert.equal(typeof dialogs[0].querySelector('[data-google-login-retry]').onclick,'function');failed.c.closeGoogleLoginSettings(false);
-  const linked=await linkingHarness({user:linkedUser}),connected=mockGoogleLoginDialog(linked);linked.c.openGoogleLoginSettings(null,false);await settle();
+  const linked=await linkingHarness({user:linkedUser}),connected=mockGoogleLoginDialog(linked);linked.c.openGoogleLoginSettings(null,false);await until(()=>/이미 Google 로그인이 연결/.test(connected[0].querySelector('[data-google-login-status]').textContent));
   assert.match(connected[0].querySelector('[data-google-login-status]').textContent,/이미 Google 로그인이 연결/);assert.equal(connected[0].querySelector('[data-google-login-retry]').hidden,true);
   assert.ok(!linked.calls.some(call=>['link-identity','password-auth','rpc'].includes(call[0])));linked.c.closeGoogleLoginSettings(false);
+});
+
+test('transfer native context proves the existing owner and key before exposing only public binding evidence',async()=>{
+  for(const sessionPresent of [true,false]){
+    const h=await linkingHarness(),original=h.memory.get('growell_session'),material=h.c.SESSION.keyB64;
+    if(!sessionPresent)h.c.SESSION=null;
+    const value=await h.c.getGoogleTransferNativeContext();assert.equal(value.authUserId,authId);assert.equal(value.profileId,profile.id);assert.equal(value.profileSalt,profile.pbkdf2_salt);assert.match(value.keyDigest,/^[a-f0-9]{64}$/);
+    assert.ok(!JSON.stringify(value).includes(material));assert.equal(h.memory.get('growell_session'),original);assert.ok(!h.calls.some(call=>['password-auth','rpc','signout','link-identity'].includes(call[0])));
+  }
+  for(const failure of ['owner','salt','approval','cache','key','draft']){
+    const h=await linkingHarness();
+    if(failure==='owner')h.c.sb.auth.getUser=async()=>({data:{user:{...nativeUser,id:'other-owner'}}});
+    if(failure==='salt'||failure==='approval')h.c.sb.from=()=>{const query={select(){return query;},eq(){return query;},maybeSingle:async()=>({data:{...profile,...failure==='salt'?{pbkdf2_salt:'f'.repeat(32)}:{approval_status:'pending'}}})};return query;};
+    if(failure==='cache')h.memory.delete('growell_session');
+    if(failure==='key')h.c.SESSION.keyB64='invalid-key';
+    if(failure==='draft')h.c.composerDrafts.unsaved={userId:profile.id,unsaved:true};
+    await assert.rejects(h.c.getGoogleTransferNativeContext(),undefined,failure);assert.ok(!h.calls.some(call=>['password-auth','rpc','signout','link-identity'].includes(call[0])),failure);
+  }
+});
+
+test('transfer callbacks dispatch only the expected proof or target client and never fall through to normal OAuth exchange',async()=>{
+  for(const step of ['proof','target','source']){
+    const events=[],nonce='a'.repeat(32),h=harness({user:nativeUser,href:'https://app.example/?code=synthetic-callback&google-login-transfer='+nonce+'&transfer-step='+step,transfer:{create:options=>{
+      assert.equal(options.nativeClient.auth,h.c.sb.auth);return {finishProof:async(code,value)=>events.push(['proof',code,value]),completeNativeLink:async(code,value,kind)=>events.push([kind,code,value])};
+    }}});await cacheMember(h);await h.c.bootApp();
+    assert.deepEqual(events,[[step,'synthetic-callback',nonce]]);assert.ok(!h.calls.some(call=>call[0]==='exchange'));assert.equal(h.c.SESSION.userId,profile.id);assert.equal(h.c.googleTransferOpenAfterBoot,true);
+    assert.doesNotMatch(h.c.location.href,/synthetic-callback|transfer-step|google-login-transfer/);
+  }
+  for(const suffix of ['google-login-transfer=bad&transfer-step=proof&code=one','google-login-transfer='+ 'a'.repeat(32)+'&code=one','google-login-transfer='+ 'a'.repeat(32)+'&transfer-step=proof&transfer-step=target&code=one','google-login-transfer='+ 'a'.repeat(32)+'&transfer-step=proof&code=one&code=two','google-login-transfer='+ 'a'.repeat(32)+'&transfer-step=proof&error=access_denied&error_description=raw-secret']){
+    let called=false;const h=harness({href:'https://app.example/?'+suffix,transfer:{create(){called=true;throw Error('must not call');}}});await h.c.finishOAuthCallback();
+    assert.equal(called,false);assert.ok(!h.calls.some(call=>['exchange','signout','read','rpc'].includes(call[0])));assert.doesNotMatch(h.c.location.href,/raw-secret|code=|google-login-transfer|transfer-step/);assert.equal(h.logs.length,0);
+  }
+});
+
+test('proof client uses separate session storage and PKCE while native client storage remains untouched',async()=>{
+  let options;const proof={auth:{}},h=await linkingHarness({transfer:{create:value=>{options=value;return {}; }},createProofClient:()=>proof});
+  h.c.googleLoginTransfer();assert.equal(options.createProofClient(),proof);assert.equal(options.createProofClient(),proof);
+  const request=h.calls.find(call=>call[0]==='proof-client-config')[1];
+  assert.equal(request.auth.storageKey,'growell_google_login_transfer_auth_v1');assert.equal(request.auth.storage,h.c.sessionStorage);assert.equal(request.auth.persistSession,true);assert.equal(request.auth.autoRefreshToken,false);assert.equal(request.auth.detectSessionInUrl,false);assert.equal(request.auth.flowType,'pkce');
+  assert.ok(!h.calls.some(call=>call[0]==='signout'));const url=options.buildRedirectUrl({nonce:'a'.repeat(32),step:'proof'});assert.match(url,/google-login-transfer=a{32}&transfer-step=proof$/);
+});
+
+test('transfer confirmation is an explicit separate user action and interrupted recovery keeps resume and restore choices',async()=>{
+  const events=[],state={stage:'confirmed',sourceEmail:'owner@example.test',canConfirm:true,canResume:false,canRestore:false};
+  const engine={inspect:async()=>({...state}),startProof:async()=>{events.push('proof');return state;},confirmTransfer:async()=>{events.push('confirm');state.stage='relink';state.canConfirm=false;state.canResume=true;state.canRestore=true;},resumeLink:async()=>{events.push('resume');throw {code:'transfer_oauth',message:'RAW-PROVIDER-DETAIL'};},restoreSource:async()=>{events.push('restore');return state;},cancel:async()=>{events.push('cancel');return {needsRecovery:true};}};
+  const h=await linkingHarness({transfer:{create:()=>engine}}),dialogs=mockGoogleLoginDialog(h);h.c.openGoogleLoginTransfer();await settle();const node=dialogs[0];
+  assert.equal(events.length,0);assert.equal(node.querySelector('[data-transfer-account]').textContent,'owner@example.test');assert.match(node.querySelector('[data-transfer-explanation]').textContent,/로그인 연결만.*기존 글·회원 ID·자료/);
+  assert.equal(node.querySelector('[data-transfer-confirm]').hidden,false);await node.querySelector('[data-transfer-confirm]').onclick();
+  assert.deepEqual(events,['confirm','resume']);assert.equal(node.querySelector('[data-transfer-resume]').hidden,false);assert.equal(node.querySelector('[data-transfer-restore]').hidden,false);assert.doesNotMatch(node.querySelector('[data-transfer-status]').textContent,/RAW-PROVIDER/);
+  assert.match(node.querySelector('[data-transfer-explanation]').textContent,/반드시.*원래 Google 계정/);
+  await node.querySelector('[data-transfer-continue]').onclick();assert.equal(node.removed,true);assert.equal(h.c.SESSION.userId,profile.id);assert.deepEqual(events,['confirm','resume','cancel']);
+});
+
+test('a stale transfer dialog cannot redirect or run confirmation for a replaced member',async()=>{
+  const pending=deferred(),events=[],h=await linkingHarness({transfer:{create:()=>({inspect:async()=>({stage:'confirmed',canConfirm:true}),confirmTransfer:async()=>{events.push('confirm');return pending.promise;},resumeLink:async()=>{events.push('resume');return {url:'https://accounts.google.com/o/oauth2/v2/auth'};}})}}),dialogs=mockGoogleLoginDialog(h);
+  h.c.openGoogleLoginTransfer();await settle();const node=dialogs[0];h.c.authFlowEpoch++;h.c.SESSION={userId:'other',keyB64:'other-key'};
+  await node.querySelector('[data-transfer-confirm]').onclick();assert.equal(events.length,0);assert.ok(!h.calls.some(call=>call[0]==='redirect'));h.c.closeGoogleLoginTransfer(false);
+});
+
+test('real transfer engine and app adapter keep native keys through isolated proof, explicit confirmation and exact target callback',async()=>{
+  const Transfer=require('../googleLoginTransfer.js'),sourceId='66666666-7777-8888-9999-000000000000',googleId='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',emailId='11111111-aaaa-bbbb-cccc-222222222222',subject='synthetic-google-subject',sourceEmail='owner@example.test',events=[];
+  const googleIdentity={identity_id:googleId,id:subject,provider:'google',provider_id:subject,identity_data:{sub:subject,email:sourceEmail,email_verified:true}};
+  let nativeView=nativeUser,sourceView={id:sourceId,email:sourceEmail,email_confirmed_at:'2026-10-22T00:00:00Z',identities:[{id:emailId,provider:'email',identity_data:{email:sourceEmail,email_verified:true}},googleIdentity]};
+  const proof={auth:{getUser:async()=>({data:{user:sourceView}}),signInWithOAuth:async()=>{events.push('proof-oauth');return {data:{url:'https://project.supabase.co/auth/v1/authorize?provider=google'}};},exchangeCodeForSession:async code=>{events.push(['proof-exchange',code]);return {};},unlinkIdentity:async identity=>{events.push(['unlink',identity.identity_id]);sourceView={...sourceView,identities:sourceView.identities.filter(value=>value.identity_id!==identity.identity_id)};return {};},signOut:async options=>{events.push(['proof-signout',options.scope]);return {}; }},rpc:async name=>{assert.equal(name,'growell_oauth_profile');return {data:{status:'new',profile:null,envelope:null}};}};
+  const options={user:nativeUser,getUser:async()=>({data:{user:nativeView}}),transfer:Transfer,createProofClient:()=>proof};
+  const first=await linkingHarness(options),saved=first.memory.get('growell_session'),key=first.c.SESSION.keyB64,dialogs=mockGoogleLoginDialog(first);
+  first.c.openGoogleLoginTransfer();await settle();assert.equal(events.length,0);await dialogs[0].querySelector('[data-transfer-proof]').onclick();
+  assert.deepEqual(events,['proof-oauth']);assert.equal(first.memory.get('growell_session'),saved);const pending=JSON.parse(first.sessionMemory.get(Transfer.STORAGE_KEY));assert.equal(pending.stage,'proof');assert.ok(!JSON.stringify(pending).includes(key));
+  const verified=harness({...options,memory:first.memory,sessionMemory:first.sessionMemory,href:'https://app.example/?google-login-transfer='+pending.nonce+'&transfer-step=proof&code=proof-code'});await verified.c.bootApp();
+  assert.equal(verified.c.SESSION.keyB64,key);assert.ok(events.some(value=>Array.isArray(value)&&value[0]==='proof-exchange'));assert.ok(!verified.calls.some(call=>call[0]==='exchange'));assert.equal(events.filter(value=>Array.isArray(value)&&value[0]==='unlink').length,0);
+  assert.equal((await verified.c.googleLoginTransfer().inspect()).stage,'confirmed');
+  const confirmDialogs=mockGoogleLoginDialog(verified);verified.c.openGoogleLoginTransfer();await until(()=>!confirmDialogs[0]._busy&&confirmDialogs[0].querySelector('[data-transfer-confirm]').hidden===false);await confirmDialogs[0].querySelector('[data-transfer-confirm]').onclick();
+  assert.equal(events.filter(value=>Array.isArray(value)&&value[0]==='unlink').length,1);assert.equal(verified.calls.filter(call=>call[0]==='link-identity').length,1);assert.equal(verified.memory.get('growell_session'),saved);
+  const linked=harness({...options,memory:first.memory,sessionMemory:first.sessionMemory,href:'https://app.example/?google-login-transfer='+pending.nonce+'&transfer-step=target&code=target-code'});
+  linked.c.sb.auth.exchangeCodeForSession=async code=>{events.push(['native-exchange',code]);nativeView={...nativeUser,identities:[...nativeUser.identities,{...googleIdentity,user_id:authId}]};return {};};
+  await linked.c.bootApp();assert.equal(linked.c.SESSION.userId,profile.id);assert.equal(linked.c.SESSION.keyB64,key);assert.equal(linked.memory.get('growell_session'),saved);assert.equal(linked.sessionMemory.has(Transfer.STORAGE_KEY),false);assert.equal(linked.c.googleTransferCompleted,true);
+  assert.ok(events.some(value=>Array.isArray(value)&&value[0]==='native-exchange'&&value[1]==='target-code'));assert.ok(events.some(value=>Array.isArray(value)&&value[0]==='proof-signout'&&value[1]==='local'));
+  assert.ok(!linked.calls.some(call=>['rpc','password-auth','signout'].includes(call[0])));assert.ok(!JSON.stringify(pending).includes(sourceEmail));
+});
+
+test('pending transfer recovery opens once after reload even when a Google identity is already attached',async()=>{
+  const h=await linkingHarness({user:linkedUser,transfer:{create:()=>({inspect:async()=>({stage:'target-mismatch',canRestore:true,canConfirm:false,canResume:false})})}}),dialogs=mockGoogleLoginDialog(h);
+  h.c.BOOTING=false;h.sessionMemory.set('growell_google_login_transfer_v1','synthetic-state');h.c.openPendingGoogleLoginTransfer();await settle();
+  assert.equal(dialogs.length,1);assert.equal(dialogs[0].querySelector('[data-transfer-restore]').hidden,false);assert.equal(dialogs[0].querySelector('[data-transfer-proof]').hidden,true);
+  h.c.closeGoogleLoginTransfer(false);h.c.openPendingGoogleLoginTransfer();await settle();assert.equal(dialogs.length,1);
+});
+
+test('compact recovery entry verifies marker owner and keys without requiring the proof session',async()=>{
+  const h=await linkingHarness(),context=await h.c.getGoogleTransferNativeContext(),state={version:1,nonce:'a'.repeat(32),stage:'unknown',...context};
+  h.sessionMemory.set('growell_google_login_transfer_v1',JSON.stringify(state));assert.equal(await h.c.getGoogleLoginTransferState(),true);
+  for(const field of ['authUserId','profileId','profileSalt','keyDigest']){
+    h.sessionMemory.set('growell_google_login_transfer_v1',JSON.stringify({...state,[field]:'changed'}));assert.equal(await h.c.getGoogleLoginTransferState(),false,field);
+  }
+  assert.ok(!h.calls.some(call=>call[0]==='proof-client-config'||call[0]==='password-auth'||call[0]==='signout'));
+});
+
+test('a changed source account stops with operator guidance without echoing provider details',()=>{
+  const h=harness(),message=h.c.googleTransferErrorMessage({code:'transfer_source_changed',message:'raw-private-provider-detail'});
+  assert.match(message,/작업을 중단.*현재 아이디.*운영자/);assert.doesNotMatch(message,/다시 시도|raw-private/);
 });
