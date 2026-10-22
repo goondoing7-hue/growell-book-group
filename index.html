@@ -4944,6 +4944,28 @@ var googleLoginDialog=null,googleLoginDialogGeneration=0;
 var GOOGLE_LINK_MARKER='growell_google_login_link_v1';
 function passwordMemberIdentity(user){return !!(user&&(user.identities||[]).some(function(identity){return identity.provider==='email';}));}
 function googleMemberIdentity(user){return !!(user&&(user.identities||[]).some(function(identity){return identity.provider==='google';}));}
+function nativePasswordMember(user,profile){
+  var loginId=profile&&(profile.login_id||profile.loginId);
+  return !!(passwordMemberIdentity(user)&&typeof loginId==='string'&&/^[a-z0-9_-]{1,64}$/.test(loginId)&&typeof user.email==='string'&&user.email.toLowerCase()===loginEmailFor(loginId));
+}
+function sameGoogleLinkProfile(current,expected){
+  return !!(current&&expected&&current.id===expected.id&&current.authUserId===expected.authUserId&&current.loginId===expected.loginId&&current.salt===expected.salt&&current.approvalStatus==='approved'&&expected.approvalStatus==='approved'&&!current.isDeleted&&!expected.isDeleted);
+}
+function checkedGoogleLinkCache(session,material,create){
+  try{
+    var raw=localStorage.getItem('growell_session');
+    if(raw===null&&create){localStorage.setItem('growell_session',JSON.stringify(session));raw=localStorage.getItem('growell_session');}
+    var cached=JSON.parse(raw||'null');
+    if(!cached||cached.userId!==session.userId||cached.keyB64!==material)throw new Error('google-link-storage');
+    return cached;
+  }catch(error){throw new Error('google-link-storage');}
+}
+async function googleLinkKeyDigest(material){
+  if(typeof material!=='string'||!/^[A-Za-z0-9+/]+={0,2}$/.test(material))throw new Error('google-link-storage');
+  var raw=atob(material);if(raw.length!==32)throw new Error('google-link-storage');
+  var digest=await crypto.subtle.digest('SHA-256',Uint8Array.from(raw,function(value){return value.charCodeAt(0);}));
+  return Array.from(new Uint8Array(digest),function(value){return value.toString(16).padStart(2,'0');}).join('');
+}
 function clearGoogleLinkMarker(expectedNonce){try{if(expectedNonce){var current=JSON.parse(sessionStorage.getItem(GOOGLE_LINK_MARKER)||'null');if(!current||current.nonce!==expectedNonce)return;}sessionStorage.removeItem(GOOGLE_LINK_MARKER);}catch(error){}}
 function readGoogleLinkMarker(){
   try{var marker=JSON.parse(sessionStorage.getItem(GOOGLE_LINK_MARKER)||'null');
@@ -5000,6 +5022,11 @@ function finishOAuthCallback(){
     if(verified.error||!user||user.id!==linkMarker.authUserId||!googleMemberIdentity(user))throw new Error('oauth-link-mismatch');
     var profile=await sb.from('profiles').select('*').eq('auth_user_id',user.id).maybeSingle();guard();
     if(profile.error||!profile.data||profile.data.id!==linkMarker.profileId||profile.data.auth_user_id!==user.id||!GrowellMemberAccess.approved(profile.data))throw new Error('oauth-link-mismatch');
+    if(linkMarker.profileSalt!==undefined&&(linkMarker.profileSalt!==profile.data.pbkdf2_salt||!nativePasswordMember(user,profile.data)))throw new Error('oauth-link-mismatch');
+    if(linkMarker.keyDigest!==undefined){
+      var cached;try{cached=JSON.parse(localStorage.getItem('growell_session')||'null');}catch(error){throw new Error('oauth-link-mismatch');}
+      if(!cached||cached.userId!==linkMarker.profileId||await googleLinkKeyDigest(cached.keyB64)!==linkMarker.keyDigest)throw new Error('oauth-link-mismatch');guard();
+    }
     clearGoogleLinkMarker(linkMarker.nonce);oauthMessage='Google 로그인 연결이 완료됐어요. 기존 아이디 로그인도 계속 사용할 수 있어요.';
   }).catch(async function(error){
     if(callbackFlow===authFlowEpoch&&linkNonces.length){clearGoogleLinkMarker(linkMarker&&linkMarker.nonce);try{await sb.auth.signOut({scope:'local'});}catch(ignored){}}
@@ -5043,7 +5070,8 @@ async function prepareOAuthMember(user,flow){
       if(typeof candidate==='string' && candidate.trim()){suggestedName=candidate.trim().slice(0,30);break;}
     }
   }
-  oauthPending={authUserId:user.id,status:data.status,profile:data.profile,envelope:data.envelope,name:suggestedName,passwordMember:passwordMemberIdentity(user)};
+  var nativeLegacy=data.status==='legacy'&&googleMemberIdentity(user)&&nativePasswordMember(user,data.profile)&&GrowellMemberAccess.approved(data.profile)&&/^[a-f0-9]{32}$/i.test(data.profile.pbkdf2_salt||'');
+  oauthPending={authUserId:user.id,status:nativeLegacy?'native':data.status,profile:data.profile,envelope:data.envelope,name:suggestedName,passwordMember:passwordMemberIdentity(user)};
   oauthMessage='';
   return oauthPending;
 }
@@ -5089,7 +5117,7 @@ async function completeOAuthMember(name,password,confirmation,button){
       if(result.error||!result.data)throw new Error('oauth-register-failed');response=result.data;
     }
     if(response.status==='legacy'){pending.status='legacy';pending.profile=response.profile;throw new Error('oauth-legacy');}
-    if(response.status!=='ready'||!response.profile||response.profile.auth_user_id!==pending.authUserId||response.profile.is_deleted)throw new Error('oauth-profile-mismatch');
+    if(['ready','native'].indexOf(response.status)<0||!response.profile||response.profile.auth_user_id!==pending.authUserId||response.profile.is_deleted)throw new Error('oauth-profile-mismatch');
     if(!GrowellMemberAccess.approved(response.profile)){oauthMessage=GrowellMemberAccess.message(response.profile.approval_status);oauthPending=null;oauthBusy=false;await sb.auth.signOut();if(flow===authFlowEpoch)render();return false;}
     if(passwordMemberIdentity(verified.data.user)){
       // A previously issued envelope may survive an interrupted password
@@ -5098,7 +5126,22 @@ async function completeOAuthMember(name,password,confirmation,button){
       if(nativeAuth.error||!nativeAuth.data||!nativeAuth.data.user||nativeAuth.data.user.id!==pending.authUserId)throw new Error('현재 GROWELL 비밀번호를 확인해주세요. 비밀번호를 바꿨다면 기존 아이디로 로그인해 기록 복구를 마쳐주세요.');
       var nativeVerified=await sb.auth.getUser();guard();
       if(nativeVerified.error||!nativeVerified.data||!nativeVerified.data.user||nativeVerified.data.user.id!==pending.authUserId)throw new Error('oauth-session-mismatch');
+      if(response.status==='native'){
+        if(!googleMemberIdentity(nativeVerified.data.user)||!nativePasswordMember(nativeVerified.data.user,response.profile))throw new Error('oauth-profile-mismatch');
+        var fresh=await sb.from('profiles').select('*').eq('auth_user_id',pending.authUserId).maybeSingle();guard();
+        if(fresh.error||!fresh.data||fresh.data.id!==response.profile.id||fresh.data.auth_user_id!==pending.authUserId||fresh.data.login_id!==response.profile.login_id||fresh.data.pbkdf2_salt!==response.profile.pbkdf2_salt||!GrowellMemberAccess.approved(fresh.data))throw new Error('oauth-profile-mismatch');
+        var nativeProfile=mapProfileRow(fresh.data),nativeKey=await keyToB64(await deriveKey(password,nativeProfile.salt));guard();
+        var made=await GrowellOAuth.createLinkedVault(password,nativeProfile.salt,pending.authUserId,nativeKey);guard();
+        var prepared=await sb.rpc('growell_oauth_link_prepare',{p_envelope:made.envelope});guard();
+        if(prepared.error)throw new Error('개인 기록 보호 설정을 준비하지 못했어요. 기존 아이디로 로그인한 뒤 다시 시도해주세요.');
+        // A first unlock never replaces an unexpected concurrent vault. A prior
+        // password recovery must finish through the existing ID-login flow.
+        if(!prepared.data||await GrowellOAuth.unlockVault(password,prepared.data.envelope,pending.authUserId)!==nativeKey)throw new Error('개인 기록 열쇠를 확인하지 못했어요. 기존 아이디로 로그인하고 기록 복구를 먼저 마쳐주세요.');guard();
+        var checked=await checkedLinkedVault(password,made,prepared.data,nativeProfile,nativeKey,guard);guard();
+        response={status:'ready',profile:checked.profile,envelope:checked.envelope};
+      }
     }
+    if(response.status!=='ready')throw new Error('oauth-profile-mismatch');
     var keyB64=await GrowellOAuth.unlockVault(password,response.envelope,pending.authUserId);guard();
     // A reset/recovery may have rotated the password member's record key. An old
     // password must never reopen a stale Google vault and read/write with it.
@@ -5136,9 +5179,11 @@ function oauthMemberHtml(){
     '<p id="oauth-status" class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button id="btn-oauth-complete" class="btn btn-primary btn-block" type="button">'+(newMember?'가입하고 시작하기':'내 기록 열기')+'</button><button class="btn btn-ghost btn-block" data-oauth-cancel type="button">다른 방법으로 로그인</button></section></div></div>';
 }
 function waitForGoogleLoginDrafts(isCurrent){
+  if(typeof pendingPrivateRecovery!=='undefined'&&pendingPrivateRecovery||typeof privateRecoveryBusy!=='undefined'&&privateRecoveryBusy)return Promise.reject(new Error('google-link-recovery'));
   captureComposerDraft();
   return new Promise(function(resolve,reject){var started=Date.now();function check(){
     if(!isCurrent()){reject(new Error('google-link-session-changed'));return;}
+    if(typeof pendingPrivateRecovery!=='undefined'&&pendingPrivateRecovery||typeof privateRecoveryBusy!=='undefined'&&privateRecoveryBusy){reject(new Error('google-link-recovery'));return;}
     // Archive and other independent editors do not share the encrypted composer
     // draft store. Do not leave any dirty editor without a verified backup.
     var dirtyDialog=Array.prototype.some.call(document.querySelectorAll('dialog[open]'),function(node){return node!==googleLoginDialog&&(node._dirty||node._bookDraftDirty||node._busy);});
@@ -5152,6 +5197,7 @@ function waitForGoogleLoginDrafts(isCurrent){
 function closeGoogleLoginSettings(restoreFocus){
   var node=googleLoginDialog;if(!node)return;
   googleLoginDialog=null;googleLoginDialogGeneration++;var restore=node._restore;
+  if(node._busy)oauthBusy=false;
   var input=node.querySelector('[data-google-login-password]');if(input)input.value='';
   if(node.open)node.close();node.remove();
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('google-login-settings');
@@ -5161,6 +5207,8 @@ function googleLoginLinkError(error){
   if(error&&error.message==='google-link-draft')return '작성 중인 내용을 먼저 저장해주세요. 임시 저장이나 저장이 끝나지 않아 연결 화면으로 이동하지 않았어요.';
   if(error&&error.message==='google-link-password')return '현재 아이디의 비밀번호가 맞는지 확인해주세요. Google 비밀번호를 입력하지 마세요.';
   if(error&&error.message==='google-link-session-changed')return '로그인 정보가 바뀌었어요. 현재 회원 계정으로 다시 로그인해주세요.';
+  if(error&&error.message==='google-link-recovery')return '개인 기록 복구를 먼저 마쳐주세요. 복구가 완료될 때까지 Google 연결 화면으로 이동하지 않아요.';
+  if(error&&error.message==='google-link-storage')return '이 기기에 기록 열쇠를 보관하지 못해 연결을 멈췄어요. 기존 기록은 그대로예요. 현재 화면을 닫지 말고 브라우저 저장 공간을 확인해주세요.';
   if(error&&/현재 비밀번호|기존 개인 기록|열쇠|비밀번호가 다르/.test(error.message))return error.message;
   if(error&&['identity_already_exists','email_exists','identity_linking_disabled','manual_linking_disabled'].indexOf(error.code)>=0)return error.code==='identity_already_exists'||error.code==='email_exists'?'이 Google 계정은 다른 로그인 계정에 연결되어 있어요. 기존 회원 글을 합치거나 옮기지 않았어요. 다른 Google 계정을 선택하거나 운영자에게 문의해주세요.':'Google 로그인 연결을 아직 사용할 수 없어요. 기존 아이디 로그인은 계속 사용할 수 있어요.';
   return 'Google 로그인 연결을 마치지 못했어요. 기존 아이디와 기록은 그대로예요. 다시 시도해주세요.';
@@ -5193,37 +5241,33 @@ async function syncGoogleLoginAfterPassword(password,authGuard){
   if(prepared.error)throw new Error('google-link-vault');
   await checkedLinkedVault(password,made,prepared.data,profile,material,guard);guard();return true;
 }
-async function connectExistingGoogleLogin(password,isCurrent){
+async function connectExistingGoogleLogin(isCurrent){
   var session=SESSION,profile=session&&STATE.users[session.userId],material=session&&session.keyB64,flow=authFlowEpoch,epoch=saveSessionEpoch;
-  function current(){return !!(session&&profile&&SESSION===session&&SESSION.keyB64===material&&STATE.users[session.userId]===profile&&authFlowEpoch===flow&&saveSessionEpoch===epoch&&isCurrent());}
+  profile=profile&&Object.assign({},profile);
+  function current(){return !!(session&&profile&&SESSION===session&&SESSION.keyB64===material&&sameGoogleLinkProfile(STATE.users[session.userId],profile)&&authFlowEpoch===flow&&saveSessionEpoch===epoch&&isCurrent());}
   function guard(){if(!current())throw new Error('google-link-session-changed');}
-  guard();if(!profile.authUserId||!profile.loginId||!profile.salt||!password)throw new Error('google-link-password');
+  guard();if(!profile.authUserId||!profile.loginId||!/^[a-f0-9]{32}$/i.test(profile.salt||''))throw new Error('google-link-session-changed');
   await waitForGoogleLoginDrafts(current);guard();
   var verified=await sb.auth.getUser();guard();var user=verified&&verified.data&&verified.data.user;
-  if(verified.error||!user||user.id!==profile.authUserId||!passwordMemberIdentity(user))throw new Error('google-link-session-changed');
+  if(verified.error||!user||user.id!==profile.authUserId||!nativePasswordMember(user,profile)&&!googleMemberIdentity(user))throw new Error('google-link-session-changed');
   var alreadyLinked=googleMemberIdentity(user);
-  var authenticated=await sb.auth.signInWithPassword({email:loginEmailFor(profile.loginId),password:password});guard();
-  if(authenticated.error)throw new Error('google-link-password');
-  if(!authenticated.data||!authenticated.data.user||authenticated.data.user.id!==profile.authUserId)throw new Error('google-link-session-changed');
-  verified=await sb.auth.getUser();guard();
-  if(verified.error||!verified.data||!verified.data.user||verified.data.user.id!==profile.authUserId)throw new Error('google-link-session-changed');
   var fresh=await sb.from('profiles').select('*').eq('auth_user_id',profile.authUserId).maybeSingle();guard();
   if(fresh.error||!fresh.data||fresh.data.id!==profile.id||fresh.data.auth_user_id!==profile.authUserId||fresh.data.pbkdf2_salt!==profile.salt||fresh.data.login_id!==profile.loginId||!GrowellMemberAccess.approved(fresh.data))throw new Error('google-link-session-changed');
-  var made=await GrowellOAuth.createLinkedVault(password,profile.salt,profile.authUserId,session.keyB64);guard();
-  var saved=await sb.rpc('growell_oauth_link_prepare',{p_envelope:made.envelope});guard();
-  if(saved.error)throw new Error('google-link-vault');
-  await checkedLinkedVault(password,made,saved.data,profile,material,guard);
+  await keyFromB64(material);guard();var digest=await googleLinkKeyDigest(material);guard();
+  checkedGoogleLinkCache(session,material,true);
   guard();if(alreadyLinked)return {connected:true};
   await waitForGoogleLoginDrafts(current);guard();
-  var marker={authUserId:profile.authUserId,profileId:profile.id,nonce:Array.from(crypto.getRandomValues(new Uint8Array(16)),function(value){return value.toString(16).padStart(2,'0');}).join(''),createdAt:Date.now()};
+  var marker={authUserId:profile.authUserId,profileId:profile.id,profileSalt:profile.salt,keyDigest:digest,nonce:Array.from(crypto.getRandomValues(new Uint8Array(16)),function(value){return value.toString(16).padStart(2,'0');}).join(''),createdAt:Date.now()};
   var serialized=JSON.stringify(marker);sessionStorage.setItem(GOOGLE_LINK_MARKER,serialized);
   if(sessionStorage.getItem(GOOGLE_LINK_MARKER)!==serialized)throw new Error('google-link-storage');
   var redirect=new URL(location.href);redirect.search='';redirect.hash='';redirect.searchParams.set('google-login-link',marker.nonce);
-  var result=await sb.auth.linkIdentity({provider:'google',options:{redirectTo:redirect.href,skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}});guard();
-  if(result.error)throw result.error;
-  var target=new URL(result.data&&result.data.url||'');
-  if(!((target.origin===new URL(SUPABASE_URL).origin&&/^\/auth\/v1\/(?:authorize|user\/identities\/authorize)$/.test(target.pathname))||(target.origin==='https://accounts.google.com'&&/^\/o\/oauth2\//.test(target.pathname))))throw new Error('google-link-redirect');
-  await waitForGoogleLoginDrafts(current);guard();location.assign(target.href);return {redirected:true};
+  try{
+    var result=await sb.auth.linkIdentity({provider:'google',options:{redirectTo:redirect.href,skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}});guard();
+    if(result.error)throw result.error;
+    var target=new URL(result.data&&result.data.url||'');
+    if(!((target.origin===new URL(SUPABASE_URL).origin&&/^\/auth\/v1\/(?:authorize|user\/identities\/authorize)$/.test(target.pathname))||(target.origin==='https://accounts.google.com'&&/^\/o\/oauth2\//.test(target.pathname))))throw new Error('google-link-redirect');
+    await waitForGoogleLoginDrafts(current);guard();checkedGoogleLinkCache(session,material,false);location.assign(target.href);return {redirected:true};
+  }catch(error){clearGoogleLinkMarker(marker.nonce);throw error;}
 }
 function openGoogleLoginSettings(trigger,returnSettings){
   if(!SESSION)return;
@@ -5231,24 +5275,20 @@ function openGoogleLoginSettings(trigger,returnSettings){
   var session=SESSION,epoch=saveSessionEpoch,route=location.href,generation=googleLoginDialogGeneration;
   function current(){return googleLoginDialog===node&&googleLoginDialogGeneration===generation&&SESSION===session&&saveSessionEpoch===epoch&&location.href===route;}
   var node=document.createElement('dialog');node.className='google-login-settings';node.setAttribute('aria-labelledby','google-login-settings-title');
-  node.innerHTML='<div class="google-login-settings-head"><h2 id="google-login-settings-title">Google 로그인</h2><button class="btn btn-ghost" type="button" data-google-login-close aria-label="Google 로그인 설정 닫기">닫기</button></div><p class="sub">기존 회원 계정에 Google 로그인 방법을 추가해요. 작성한 글·습관·자료와 아이디 로그인은 그대로 유지돼요.</p><p class="profile-account-note">백업·캘린더 연결과 별도의 로그인 설정이에요. 새 기기에서는 개인 기록을 열기 위해 현재 GROWELL 비밀번호가 필요해요.</p><p data-google-login-status class="profile-photo-status" role="status" aria-live="polite">연결 상태를 확인하고 있어요…</p><form data-google-login-form hidden><label class="field-label" for="google-login-current-password">현재 GROWELL 비밀번호</label><input id="google-login-current-password" data-google-login-password type="password" autocomplete="current-password" required><p class="profile-photo-help">Google 비밀번호를 입력하지 마세요. 비밀번호를 저장하거나 운영자에게 공개하지 않아요.</p><button class="btn btn-primary btn-block" data-google-login-connect type="submit">비밀번호 확인 후 Google 연결</button></form>';
+  node.innerHTML='<div class="google-login-settings-head"><h2 id="google-login-settings-title">Google 로그인</h2><button class="btn btn-ghost" type="button" data-google-login-close aria-label="Google 로그인 설정 닫기">닫기</button></div><p data-google-login-status class="profile-photo-status" role="status" aria-live="polite">Google 계정 선택 화면을 준비하고 있어요…</p><button class="btn btn-primary btn-block" data-google-login-retry type="button" hidden>다시 시도</button>';
   node._restore=function(){if(SESSION!==session||saveSessionEpoch!==epoch||location.href!==route)return;if(returnSettings){openGoogleConnection(trigger,'','connections');return;}var target=trigger&&trigger.isConnected?trigger:document.getElementById('btn-profile-toggle');if(target)target.focus({preventScroll:true});};
   googleLoginDialog=node;document.body.appendChild(node);node.showModal();
-  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('google-login-settings',{close:function(){if(!node._busy)closeGoogleLoginSettings();}});
-  node.querySelector('[data-google-login-close]').onclick=function(){if(!node._busy)closeGoogleLoginSettings();};
-  node.addEventListener('cancel',function(event){event.preventDefault();if(!node._busy)closeGoogleLoginSettings();});
-  var status=node.querySelector('[data-google-login-status]'),form=node.querySelector('[data-google-login-form]'),button=node.querySelector('[data-google-login-connect]');
-  sb.auth.getUser().then(function(result){if(!current())return;var user=result&&result.data&&result.data.user,member=STATE.users[session.userId];
-    if(result.error||!user||!member||user.id!==member.authUserId)throw new Error('google-link-session-changed');
-    if(!passwordMemberIdentity(user)){status.textContent=googleMemberIdentity(user)?'Google 로그인으로 가입한 계정이에요. 현재 Google 로그인과 개인 기록 비밀번호를 그대로 사용해주세요.':'이 계정은 기존 아이디 로그인 계정이 아니에요. 현재 로그인 방법을 유지해주세요.';return;}
-    if(googleMemberIdentity(user)){status.textContent='Google 계정이 연결되어 있어요. 개인 기록 보호 설정을 확인하거나 갱신하려면 현재 GROWELL 비밀번호를 입력해주세요.';form.hidden=false;button.textContent='비밀번호 확인 후 로그인 설정 확인';return;}
-    status.textContent='아직 연결하지 않았어요. 현재 비밀번호를 확인한 뒤 본인 Google 계정을 선택해주세요.';form.hidden=false;node.querySelector('[data-google-login-password]').focus();
-  }).catch(function(error){if(current())status.textContent=googleLoginLinkError(error);});
-  form.onsubmit=async function(event){event.preventDefault();if(!current()||node._busy)return;var input=node.querySelector('[data-google-login-password]'),password=input.value;if(!password)return;input.value='';node._busy=true;button.disabled=true;oauthBusy=true;status.textContent='기존 기록과 로그인 정보를 확인하고 있어요…';
-    try{var result=await connectExistingGoogleLogin(password,current);if(current())status.textContent=result.connected?'이미 Google 로그인이 연결되어 있어요.':'Google 계정 선택 화면으로 이동하고 있어요…';}
-    catch(error){clearGoogleLinkMarker();if(current())status.textContent=googleLoginLinkError(error);}
-    finally{password='';oauthBusy=false;node._busy=false;button.disabled=false;}
-  };
+  if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.open('google-login-settings',{close:function(){closeGoogleLoginSettings();}});
+  node.querySelector('[data-google-login-close]').onclick=function(){closeGoogleLoginSettings();};
+  node.addEventListener('cancel',function(event){event.preventDefault();closeGoogleLoginSettings();});
+  var status=node.querySelector('[data-google-login-status]'),button=node.querySelector('[data-google-login-retry]');
+  async function start(){
+    if(!current()||node._busy)return;node._busy=true;button.hidden=true;button.disabled=true;oauthBusy=true;status.textContent='Google 계정 선택 화면을 준비하고 있어요…';
+    try{var result=await connectExistingGoogleLogin(current);if(current())status.textContent=result.connected?'이미 Google 로그인이 연결되어 있어요.':'Google 계정 선택 화면으로 이동하고 있어요…';}
+    catch(error){if(current()){status.textContent=googleLoginLinkError(error);button.hidden=false;}}
+    finally{node._busy=false;if(current()){oauthBusy=false;button.disabled=false;}}
+  }
+  button.onclick=start;start();
 }
 function bindOAuthEvents(){
   document.querySelectorAll('[data-oauth-provider]').forEach(function(button){if(button.dataset.oauthBound)return;button.dataset.oauthBound='1';button.addEventListener('click',function(){startOAuth(button.dataset.oauthProvider,button);});});
