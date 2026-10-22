@@ -35,7 +35,7 @@ function harness(options={}){
       exchangeCodeForSession:async code=>{calls.push(['exchange',code]);return {error:null};},
       signInWithPassword:async input=>{calls.push(['password-auth',input]);return options.passwordAuth?options.passwordAuth(input):{data:{user:authUser},error:null};},
       linkIdentity:async input=>{calls.push(['link-identity',input]);return options.linkIdentity?options.linkIdentity(input):{data:{url:'https://accounts.google.com/o/oauth2/v2/auth?opaque=authorization'},error:null};},
-      signOut:async()=>{calls.push(['signout']);return {};},
+      signOut:async input=>{calls.push(['signout',input]);return {};},
       signInWithOAuth:async input=>{calls.push(['oauth',input]);return {data:{url:'https://project.supabase.co/auth/v1/authorize?provider='+input.provider}};}
     },from(table){const query={select(){return query;},eq(key,value){calls.push(['read',table,key,value]);return query;},maybeSingle:async()=>options.getProfile?options.getProfile():({data:options.profile===undefined?profile:options.profile,error:null})};return query;},
     rpc:async(name,args)=>{calls.push(['rpc',name,args]);if(options.rpc)return options.rpc(name,args);return {data:{status:'new',profile:null,envelope:null}};}}
@@ -324,13 +324,42 @@ test('legacy identity refuses automatic registration and profile overwrite',asyn
   const {c,calls}=harness();c.oauthPending={status:'legacy',authUserId:authId,profile};
   assert.equal(await c.completeOAuthMember('회원','private-password','private-password'),false);assert.ok(!calls.some(v=>v[0]==='rpc'));
 });
-test('cross-tab signout and a different Auth user clear local private records',async()=>{
-  const {c}=harness();c.BOOTING=false;c.SESSION={userId:profile.id};c.STATE.users[profile.id]={authUserId:authId};c.STATE.privateEntries.note={data:'private'};c.bindOAuthAuthWatcher();
-  c.authCallback('SIGNED_IN',{user:{id:'other-user'}});await new Promise(r=>setTimeout(r,5));assert.equal(c.SESSION,null);assert.equal(Object.keys(c.STATE.privateEntries).length,0);
+test('confirmed signout and a different Auth user still lock private records and cached access',async()=>{
+  for(const [event,session] of [['SIGNED_OUT',null],['SIGNED_IN',{user:{id:'other-user'}}]]){
+    const h=harness(),{c}=h;const cached=await cacheMember(h);c.BOOTING=false;c.SESSION={userId:profile.id,keyB64:cached.keyB64};c.STATE.users[profile.id]={authUserId:authId};c.STATE.privateEntries.note={data:'private'};c.bindOAuthAuthWatcher();
+    c.authCallback(event,session);await settle();assert.equal(c.SESSION,null,event);assert.equal(Object.keys(c.STATE.privateEntries).length,0,event);assert.equal(h.memory.has('growell_session'),false,event);
+  }
 });
-test('the same user token refresh does not clear private keys or cancel writing',async()=>{
-  const {c,calls}=harness();c.SESSION={userId:profile.id,keyB64:'keep'};c.STATE.users[profile.id]={authUserId:authId};c.bindOAuthAuthWatcher();c.authCallback('TOKEN_REFRESHED',{user});
-  await new Promise(r=>setTimeout(r,5));assert.equal(c.SESSION.keyB64,'keep');assert.ok(!calls.some(v=>v[0]==='clear'));
+test('same-owner refresh and empty initial lifecycle events preserve session key cache and writing',async()=>{
+  const h=harness(),{c,calls}=h,cached=await cacheMember(h),member={userId:profile.id,keyB64:cached.keyB64};c.SESSION=member;c.STATE.users[profile.id]={authUserId:authId};c.STATE.privateEntries.note={data:'private'};c.bindOAuthAuthWatcher();
+  for(const [event,session] of [['INITIAL_SESSION',null],['TOKEN_REFRESHED',null],['SIGNED_IN',null],['USER_UPDATED',{}],['TOKEN_REFRESHED',{user}]])c.authCallback(event,session);
+  await settle();assert.equal(c.SESSION,member);assert.equal(h.memory.get('growell_session'),cached.saved);assert.equal(c.STATE.privateEntries.note.data,'private');assert.equal(c.saveSessionEpoch,0);assert.ok(!calls.some(v=>v[0]==='clear'));
+});
+test('a newer same-owner sign-in or refresh supersedes a queued stale signout',async()=>{
+  for(const event of ['SIGNED_IN','TOKEN_REFRESHED']){
+    const h=harness(),{c}=h,cached=await cacheMember(h),member={userId:profile.id,keyB64:cached.keyB64};c.SESSION=member;c.STATE.users[profile.id]={authUserId:authId};c.bindOAuthAuthWatcher();
+    c.authCallback('SIGNED_OUT',null);c.authCallback(event,{user});await settle();
+    assert.equal(c.SESSION,member,event);assert.equal(h.memory.get('growell_session'),cached.saved,event);assert.equal(c.authFlowEpoch,0,event);assert.equal(c.saveSessionEpoch,0,event);
+  }
+});
+test('empty or unknown lifecycle events cannot cancel a queued confirmed signout',async()=>{
+  for(const event of ['INITIAL_SESSION','TOKEN_REFRESHED','SIGNED_IN','UNKNOWN_EVENT']){
+    const h=harness(),{c}=h;await cacheMember(h);c.SESSION={userId:profile.id};c.STATE.users[profile.id]={authUserId:authId};c.bindOAuthAuthWatcher();
+    c.authCallback('SIGNED_OUT',null);c.authCallback(event,null);await settle();assert.equal(c.SESSION,null,event);assert.equal(h.memory.has('growell_session'),false,event);
+  }
+});
+test('a signout after a successful refresh still takes effect',async()=>{
+  const h=harness(),{c}=h;await cacheMember(h);c.SESSION={userId:profile.id};c.STATE.users[profile.id]={authUserId:authId};c.bindOAuthAuthWatcher();
+  c.authCallback('TOKEN_REFRESHED',{user});c.authCallback('SIGNED_OUT',null);await settle();assert.equal(c.SESSION,null);assert.equal(h.memory.has('growell_session'),false);
+});
+test('explicit logout and cancelling Google unlock revoke only this device session',async()=>{
+  for(const action of ['doLogout','cancelOAuth']){
+    const h=harness(),{c,calls}=h;await cacheMember(h);c.SESSION={userId:profile.id};c.STATE.users[profile.id]={authUserId:authId};c.authTransition=Promise.resolve();c.pushDetachPending=Promise.resolve();
+    if(action==='doLogout')vm.runInContext(section('function doLogout(){','/* 계정 삭제'),c);
+    await c[action]();
+    assert.equal(c.SESSION,null,action);assert.equal(h.memory.has('growell_session'),false,action);
+    const signouts=calls.filter(call=>call[0]==='signout');assert.equal(signouts.length,1,action);assert.deepEqual(JSON.parse(JSON.stringify(signouts[0][1])),{scope:'local'},action);
+  }
 });
 test('provider status controls launch and returned redirect stays on configured Supabase',async()=>{
   const {c,calls}=harness();c.SOCIAL_AUTH_VISIBLE=true;await c.loadOAuthProviderSettings();await c.startOAuth('kakao');assert.ok(!calls.some(v=>v[0]==='oauth'));await c.startOAuth('google');

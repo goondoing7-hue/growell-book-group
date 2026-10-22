@@ -2920,7 +2920,7 @@ function doLogout(){
   ++authFlowEpoch;
   var pendingSave = resetSaveSession();
   clearMemberSession();
-  authTransition = authTransition.catch(function(){}).then(function(){ return pendingSave; }).then(function(){return pushDetachPending;}).then(function(){ return sb.auth.signOut(); }).catch(function(){});
+  authTransition = authTransition.catch(function(){}).then(function(){ return pendingSave; }).then(function(){return pushDetachPending;}).then(function(){ return sb.auth.signOut({scope:'local'}); }).catch(function(){});
   location.hash = '#/';
   render();
   return authTransition;
@@ -5036,16 +5036,23 @@ function finishOAuthCallback(){
 function bindOAuthAuthWatcher(){
   if(oauthWatcherBound || typeof sb.auth.onAuthStateChange!=='function')return;
   oauthWatcherBound=true;
+  var generation=0;
   sb.auth.onAuthStateChange(function(event,session){
     var expected=SESSION && STATE.users[SESSION.userId] && STATE.users[SESSION.userId].authUserId || oauthPending && oauthPending.authUserId || authRestoreUserId;
     // Guest/sign-up cleanup has no protected member session to invalidate. In
     // particular, its SIGNED_OUT must not cancel approval-pending feedback.
     if(!expected)return;
-    if(event!=='SIGNED_OUT' && session && session.user && session.user.id===expected)return;
-    var flow=authFlowEpoch;
+    if(event!=='SIGNED_OUT' && session && session.user && session.user.id===expected){
+      // A newer successful sign-in/refresh supersedes an already queued sign-out.
+      if(event==='SIGNED_IN'||event==='TOKEN_REFRESHED')generation++;
+      return;
+    }
+    // Initial/empty lifecycle events are not a confirmed logout or account change.
+    if(event!=='SIGNED_OUT' && !(session&&session.user&&session.user.id))return;
+    var flow=authFlowEpoch,queuedGeneration=++generation;
     // Supabase holds an Auth lock inside this callback; never await another Auth call here.
     setTimeout(function(){
-      if(flow!==authFlowEpoch)return;
+      if(flow!==authFlowEpoch||queuedGeneration!==generation)return;
       ++authFlowEpoch;resetSaveSession();clearMemberSession();oauthPending=null;oauthBusy=false;
       oauthMessage=event==='SIGNED_OUT'?'로그아웃되었어요. 다시 로그인해주세요.':'다른 계정으로 로그인되어 기록 화면을 잠갔어요.';
       if(!BOOTING)render();
@@ -5165,7 +5172,7 @@ async function completeOAuthMember(name,password,confirmation,button){
 }
 async function cancelOAuth(){
   ++authFlowEpoch;var pending=resetSaveSession();clearMemberSession();oauthPending=null;oauthBusy=false;oauthMessage='';
-  await pending;await sb.auth.signOut().catch(function(){});authMode='login';location.hash='#/login';render();
+  await pending;await sb.auth.signOut({scope:'local'}).catch(function(){});authMode='login';location.hash='#/login';render();
 }
 function oauthMemberHtml(){
   var pending=oauthPending,newMember=pending.status==='new',originalMember=pending.passwordMember===true;
