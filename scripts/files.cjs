@@ -11,6 +11,8 @@ const DEPLOY_FILES = Object.freeze([
   'webPush.js', 'webPushPrompt.js', 'webPush.css',
   'connection-guide.html', 'connection-guide.css',
   'guides/growell-connection-guide.pdf',
+  'materials/meeting-2-development-trauma.pdf', 'materials/meeting-2-schemas.pdf',
+  'materials/meeting-2-development-trauma.jpg', 'materials/meeting-2-schemas.jpg',
   'insightRounds.js', 'insightRounds.css',
   'meetingRecords.js', 'meetingRecords.css', 'meetingRecordsDomain.js', 'meetingRecordsBridge.js', 'meetingRecordShare.js',
   'driveBackup.js', 'driveBackup.css',
