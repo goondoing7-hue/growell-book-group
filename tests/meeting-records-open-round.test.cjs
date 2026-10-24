@@ -231,11 +231,13 @@ test('book sharing keeps participant cards primary and gives only intervening le
   h.click('preview-mode');verify();assert.equal(JSON.stringify(selected),snapshot);assert.deepEqual(h.calls.writes,[]);
   const css=fs.readFileSync(path.join(__dirname,'../meetingRecords.css'),'utf8');
   assert.match(css,/\.mr-sharing-cards\{display:grid;gap:14px\}/);
-  assert.match(css,/\.mr-sharing-card\{[^}]*border:1px solid #f0dfb5[^}]*background:#fff7df/);
+  assert.match(css,/\.mr-sharing-card\{[^}]*border:1px solid #f2e8ce[^}]*background:#fffbef/);
+  assert.match(css,/\.mr-sharing-card:not\(\.mr-sharing-card-leader\) h4\{color:#7c633d\}/);
   assert.match(css,/\.mr-sharing-card-leader\{background:#f8f9f7;border-color:#eef0eb;color:#626f66\}/);
   assert.match(css,/\.mr-sharing-card-leader h4\{font-size:13px/);assert.match(css,/\.mr-sharing-card-leader \.mr-summary\{font-size:14px/);
   assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card-leader\{[^}]*color:var\(--ink-soft/,'dark-mode leader text must keep a readable contrast');
   assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card:not\(\.mr-sharing-card-leader\)\{background:#3c3527;border-color:#66583b\}/);
+  assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card:not\(\.mr-sharing-card-leader\) h4\{color:#e5cba1\}/);
 });
 
 test('incomplete sharing structure falls back to the entire escaped original text rather than hiding or inventing cards',async t=>{

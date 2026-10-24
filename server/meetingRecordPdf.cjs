@@ -9,7 +9,7 @@ const { detailParts, sharingParts } = require('../meetingRecordsDomain.js');
 const FONT_REGULAR = path.join(__dirname, 'fonts', 'Pretendard-Regular.otf');
 const FONT_BOLD = path.join(__dirname, 'fonts', 'Pretendard-Bold.otf');
 const FONT_EMOJI = path.join(__dirname, 'fonts', 'NotoEmoji.ttf');
-const COLOR = Object.freeze({ ink: '#263D33', green: '#3A624E', muted: '#67736B', rule: '#DCE3D9', pale: '#EDF2E9', sharing: '#FFF7DF', sharingLeader: '#F7F8F5', sharingLeaderInk: '#5E6B62', accent: '#9EB5A0' });
+const COLOR = Object.freeze({ ink: '#263D33', green: '#3A624E', muted: '#67736B', rule: '#DCE3D9', pale: '#EDF2E9', sharing: '#FFFBEF', sharingLabel: '#7C633D', sharingLeader: '#F7F8F5', sharingLeaderInk: '#5E6B62', accent: '#9EB5A0' });
 const PREPARATION = Object.freeze([['place', '장소'], ['reading', '읽기 범위'], ['sharing', '나눔'], ['habit', '독서 습관']]);
 const LIMITS = Object.freeze({ sections: 20, concepts: 30, questions: 30, question: 1000, materials: 30, title: 160, summary: 120, detail: 10000, word: 80, meaning: 4000, url: 2000 });
 const RENDER_LIMITS = Object.freeze({ pages: 30, bytes: 4 * 1024 * 1024, cpuMicroseconds: 15000000, milliseconds: 30000 });
@@ -290,7 +290,7 @@ async function renderMeetingRecordPdf(content, layout, check) {
       style(...saved);
       return height;
     }
-    return { padding, innerWidth, labelSize, bodySize, color: leader ? COLOR.sharingLeaderInk : COLOR.ink, background: leader ? COLOR.sharingLeader : COLOR.sharing,
+    return { padding, innerWidth, labelSize, bodySize, labelColor: leader ? COLOR.sharingLeaderInk : COLOR.sharingLabel, color: leader ? COLOR.sharingLeaderInk : COLOR.ink, background: leader ? COLOR.sharingLeader : COLOR.sharing,
       height: padding * 2 + measured(block.name, 'PretendardBold', labelSize) + 6 + measured(block.body, 'Pretendard', bodySize) };
   }
   function sharingBlock(block, box) {
@@ -299,7 +299,7 @@ async function renderMeetingRecordPdf(content, layout, check) {
       // An exceptionally long future block flows as ordinary text rather
       // than being squeezed into a fixed-height card or losing its tail.
       reserve(textHeight(block.name, 'PretendardBold', box.labelSize) + 6 + bodyLinesHeight(2));
-      paragraph(block.name, { bold: true, size: box.labelSize, color: box.color, gap: 6 / layout.scale });
+      paragraph(block.name, { bold: true, size: box.labelSize, color: box.labelColor, gap: 6 / layout.scale });
       paragraph(block.body, { size: box.bodySize, color: box.color, gap: 10 / layout.scale });
       return;
     }
@@ -307,7 +307,7 @@ async function renderMeetingRecordPdf(content, layout, check) {
     const top = doc.y;
     doc.roundedRect(left, top, width, box.height, 8).fill(box.background);
     doc.y = top + box.padding;
-    paragraph(block.name, { bold: true, size: box.labelSize, color: box.color, gap: 6 / layout.scale, text: { x: left + box.padding, width: box.innerWidth } });
+    paragraph(block.name, { bold: true, size: box.labelSize, color: box.labelColor, gap: 6 / layout.scale, text: { x: left + box.padding, width: box.innerWidth } });
     paragraph(block.body, { size: box.bodySize, color: box.color, gap: 0, text: { x: left + box.padding, width: box.innerWidth } });
     doc.y = Math.max(doc.y, top + box.height) + 10;
     doc.x = left;
