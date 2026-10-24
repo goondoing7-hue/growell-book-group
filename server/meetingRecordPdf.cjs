@@ -4,12 +4,12 @@ const path = require('node:path');
 const { performance } = require('node:perf_hooks');
 const PDFDocument = require('pdfkit');
 const fontkit = require('fontkit');
-const { detailParts } = require('../meetingRecordsDomain.js');
+const { detailParts, sharingParts } = require('../meetingRecordsDomain.js');
 
 const FONT_REGULAR = path.join(__dirname, 'fonts', 'Pretendard-Regular.otf');
 const FONT_BOLD = path.join(__dirname, 'fonts', 'Pretendard-Bold.otf');
 const FONT_EMOJI = path.join(__dirname, 'fonts', 'NotoEmoji.ttf');
-const COLOR = Object.freeze({ ink: '#263D33', green: '#3A624E', muted: '#67736B', rule: '#DCE3D9', pale: '#EDF2E9', accent: '#9EB5A0' });
+const COLOR = Object.freeze({ ink: '#263D33', green: '#3A624E', muted: '#67736B', rule: '#DCE3D9', pale: '#EDF2E9', sharing: '#F1F2EF', accent: '#9EB5A0' });
 const PREPARATION = Object.freeze([['place', '장소'], ['reading', '읽기 범위'], ['sharing', '나눔'], ['habit', '독서 습관']]);
 const LIMITS = Object.freeze({ sections: 20, concepts: 30, questions: 30, question: 1000, materials: 30, title: 160, summary: 120, detail: 10000, word: 80, meaning: 4000, url: 2000 });
 const RENDER_LIMITS = Object.freeze({ pages: 30, bytes: 4 * 1024 * 1024, cpuMicroseconds: 15000000, milliseconds: 30000 });
@@ -274,6 +274,42 @@ async function renderMeetingRecordPdf(content, layout, check) {
     }
     doc.y += 5 * layout.scale;
   }
+  function sharingBox(block) {
+    const padding = 12, innerWidth = width - padding * 2;
+    function measured(value, font, size) {
+      let height = textHeight(value, font, size, innerWidth);
+      // A fallback emoji can be wider/taller than the main font's missing
+      // glyph measurement. Reserve conservative extra lines, never clip it.
+      const saved = [currentFont, currentSize, currentColor];
+      fontRuns(value, font === 'PretendardBold', check).forEach(run => {
+        if (run.font === font) return;
+        style(run.font, size);
+        height += (Math.ceil(doc.widthOfString(run.text) / innerWidth) + 1) * (doc.currentLineHeight(true) + layout.lineGap);
+      });
+      style(...saved);
+      return height;
+    }
+    return { padding, innerWidth, height: padding * 2 + measured(block.name, 'PretendardBold', 11.5) + 6 + measured(block.body, 'Pretendard', 10.5) };
+  }
+  function sharingBlock(block, box) {
+    const pageCapacity = doc.page.height - doc.page.margins.top - doc.page.margins.bottom;
+    if (box.height > pageCapacity) {
+      // An exceptionally long future block flows as ordinary text rather
+      // than being squeezed into a fixed-height card or losing its tail.
+      reserve(textHeight(block.name, 'PretendardBold', 11.5) + 6 + bodyLinesHeight(2));
+      paragraph(block.name, { bold: true, size: 11.5, gap: 6 / layout.scale });
+      paragraph(block.body, { size: 10.5, gap: 10 / layout.scale });
+      return;
+    }
+    reserve(box.height);
+    const top = doc.y;
+    doc.roundedRect(left, top, width, box.height, 8).fill(COLOR.sharing);
+    doc.y = top + box.padding;
+    paragraph(block.name, { bold: true, size: 11.5, gap: 6 / layout.scale, text: { x: left + box.padding, width: box.innerWidth } });
+    paragraph(block.body, { size: 10.5, gap: 0, text: { x: left + box.padding, width: box.innerWidth } });
+    doc.y = Math.max(doc.y, top + box.height) + 10;
+    doc.x = left;
+  }
   paragraph(`${content.round}번째 모임 · ${dateLabel(content.date)}`, { size: 10, color: COLOR.muted, gap: 4 });
   paragraph(title, { bold: true, size: 23, gap: 6 });
   if (content.bookTitle) paragraph(content.bookTitle, { size: 10.5, color: COLOR.muted, gap: 8 });
@@ -316,9 +352,16 @@ async function renderMeetingRecordPdf(content, layout, check) {
   if (content.sections.length) {
     content.sections.forEach((item, index) => {
       const parts = detailParts(item.detail);
+      const sharing = sharingParts(item.summary, item.detail);
+      const boxes = sharing && sharing.map(sharingBox);
+      if (boxes && boxes.length) {
+        const first = boxes[0].height, headingHeight = textHeight(`${index + 1}. ${item.summary}`, 'PretendardBold', 11.5) + layout.topicBefore + 5 * layout.scale;
+        if (first + headingHeight <= doc.page.height - doc.page.margins.top - doc.page.margins.bottom) reserve(first + headingHeight);
+      }
       heading(`${index + 1}. ${item.summary}`, 3, parts.question ? `생각 질문: ${parts.question}` : parts.body);
       if (parts.question) paragraph(`생각 질문: ${parts.question}`, { size: 9.5, color: COLOR.muted, gap: 6 });
-      paragraph(parts.body);
+      if (sharing) sharing.forEach((block, blockIndex) => sharingBlock(block, boxes[blockIndex]));
+      else paragraph(parts.body);
     });
   } else {
     paragraph('등록된 모임 내용이 없습니다.', { color: COLOR.muted });

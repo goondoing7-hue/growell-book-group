@@ -56,6 +56,23 @@ test('a topic question prints as safe small text directly below its title with i
   assert.equal(JSON.stringify(row),before);
 });
 
+test('print gives participants and repeated leader explanations the same cards in source order with complete safe text',()=>{
+  const b=browser(),row=record(),parts=[{name:'가람',body:'  소감 원문\n다음 문장  '},{name:'리더 나눔',body:'<script>설명 원문</script>'},{name:'다온',body:('긴 소감도 자르지 않는다. ').repeat(400)+'끝 문장'},{name:'리더 나눔',body:'두 번째 설명'}];
+  row.sections=[{id:'sharing',summary:'책 나눔: 가람 · 다온',detail:parts.map(part=>part.name+'\n'+part.body).join('\n\n')}];
+  const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),cards=walk(sheet).filter(item=>item.className==='mr-print-sharing-card');
+  assert.equal(cards.length,4);assert.deepEqual(cards.map(card=>({name:card.children[0].textContent,body:card.children[1].textContent})),parts);
+  assert.equal(walk(sheet).some(item=>item.tagName==='SCRIPT'),false);assert.equal(JSON.stringify(row),before);
+  const css=require('node:fs').readFileSync(require('node:path').join(__dirname,'../meetingRecordsPrint.css'),'utf8');
+  assert.match(css,/\.mr-print-sharing-card\{[^}]*break-inside:auto;page-break-inside:auto/);assert.match(css,/\.mr-print-sharing-card\+\.mr-print-sharing-card\{margin-top:9pt/);
+});
+
+test('print preserves the whole original sharing body when participant labels do not form a complete structure',()=>{
+  const b=browser(),row=record(),detail='가람\n원문\n\n알 수 없는 사람\n<img> 설명';row.sections=[{id:'sharing',summary:'책 나눔: 가람 · 다온',detail}];
+  const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),nodes=walk(sheet);
+  assert.equal(nodes.some(item=>item.className==='mr-print-sharing-card'),false);assert.ok(nodes.some(item=>item.className==='mr-print-text'&&item.textContent===detail));
+  assert.equal(nodes.some(item=>item.tagName==='IMG'),false);assert.equal(JSON.stringify(row),before);
+});
+
 test('printing and canceling restore title and remove only the temporary print sheet',()=>{
   const b=browser(),app=new Element('main');b.document.body.appendChild(app);
   const cleanup=api.printRecord(b,record(),{bookTitle:'감정의 책'});

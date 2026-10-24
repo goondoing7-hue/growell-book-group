@@ -225,3 +225,29 @@ test('topic questions are presentation-only first-line prefixes and preserve the
   const row=record({sections:[{id:'one',summary:'주제',detail}]}),before=JSON.stringify(row);domain.detailParts(row.sections[0].detail);
   assert.equal(JSON.stringify(row),before);
 });
+
+test('book sharing separates complete participant and repeated leader blocks in their authored order without changing content',()=>{
+  const names=['가람','다온','라온','마루','바다'],parts=[];
+  names.forEach((name,index)=>{parts.push({name,body:'  '+name+'의 소감\n다음 문장  '});if(index<4)parts.push({name:'리더 나눔',body:'리더 설명 '+(index+1)});});
+  const summary='책 나눔: '+names.join(' · '),detail=parts.map(part=>part.name+'\n'+part.body).join('\n\n');
+  const row=record({sections:[{id:'sharing',summary,detail}]}),before=JSON.stringify(row);
+  assert.deepEqual(domain.sharingParts(summary,detail),parts);assert.equal(JSON.stringify(row),before);
+  assert.deepEqual(domain.sharingParts('책 나눔: 가람 · 다온','가람\r\n  소감 원문  \r\n\r\n리더 나눔\r\n설명\r\n다음 줄\r\n\r\n다온\r\n마지막 소감'),[
+    {name:'가람',body:'  소감 원문  '},{name:'리더 나눔',body:'설명\r\n다음 줄'},{name:'다온',body:'마지막 소감'}]);
+  assert.deepEqual(domain.sharingParts('책 나눔: 가람','가람\n첫 소감'),[{name:'가람',body:'첫 소감'}]);
+});
+
+test('ambiguous sharing names, missing members, duplicates, extra labels and malformed blocks fail closed for full-text fallback',()=>{
+  const summary='책 나눔: 가람 · 다온',detail='가람\n소감\n\n리더 나눔\n설명\n\n다온\n소감';
+  for(const heading of [null,12,'책 나눔',' 책 나눔: 가람 · 다온','다른 주제: 가람 · 다온','책 나눔: ','책 나눔: 가람 · 가람','책 나눔: 가람 · ','책 나눔: 가람 · 리더 나눔','책 나눔: 가람\n다온','책 나눔: 가람\u0000'])
+    assert.equal(domain.sharingParts(heading,detail),null,String(heading));
+  for(const body of [null,[],12,'','가람\n소감','가람\n소감\n\n가람\n중복\n\n다온\n소감','가람\n소감\n\n누락된 회원\n내용\n\n다온\n소감',
+    '가람\n소감\n\n리더 나눔\n  \n\n다온\n소감','가람\n소감\n\n다온','가람\n소감\n\n다온 \n소감',
+    '가람\n소감\n\n<script>\n잘못된 이름\n\n다온\n소감','가람\n소감\n\n\n\n다온\n소감','가람\n첫 문단\n\n제목 없는 다음 문단\n\n다온\n소감'])
+    assert.equal(domain.sharingParts(summary,body),null,JSON.stringify(body));
+});
+
+test('recognized sharing returns markup as literal text rather than interpreting or stripping it',()=>{
+  const summary='책 나눔: <b>가람</b> · 다온',detail='<b>가람</b>\n<img src=x onerror=bad>\n\n리더 나눔\n<script>설명</script>\n\n다온\n& 소감';
+  assert.deepEqual(domain.sharingParts(summary,detail),[{name:'<b>가람</b>',body:'<img src=x onerror=bad>'},{name:'리더 나눔',body:'<script>설명</script>'},{name:'다온',body:'& 소감'}]);
+});

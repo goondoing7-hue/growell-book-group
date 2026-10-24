@@ -59,6 +59,9 @@
 .meeting-records-dialog .mr-story h3{display:flex;align-items:flex-start;gap:11px;font-size:16px;font-weight:650;line-height:1.7;margin-bottom:10px}
 .meeting-records-dialog .mr-story h3>span:last-child{min-width:0}
 .meeting-records-dialog .mr-topic-question{font-size:13px;line-height:1.7;color:var(--ink-soft);margin:0 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
+.meeting-records-dialog .mr-sharing-cards{display:grid;gap:14px}
+.meeting-records-dialog .mr-sharing-card{min-width:0;padding:16px 18px;border:1px solid var(--line,#dfe3df);border-radius:10px;background:color-mix(in srgb,var(--surface,#fff) 92%,var(--ink,#273b30) 8%)}
+.meeting-records-dialog .mr-sharing-card h4{margin:0 0 7px;font-size:14px;font-weight:650;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-summary{font-size:15px;line-height:1.95}
 .meeting-records-dialog .mr-preparation-list{display:grid;gap:0;margin:0;padding:0;border:1px solid var(--line);border-radius:13px;overflow:hidden}
 .meeting-records-dialog .mr-preparation-row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start;margin:0;padding:15px 18px}

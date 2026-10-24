@@ -23,6 +23,9 @@
   .mr-print-sheet h4{font-size:9pt;line-height:1.4;margin:5pt 0 2pt;color:#526156}
   .mr-print-text{margin:0 0 4pt;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;orphans:2;widows:2;break-inside:auto;page-break-inside:auto}
   .mr-print-topic-question{font-size:9pt;line-height:1.45;color:#5f7168;margin:0 0 5pt;white-space:pre-wrap;overflow-wrap:anywhere;break-after:avoid;page-break-after:avoid}
+  .mr-print-sharing-card{margin:0;padding:9pt 10pt;border:.6pt solid #dfe3df;border-radius:6pt;background:#f2f3f2;break-inside:auto;page-break-inside:auto;box-decoration-break:clone;-webkit-box-decoration-break:clone}
+  .mr-print-sharing-card+.mr-print-sharing-card{margin-top:9pt}
+  .mr-print-sheet .mr-print-sharing-card h4{margin:0 0 5pt;font-size:10pt;line-height:1.4;color:#3c4a40;white-space:pre-wrap;break-after:avoid-page;page-break-after:avoid}
   .mr-print-outline{margin:0;padding:6pt 9pt 3pt 26pt;list-style:decimal;background:#f3f5f0;border-left:2pt solid #3c634d}
   .mr-print-outline li{padding-left:3pt;break-inside:avoid-page;page-break-inside:avoid}
   .mr-print-thought-questions{margin:0;padding:0 0 0 20pt;list-style:decimal}

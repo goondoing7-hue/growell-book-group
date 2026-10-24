@@ -53,8 +53,15 @@
     record.sections.forEach(function(item,index){
       var story=node(document,'article','mr-print-story');story.appendChild(node(document,'h3','',(index+1)+'. '+item.summary));
       var parts=domain&&typeof domain.detailParts==='function'?domain.detailParts(item.detail):{question:'',body:item.detail};
-      if(parts.question)paragraph(document,story,'생각 질문: '+parts.question,'mr-print-topic-question');
-      paragraph(document,story,parts.body);details.appendChild(story);
+      var sharing=domain&&typeof domain.sharingParts==='function'?domain.sharingParts(item.summary,item.detail):null;
+      if(sharing)sharing.forEach(function(part){
+        var card=node(document,'article','mr-print-sharing-card');card.appendChild(node(document,'h4','',part.name));paragraph(document,card,part.body);story.appendChild(card);
+      });
+      else {
+        if(parts.question)paragraph(document,story,'생각 질문: '+parts.question,'mr-print-topic-question');
+        paragraph(document,story,parts.body);
+      }
+      details.appendChild(story);
     });
     var preparation=preparationRows(record.nextMeeting);
     if(preparation.length){

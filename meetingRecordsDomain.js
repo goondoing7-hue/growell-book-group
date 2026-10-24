@@ -174,5 +174,24 @@
     return {question:question,body:body};
   }
 
-  return Object.freeze({LIMITS:LIMITS,normalizeRecord:normalizeRecord,validateRecord:validateRecord,newRecord:newRecord,newId:newId,isUuid:isUuid,validDate:validDate,detailParts:detailParts});
+  // Opt in only when the summary's complete participant list agrees with all
+  // authored blocks. Ambiguous or incomplete text stays one unchanged body.
+  function sharingParts(summary,detail){
+    var prefix='책 나눔: ',leader='리더 나눔';
+    if(typeof summary!=='string'||summary.indexOf(prefix)!==0||typeof detail!=='string')return null;
+    var names=summary.slice(prefix.length).split(' · '),seen=new Set(),parts=[];
+    if(!names.length||names.some(function(name){return !name||name!==name.trim()||Array.from(name).length>80||/[\r\n\u0000]/.test(name)||name===leader;})||new Set(names).size!==names.length)return null;
+    var blocks=detail.split(/\r?\n\r?\n/);
+    for(var i=0;i<blocks.length;i++){
+      var block=blocks[i],end=block.indexOf('\n');
+      if(end<0)return null;
+      var name=block.slice(0,end).replace(/\r$/,''),body=block.slice(end+1);
+      if((name!==leader&&names.indexOf(name)<0)||!body.trim())return null;
+      if(name!==leader){if(seen.has(name))return null;seen.add(name);}
+      parts.push({name:name,body:body});
+    }
+    return seen.size===names.length?parts:null;
+  }
+
+  return Object.freeze({LIMITS:LIMITS,normalizeRecord:normalizeRecord,validateRecord:validateRecord,newRecord:newRecord,newId:newId,isUuid:isUuid,validDate:validDate,detailParts:detailParts,sharingParts:sharingParts});
 });

@@ -212,6 +212,32 @@ test('an explicit topic question displays below its matching title in read and p
   h.click('preview-mode');assert.ok(h.html().includes(question));assert.equal(JSON.stringify(selected),snapshot);
 });
 
+test('book sharing and intervening leader explanations use equal safe cards in read and preview while core contains only participant names',async t=>{
+  const names=['가람','다온','라온','마루','바다'],parts=[];
+  names.forEach((name,index)=>{parts.push({name,body:'  '+name+' 소감 <img src=x onerror=bad>  '});if(index<4)parts.push({name:'리더 나눔',body:'설명 '+(index+1)+' <script>글자 그대로</script>'});});
+  const summary='책 나눔: '+names.join(' · '),detail=parts.map(part=>part.name+'\n'+part.body).join('\n\n');
+  const selected=record(1,{userId:'reader',sections:[{id:'sharing',summary,detail}]}),snapshot=JSON.stringify(selected);
+  const h=harness(t,{session:{admin:true},rows:[selected]});h.api.openRound('emotion',1);await tick();
+  function verify(){
+    const html=h.html(),core=html.slice(html.indexOf('mr-core-list'),html.indexOf('함께 살펴본 개념'));
+    assert.match(core,/책 나눔: 가람 · 다온 · 라온 · 마루 · 바다/);assert.doesNotMatch(core,/소감|설명|리더 나눔/);
+    assert.equal((html.match(/class="mr-sharing-card"/g)||[]).length,9);assert.equal((html.match(/<h4>리더 나눔<\/h4>/g)||[]).length,4);
+    let last=-1;for(const part of parts){const needle='<h4>'+part.name+'</h4><p class="mr-summary">'+part.body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</p>';const at=html.indexOf(needle);assert.ok(at>last);last=at;}
+    assert.doesNotMatch(html,/<script>|<img src=x/);
+  }
+  verify();h.click('edit');assert.doesNotMatch(h.html(),/class="mr-sharing-card"/);assert.match(h.html(),/가람\n  가람 소감/);
+  h.click('preview-mode');verify();assert.equal(JSON.stringify(selected),snapshot);assert.deepEqual(h.calls.writes,[]);
+});
+
+test('incomplete sharing structure falls back to the entire escaped original text rather than hiding or inventing cards',async t=>{
+  const detail='가람\n원문 첫 소감\n\n알 수 없는 이름\n<script>원문 설명</script>';
+  const selected=record(1,{sections:[{id:'sharing',summary:'책 나눔: 가람 · 다온',detail}]}),snapshot=JSON.stringify(selected);
+  const h=harness(t,{rows:[selected]});h.api.openRound('emotion',1);await tick();
+  assert.doesNotMatch(h.html(),/class="mr-sharing-card"|<script>/);
+  assert.ok(h.html().includes('<p class="mr-summary">가람\n원문 첫 소감\n\n알 수 없는 이름\n&lt;script&gt;원문 설명&lt;/script&gt;</p>'));
+  assert.equal(JSON.stringify(selected),snapshot);assert.deepEqual(h.calls.writes,[]);
+});
+
 test('record PDF action downloads directly without copying client-side insights or writing source records',async t=>{
   const row=record(1),before=JSON.stringify(row);let downloaded;
   const printer={downloadRecord(browser,value,options){downloaded={value,options};return Promise.resolve({filename:'GROWELL-meeting-1.pdf'});},printRecord(){throw new Error('PDF save must not open a print dialog');}};
