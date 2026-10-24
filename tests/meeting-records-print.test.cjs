@@ -65,6 +65,7 @@ test('print keeps all sharing cards in source order with only leader explanation
   assert.equal(walk(sheet).some(item=>item.tagName==='SCRIPT'),false);assert.equal(JSON.stringify(row),before);
   const css=require('node:fs').readFileSync(require('node:path').join(__dirname,'../meetingRecordsPrint.css'),'utf8');
   assert.match(css,/\.mr-print-sharing-card\{[^}]*break-inside:auto;page-break-inside:auto/);assert.match(css,/\.mr-print-sharing-card\+\.mr-print-sharing-card\{margin-top:9pt/);
+  assert.match(css,/\.mr-print-sharing-card\{[^}]*border:\.6pt solid #f0dfb5[^}]*background:#fff7df/);
   assert.match(css,/\.mr-print-sharing-card-leader\{background:#f8f9f7;border-color:#eef0eb;color:#626f66\}/);
   assert.match(css,/\.mr-print-sharing-card-leader \.mr-print-text\{font-size:9\.8pt;line-height:1\.5;color:inherit\}/);
 });

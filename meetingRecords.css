@@ -60,7 +60,7 @@
 .meeting-records-dialog .mr-story h3>span:last-child{min-width:0}
 .meeting-records-dialog .mr-topic-question{font-size:13px;line-height:1.7;color:var(--ink-soft);margin:0 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-sharing-cards{display:grid;gap:14px}
-.meeting-records-dialog .mr-sharing-card{min-width:0;padding:16px 18px;border:1px solid var(--line,#dfe3df);border-radius:10px;background:color-mix(in srgb,var(--surface,#fff) 92%,var(--ink,#273b30) 8%)}
+.meeting-records-dialog .mr-sharing-card{min-width:0;padding:16px 18px;border:1px solid #f0dfb5;border-radius:10px;background:#fff7df}
 .meeting-records-dialog .mr-sharing-card h4{margin:0 0 7px;font-size:14px;font-weight:650;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-summary{font-size:15px;line-height:1.95}
 .meeting-records-dialog .mr-sharing-card-leader{background:#f8f9f7;border-color:#eef0eb;color:#626f66}
@@ -68,6 +68,8 @@
 .meeting-records-dialog .mr-sharing-card-leader .mr-summary{font-size:14px;line-height:1.85;color:inherit}
 :root[data-theme="dark"] .meeting-records-dialog .mr-sharing-card-leader{background:color-mix(in srgb,var(--surface,#20332b) 98%,var(--ink,#f0f3eb) 2%);border-color:var(--line);color:var(--ink-soft,#c1ccbf)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .meeting-records-dialog .mr-sharing-card-leader{background:color-mix(in srgb,var(--surface,#20332b) 98%,var(--ink,#f0f3eb) 2%);border-color:var(--line);color:var(--ink-soft,#c1ccbf)}}
+:root[data-theme="dark"] .meeting-records-dialog .mr-sharing-card:not(.mr-sharing-card-leader){background:#3c3527;border-color:#66583b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .meeting-records-dialog .mr-sharing-card:not(.mr-sharing-card-leader){background:#3c3527;border-color:#66583b}}
 .meeting-records-dialog .mr-preparation-list{display:grid;gap:0;margin:0;padding:0;border:1px solid var(--line);border-radius:13px;overflow:hidden}
 .meeting-records-dialog .mr-preparation-row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start;margin:0;padding:15px 18px}
 .meeting-records-dialog .mr-preparation-row+.mr-preparation-row{border-top:1px solid var(--line)}
