@@ -726,7 +726,7 @@ test('fresh native Google members prove their current password and retain origin
   const original={...identity,...await Private.create(identity,originalKey,await Private.newKey(),'원래 회원이 작성한 문장')},before=JSON.stringify(original);
   const h=harness({user:linkedUser,rpc:async(name,args)=>name==='growell_oauth_profile'?{data:{status:'legacy',profile,envelope:null}}:{data:{status:'prepared',profile,envelope:args.p_envelope}}});
   h.c.STATE.privateEntries[original.id]=original;await h.c.prepareOAuthMember(linkedUser,h.c.authFlowEpoch);
-  assert.equal(h.c.oauthPending.status,'native');assert.match(h.c.oauthMemberHtml(),/현재 GROWELL 비밀번호/);
+  assert.equal(h.c.oauthPending.status,'native');assert.match(h.c.oauthMemberHtml(),/Google 기록 연결/);assert.doesNotMatch(h.c.oauthMemberHtml(),/oauth-password|현재 GROWELL 비밀번호/);
   assert.equal(await h.c.completeOAuthMember('',memberPassword,''),true);assert.equal(h.c.SESSION.keyB64,material);assert.equal(h.c.SESSION.authKind,'password');
   assert.equal(JSON.stringify(h.c.STATE.privateEntries[original.id]),before);
   assert.equal((await Private.read(original,await Private.importKey(h.c.SESSION.keyB64))).text,'원래 회원이 작성한 문장');

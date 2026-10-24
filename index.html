@@ -1123,6 +1123,7 @@
 <script src="bookDetails.js"></script>
 <link rel="stylesheet" href="bookDetails.css">
 <script src="oauthDomain.js"></script>
+<script src="googleRecordAccess.js"></script>
 <script src="googleLoginTransfer.js"></script>
 <script src="homeDomain.js"></script>
 <script src="guideRouting.js"></script>
@@ -1731,7 +1732,7 @@ function restoreMemberSession(linkEvidence){
   function guard(){if(!current())throw new Error('auth-flow-cancelled');}
   function forgetCachedSession(){
     guard();SESSION=null;sharedPostsLoadState='idle';authRestoreState='idle';authRestoreRetryCount=0;authRestoreUserId=null;
-    try{localStorage.removeItem('growell_session');}catch(e){}
+    try{if(typeof googleDraftMigrationBlocked==='undefined'||!googleDraftMigrationBlocked)localStorage.removeItem('growell_session');}catch(e){}
   }
   async function verifiedUser(session){
     if(!session||!session.user||!session.user.id)throw memberSessionFailure(null,true);
@@ -1779,9 +1780,27 @@ function restoreMemberSession(linkEvidence){
       try{await keyFromB64(restored.keyB64);}catch(e){restored=null;}
       guard();
       if(restored){
+        if(typeof GrowellGoogleRecordAccess!=='undefined'&&googleMemberIdentity(user)){
+          var cachedMaterial=restored.keyB64,cacheSnapshot=saved,accessContext={authUserId:user.id,profile:row,keyB64:cachedMaterial,current:function(){
+            if(!current()||SESSION)return false;
+            try{return localStorage.getItem('growell_session')===cacheSnapshot;}catch(_){return false;}
+          }};
+          // A password recovery on another device can leave a valid-looking old
+          // cache. Prove the server key before opening a session or writing notes.
+          var recordAccess=await googleRecordAccessClient().get(accessContext);guard();
+          if(recordAccess.status==='missing')recordAccess=await googleRecordAccessClient().prepare(accessContext);guard();
+          if(recordAccess.status!=='ready'||linkEvidence&&recordAccess.keyB64!==linkEvidence.keyB64)throw new Error('google-link-restore-unavailable');
+          restored.keyB64=recordAccess.keyB64;
+        }
         if(linkEvidence&&(restored.keyB64!==linkEvidence.keyB64||!linkEvidence.current()))throw new Error('google-link-restore-unavailable');
         var profile=mapProfileRow(row);STATE.users[profile.id]=profile;
         SESSION={userId:profile.id,name:profile.name,keyB64:restored.keyB64,authKind:restored.authKind==='oauth'?'oauth':'password'};
+        if(typeof GrowellGoogleRecordAccess!=='undefined'&&googleMemberIdentity(user)){
+          var candidateSession=SESSION;
+          try{await migrateGoogleRecordDrafts(cachedMaterial,guard);guard();}
+          catch(error){if(SESSION===candidateSession)SESSION=null;throw error;}
+        }
+        if(typeof GrowellGoogleRecordAccess!=='undefined'&&googleMemberIdentity(user))try{localStorage.setItem('growell_session',JSON.stringify(SESSION));}catch(_){}
         if(typeof markMemberPushPromptSession==='function')markMemberPushPromptSession();
         sharedPostsLoadState='idle';authRestoreState='idle';authRestoreRetryCount=0;oauthMessage='';
         if(location.hash==='#/login')history.replaceState(null,'','#/');
@@ -1822,6 +1841,7 @@ function retryMemberSession(resetAttempts){
 }
 function restartMemberLogin(){
   if(authRestoreState==='idle')return;
+  if(typeof canLeaveGoogleDraftMigration==='function'&&!canLeaveGoogleDraftMigration())return;
   ++authFlowEpoch;
   var pending=resetSaveSession();clearMemberSession();
   oauthPending=null;oauthBusy=false;oauthMessage='';authMode='login';
@@ -2368,6 +2388,8 @@ function finishSaveButton(opts){
   if(opts.button){ opts.button.disabled=false; opts.button.textContent=opts.originalLabel||'저장'; }
 }
 function clearMemberSession(){
+  if(typeof googleRecordAccessPrepared!=='undefined')googleRecordAccessPrepared=null;
+  if(typeof googleRecordAccessTask!=='undefined')googleRecordAccessTask=null;
   if(typeof resetMemberPushPrompt==='function')resetMemberPushPrompt();
   if(SESSION&&typeof GrowellWebPush!=='undefined'&&typeof GrowellWebPush.detach==='function'){
     var pushSession=SESSION,pushEpoch=saveSessionEpoch,pushMember=STATE.users[pushSession.userId],pushAuthId=pushMember&&pushMember.authUserId;
@@ -2424,7 +2446,7 @@ function clearMemberSession(){
   if(typeof readingSavePanelOpen!=='undefined') readingSavePanelOpen=false;
   if(typeof clearPrivateCryptoState==='function') clearPrivateCryptoState();
   if(typeof clearPrivateCategoryState==='function') clearPrivateCategoryState();
-  try{ localStorage.removeItem('growell_session'); }catch(e){}
+  try{if(typeof googleDraftMigrationBlocked!=='undefined'&&googleDraftMigrationBlocked){if(googleDraftMigrationBlocked.cachedRaw)localStorage.setItem('growell_session',googleDraftMigrationBlocked.cachedRaw);}else localStorage.removeItem('growell_session');}catch(e){}
 }
 function memberDataStatusHtml(key){
   var status = memberLoadState[key];
@@ -2797,7 +2819,8 @@ function showToast(msg, isErr){
    로그인 검증 자체는 더 이상 클라이언트가 하지 않는다 — Supabase Auth가 비밀번호를 서버에서만
    비교한다(signInWithPassword). 아이디(loginId)는 실제 이메일이 없으니 "아이디@growell.internal"
    더미 이메일로 매핑해서 쓴다. deriveKey(PBKDF2)는 이제 로그인 검증용이 아니라 오직 나의 공간
-   (privateEntries) 암호화 키를 만드는 데만 쓰인다 — 그 키는 절대 서버로 전송되지 않는다. */
+   (privateEntries) 암호화 키를 만드는 데만 쓰인다. Google 연결 회원의 같은 키는 검증 후
+   서버의 별도 Vault에 보호되어, 다른 기기에서도 Google 로그인으로 열 수 있다. */
 function loginEmailFor(loginId){ return loginId + '@growell.internal'; }
 
 function callEdgeFunction(name, body, accessToken){
@@ -2835,6 +2858,7 @@ function doGrantAdmin(code){
   }).catch(function(){ showToast('코드가 올바르지 않아요.', true); });
 }
 function doLogin(id, pw, btn){
+  if(typeof canLeaveGoogleDraftMigration==='function'&&!canLeaveGoogleDraftMigration())return Promise.resolve(false);
   id = id.trim().toLowerCase();
   if(btn){ btn.disabled=true; btn.textContent='확인 중…'; }
   var loggedInUser = null;
@@ -2872,8 +2896,12 @@ function doLogin(id, pw, btn){
     if(memberLoadState.privateEntries==='ready' && typeof completePendingPrivateRecovery==='function') return completePendingPrivateRecovery();
   }).then(async function(recovered){
     authGuard();
+    if(typeof GrowellGoogleRecordAccess!=='undefined'&&!pendingPrivateRecovery&&!googleRecordAccessBlocked()){
+      try{await migrateGoogleRecordDrafts(null,authGuard);}
+      catch(_){authGuard();showToast('이전에 임시 저장한 글은 보관 중이에요. Google로 다시 연결하면 이어서 확인할 수 있어요.',true);}
+    }
     if(recovered!==false&&!pendingPrivateRecovery&&typeof syncGoogleLoginAfterPassword==='function'){
-      try{await syncGoogleLoginAfterPassword(pw,authGuard);}
+      try{await syncGoogleLoginAfterPassword(pw,authGuard,!!(googleRecordRecoveryCompleted&&googleRecordRecoveryCompleted.session===SESSION&&googleRecordRecoveryCompleted.keyB64===SESSION.keyB64));googleRecordRecoveryCompleted=false;}
       catch(error){authGuard();showToast('아이디 로그인과 기록 복구는 유지돼요. Google 로그인 보호 설정을 갱신하지 못했으니 프로필 → 설정 → 연동 → Google 로그인 설정에서 다시 확인해주세요.',true);}
     }
     authGuard();
@@ -3046,7 +3074,8 @@ var privateRecoveryBusy = false;
 var privateRecoveryGeneration = 0;
 var pendingPrivateRecovery = null;
 var selectedResetRecovery = null;
-function clearPrivateCryptoState(){ privateDataKeyPromise=null; privateRecoveryBusy=false; ++privateRecoveryGeneration; }
+var googleRecordRecoveryCompleted = false;
+function clearPrivateCryptoState(){ privateDataKeyPromise=null; privateRecoveryBusy=false; googleRecordRecoveryCompleted=false; ++privateRecoveryGeneration; }
 function privateSessionGuard(userId, keyB64){
   if(!SESSION || SESSION.userId!==userId || SESSION.keyB64!==keyB64) throw new Error('로그인 정보가 바뀌었어요. 다시 시도해주세요.');
 }
@@ -3154,7 +3183,7 @@ async function completePendingPrivateRecovery(){
     privateSessionGuard(userId,keyB64);
     var draftRecovery=await migratePrivateDraftKeys(kit.legacyKeys);
     privateSessionGuard(userId,keyB64);
-    privateDataKeyPromise=Promise.resolve(master);pendingPrivateRecovery=null;selectedResetRecovery=null;
+    privateDataKeyPromise=Promise.resolve(master);pendingPrivateRecovery=null;selectedResetRecovery=null;googleRecordRecoveryCompleted={session:SESSION,keyB64:keyB64};
     recoveryStatus('개인 기록을 복구했어요.');showToast('개인 기록을 복구했어요.');
     if(draftRecovery.unreadable)showToast('일부 임시 글은 이전 복구 파일이 필요해요. 해당 초안은 삭제하지 않고 보관했어요.',true);
     return true;
@@ -4918,6 +4947,124 @@ var googleLoginTransferEngine=null,googleLoginTransferProof=null,googleLoginTran
 var googleTransferOpenAfterBoot=false,googleTransferNotice='',googleTransferCompleted=false,googleTransferRecoveryChecked=false;
 var GOOGLE_LINK_MARKER='growell_google_login_link_v1';
 var LOGIN_CHOICE_KEY='growell_login_choice_v1',authOtherAccount=false;
+var googleRecordAccessTask=null,googleRecordAccessPrepared=null,googleDraftMigrationBlocked=null;
+function canLeaveGoogleDraftMigration(){
+  if(!googleDraftMigrationBlocked)return true;
+  showToast('임시 글을 안전하게 보관하지 못했어요. 연결을 다시 확인해주세요.',true);return false;
+}
+function googleRecordAccessBlocked(){
+  if(typeof pendingPrivateRecovery!=='undefined'&&pendingPrivateRecovery||typeof privateRecoveryBusy!=='undefined'&&privateRecoveryBusy)return true;
+  if(typeof saving!=='undefined'&&saving||typeof activeSave!=='undefined'&&activeSave||typeof composerDraftPending!=='undefined'&&composerDraftPending)return true;
+  if(typeof saveQueue!=='undefined'&&saveQueue.length||typeof editingAnnouncement!=='undefined'&&editingAnnouncement)return true;
+  if(typeof composerDrafts!=='undefined'&&Object.keys(composerDrafts).some(function(key){return SESSION&&composerDrafts[key].userId===SESSION.userId&&composerDrafts[key].unsaved;}))return true;
+  return Array.prototype.some.call(document.querySelectorAll('dialog[open]'),function(node){return node._dirty||node._bookDraftDirty||node._busy;});
+}
+function googleRecordAccessClient(){
+  if(typeof GrowellGoogleRecordAccess==='undefined')throw new Error('record-access-unavailable');
+  return GrowellGoogleRecordAccess.create({sb:sb,privateCrypto:GrowellPrivateCrypto,isBlocked:googleRecordAccessBlocked});
+}
+async function migrateGoogleRecordDrafts(previousKey,guard){
+  if(!SESSION)return;
+  var member=STATE.users[SESSION.userId],session=SESSION,path='growell_draft_key_recovery_v1:'+encodeURIComponent(SESSION.userId),keys=[],stored=null,cachedRaw=null,storedUnderCurrent=false,opened=null;
+  if(googleDraftMigrationBlocked&&(googleDraftMigrationBlocked.owner!==session.userId||googleDraftMigrationBlocked.authUserId!==member.authUserId))throw new Error('record-access-drafts');
+  function protectCache(raw){googleDraftMigrationBlocked={cachedRaw:raw,owner:session.userId,authUserId:member.authUserId};}
+  if(previousKey&&previousKey!==SESSION.keyB64)keys.push(previousKey);
+  try{stored=localStorage.getItem(path);cachedRaw=localStorage.getItem('growell_session');}catch(_){if(keys.length)protectCache(null);throw new Error('record-access-drafts');}
+  if(keys.length&&cachedRaw){try{var cached=JSON.parse(cachedRaw);if(cached.userId===session.userId&&cached.keyB64===previousKey)protectCache(cachedRaw);}catch(_){} }
+  if(stored){
+    var box;try{box=JSON.parse(stored);}catch(_){throw new Error('record-access-drafts');}
+    var candidates=[SESSION.keyB64].concat(keys);
+    for(var candidate of candidates){try{opened=await GrowellGoogleRecordAccess.openDraftKeys(member,candidate,box);guard();storedUnderCurrent=candidate===session.keyB64;break;}catch(_){guard();}}
+    if(!opened)throw new Error('record-access-drafts');keys=keys.concat(opened);
+  }
+  keys=Array.from(new Set(keys)).filter(function(key){return key!==session.keyB64;});
+  if(!keys.length){googleDraftMigrationBlocked=null;return;}
+  if(typeof migratePrivateDraftKeys!=='function')throw new Error('record-access-drafts');
+  var result=await migratePrivateDraftKeys(keys);guard();
+  if(result&&!result.unreadable){googleDraftMigrationBlocked=null;try{if(localStorage.getItem(path)===stored)localStorage.removeItem(path);}catch(_){}return;}
+  if(storedUnderCurrent&&keys.every(function(key){return opened.indexOf(key)>=0;})){googleDraftMigrationBlocked=null;throw new Error('record-access-drafts');}
+  // Protect the final old key under the proved server key before allowing an
+  // ID-login fallback to clear its original session cache. Plaintext drafts and
+  // old keys never enter this local recovery envelope's metadata.
+  try{
+    var protectedKeys=await GrowellGoogleRecordAccess.protectDraftKeys(member,session.keyB64,keys);guard();var raw=JSON.stringify(protectedKeys);
+    if(localStorage.getItem(path)!==stored)throw new Error('record-access-drafts');localStorage.setItem(path,raw);
+    if(localStorage.getItem(path)!==raw)throw new Error('record-access-drafts');
+    var proof=await GrowellGoogleRecordAccess.openDraftKeys(member,session.keyB64,JSON.parse(raw));guard();
+    if(proof.length!==keys.length||proof.some(function(key,i){return key!==keys[i];}))throw new Error('record-access-drafts');googleDraftMigrationBlocked=null;
+  }catch(error){
+    guard();if(cachedRaw)protectCache(cachedRaw);throw new Error('record-access-drafts');
+  }
+  throw new Error('record-access-drafts');
+}
+function googleRecordSessionContext(authGuard){
+  var session=SESSION,member=session&&STATE.users[session.userId],material=session&&session.keyB64,epoch=saveSessionEpoch,flow=authFlowEpoch;
+  var expected=member&&Object.assign({},member);
+  function current(){
+    if(typeof authGuard==='function'){try{authGuard();}catch(_){return false;}}
+    return !!(session&&expected&&SESSION===session&&SESSION.keyB64===material&&saveSessionEpoch===epoch&&authFlowEpoch===flow&&sameGoogleLinkProfile(STATE.users[session.userId],expected));
+  }
+  return {session:session,profile:expected,keyB64:material,authUserId:expected&&expected.authUserId,current:current,epoch:epoch};
+}
+function maybePrepareGoogleRecordAccess(){
+  if(typeof GrowellGoogleRecordAccess==='undefined'||!SESSION||memberLoadState.privateEntries!=='ready'||googleRecordAccessBlocked())return Promise.resolve(false);
+  var context=googleRecordSessionContext();
+  if(!context.current())return Promise.resolve(false);
+  if(googleRecordAccessPrepared&&googleRecordAccessPrepared.session===context.session&&googleRecordAccessPrepared.keyB64===context.keyB64&&googleRecordAccessPrepared.profile.salt===context.profile.salt)return Promise.resolve(true);
+  if(googleRecordAccessTask&&googleRecordAccessTask.context.session===context.session&&googleRecordAccessTask.context.keyB64===context.keyB64)return googleRecordAccessTask.promise;
+  var task={context:context};googleRecordAccessTask=task;
+  task.promise=(async function(){
+    try{
+      var verified=await sb.auth.getUser();if(!context.current())return false;
+      var account=verified&&verified.data&&verified.data.user;
+      if(verified.error||!account||account.id!==context.authUserId)return false;
+      if(!googleMemberIdentity(account)){googleRecordAccessPrepared=context;return true;}
+      await googleRecordAccessClient().prepare(context);if(!context.current())return false;
+      googleRecordAccessPrepared=context;return true;
+    }catch(_){return false;}
+    finally{if(googleRecordAccessTask===task)googleRecordAccessTask=null;}
+  })();return task.promise;
+}
+async function completeGoogleOnlyMember(name,button){
+  if(!oauthPending||oauthBusy)return false;
+  var pending=oauthPending,flow=authFlowEpoch,epoch=saveSessionEpoch,originalSession=SESSION,acceptedSession=null,newMember=pending.status==='new';
+  function current(){return authFlowEpoch===flow&&saveSessionEpoch===epoch&&oauthPending===pending&&SESSION===(acceptedSession||originalSession);}
+  function guard(){if(!current())throw new Error('auth-flow-cancelled');}
+  if(googleDraftMigrationBlocked&&(!pending.profile||pending.profile.id!==googleDraftMigrationBlocked.owner||pending.authUserId!==googleDraftMigrationBlocked.authUserId)){canLeaveGoogleDraftMigration();return false;}
+  if(googleRecordAccessBlocked()){oauthMessage='작성 중인 내용이나 개인 기록 복구를 먼저 마쳐주세요.';return false;}
+  if(newMember&&(!SOCIAL_AUTH_VISIBLE||!name||!name.trim()||Array.from(name.trim()).length>30)){oauthMessage='별명은 1~30자로 입력해주세요.';render();return false;}
+  oauthBusy=true;pending.recordAccessState='loading';oauthMessage='';if(button){button.disabled=true;button.textContent='기록을 준비하고 있어요…';}
+  try{
+    var verified=await sb.auth.getUser();guard();var account=verified&&verified.data&&verified.data.user;
+    if(verified.error||!account||account.id!==pending.authUserId||!googleMemberIdentity(account))throw new Error('record-access-identity');
+    var client=googleRecordAccessClient(),context={authUserId:pending.authUserId,profile:pending.profile,current:current};
+    var response=newMember?await client.register(context,name):await client.get(context);guard();
+    if(response.status==='approval-required'){
+      oauthPending=null;oauthBusy=false;authRestoreUserId=null;authMode='signup-complete';oauthMessage='';
+      await sb.auth.signOut({scope:'local'}).catch(function(){});if(flow===authFlowEpoch)render();return false;
+    }
+    if(response.status==='missing'){
+      pending.recordAccessState='missing';oauthBusy=false;oauthMessage='기존에 로그인한 기기에서 GROWELL을 한 번 열어주세요. 연결이 준비되면 이 기기에서도 Google로 기록을 열 수 있어요.';render();return false;
+    }
+    if(response.status!=='ready'||!GrowellMemberAccess.approved(response.profile)||response.profile.auth_user_id!==pending.authUserId)throw new Error('record-access-profile');
+    await keyFromB64(response.keyB64);guard();
+    rememberVerifiedLoginChoice(account,response.profile);
+    var member=mapProfileRow(response.profile);STATE.users[member.id]=member;
+    var previousCache=null;try{previousCache=JSON.parse(localStorage.getItem('growell_session')||'null');}catch(_){}
+    acceptedSession={userId:member.id,name:member.name,keyB64:response.keyB64,authKind:passwordMemberIdentity(account)?'password':'oauth'};SESSION=acceptedSession;
+    await migrateGoogleRecordDrafts(previousCache&&previousCache.userId===member.id?previousCache.keyB64:null,guard);guard();
+    if(typeof markMemberPushPromptSession==='function')markMemberPushPromptSession();
+    try{localStorage.setItem('growell_session',JSON.stringify(SESSION));}catch(_){}
+    await loadMemberData();guard();
+    googleRecordAccessPrepared=googleRecordSessionContext();oauthPending=null;oauthMessage='';oauthBusy=false;authRestoreState='idle';authRestoreRetryCount=0;sharedPostsLoadState='idle';
+    var destination='#/';try{var saved=sessionStorage.getItem('growell_oauth_return');if(/^#\/book\/[a-z]+\/(share|mine|worksheet|materials|habit)$/.test(saved))destination=saved;sessionStorage.removeItem('growell_oauth_return');}catch(_){}
+    location.hash=destination;render();showToast(member.name+'님, 환영해요.');return true;
+  }catch(_){
+    if(!current())return false;
+    if(acceptedSession&&SESSION===acceptedSession){SESSION=originalSession;acceptedSession=null;}
+    oauthBusy=false;pending.recordAccessState='unavailable';oauthMessage='Google 기록 연결을 확인하지 못했어요. 기존 기록은 그대로예요. 잠시 후 다시 시도하거나 기존 아이디로 로그인해주세요.';render();return false;
+  }
+}
 function rememberVerifiedLoginChoice(user,profile){
   var choice=GrowellOAuth.loginPreference(user,profile);if(!choice)return;
   try{localStorage.setItem(LOGIN_CHOICE_KEY,JSON.stringify(choice));}catch(error){}
@@ -5091,7 +5238,7 @@ async function prepareOAuthMember(user,flow){
   var data=result.data;
   if(data.profile && (data.profile.auth_user_id!==user.id||data.profile.is_deleted))throw new Error('oauth-profile-mismatch');
   if(data.status!=='new'&&!data.profile)throw new Error('oauth-profile-missing');
-  if(data.status==='ready')GrowellOAuth.validateEnvelope(data.envelope,user.id);
+  if(data.status==='ready'&&typeof GrowellGoogleRecordAccess==='undefined')GrowellOAuth.validateEnvelope(data.envelope,user.id);
   var suggestedName='';
   if(data.profile)suggestedName=data.profile.name;
   else{
@@ -5105,14 +5252,28 @@ async function prepareOAuthMember(user,flow){
   var nativeLegacy=data.status==='legacy'&&googleMemberIdentity(user)&&nativePasswordMember(user,data.profile)&&GrowellMemberAccess.approved(data.profile)&&/^[a-f0-9]{32}$/i.test(data.profile.pbkdf2_salt||'');
   oauthPending={authUserId:user.id,status:nativeLegacy?'native':data.status,profile:data.profile,envelope:data.envelope,name:suggestedName,passwordMember:passwordMemberIdentity(user)};
   oauthMessage='';
+  if(data.profile&&!GrowellMemberAccess.approved(data.profile)){
+    if(typeof GrowellGoogleRecordAccess!=='undefined'){
+      oauthPending=null;authRestoreUserId=null;oauthMessage=GrowellMemberAccess.message(data.profile.approval_status);
+      await sb.auth.signOut({scope:'local'}).catch(function(){});if(flow!==authFlowEpoch)throw new Error('auth-flow-cancelled');
+    }
+    return oauthPending;
+  }
+  if(data.status!=='new'&&googleMemberIdentity(user)&&typeof GrowellGoogleRecordAccess!=='undefined')await completeGoogleOnlyMember('',null);
   return oauthPending;
 }
 async function startOAuth(provider,button){
   if(!GOOGLE_LOGIN_VISIBLE||oauthBusy||provider!=='google'||!oauthProviders.google)return;
+  if(!canLeaveGoogleDraftMigration())return;
+  if(googleRecordAccessBlocked()){showToast('작성 중인 내용이나 개인 기록 복구를 먼저 마쳐주세요.',true);return;}
+  var retainedCache=null;try{retainedCache=localStorage.getItem('growell_session');}catch(_){}
   oauthBusy=true;oauthMessage='';if(button){button.disabled=true;button.textContent='로그인 화면으로 이동 중…';}
   var flow=++authFlowEpoch,pending=resetSaveSession();clearMemberSession();oauthPending=null;
   try{
     await pending;if(flow!==authFlowEpoch)return;
+    // Retain the existing encrypted-record key in its original local cache.
+    // A verified callback still has to match the exact member before using it.
+    if(retainedCache!==null)try{localStorage.setItem('growell_session',retainedCache);}catch(_){}
     clearGoogleLinkMarker();
     try{sessionStorage.setItem('growell_oauth_return',/^#\/book\/[a-z]+\/(share|mine|worksheet|materials|habit)$/.test(location.hash)?location.hash:'#/');}catch(e){}
     var redirect=new URL(location.href);redirect.search='';redirect.hash='';
@@ -5128,6 +5289,8 @@ async function startOAuth(provider,button){
     location.assign(target.href);
   }catch(e){if(flow===authFlowEpoch){oauthBusy=false;oauthMessage='간편 로그인 화면을 열지 못했어요. 잠시 후 다시 시도해주세요.';render();}}
 }
+// Owner-assisted compatibility for existing password-encrypted vaults. The
+// Google login/signup interface never calls this password-based path.
 async function completeOAuthMember(name,password,confirmation,button){
   if(!oauthPending||oauthBusy)return false;
   var pending=oauthPending,flow=authFlowEpoch;
@@ -5198,19 +5361,16 @@ async function completeOAuthMember(name,password,confirmation,button){
   }
 }
 async function cancelOAuth(){
+  if(!canLeaveGoogleDraftMigration())return false;
   ++authFlowEpoch;var pending=resetSaveSession();clearMemberSession();oauthPending=null;oauthBusy=false;oauthMessage='';
-  await pending;await sb.auth.signOut({scope:'local'}).catch(function(){});authMode='login';location.hash='#/login';render();
+  await pending;await sb.auth.signOut({scope:'local'}).catch(function(){});authOtherAccount=true;authMode='login';location.hash='#/login';render();
 }
 function oauthMemberHtml(){
   var pending=oauthPending,newMember=pending.status==='new',originalMember=pending.passwordMember===true;
   if(newMember&&!SOCIAL_AUTH_VISIBLE)return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>기존 회원 계정에서 연결해주세요</h2><p class="sub">Google로 새 회원을 만들지 않았어요. 먼저 가입한 아이디로 로그인한 뒤 프로필 → 설정 → 연동 → Google 로그인 설정에서 연결해주세요. 작성한 기록은 기존 계정에 그대로 있어요.</p><p class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button class="btn btn-primary btn-block" data-oauth-cancel type="button">아이디 로그인으로 돌아가기</button></section></div></div>';
-  if(pending.status==='legacy')return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>기존 아이디로 이어가세요</h2><p class="sub">이미 연결된 일반 회원 기록이 있어요. 기존 아이디와 비밀번호로 로그인하면 그대로 이어갈 수 있어요.</p><button class="btn btn-primary btn-block" data-oauth-cancel type="button">아이디 로그인으로 돌아가기</button></section></div></div>';
-  return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>'+(newMember?'마지막으로, 나만의 기록을 준비해요':'나의 기록을 열어주세요')+'</h2><p class="sub">'+(newMember?'별명과 개인 기록 비밀번호를 정하면 가입 신청이 완료돼요. 관리자 승인 후 이용할 수 있어요.':'간편 로그인은 완료됐어요. 개인 기록 비밀번호로 나의 공간을 열어주세요.')+'</p>'+
-    (newMember?'<label class="field-label" for="oauth-name">별명</label><input id="oauth-name" maxlength="30" autocomplete="nickname" value="'+esc(pending.name||'')+'">':'<p class="profile-account-note">'+esc(pending.profile.name)+'님의 기록</p>')+
-    '<label class="field-label" for="oauth-password">'+(originalMember?'현재 GROWELL 비밀번호':'개인 기록 비밀번호 (8자 이상)')+'</label><input id="oauth-password" type="password" autocomplete="'+(newMember?'new-password':'current-password')+'">'+
-    (newMember?'<label class="field-label" for="oauth-confirm">개인 기록 비밀번호 확인</label><input id="oauth-confirm" type="password" autocomplete="new-password">':'')+
-    '<p class="profile-photo-help">'+(originalMember?'원래 아이디로 로그인할 때의 현재 비밀번호예요. Google 비밀번호를 입력하지 마세요. 비밀번호를 바꿨다면 아이디 로그인으로 기록 복구를 먼저 마쳐주세요.':'Google 비밀번호와는 별개예요. 다른 기기에서도 이 비밀번호로 기록을 열어요. 가입 후 프로필에서 복구 파일을 보관해주세요.')+'</p>'+
-    '<p id="oauth-status" class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button id="btn-oauth-complete" class="btn btn-primary btn-block" type="button">'+(newMember?'가입하고 시작하기':'내 기록 열기')+'</button><button class="btn btn-ghost btn-block" data-oauth-cancel type="button">다른 방법으로 로그인</button></section></div></div>';
+  return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>'+(newMember?'사용할 별명을 알려주세요':'Google 기록 연결')+'</h2><p class="sub">'+(newMember?'별명을 정하면 가입 신청이 완료돼요. 관리자 승인 후 이용할 수 있어요.':'연결한 Google 계정으로 기존 기록을 이어가요.')+'</p>'+
+    (newMember?'<label class="field-label" for="oauth-name">별명</label><input id="oauth-name" maxlength="30" autocomplete="nickname" value="'+esc(pending.name||'')+'">':'')+
+    '<p id="oauth-status" class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button id="btn-oauth-complete" class="btn btn-primary btn-block" type="button"'+(oauthBusy?' disabled':'')+'>'+(newMember?'가입하고 시작하기':oauthBusy?'기록 연결 중…':'연결 다시 확인')+'</button><button class="btn btn-ghost btn-block" data-oauth-cancel type="button">기존 아이디로 로그인</button></section></div></div>';
 }
 function waitForGoogleLoginDrafts(isCurrent){
   if(typeof pendingPrivateRecovery!=='undefined'&&pendingPrivateRecovery||typeof privateRecoveryBusy!=='undefined'&&privateRecoveryBusy)return Promise.reject(new Error('google-link-recovery'));
@@ -5399,7 +5559,7 @@ async function checkedLinkedVault(password,made,response,profile,material,guard)
   if(await GrowellOAuth.unlockVault(password,rotated.data.envelope,profile.authUserId)!==material)throw new Error('기존 개인 기록 열쇠와 연결 설정이 일치하지 않아요. 연결을 중단했어요.');
   guard();return rotated.data;
 }
-async function syncGoogleLoginAfterPassword(password,authGuard){
+async function syncGoogleLoginAfterPassword(password,authGuard,recoveredRecords){
   var session=SESSION,profile=session&&STATE.users[session.userId],material=session&&session.keyB64,epoch=saveSessionEpoch;
   function guard(){authGuard();if(!session||!profile||SESSION!==session||SESSION.keyB64!==material||saveSessionEpoch!==epoch||STATE.users[session.userId]!==profile)throw new Error('google-link-session-changed');}
   guard();var verified=await sb.auth.getUser();guard();var user=verified&&verified.data&&verified.data.user;
@@ -5409,7 +5569,12 @@ async function syncGoogleLoginAfterPassword(password,authGuard){
   var made=await GrowellOAuth.createLinkedVault(password,profile.salt,profile.authUserId,material);guard();
   var prepared=await sb.rpc('growell_oauth_link_prepare',{p_envelope:made.envelope});guard();
   if(prepared.error)throw new Error('google-link-vault');
-  await checkedLinkedVault(password,made,prepared.data,profile,material,guard);guard();return true;
+  await checkedLinkedVault(password,made,prepared.data,profile,material,guard);guard();
+  if(typeof GrowellGoogleRecordAccess!=='undefined'&&memberLoadState.privateEntries==='ready'&&!googleRecordAccessBlocked()){
+    var context=googleRecordSessionContext(authGuard);if(!context.current())throw new Error('google-link-session-changed');
+    if(recoveredRecords===true)await googleRecordAccessClient().rotate(context);else await googleRecordAccessClient().prepare(context);guard();googleRecordAccessPrepared=context;
+  }
+  return true;
 }
 async function connectExistingGoogleLogin(isCurrent){
   var session=SESSION,profile=session&&STATE.users[session.userId],material=session&&session.keyB64,flow=authFlowEpoch,epoch=saveSessionEpoch;
@@ -5465,8 +5630,8 @@ function bindOAuthEvents(){
   document.querySelectorAll('[data-oauth-provider]').forEach(function(button){if(button.dataset.oauthBound)return;button.dataset.oauthBound='1';button.addEventListener('click',function(){startOAuth(button.dataset.oauthProvider,button);});});
   document.querySelectorAll('[data-oauth-cancel]').forEach(function(button){if(button.dataset.oauthBound)return;button.dataset.oauthBound='1';button.addEventListener('click',cancelOAuth);});
   var button=document.getElementById('btn-oauth-complete');
-  if(button&&!button.dataset.oauthBound){button.dataset.oauthBound='1';button.addEventListener('click',function(){var name=document.getElementById('oauth-name'),confirmation=document.getElementById('oauth-confirm');completeOAuthMember(name?name.value:'',document.getElementById('oauth-password').value,confirmation?confirmation.value:'',button);});}
-  ['oauth-password','oauth-confirm'].forEach(function(id){var input=document.getElementById(id);if(input&&!input.dataset.oauthBound){input.dataset.oauthBound='1';input.addEventListener('keydown',function(event){if(event.key==='Enter'&&!event.isComposing){event.preventDefault();if(button)button.click();}});}});
+  if(button&&!button.dataset.oauthBound){button.dataset.oauthBound='1';button.addEventListener('click',function(){var name=document.getElementById('oauth-name');completeGoogleOnlyMember(name?name.value:'',button);});}
+  ['oauth-name'].forEach(function(id){var input=document.getElementById(id);if(input&&!input.dataset.oauthBound){input.dataset.oauthBound='1';input.addEventListener('keydown',function(event){if(event.key==='Enter'&&!event.isComposing){event.preventDefault();if(button)button.click();}});}});
 }
 
 /* ---------------- render: login ---------------- */
@@ -8463,6 +8628,7 @@ function render(){
   if(typeof refreshHabitSummary==='function')refreshHabitSummary();
   if(typeof GrowellHabitReminder!=='undefined')GrowellHabitReminder.refresh();
   bindEvents(route);
+  if(typeof maybePrepareGoogleRecordAccess==='function')maybePrepareGoogleRecordAccess();
   handleHabitSyncReturn();
   if(typeof GrowellDriveBackup!=='undefined')GrowellDriveBackup.refresh();
   handleDriveBackupReturn();
