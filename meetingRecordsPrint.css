@@ -24,6 +24,8 @@
   .mr-print-text{margin:0 0 4pt;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;orphans:2;widows:2;break-inside:auto;page-break-inside:auto}
   .mr-print-outline{margin:0;padding:6pt 9pt 3pt 26pt;list-style:decimal;background:#f3f5f0;border-left:2pt solid #3c634d}
   .mr-print-outline li{padding-left:3pt;break-inside:avoid-page;page-break-inside:avoid}
+  .mr-print-thought-questions{margin:0;padding:0 0 0 20pt;list-style:decimal}
+  .mr-print-thought-questions li{padding-left:3pt;break-inside:avoid-page;page-break-inside:avoid}
   .mr-print-story,.mr-print-concept,.mr-print-insight,.mr-print-preparation{break-inside:auto;page-break-inside:auto}
   .mr-print-story+.mr-print-story,.mr-print-concept+.mr-print-concept{margin-top:7pt}
   .mr-print-insight{margin:9pt 0 0;padding:0 0 2pt;border-left:1.5pt solid #3c634d;border-right:.6pt solid #d9e1d8;border-bottom:.6pt solid #d9e1d8;box-decoration-break:clone;-webkit-box-decoration-break:clone}

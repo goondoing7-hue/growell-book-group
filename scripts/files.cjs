@@ -42,7 +42,7 @@ const TEST_FILES = Object.freeze([
   'tests/book-photo-ocr.test.cjs', 'tests/book-photo-ocr-assets.test.cjs', 'tests/reading-notification.test.cjs', 'tests/save-diagnostics.test.cjs',
   'tests/photo-editor.test.cjs', 'tests/photo-editor-text.test.cjs', 'tests/photo-sources.test.cjs', 'tests/photo-editor-integration.test.cjs', 'tests/archive-photo-tools.test.cjs', 'tests/reading-notification-background.test.cjs', 'tests/reading-notification-reconciliation.test.cjs',
   'tests/auth-profile-diagnostics.test.cjs',
-  'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs', 'tests/web-push-materials-sql.test.cjs', 'tests/web-push-materials-integration.test.cjs',
+  'tests/web-push-ui.test.cjs', 'tests/web-push-prompt.test.cjs', 'tests/web-push-server.test.cjs', 'tests/web-push-provider.test.cjs', 'tests/web-push-sql.test.cjs', 'tests/web-push-integration.test.cjs', 'tests/web-push-materials-sql.test.cjs', 'tests/web-push-materials-integration.test.cjs', 'tests/web-push-meetings-sql.test.cjs', 'tests/web-push-meetings-integration.test.cjs',
   'tests/meeting-record-download.test.cjs',
   'tests/meeting-mail-server.test.cjs', 'tests/meeting-mail-sql.test.cjs', 'tests/meeting-record-pdf.test.cjs', 'tests/meeting-email-worker.test.cjs',
   'tests/google-connection-ui.test.cjs', 'tests/google-connection-server.test.cjs', 'tests/google-login-transfer.test.cjs',
@@ -69,13 +69,13 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
-  'api/web-push.js', 'server/webPushService.cjs', 'server/webPushProvider.cjs', 'server/web-push.sql', 'server/web-push-schedule.sql', 'server/web-push-materials.sql', 'server/web-push-materials-verification.sql', 'server/WEB_PUSH_SETUP.md',
+  'api/web-push.js', 'server/webPushService.cjs', 'server/webPushProvider.cjs', 'server/web-push.sql', 'server/web-push-schedule.sql', 'server/web-push-materials.sql', 'server/web-push-materials-verification.sql', 'server/web-push-meetings.sql', 'server/web-push-meetings-verification.sql', 'server/WEB_PUSH_SETUP.md',
   'api/meeting-record-pdf.js', 'server/meetingRecordDownloadService.cjs',
-  'api/meeting-record-mail.js', 'server/meetingMailService.cjs', 'server/meetingRecordPdf.cjs', 'server/meeting-record-email-worker.ts', 'server/meeting-mail.sql', 'server/meeting-mail-activate.sql', 'server/meeting-mail-schedule.sql', 'server/MEETING_MAIL_SETUP.md',
+  'api/meeting-record-mail.js', 'server/meetingMailService.cjs', 'server/meetingRecordPdf.cjs', 'server/meeting-record-email-worker.ts', 'server/meeting-mail.sql', 'server/meeting-mail-thought-questions.sql', 'server/meeting-mail-activate.sql', 'server/meeting-mail-schedule.sql', 'server/MEETING_MAIL_SETUP.md',
   'server/fonts/Pretendard-Regular.otf', 'server/fonts/Pretendard-Bold.otf', 'server/fonts/NotoEmoji.ttf', 'server/fonts/OFL.txt', 'server/fonts/NotoEmoji-OFL.txt', 'server/fonts/README.md',
   'server/googleConnectionService.cjs', 'server/google-toggle-consent.sql',
   'api/meeting-calendar.js', 'server/meetingCalendarDomain.cjs', 'server/meetingCalendarProvider.cjs', 'server/meetingCalendarService.cjs', 'server/meeting-calendar.sql', 'server/meeting-calendar-schedule.sql', 'server/MEETING_CALENDAR_SETUP.md',
-  'server/meeting-records.sql', 'server/meeting-records-next-preparation.sql', 'server/meeting-records-verification.sql',
+  'server/meeting-records.sql', 'server/meeting-records-next-preparation.sql', 'server/meeting-records-thought-questions.sql', 'server/meeting-records-verification.sql',
   'api/drive-backup.js', 'server/driveBackupDomain.cjs', 'server/driveBackupProvider.cjs', 'server/driveBackupService.cjs', 'server/drive-backup.sql', 'server/drive-backup-schedule.sql', 'server/DRIVE_BACKUP_SETUP.md',
   'server/materialTranscriptTranslation.cjs', 'server/material-video-translation.sql',
   'server/materialVideoMetadata.cjs',

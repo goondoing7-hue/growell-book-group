@@ -176,3 +176,25 @@ test('preparation rejects invalid dates, times, shapes and oversized text withou
   }
   assert.equal(domain.validateRecord(record({nextMeeting:{...good,place:'😀'.repeat(1000),sharing:'😀'.repeat(4000)}})).ok,true);
 });
+
+test('optional thought questions preserve legacy omission, exact text, stable IDs and draft blanks',()=>{
+  const legacy=record(),copy=domain.normalizeRecord(legacy);
+  assert.equal(Object.hasOwn(copy,'thoughtQuestions'),false,'omitted legacy fields must stay omitted on saves');
+  const thoughtQuestions=[{id:'question-1',text:'  감정을 어떻게 바라보는가?\n다른 생각은 무엇인가?  '},{id:'question-2',text:'😀'.repeat(1000)}];
+  const source=record({thoughtQuestions}),before=JSON.stringify(source),normalized=domain.normalizeRecord(source);
+  assert.equal(domain.validateRecord(normalized).ok,true);assert.deepEqual(normalized.thoughtQuestions,thoughtQuestions);
+  normalized.thoughtQuestions[0].text='다른 질문';assert.equal(JSON.stringify(source),before);
+  assert.deepEqual(domain.newRecord('emotion','operator').thoughtQuestions,[]);
+  assert.equal(domain.validateRecord(record({status:'draft',thoughtQuestions:[{id:'question-1',text:''}]})).ok,true);
+  assert.equal(domain.validateRecord(record({thoughtQuestions:[{id:'question-1',text:'  '}]})).ok,false);
+});
+
+test('thought questions reject malformed, duplicate, unknown and oversized input without shortening',()=>{
+  const question={id:'question-1',text:'나의 감정은 무엇을 알려주는가?'};
+  for(const thoughtQuestions of [null,{},'text',[null],[{text:'ID 없음'}],[{id:'../unsafe',text:'질문'}],
+    [question,question],[{...question,text:'가'.repeat(1001)}],[{...question,text:'원문\u0000'}],
+    [{...question,answer:'허용되지 않은 응답'}],Array.from({length:31},(_,i)=>({...question,id:'question-'+i}))]){
+    const source=record({thoughtQuestions});assert.equal(domain.validateRecord(domain.normalizeRecord(source)).ok,false);
+    assert.deepEqual(domain.normalizeRecord(source).thoughtQuestions,thoughtQuestions);
+  }
+});

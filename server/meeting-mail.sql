@@ -240,7 +240,7 @@ begin
     -- answers only. Profile/account details and private/material bodies remain
     -- in their original tables and are never copied to the outgoing document.
     record_json:=jsonb_build_object('id',record_row.id,'bookId',record_row.book_id,'round',record_row.round,'date',record_row.meeting_date,
-      'topic',record_row.topic,'sections',record_row.sections,'concepts',record_row.concepts,'nextMeeting',record_row.next_meeting,
+      'topic',record_row.topic,'sections',record_row.sections,'concepts',record_row.concepts,'thoughtQuestions',coalesce(nullif(to_jsonb(record_row)->'thought_questions','null'::jsonb),'[]'::jsonb),'nextMeeting',record_row.next_meeting,
       'revision',record_row.revision,'status','published');
     select coalesce(jsonb_agg(jsonb_build_object('id',m.id,'title',m.title) order by array_position(record_row.material_ids,m.id)),'[]') into materials
       from public.material_notes m where m.id=any(record_row.material_ids) and m.book_id=record_row.book_id and m.user_id=record_row.user_id;

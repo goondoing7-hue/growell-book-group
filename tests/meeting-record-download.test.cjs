@@ -38,6 +38,13 @@ test('saved PDF downloads canonical server content with private attachment heade
   assert.deepEqual({records:f.state.records,posts:f.state.posts,authors:f.state.authors,materials:f.state.materials},original);
   assert.equal(f.state.reads.filter(call=>call[0]==='records').length,2);
 });
+
+test('PDF projection includes canonical thought questions without caller extras or source mutation',async()=>{
+  const f=fixture();f.state.records[0].thoughtQuestions=[{id:'question-1',text:'감정은 무엇을 알려주는가?'}];
+  const before=structuredClone(f.state.records);assert.equal((await invoke(f.handler)).headers.status,200);
+  assert.deepEqual(f.state.renders[0][0].record.thoughtQuestions,[{text:'감정은 무엇을 알려주는가?'}]);
+  assert.deepEqual(f.state.records,before);
+});
 test('no auth, unapproved profile, incorrect origin, non-JSON and non-POST requests cannot download',async()=>{
   assert.equal((await invoke(fixture().handler,{headers:{authorization:'Bearer unknown',origin:CONFIG.origin,'content-type':'application/json'}})).headers.status,401);
   assert.equal((await invoke(fixture().handler,{headers:{origin:CONFIG.origin,'content-type':'application/json'}})).headers.status,401);

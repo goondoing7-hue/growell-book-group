@@ -108,6 +108,38 @@ function harness(t,options={}){
   return {api,adapter,document,session,calls,current,click,input,html:()=>current()?.innerHTML||''};
 }
 
+test('thought questions appear after concepts and before stories, escape text and leave legacy records unchanged',async t=>{
+  const source=record(1,{thoughtQuestions:[{id:'question-1',text:'<script>감정을 어떻게 보는가?</script>\n그 이유는 무엇인가?'},{id:'question-2',text:'나의 생각과 감정은 어떻게 다른가?'}]}),before=JSON.stringify(source);
+  const h=harness(t,{rows:[source]});h.api.openRound('emotion',1);await tick();
+  assert.ok(h.html().indexOf('함께 살펴본 개념')<h.html().indexOf('생각 질문'));
+  assert.ok(h.html().indexOf('생각 질문')<h.html().indexOf('>모임 내용</h2>'));
+  assert.match(h.html(),/class="mr-thought-questions"/);assert.match(h.html(),/&lt;script&gt;감정을 어떻게 보는가/);
+  assert.doesNotMatch(h.html(),/<script>/);assert.equal(JSON.stringify(source),before);
+  const legacy=harness(t,{rows:[record(1)]});legacy.api.openRound('emotion',1);await tick();assert.doesNotMatch(legacy.html(),/생각 질문|data-mr-thought-questions/);
+});
+
+test('operator edits, previews, removes and restores questions while retaining the source and saving only a draft',async t=>{
+  const source=record(1,{userId:'reader',status:'draft',thoughtQuestions:[{id:'question-1',text:'원래 질문'}]}),before=JSON.stringify(source);
+  const h=harness(t,{rows:[source],session:{admin:true},save:async payload=>({...payload,revision:2})});
+  h.api.openList('emotion');await tick();h.click('record',source.id);h.click('edit');h.input('[data-mr-question="question-1"]','수정한 생각 질문\n두 번째 문장');
+  h.click('remove-question','question-1');assert.match(h.html(),/생각 질문을 삭제했어요/);h.click('undo');
+  h.click('preview-mode');assert.match(h.html(),/수정한 생각 질문\n두 번째 문장/);h.click('editor-mode');h.click('save-draft');await tick();
+  assert.equal(h.calls.writes.length,1);assert.equal(h.calls.writes[0][1].status,'draft');
+  assert.deepEqual(h.calls.writes[0][1].thoughtQuestions,[{id:'question-1',text:'수정한 생각 질문\n두 번째 문장'}]);
+  assert.equal(JSON.stringify(source),before);
+});
+
+test('adding a first question to a legacy draft creates a stable question ID and preserves its existing body',async t=>{
+  const source=record(1,{userId:'reader',status:'draft'}),before=JSON.stringify(source);
+  const h=harness(t,{rows:[source],session:{admin:true},save:async payload=>({...payload,revision:2})});
+  h.api.openList('emotion');await tick();h.click('record',source.id);h.click('edit');h.click('add-question');
+  const questionId=h.current().querySelector('[data-mr-question]').getAttribute('data-mr-question');assert.ok(domain.isUuid(questionId));
+  h.input('[data-mr-question="'+questionId+'"]','함께 생각해볼 첫 질문이다.');h.click('preview-mode');assert.match(h.html(),/함께 생각해볼 첫 질문이다/);
+  h.click('editor-mode');h.click('save-draft');await tick();
+  assert.deepEqual(h.calls.writes[0][1].thoughtQuestions,[{id:questionId,text:'함께 생각해볼 첫 질문이다.'}]);
+  assert.deepEqual(h.calls.writes[0][1].sections,source.sections);assert.equal(JSON.stringify(source),before);
+});
+
 test('openRound reads only the published record for the same book and normalized numeric round',async t=>{
   for(const round of [1,'1','01','０１',' ０１ ',9999,'９９９９']){
     const number=Number(String(round).normalize('NFKC').trim());

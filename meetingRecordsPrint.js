@@ -45,6 +45,10 @@
         block.appendChild(node(document,'h3','',item.word));paragraph(document,block,item.meaning);concepts.appendChild(block);
       });
     }
+    if(Array.isArray(record.thoughtQuestions)&&record.thoughtQuestions.length){
+      var questions=section(document,sheet,'생각 질문'),questionList=node(document,'ol','mr-print-thought-questions');questions.appendChild(questionList);
+      record.thoughtQuestions.forEach(function(item){questionList.appendChild(node(document,'li','mr-print-text',item.text));});
+    }
     var details=section(document,sheet,'모임 내용');
     record.sections.forEach(function(item,index){
       var story=node(document,'article','mr-print-story');story.appendChild(node(document,'h3','',(index+1)+'. '+item.summary));

@@ -5,12 +5,12 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function(root){
   'use strict';
 
-  var LIMITS = Object.freeze({ topic:160, summary:120, detail:10000, word:80, meaning:4000, sections:20, concepts:30, materials:30, round:9999, nextPlace:1000, nextText:4000 });
+  var LIMITS = Object.freeze({ topic:160, summary:120, detail:10000, word:80, meaning:4000, sections:20, concepts:30, questions:30, question:1000, materials:30, round:9999, nextPlace:1000, nextText:4000 });
   var BOOKS = ['emotion','thought','body','action'];
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   var NODE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
   var MATERIAL_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,119}$/;
-  var FIELDS=['id','bookId','round','date','topic','sections','concepts','materialIds','nextMeeting','status','userId','revision','createdAt','updatedAt'];
+  var FIELDS=['id','bookId','round','date','topic','sections','concepts','thoughtQuestions','materialIds','nextMeeting','status','userId','revision','createdAt','updatedAt'];
   var own = function(object,key){ return Object.prototype.hasOwnProperty.call(object,key); };
   function plainObject(value){
     if(!value || Object.prototype.toString.call(value)!=='[object Object]') return false;
@@ -124,6 +124,9 @@
     nodes(record.concepts,LIMITS.concepts,'개념',[
       ['word',LIMITS.word,'개념 키워드'],['meaning',LIMITS.meaning,'개념 의미']
     ]);
+    if(own(record,'thoughtQuestions')) nodes(record.thoughtQuestions,LIMITS.questions,'생각 질문',[
+      ['text',LIMITS.question,'생각 질문']
+    ]);
     if(!Array.isArray(record.materialIds)) errors.push('연결 자료 형식이 올바르지 않습니다.');
     else {
       if(record.materialIds.length>LIMITS.materials) errors.push('관련 자료는 30개까지 연결할 수 있습니다.');
@@ -150,7 +153,7 @@
     return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20);
   }
   function newRecord(bookId,userId){
-    return {id:newId(),bookId:bookId,round:1,date:null,topic:'',sections:[],concepts:[],materialIds:[],nextMeeting:null,status:'draft',userId:userId || '',revision:0,createdAt:null,updatedAt:null};
+    return {id:newId(),bookId:bookId,round:1,date:null,topic:'',sections:[],concepts:[],thoughtQuestions:[],materialIds:[],nextMeeting:null,status:'draft',userId:userId || '',revision:0,createdAt:null,updatedAt:null};
   }
 
   return Object.freeze({LIMITS:LIMITS,normalizeRecord:normalizeRecord,validateRecord:validateRecord,newRecord:newRecord,newId:newId,isUuid:isUuid,validDate:validDate});

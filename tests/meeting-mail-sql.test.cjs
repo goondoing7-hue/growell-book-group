@@ -7,7 +7,9 @@ const {PGlite}=require('@electric-sql/pglite');
 const sql=fs.readFileSync(path.join(__dirname,'../server/meeting-mail.sql'),'utf8');
 const activate=fs.readFileSync(path.join(__dirname,'../server/meeting-mail-activate.sql'),'utf8');
 const consentPatch=fs.readFileSync(path.join(__dirname,'../server/google-toggle-consent.sql'),'utf8');
+const questionsPatch=fs.readFileSync(path.join(__dirname,'../server/meeting-mail-thought-questions.sql'),'utf8');
 function configureDefinition(source){const start=source.indexOf('create or replace function public.growell_meeting_mail_configure('),end=source.indexOf('$function$;',start);assert.ok(start>=0&&end>start);return source.slice(start,end+'$function$;'.length).replace(/\r\n/g,'\n');}
+function applyDefinition(source){const start=source.indexOf('create or replace function public.growell_meeting_mail_apply('),end=source.indexOf('$function$;',start);assert.ok(start>=0&&end>start);return source.slice(start,end+'$function$;'.length).replace(/\r\n/g,'\n');}
 const AUTH='11111111-1111-4111-8111-111111111111',OTHER='22222222-2222-4222-8222-222222222222';
 const R1='33333333-3333-4333-8333-333333333333',R2='44444444-4444-4444-8444-444444444444',R3='55555555-5555-4555-8555-555555555555';
 const codeIs=code=>error=>error.code===code;
@@ -21,7 +23,7 @@ describe('Automatic meeting PDF mail SQL preserves authored records and delivery
       create table public.growell_drive_backup_connections(owner_id text primary key references public.profiles(id),auth_user_id uuid,account_id text,account_email text,token_cipher text);
       create table public.growell_meeting_calendar_connections(like public.growell_drive_backup_connections including all);
       create table public.book_locks(book_id text primary key,locked boolean);
-      create table public.growell_meeting_records(id uuid primary key,book_id text,round integer,meeting_date date,topic text,sections jsonb,concepts jsonb,next_meeting jsonb,material_ids text[],status text,user_id text,revision bigint default 1,created_at timestamptz default now(),deleted_at timestamptz);
+      create table public.growell_meeting_records(id uuid primary key,book_id text,round integer,meeting_date date,topic text,sections jsonb,concepts jsonb,thought_questions jsonb,next_meeting jsonb,material_ids text[],status text,user_id text,revision bigint default 1,created_at timestamptz default now(),deleted_at timestamptz);
       create table public.material_notes(id text primary key,book_id text,user_id text,title text,html text);
       create table public.posts(id text primary key,user_id text,html text,q1 text,q2 text,q3 text,book_id text,note_type text,meeting_no text,created_at bigint,
         deleted_at timestamptz,is_deleted boolean default false,is_private boolean default false,visibility text default 'public');
@@ -31,6 +33,8 @@ describe('Automatic meeting PDF mail SQL preserves authored records and delivery
     await db.exec(sql);
     assert.equal(configureDefinition(consentPatch),configureDefinition(sql),'standalone production patch must match the canonical configure function');
     await db.exec(configureDefinition(consentPatch));
+    assert.equal(applyDefinition(questionsPatch),applyDefinition(sql),'the additive snapshot patch must match the canonical mail function');
+    await db.exec(questionsPatch);
   });
   beforeEach(async()=>{
     await db.exec('reset role;truncate public.growell_meeting_mail_jobs,public.growell_meeting_mail_subscriptions,public.growell_meeting_records,public.material_notes,public.posts,public.private_entries,public.growell_drive_backup_connections,public.growell_meeting_calendar_connections,public.profiles,public.book_locks');
@@ -114,6 +118,16 @@ describe('Automatic meeting PDF mail SQL preserves authored records and delivery
     assert.deepEqual(snapshot.insights,[]);assert.match(snapshot.content_hash,/^[0-9a-f]{64}$/);
     const encoded=JSON.stringify(snapshot);for(const value of ['PUBLIC STORY','ENCRYPTED PRIVATE','COMPLETE MATERIAL BODY','operator','auth_user_id','q1'])assert.equal(encoded.includes(value),false,value);
     assert.equal((await rows())[0].status,'claimed','PDF rendering alone cannot start delivery');
+  });
+  test('thought questions enter the canonical mail snapshot and hash without changing queue or delivery receipts',async()=>{
+    await configure();const work=(await claim())[0],legacy=await apply(work,'snapshot');assert.deepEqual(legacy.record.thoughtQuestions,[]);
+    const questions=[{id:'question-1',text:'  감정은 무엇을 알려주는가?\n생각과 어떻게 연결되는가?  '}];
+    await db.query('update public.growell_meeting_records set thought_questions=$1::jsonb where id=$2::uuid',[JSON.stringify(questions),R2]);
+    const snapshot=await apply(work,'snapshot');assert.deepEqual(snapshot.record.thoughtQuestions,questions);assert.notEqual(snapshot.content_hash,legacy.content_hash);
+    assert.deepEqual(await apply(work,'prepare',{record_revision:legacy.record.revision,content_hash:legacy.content_hash}),{applied:false});
+    const before=(await rows());await db.exec(questionsPatch);assert.deepEqual(await rows(),before);
+    assert.deepEqual((await apply(work,'snapshot')).record.thoughtQuestions,questions);
+    for(const role of ['anon','authenticated'])await assert.rejects(as(role,()=>db.query('select public.growell_meeting_mail_apply($1,$2,$3,$4)',[work.id,work.lease_token,'snapshot','{}'])),codeIs('42501'));
   });
   test('only public insights in this book and round from approved active authors are included with no private profile fields',async()=>{
     const insert=async(id,book='emotion',round='2',kind='insight',extra={})=>db.query(`insert into public.posts(id,user_id,html,q1,q2,q3,book_id,note_type,meeting_no,created_at,is_private,visibility,is_deleted,deleted_at)

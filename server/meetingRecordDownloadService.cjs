@@ -127,7 +127,7 @@ function createService(options={}) {
     // Deliberate projection: email, avatars, tokens, source dumps, photos,
     // private entries and arbitrary caller fields never enter a PDF.
     const projected={record:{round:record.round,date:record.date,topic:record.topic,sections:record.sections.map(item=>({summary:item.summary,detail:item.detail})),
-      concepts:record.concepts.map(item=>({word:item.word,meaning:item.meaning})),nextMeeting:record.nextMeeting,status:record.status},bookTitle:BOOKS[record.bookId],materials,insights};
+      concepts:record.concepts.map(item=>({word:item.word,meaning:item.meaning})),thoughtQuestions:(record.thoughtQuestions||[]).map(item=>({text:item.text})),nextMeeting:record.nextMeeting,status:record.status},bookTitle:BOOKS[record.bookId],materials,insights};
     return {projected,revision:record.revision,preview:shape.preview || record.status==='draft',round:record.round};
   }
   async function download(identity,body) {

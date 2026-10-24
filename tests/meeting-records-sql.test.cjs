@@ -18,6 +18,85 @@ const record=overrides=>({id:ID,bookId:'emotion',round:1,date:'2026-10-11',topic
   sections:[{id:'section-1',summary:'감정을 알아차리기',detail:'서로 다른 의견을 듣고 대화를 이어 갔습니다.'}],
   concepts:[{id:'concept-1',word:'공감',meaning:'상대의 경험을 이해하려고 듣기'}],materialIds:['mn_owner'],status:'draft',userId:'owner',...overrides});
 
+describe('Optional thought questions preserve legacy records and draft privacy',()=>{
+  let db,legacySnapshot;
+  const LEGACY='99999999-9999-4999-8999-999999999998';
+  const questionsMigration=fs.readFileSync(path.join(__dirname,'../server/meeting-records-thought-questions.sql'),'utf8');
+  const questions=()=>[{id:'question-1',text:'  감정을 어떻게 바라보는가?\n그 이유는 무엇인가?  '},{id:'question-2',text:'생각과 감정은 어떻게 다른가?'}];
+  before(async()=>{
+    db=new PGlite();
+    await db.exec(`create role anon nologin;create role authenticated nologin;
+      grant usage on schema public to anon,authenticated;create schema auth;
+      create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+      grant usage on schema auth to anon,authenticated;grant execute on function auth.uid() to anon,authenticated;
+      create table public.profiles(id text primary key,auth_user_id uuid unique,is_deleted boolean default false,is_admin boolean default false,approval_status text default 'approved');
+      create table public.book_locks(book_id text primary key,locked boolean);
+      create table public.material_notes(id text primary key,user_id text,book_id text,html text);
+      create table public.private_entries(id text primary key,data text);
+      create function public.growell_is_active_member() returns boolean language sql stable security definer set search_path='' as $$
+        select exists(select 1 from public.profiles where auth_user_id=auth.uid() and not is_deleted and approval_status='approved')$$;
+      create function public.growell_is_approved_admin() returns boolean language sql stable security definer set search_path='' as $$
+        select exists(select 1 from public.profiles where auth_user_id=auth.uid() and not is_deleted and approval_status='approved' and is_admin)$$;
+      insert into public.profiles(id,auth_user_id,is_admin) values('owner','${AUTH}',true),('other','${OTHER}',true),('member','${MEMBER}',false);
+      insert into public.material_notes values('mn_owner','owner','emotion','  Source material unchanged  ');
+      insert into public.private_entries values('private-original','ENCRYPTED PRIVATE ORIGINAL');`);
+    await db.exec(migration);await db.exec(preparationMigration);
+    await db.query(`insert into public.growell_meeting_records(id,book_id,round,meeting_date,topic,sections,concepts,material_ids,status,user_id,revision,created_at,updated_at,next_meeting)
+      values($1,'emotion',999,'2026-10-10','기존 첫 기록','[{"id":"original","summary":"원래 주제","detail":"원문과 여백 😀 유지  "}]','[]','{}','published','owner',17,'2026-10-10T10:00:00Z','2026-10-10T11:00:00Z','{"date":"","time":"","place":"원래 장소","reading":"원래 범위","sharing":"원래 나눔","habit":""}')`,[LEGACY]);
+    legacySnapshot=(await db.query('select to_jsonb(r) as value from public.growell_meeting_records r where id=$1',[LEGACY])).rows[0].value;
+    await db.exec(questionsMigration);
+  });
+  beforeEach(async()=>{await db.exec('reset role');await db.query('delete from public.growell_meeting_records where id<>$1',[LEGACY]);});
+  after(async()=>{await db?.close();});
+  async function as(auth,operation,role='authenticated'){
+    await db.query("select set_config('request.jwt.claim.sub',$1,false)",[auth||'']);await db.exec('set role '+role);
+    try{return await operation();}finally{await db.exec('reset role');}
+  }
+  const save=(value=record(),revision=0,auth=AUTH)=>as(auth,async()=>(await db.query('select public.growell_save_meeting_record($1::jsonb,$2::bigint) as value',[JSON.stringify(value),revision])).rows[0].value);
+  const list=(auth=AUTH)=>as(auth,async()=>(await db.query("select public.growell_get_meeting_records('emotion') as value")).rows[0].value);
+  test('additive migration and repeat application leave all existing authored fields, IDs and times untouched',async()=>{
+    const row=(await db.query('select to_jsonb(r) as value from public.growell_meeting_records r where id=$1',[LEGACY])).rows[0].value;
+    assert.equal(row.thought_questions,null);delete row.thought_questions;assert.deepEqual(row,legacySnapshot);
+    const saved=await save(record({thoughtQuestions:questions()}));await db.exec(questionsMigration);
+    assert.deepEqual((await list()).find(row=>row.id===ID),saved);
+    assert.equal((await db.query("select html from public.material_notes where id='mn_owner'")).rows[0].html,'  Source material unchanged  ');
+    assert.equal((await db.query('select data from public.private_entries')).rows[0].data,'ENCRYPTED PRIVATE ORIGINAL');
+  });
+  test('draft questions stay with the owner, preserve text and IDs, and become public only on publish',async()=>{
+    const thoughtQuestions=questions(),saved=await save(record({thoughtQuestions}));
+    assert.deepEqual(saved.thoughtQuestions,thoughtQuestions);assert.deepEqual(await save(record({thoughtQuestions})),saved);
+    assert.equal((await list(OTHER)).some(row=>row.id===ID),false);assert.equal((await list(MEMBER)).some(row=>row.id===ID),false);
+    const published=await save({...saved,status:'published'},1);assert.deepEqual((await list(MEMBER)).find(row=>row.id===ID).thoughtQuestions,thoughtQuestions);
+    assert.equal(published.createdAt,saved.createdAt);assert.equal(published.userId,saved.userId);
+  });
+  test('legacy omitted fields preserve saved questions and preparation through idempotent edits',async()=>{
+    const nextMeeting={date:'',time:'',place:'보존할 장소',reading:'다음 읽기',sharing:'',habit:''};
+    const saved=await save(record({thoughtQuestions:questions(),nextMeeting}));
+    const legacy=record({topic:'옛 클라이언트 제목 수정'}),edited=await save(legacy,1);
+    assert.deepEqual(edited.thoughtQuestions,saved.thoughtQuestions);assert.deepEqual(edited.nextMeeting,nextMeeting);assert.deepEqual(await save(legacy,1),edited);
+    const cleared=await save({...edited,thoughtQuestions:[]},2);assert.deepEqual(cleared.thoughtQuestions,[]);assert.deepEqual(cleared.sections,saved.sections);
+  });
+  test('malformed, oversized, duplicate and blank published questions are rejected without overwrites',async()=>{
+    const saved=await save(record({thoughtQuestions:questions()})),question={id:'question-1',text:'질문'};
+    for(const thoughtQuestions of [null,{},'text',[null],[{text:'ID 없음'}],[{id:'../bad',text:'질문'}],
+      [question,question],[{...question,text:'가'.repeat(1001)}],[{...question,privateData:'forbidden'}],
+      Array.from({length:31},(_,i)=>({...question,id:'question-'+i}))]){
+      await assert.rejects(save({...saved,thoughtQuestions},1),errorCode('22023'));
+    }
+    assert.deepEqual((await list()).find(row=>row.id===ID),saved);
+    const blank=await save({...saved,thoughtQuestions:[{id:'empty-question',text:'  '}]},1);
+    await assert.rejects(save({...blank,status:'published'},2),errorCode('22023'));
+    await assert.rejects(save({...blank,status:'published',thoughtQuestions:[{id:'empty-question',text:'\n\t\r'}]},2),errorCode('22023'));
+    assert.deepEqual((await list()).find(row=>row.id===ID).thoughtQuestions,blank.thoughtQuestions);
+  });
+  test('question helpers and writes retain role and record ownership barriers',async()=>{
+    const saved=await save(record({thoughtQuestions:questions()}));
+    for(const auth of [OTHER,MEMBER,null])await assert.rejects(save({...saved,userId:auth===OTHER?'other':auth===MEMBER?'member':'owner'},1,auth),errorCode('42501'));
+    for(const role of ['anon','authenticated'])await assert.rejects(as(AUTH,()=>db.exec("select public.growell_valid_meeting_questions('[]')"),role),errorCode('42501'));
+    assert.deepEqual((await list()).find(row=>row.id===ID),saved);
+  });
+});
+
 // Isolated PostgreSQL execution: no network, real member data, or live secrets.
 describe('Meeting records PostgreSQL authorization and persistence',()=>{
   let db;

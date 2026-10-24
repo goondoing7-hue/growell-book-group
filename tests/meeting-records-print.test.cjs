@@ -84,6 +84,17 @@ test('draft and unsaved preview labels remain explicit on printed copies',()=>{
   assert.match(api.buildPrintSheet(b.document,row,{preview:true}).textContent,/작성 중인 내용의 미리보기/);
 });
 
+test('printed thought questions keep full text in order between concepts and stories and omit an empty legacy section',()=>{
+  const b=browser(),row=record(),before=JSON.stringify(row);
+  assert.doesNotMatch(api.buildPrintSheet(b.document,row).textContent,/생각 질문/);
+  row.thoughtQuestions=[{id:'question-1',text:'감정을 어떻게 바라보는가?\n다른 생각은 무엇인가?'},{id:'question-2',text:'<b>질문 원문</b>'}];
+  const sheet=api.buildPrintSheet(b.document,row),list=walk(sheet).find(item=>item.className==='mr-print-thought-questions');
+  assert.deepEqual(list.children.map(item=>item.textContent),row.thoughtQuestions.map(item=>item.text));
+  const headings=walk(sheet).filter(item=>item.tagName==='H2').map(item=>item.textContent);
+  assert.equal(headings.indexOf('생각 질문'),headings.indexOf('함께 살펴본 개념')+1);assert.equal(headings.indexOf('모임 내용'),headings.indexOf('생각 질문')+1);
+  delete row.thoughtQuestions;assert.equal(JSON.stringify(row),before);
+});
+
 function downloadBrowser(fetch){
   const clicked=[],created=[],revoked=[],document={body:new Element('body'),createElement:tag=>{
     const element=new Element(tag);element.click=()=>clicked.push({href:element.href,filename:element.download});return element;

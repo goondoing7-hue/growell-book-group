@@ -33,6 +33,34 @@ test('email PDF projection preserves editorial and explicit public insights whil
   assert.equal(JSON.stringify(source), before);
 });
 
+test('thought-question PDF projection keeps exact text and excludes IDs, answers and arbitrary fields',()=>{
+  const source=fixture();source.record.thoughtQuestions=[{id:'question-1',text:'  무엇을 느끼는가?\n그 감정은 무엇을 알려주는가?  ',privateAnswer:'MUST NOT EXPORT'}];
+  const before=JSON.stringify(source),projected=editorialContent(source);
+  assert.deepEqual(projected.thoughtQuestions,[{text:source.record.thoughtQuestions[0].text}]);
+  assert.equal(JSON.stringify(source),before);assert.doesNotMatch(JSON.stringify(projected),/MUST NOT EXPORT|question-1/);
+  for(const thoughtQuestions of [null,{},'question',[null],[{text:'가'.repeat(1001)}],Array.from({length:31},()=>({text:'질문'}))]){
+    assert.throws(()=>editorialContent({...source,record:{...source.record,thoughtQuestions}}),TypeError);
+  }
+});
+
+test('a second meeting overview with seven summaries, three concepts and five questions stays on page one of five',async()=>{
+  const source=fixture(),drawn=[];
+  source.record.round=2;source.record.topic='감정을 알아차리고 나의 경험 이해하기';
+  source.record.sections=Array.from({length:7},(_,i)=>({summary:(i+1)+'번째 핵심 요약은 감정과 경험의 관계를 이해하는 것이다.',detail:'감정은 자신의 상태와 필요한 것을 알려주는 신호이다. 감정을 밀어내기보다 몸과 생각의 반응을 함께 살핀다. 서로 다른 경험은 같은 상황에서도 다른 감정을 만든다. 자신의 경험을 이해하고 필요한 행동을 선택한다.'}));
+  source.record.concepts=[{word:'심리도식',meaning:'반복된 경험을 통해 형성된 자신과 타인에 대한 생각과 감정의 틀이다.'},{word:'발달트라우마',meaning:'성장 과정에서 반복된 위협이나 관계의 어려움이 마음과 몸에 남긴 영향이다.'},{word:'감정 알아차리기',meaning:'지금 느끼는 감정과 몸의 반응을 판단하지 않고 구체적으로 살피는 것이다.'}];
+  source.record.thoughtQuestions=Array.from({length:5},(_,i)=>({id:'question-'+i,text:(i+1)+'번째 질문: 나의 감정은 어떤 경험과 연결되며 무엇을 필요로 하는가?'}));
+  const before=JSON.stringify(source),originalText=PDFDocument.prototype.text;
+  PDFDocument.prototype.text=function(value,...args){if(typeof value==='string')drawn.push({value,page:this.page,document:this});return originalText.call(this,value,...args);};
+  let pdf;try{pdf=await createMeetingRecordPdf(source);}finally{PDFDocument.prototype.text=originalText;}
+  assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,5);
+  const successful=drawn.findLast(item=>item.value==='GROWELL  |  모임별 기록').document,items=drawn.filter(item=>item.document===successful);
+  const overview=items.find(item=>item.value===source.record.topic).page,details=items.find(item=>item.value==='모임 내용').page;
+  assert.equal(items.find(item=>item.value==='생각 질문').page,overview);
+  source.record.thoughtQuestions.forEach((item,i)=>assert.equal(items.find(value=>value.value===(i+1)+'. '+item.text).page,overview));
+  source.record.sections.forEach(item=>assert.equal(items.find(value=>value.value===item.detail).page,details));
+  assert.equal(JSON.stringify(source),before);
+});
+
 test('actual PDF is a binary A4 attachment with embedded Korean/emoji fonts', async () => {
   const source = fixture(), before = JSON.stringify(source);
   const pdf = await createMeetingRecordPdf(source);

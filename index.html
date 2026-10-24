@@ -2288,6 +2288,7 @@ function currentRoute(){
   if(parts[0]==='book' && parts[1]){
     var br = {view:'book', bookId:parts[1], tab:parts[2]||'mine'};
     if(parts[3]==='post' && parts[4]){ br.postId = parts[4]; }
+    if(br.tab==='share'&&parts.length===5&&parts[3]==='meeting'&&/^[1-9]\d{0,3}$/.test(parts[4]))br.meetingRound=Number(parts[4]);
     return br;
   }
   if(parts[0]==='login'){ return {view:'login'}; }
@@ -2299,6 +2300,16 @@ function currentRoute(){
   if(parts[0]==='admin' && parts[1]==='users'){ return {view:'admin-users'}; }
   if(parts[0]==='profile' && parts[1]==='edit'){ return {view:'profile-edit'}; }
   return {view:'home'};
+}
+var meetingRecordRouteOpened=null;
+function openMeetingRecordRoute(route){
+  if(!route||route.view!=='book'||route.tab!=='share'||!Number.isInteger(route.meetingRound)||route.meetingRound<1||route.meetingRound>9999){meetingRecordRouteOpened=null;return false;}
+  if(!SESSION||!meetingMemberCanRead(route.bookId)||typeof GrowellMeetingRecords==='undefined'||typeof GrowellMeetingRecords.openRound!=='function')return false;
+  var key=SESSION.userId+':'+saveSessionEpoch+':'+route.bookId+':'+route.meetingRound;
+  if(meetingRecordRouteOpened===key)return false;
+  if(BOOTING||BOOT_FAILED||authRestoreState!=='idle'||oauthBusy||saving||anyComposerOpen()||document.querySelector('dialog[open]'))return false;
+  meetingRecordRouteOpened=key;
+  GrowellMeetingRecords.openRound(route.bookId,route.meetingRound,null);return true;
 }
 window.addEventListener('hashchange', function(){
   readingHistoryRouteVersion++;
@@ -8517,7 +8528,7 @@ function render(){
   captureComposerDraft();
   bindMemberPushPromptLifecycle();
   var openingGoogleTransfer=openPendingGoogleLoginTransfer();
-  if(!openingGoogleTransfer)maybePromptMemberForPush();
+  if(!openingGoogleTransfer&&!openMeetingRecordRoute(route))maybePromptMemberForPush();
 }
 
 function restoreDraftIfAny(route){

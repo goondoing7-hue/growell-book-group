@@ -3,7 +3,7 @@
 self.addEventListener('install',function(event){event.waitUntil(self.skipWaiting());});
 self.addEventListener('activate',function(event){event.waitUntil(self.clients.claim());});
 function growellPush(value){
-  if(!value||typeof value!=='object'||Array.isArray(value)||value.version!==1||['post','material','verse','test'].indexOf(value.type)<0)return null;
+  if(!value||typeof value!=='object'||Array.isArray(value)||value.version!==1||['post','material','meeting','verse','test'].indexOf(value.type)<0)return null;
   var tag=typeof value.tag==='string'&&/^[A-Za-z0-9:_-]{1,160}$/.test(value.tag)?value.tag:'';
   if(!tag)return null;
   var data={kind:'growell-push',type:value.type},title='GROWELL',body='';
@@ -14,6 +14,10 @@ function growellPush(value){
     var books={emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'};
     if(['emotion','thought','body','action'].indexOf(value.bookId)<0||typeof value.materialId!=='string'||! /^[A-Za-z0-9_-]{1,100}$/.test(value.materialId))return null;
     data.bookId=value.bookId;data.materialId=value.materialId;title='GROWELL 새 자료';body='『'+books[value.bookId]+'』 자료실에 새 자료가 올라왔어요.';
+  }else if(value.type==='meeting'){
+    if(['emotion','thought','body','action'].indexOf(value.bookId)<0||typeof value.meetingId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.meetingId)||!Number.isInteger(value.round)||value.round<1||value.round>9999)return null;
+    var meetingBooks={emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'};
+    data.bookId=value.bookId;data.meetingId=value.meetingId.toLowerCase();data.round=value.round;title=value.round+'번째 모임 기록이 올라왔어요';body='『'+meetingBooks[value.bookId]+'』 모임에서 함께 나눈 내용을 확인해보세요.';
   }else if(value.type==='verse'){
     if(typeof value.body!=='string'||!value.body.trim()||value.body.length>800)return null;
     title='오늘의 말씀';body=value.body.trim();
@@ -99,6 +103,7 @@ self.addEventListener('notificationclick',function(event){
     route='#/';
     if(data.type==='post'&&allowed.indexOf(data.bookId)>=0&&typeof data.postId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.postId))route='#/book/'+data.bookId+'/share/post/'+data.postId;
     else if(data.type==='material'&&allowed.indexOf(data.bookId)>=0&&typeof data.materialId==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(data.materialId))route='#/book/'+data.bookId+'/materials/post/'+data.materialId;
+    else if(data.type==='meeting'&&allowed.indexOf(data.bookId)>=0&&typeof data.meetingId==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.meetingId)&&Number.isInteger(data.round)&&data.round>=1&&data.round<=9999)route='#/book/'+data.bookId+'/share/meeting/'+data.round;
   }
   var destination=new URL('/'+route,self.location.origin).href;
   event.waitUntil(self.clients.matchAll({type:'window',includeUncontrolled:true}).then(function(windows){

@@ -74,6 +74,10 @@ function payloadFor(job,now,jobId){
     if(!BOOKS.has(job.book_id)||typeof job.material_id!=='string'||!ID.test(job.material_id))throw new D.BackupError('push-unavailable');
     return{version:1,type:'material',bookId:job.book_id,materialId:job.material_id,tag:'growell-material-'+job.material_id,body:'『'+BOOK_TITLES[job.book_id]+'』 자료실에 새 자료가 올라왔어요.'};
   }
+  if(job.kind==='meeting'){
+    if(!BOOKS.has(job.book_id)||!UUID.test(job.meeting_id||'')||!Number.isInteger(job.meeting_round)||job.meeting_round<1||job.meeting_round>9999)throw new D.BackupError('push-unavailable');
+    return{version:1,type:'meeting',bookId:job.book_id,meetingId:job.meeting_id.toLowerCase(),round:job.meeting_round,tag:'growell-meeting-'+job.meeting_id.toLowerCase(),body:job.meeting_round+'번째 모임 기록이 올라왔어요. 『'+BOOK_TITLES[job.book_id]+'』에서 확인해보세요.'};
+  }
   if(job.kind==='verse'){
     const verse=Verse.getCompact(VERSES,now);
     if(!verse||verse.dateKey!==job.verse_day)throw new D.BackupError('push-unavailable');

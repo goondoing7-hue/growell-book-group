@@ -47,6 +47,10 @@
 .meeting-records-dialog .mr-core-list li{display:flex;align-items:flex-start;gap:12px;font-size:15px;line-height:1.8}
 .meeting-records-dialog .mr-number{min-width:21px;flex:none;color:var(--mr-green);font-size:12px;font-weight:700;line-height:27px;font-variant-numeric:tabular-nums}
 .meeting-records-dialog .mr-core-list p,.meeting-records-dialog .mr-summary{white-space:pre-wrap;overflow-wrap:anywhere}
+.meeting-records-dialog .mr-thought-questions{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.meeting-records-dialog .mr-thought-questions li{display:flex;align-items:flex-start;gap:10px;font-size:15px;line-height:1.8;min-width:0}
+.meeting-records-dialog .mr-thought-questions p{margin:0;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.meeting-records-dialog .mr-question-row{margin-bottom:10px}
 .meeting-records-dialog .mr-keywords{display:flex;flex-wrap:wrap;gap:8px}
 .meeting-records-dialog .mr-keyword{display:inline-flex;align-items:center;min-height:41px;padding:9px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--mr-green);font-size:13px;text-align:left;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-keyword:hover,.meeting-records-dialog .mr-keyword[aria-pressed=true]{background:var(--mr-soft);border-color:var(--mr-green)}

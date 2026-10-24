@@ -9,7 +9,7 @@ const FONT_BOLD = path.join(__dirname, 'fonts', 'Pretendard-Bold.otf');
 const FONT_EMOJI = path.join(__dirname, 'fonts', 'NotoEmoji.ttf');
 const COLOR = Object.freeze({ ink: '#263D33', green: '#3A624E', muted: '#67736B', rule: '#DCE3D9', pale: '#EDF2E9', accent: '#9EB5A0' });
 const PREPARATION = Object.freeze([['place', '장소'], ['reading', '읽기 범위'], ['sharing', '나눔'], ['habit', '독서 습관']]);
-const LIMITS = Object.freeze({ sections: 20, concepts: 30, materials: 30, title: 160, summary: 120, detail: 10000, word: 80, meaning: 4000, url: 2000 });
+const LIMITS = Object.freeze({ sections: 20, concepts: 30, questions: 30, question: 1000, materials: 30, title: 160, summary: 120, detail: 10000, word: 80, meaning: 4000, url: 2000 });
 let fontCoverage;
 const graphemes = new Intl.Segmenter('ko', { granularity: 'grapheme' });
 
@@ -69,6 +69,7 @@ function editorialContent(input, options = {}) {
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new TypeError('모임 날짜가 올바르지 않습니다.');
   const sections = rows(record.sections, LIMITS.sections).map(item => ({ summary: text(item && item.summary, LIMITS.summary), detail: text(item && item.detail, LIMITS.detail) }));
   const concepts = rows(record.concepts || [], LIMITS.concepts).map(item => ({ word: text(item && item.word, LIMITS.word), meaning: text(item && item.meaning, LIMITS.meaning) }));
+  const thoughtQuestions = rows(record.thoughtQuestions === undefined ? [] : record.thoughtQuestions, LIMITS.questions).map(item => ({ text: text(item && item.text, LIMITS.question) }));
   let nextMeeting = null;
   if (record.nextMeeting !== undefined && record.nextMeeting !== null) {
     if (typeof record.nextMeeting !== 'object' || Array.isArray(record.nextMeeting)) throw new TypeError('다음 모임 준비 형식이 올바르지 않습니다.');
@@ -92,7 +93,7 @@ function editorialContent(input, options = {}) {
     authorName: text(item && item.authorName, 120), date: text(item && item.date, 64, true),
     q1: text(item && item.q1, 100000, true), q2: text(item && item.q2, 100000, true), q3: text(item && item.q3, 100000, true)
   }));
-  const projected = { round: record.round, date, topic, sections, concepts, nextMeeting, bookTitle: text(input.bookTitle, 300, true), materials, insights };
+  const projected = { round: record.round, date, topic, sections, concepts, thoughtQuestions, nextMeeting, bookTitle: text(input.bookTitle, 300, true), materials, insights };
   if (JSON.stringify(projected).length > 1000000) throw new TypeError('PDF에 포함할 전체 내용이 너무 커 원문을 보존한 채 발송을 중단했습니다.');
   return projected;
 }
@@ -149,6 +150,7 @@ async function renderMeetingRecordPdf(content, layout) {
   const strings = [content.topic, content.bookTitle];
   content.sections.forEach(item => strings.push(item.summary, item.detail));
   content.concepts.forEach(item => strings.push(item.word, item.meaning));
+  content.thoughtQuestions.forEach(item => strings.push(item.text));
   if (content.nextMeeting) strings.push(...Object.values(content.nextMeeting));
   content.materials.forEach(item => strings.push(item.title, item.url));
   content.insights.forEach(item => strings.push(item.authorName, item.q1, item.q2, item.q3));
@@ -255,6 +257,10 @@ async function renderMeetingRecordPdf(content, layout) {
   heading('함께 살펴본 개념');
   content.concepts.forEach(item => { heading(item.word, 3, item.meaning); paragraph(item.meaning); });
   if (!content.concepts.length) paragraph('등록된 개념이 없습니다.', { color: COLOR.muted });
+  if (content.thoughtQuestions.length) {
+    heading('생각 질문');
+    content.thoughtQuestions.forEach((item, index) => paragraph(`${index + 1}. ${item.text}`, { gap: 4 }));
+  }
 
   function nextReadingPage(group, index, last = index) {
     if (pageNumber !== index - 1) throw layoutOverflow(currentGroup);
