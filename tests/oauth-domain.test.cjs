@@ -65,3 +65,13 @@ test('linking refuses mismatched password or original key instead of generating 
   await assert.rejects(oauth.createLinkedVault(password,salt,owner,Buffer.alloc(32,7).toString('base64')),/열쇠가 일치/);
   await assert.rejects(oauth.createLinkedVault(password,salt,owner,Buffer.alloc(16).toString('base64')),/기존 개인 기록/);
 });
+
+test('login preference accepts only verified approved owner bindings and contains no key or credential',()=>{
+  const profile={id:'synthetic-member',auth_user_id:owner,approval_status:'approved',is_deleted:false};
+  const user={id:owner,identities:[{provider:'email'},{provider:'google'}],user_metadata:{provider:'email'}};
+  const choice=oauth.loginPreference(user,profile);assert.equal(choice.method,'google');assert.equal(oauth.knownGooglePreference(choice),true);
+  assert.deepEqual(Object.keys(choice).sort(),['method','owner','profileId','version']);
+  for(const [account,row] of [[{...user,id:'other'},profile],[user,{...profile,approval_status:'pending'}],[user,{...profile,is_deleted:true}],[{id:owner,user_metadata:{provider:'google'}},profile]])assert.equal(oauth.loginPreference(account,row),null);
+  assert.equal(oauth.loginPreference({...user,identities:[{provider:'email'}]},profile).method,'password');
+  for(const value of [null,{}, {...choice,owner:'invalid'}, {...choice,method:'password'}, {...choice,version:2}])assert.equal(oauth.knownGooglePreference(value),false);
+});

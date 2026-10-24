@@ -114,7 +114,9 @@ async function createMeetingRecordPdf(input, options = {}) {
   const layouts = [
     { side: 48, bottom: 58, lineGap: 3, insightGap: 1.7, insightSize: 10.5, topicBefore: 12, sectionBefore: 14, scale: 1 },
     { side: 44, bottom: 50, lineGap: 3, insightGap: 1.7, insightSize: 10.5, topicBefore: 10, sectionBefore: 12, scale: 0.75 },
-    { side: 44, bottom: 48, lineGap: 2.8, insightGap: 1.5, insightSize: 10, topicBefore: 10, sectionBefore: 12, scale: 0.65 }
+    // Longer glossaries can use a label/meaning row without reducing body
+    // type, removing definitions, or spilling the overview onto page two.
+    { side: 44, bottom: 48, lineGap: 2.8, insightGap: 1.5, insightSize: 10, topicBefore: 10, sectionBefore: 12, scale: 0.65, conceptRows: content.concepts.length >= 7 }
   ];
   let failure;
   for (const layout of layouts) {
@@ -255,7 +257,23 @@ async function renderMeetingRecordPdf(content, layout) {
   content.sections.forEach((item, index) => paragraph(`${index + 1}. ${item.summary}`, { gap: 2 }));
   if (!content.sections.length) paragraph('등록된 핵심 요약이 없습니다.', { color: COLOR.muted });
   heading('함께 살펴본 개념');
-  content.concepts.forEach(item => { heading(item.word, 3, item.meaning); paragraph(item.meaning); });
+  content.concepts.forEach(item => {
+    if (!layout.conceptRows) { heading(item.word, 3, item.meaning); paragraph(item.meaning); return; }
+    const labelWidth = 112, gutter = 14, meaningWidth = width - labelWidth - gutter;
+    const before = doc.y > doc.page.margins.top ? layout.topicBefore : 0;
+    const height = Math.max(textHeight(item.word, 'PretendardBold', 11.5, labelWidth), textHeight(item.meaning, 'Pretendard', 10.5, meaningWidth));
+    reserve(before + height + 5 * layout.scale);
+    doc.y += before;
+    const start = doc.y;
+    style('PretendardBold', 11.5, COLOR.green);
+    write(item.word, { width: labelWidth, lineGap: layout.lineGap });
+    const labelEnd = doc.y;
+    doc.y = start;
+    style('Pretendard', 10.5, COLOR.ink);
+    write(item.meaning, { x: left + labelWidth + gutter, width: meaningWidth, lineGap: layout.lineGap });
+    doc.y = Math.max(labelEnd, doc.y) + 5 * layout.scale;
+    doc.x = left;
+  });
   if (!content.concepts.length) paragraph('등록된 개념이 없습니다.', { color: COLOR.muted });
   if (content.thoughtQuestions.length) {
     heading('생각 질문');

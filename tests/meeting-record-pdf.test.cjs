@@ -74,6 +74,23 @@ test('actual PDF is a binary A4 attachment with embedded Korean/emoji fonts', as
   assert.equal(JSON.stringify(source), before);
 });
 
+test('eight glossary definitions retain readable text on overview and seven topics stay on page two of five', async () => {
+  const source=fixture(),drawn=[],originalText=PDFDocument.prototype.text;
+  source.record.sections=Array.from({length:7},(_,i)=>({summary:(i+1)+'번째 경험에서 나의 감정과 관계를 이해한다.',detail:'어떤 상황에서 느낀 감정인지 생각하며 자신의 반응을 살펴본다. 다양한 경험을 하나의 원인으로 단정하지 않고 필요한 도움을 알아차린다.'}));
+  source.record.concepts=Array.from({length:8},(_,i)=>({word:'살펴볼 개념 '+(i+1),meaning:'과거의 여러 경험을 통해 감정과 생각, 몸과 행동이 연결되어 반복되는 반응 체계이다.'}));
+  source.record.thoughtQuestions=Array.from({length:5},(_,i)=>({text:(i+1)+'번째 질문: 나는 어떤 경험에서 무엇을 느꼈는가?'}));
+  const before=JSON.stringify(source);
+  PDFDocument.prototype.text=function(value,...args){if(typeof value==='string')drawn.push({value,page:this.page,document:this,size:this._fontSize,x:args[0]});return originalText.call(this,value,...args);};
+  let pdf;try{pdf=await createMeetingRecordPdf(source);}finally{PDFDocument.prototype.text=originalText;}
+  assert.equal((pdf.toString('latin1').match(/\/Type \/Page\b/g)||[]).length,5);
+  const successful=drawn.findLast(item=>item.value==='GROWELL  |  모임별 기록').document,items=drawn.filter(item=>item.document===successful);
+  const overview=items.find(item=>item.value===source.record.topic).page,details=items.find(item=>item.value==='모임 내용').page;
+  source.record.concepts.forEach(item=>{const definition=items.find(value=>value.value===item.meaning);assert.equal(definition.page,overview);assert.equal(definition.size,10.5);assert.equal(items.find(value=>value.value===item.word).page,overview);});
+  source.record.thoughtQuestions.forEach(item=>assert.equal(items.find(value=>value.value.endsWith(item.text)).page,overview));
+  source.record.sections.forEach(item=>assert.equal(items.find(value=>value.value===item.detail).page,details));
+  assert.equal(JSON.stringify(source),before);
+});
+
 test('a traced deployment without any implicit standard-font module still renders Korean PDF', () => {
   const code = `
     const Module = require('node:module');

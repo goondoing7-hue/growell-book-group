@@ -7,9 +7,11 @@ const source=fs.readFileSync(path.join(__dirname,'../webPush.js'),'utf8');
 const workerSource=fs.readFileSync(path.join(__dirname,'../timer-alert-sw.js'),'utf8');
 const key=Buffer.concat([Buffer.from([4]),Buffer.alloc(64,9)]).toString('base64url');
 const json=value=>JSON.parse(JSON.stringify(value));
+const repairEntries=memory=>[...memory].filter(([name])=>name.startsWith('growell_push_repair_v1:'));
+function createLocks(){let tail=Promise.resolve();const calls=[];return {calls,request(name,settings,callback){calls.push(name);const task=tail.then(()=>{if(settings.signal.aborted){const error=Error('cancelled');error.name='AbortError';throw error;}return callback({name});});tail=task.catch(()=>{});return task;}};}
 function harness(options={}){
   const calls={prompts:0,registrations:[],requests:[],subscriptions:0,unsubscribe:0,tokens:0,changes:[],localNotifications:[]};
-  let current=true,backendActive=!!options.subscribed,prefs={posts:options.posts!==false,dailyVerse:options.dailyVerse!==false},backendEndpoint='https://push.example.test/private-endpoint';
+  let current=true;const backend=options.backend||{active:!!options.subscribed,prefs:{posts:options.posts!==false,dailyVerse:options.dailyVerse!==false},endpoint:'https://push.example.test/private-endpoint'};
   const notification={permission:options.permission||'default',requestPermission(){calls.prompts++;notification.permission=options.answer||'granted';return Promise.resolve(notification.permission);}};
   const native=options.native||{};function createSubscription(endpoint,expirationTime=null){return {endpoint,expirationTime,toJSON(){return {endpoint:this.endpoint,expirationTime:this.expirationTime,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};},unsubscribe(){calls.unsubscribe++;if(options.unsubscribeError)return Promise.reject(Error('device error'));if(options.unsubscribeFalse)return Promise.resolve(false);if(!options.keepNative)native.value=null;if(options.onUnsubscribe)options.onUnsubscribe();return Promise.resolve(true);}};}
   const subscription=createSubscription('https://push.example.test/private-endpoint',options.expirationTime??null);
@@ -26,21 +28,21 @@ function harness(options={}){
     if(options.failure===body.action)return {ok:false,status:503,json:async()=>({error:options.errorCode||'unavailable',detail:'PRIVATE_ERROR_DETAIL'})};
     let data;
     if(body.action==='config')data={configured:options.configured!==false,publicKey:options.badKey||key};
-    else if(body.action==='status')data={configured:true,subscription:body.endpoint===backendEndpoint&&(backendActive||options.inactive)?{active:backendActive,preferences:prefs,lastSentAt:options.lastSentAt,lastError:backendActive?null:options.lastError??'subscription-expired'}:null};
-    else if(body.action==='subscribe'){backendActive=true;backendEndpoint=body.subscription.endpoint;prefs=options.serverPrefs||body.preferences;data={ok:true};}
-    else if(body.action==='preferences'){prefs=body.preferences;data={ok:true};}
-    else if(body.action==='unsubscribe'){backendActive=false;data={ok:true};}
+    else if(body.action==='status')data={configured:true,subscription:body.endpoint===backend.endpoint&&(backend.active||options.inactive)?{active:backend.active,preferences:backend.prefs,lastSentAt:options.lastSentAt,lastError:backend.active?null:options.lastError??'subscription-expired'}:null};
+    else if(body.action==='subscribe'){backend.active=true;backend.endpoint=body.subscription.endpoint;backend.prefs=options.serverPrefs||body.preferences;data={ok:true};}
+    else if(body.action==='preferences'){backend.prefs=body.preferences;data={ok:true};}
+    else if(body.action==='unsubscribe'){backend.active=false;data={ok:true};}
     else data={ok:true};
     return {ok:true,status:200,json:async()=>data};
   }
   const c={Promise,Date,Math,JSON,Array,Number,Object,Set,Uint8Array,AbortController,URL,crypto:require('node:crypto').webcrypto,localStorage:storage,
     setTimeout:options.fastTimers?(fn,delay)=>setTimeout(fn,Math.min(delay,10)):setTimeout,clearTimeout,
     atob:value=>Buffer.from(value,'base64').toString('binary'),isSecureContext:!options.insecure,Notification:options.unsupported?undefined:notification,PushManager:options.unsupported?undefined:function(){},
-    location:{origin:'https://growell-book.vercel.app'},matchMedia:()=>({matches:!!options.standalone}),navigator:{userAgent:options.ios?'iPhone':'Windows',platform:options.ipad?'MacIntel':'Win32',maxTouchPoints:options.ipad?5:0,
+    location:{origin:'https://growell-book.vercel.app'},matchMedia:()=>({matches:!!options.standalone}),navigator:{locks:options.noLocks?undefined:options.locks||createLocks(),userAgent:options.ios?'iPhone':'Windows',platform:options.ipad?'MacIntel':'Win32',maxTouchPoints:options.ipad?5:0,
       standalone:!!options.standalone,serviceWorker:{getRegistration(){calls.getRegistration=(calls.getRegistration||0)+1;return options.registrationDeferred||Promise.resolve(registration);},register(url,settings){calls.registrations.push({url,settings});return options.registerError?Promise.reject(Error('device registration')):Promise.resolve(registration);}}},fetch};
   vm.createContext(c);vm.runInContext(source,c);
   const api=c.GrowellWebPush,adapter={memberKey:options.memberKey||'SYNTHETIC_MEMBER',isCurrent:()=>current,getAccessToken:()=>{calls.tokens++;return Promise.resolve('PRIVATE_BEARER_TOKEN');},onChange:value=>calls.changes.push(json(value))};
-  return {api,c,calls,notification,subscription,registration,adapter,options,memory,native,controller:api.createController(adapter),endSession(){current=false;},setCurrent(value){current=value;}};
+  return {api,c,calls,notification,subscription,registration,adapter,options,memory,native,backend,controller:api.createController(adapter),endSession(){current=false;},setCurrent(value){current=value;}};
 }
 test('opening settings only checks the current device and never asks permission or subscribes',async()=>{
   const h=harness();await h.controller.refresh();
@@ -179,7 +181,7 @@ test('turning this device off deactivates server delivery before browser unsubsc
   const h=harness({subscribed:true,permission:'granted'});await h.controller.refresh();await h.controller.disable();
   assert.equal(h.calls.unsubscribe,1);assert.equal(h.controller.snapshot().subscribed,false);
   assert.deepEqual(h.calls.requests.map(r=>r.body.action),['config','status','unsubscribe']);
-  const failed=harness({subscribed:true,permission:'granted',failure:'unsubscribe'});await failed.controller.refresh();await failed.controller.disable();assert.equal(failed.calls.unsubscribe,0);assert.equal(failed.controller.snapshot().subscribed,true);
+  const failed=harness({subscribed:true,permission:'granted',failure:'unsubscribe'});await failed.controller.refresh();await failed.controller.disable();assert.equal(failed.calls.unsubscribe,1);assert.equal(failed.controller.snapshot().subscribed,false);
 });
 test('network/registration errors are retryable and do not fabricate successful delivery',async()=>{
   const h=harness({networkError:true});await h.controller.refresh();assert.equal(h.controller.snapshot().loaded,false);assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.controller.snapshot().errorCode,'unavailable');
@@ -312,7 +314,7 @@ test('expired own devices renew only on explicit click and keep both disabled pr
   assert.equal(h.controller.snapshot().expired,true);assert.equal(h.controller.snapshot().subscribed,false);assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});
   assert.equal(await h.controller.enable(),true);assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);assert.equal(h.calls.prompts,0);
   const request=h.calls.requests.find(call=>call.body.action==='subscribe');assert.equal(request.body.subscription.endpoint,'https://push.example.test/fresh-device');assert.notEqual(request.body.subscription.endpoint,h.subscription.endpoint);assert.deepEqual(request.body.preferences,{posts:false,dailyVerse:false});
-  assert.equal(h.controller.snapshot().subscribed,true);assert.equal(h.controller.snapshot().reconnectRequired,false);assert.equal(h.controller.snapshot().expired,false);assert.equal(h.memory.size,0);assert.match(h.controller.snapshot().notice,/다시 연결.*수신 설정은 그대로/);
+  assert.equal(h.controller.snapshot().subscribed,true);assert.equal(h.controller.snapshot().reconnectRequired,false);assert.equal(h.controller.snapshot().expired,false);assert.equal(repairEntries(h.memory).length,0);assert.match(h.controller.snapshot().notice,/다시 연결.*수신 설정은 그대로/);
 });
 test('native expiration renews even when the server last knew it as active while healthy refreshes never rotate',async()=>{
   const expired=harness({subscribed:true,permission:'granted',expirationTime:Date.now()-1,posts:false,freshEndpoint:'https://push.example.test/renewed-native'});await expired.controller.refresh();assert.equal(expired.controller.snapshot().subscribed,false);assert.equal(expired.controller.snapshot().expired,true);
@@ -334,16 +336,16 @@ test('reconnection rejects a different worker or a changed native endpoint witho
 });
 test('session replacement during exact old unsubscribe prevents creation or registration for the next account',async()=>{
   const h=harness({inactive:true,permission:'granted',posts:false});await h.controller.refresh();h.options.onUnsubscribe=()=>h.endSession();assert.equal(await h.controller.enable(),false);
-  assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);assert.equal(h.memory.size,1);
+  assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);assert.equal(repairEntries(h.memory).length,1);
   const other=harness({permission:'granted',memberKey:'ANOTHER_SYNTHETIC_MEMBER',memory:h.memory,native:h.native});await other.controller.refresh();assert.deepEqual(json(other.controller.snapshot().preferences),{posts:true,dailyVerse:true});assert.equal(other.controller.snapshot().reconnectRequired,false);assert.equal(other.calls.subscriptions,0);
 });
 test('a fresh endpoint whose server save fails retains OFF choices through refresh and reload until confirmed retry',async()=>{
   const h=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/fresh-unregistered',failure:'subscribe'});await h.controller.refresh();assert.equal(await h.controller.enable(),false);
-  assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);assert.equal(h.memory.size,1);assert.equal(h.native.value.endpoint,'https://push.example.test/fresh-unregistered');
+  assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);assert.equal(repairEntries(h.memory).length,1);assert.equal(h.native.value.endpoint,'https://push.example.test/fresh-unregistered');
   const [savedKey,savedRaw]=[...h.memory][0];assert.match(savedKey,/^growell_push_repair_v1:[a-f0-9]+-[a-f0-9]+:\d+-[a-f0-9]{32}$/);assert.deepEqual(JSON.parse(savedRaw),{posts:false,dailyVerse:false});assert.doesNotMatch(savedKey+savedRaw,/SYNTHETIC_MEMBER|PRIVATE|endpoint|push\.example|TOKEN|AUTH/);
   await h.controller.refresh();assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.subscriptions,1);h.controller.destroy();
   const reload=harness({permission:'granted',native:h.native,memory:h.memory});await reload.controller.refresh();assert.equal(reload.controller.snapshot().subscribed,false);assert.equal(reload.controller.snapshot().reconnectRequired,true);assert.deepEqual(json(reload.controller.snapshot().preferences),{posts:false,dailyVerse:false});
-  assert.equal(await reload.controller.enable(),true);assert.equal(reload.calls.subscriptions,0);assert.equal(reload.calls.unsubscribe,0);assert.deepEqual(reload.calls.requests.find(call=>call.body.action==='subscribe').body.preferences,{posts:false,dailyVerse:false});assert.equal(reload.memory.size,0);
+  assert.equal(await reload.controller.enable(),true);assert.equal(reload.calls.subscriptions,0);assert.equal(reload.calls.unsubscribe,0);assert.deepEqual(reload.calls.requests.find(call=>call.body.action==='subscribe').body.preferences,{posts:false,dailyVerse:false});assert.equal(repairEntries(reload.memory).length,0);
 });
 test('failed repair followed by unreadable or malformed durable choices fails closed before any device or server change',async()=>{
   const initial=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/new-endpoint',failure:'subscribe'});await initial.controller.refresh();await initial.controller.enable();initial.controller.destroy();
@@ -355,12 +357,12 @@ test('failed repair followed by unreadable or malformed durable choices fails cl
 test('pending OFF choices prevent confirmed ON settings from hiding the repair and are restored before success',async()=>{
   const first=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,failure:'subscribe'});await first.controller.refresh();await first.controller.enable();first.controller.destroy();
   const h=harness({subscribed:true,permission:'granted',memory:first.memory,native:first.native,serverPrefs:{posts:true,dailyVerse:true}});await h.controller.refresh();assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.controller.snapshot().reconnectRequired,true);assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});
-  assert.equal(await h.controller.enable(),true);assert.deepEqual(h.calls.requests.find(call=>call.body.action==='preferences').body.preferences,{posts:false,dailyVerse:false});assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});assert.equal(h.memory.size,0);
+  assert.equal(await h.controller.enable(),true);assert.deepEqual(h.calls.requests.find(call=>call.body.action==='preferences').body.preferences,{posts:false,dailyVerse:false});assert.deepEqual(json(h.controller.snapshot().preferences),{posts:false,dailyVerse:false});assert.equal(repairEntries(h.memory).length,0);
 });
 test('reconnection cleanup cannot erase a newer pending preference generation created during registration',async()=>{
   const h=harness({inactive:true,permission:'granted',posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/fresh-generation'});await h.controller.refresh();let newKey;
   h.options.onFetch=body=>{if(body.action==='subscribe'){const prefix=[...h.memory.keys()][0].split(':').slice(0,2).join(':')+':';newKey=prefix+'9999999999999-'+'a'.repeat(32);h.memory.set(newKey,JSON.stringify({posts:false,dailyVerse:false}));}};
-  assert.equal(await h.controller.enable(),true);assert.equal(h.memory.size,1);assert.equal(h.memory.has(newKey),true);assert.deepEqual(JSON.parse(h.memory.get(newKey)),{posts:false,dailyVerse:false});
+  assert.equal(await h.controller.enable(),true);assert.equal(repairEntries(h.memory).length,1);assert.equal(h.memory.has(newKey),true);assert.deepEqual(JSON.parse(h.memory.get(newKey)),{posts:false,dailyVerse:false});
 });
 test('a newer OFF generation arriving after registration is preserved and cannot be declared connected with ON settings',async()=>{
   const h=harness({inactive:true,permission:'granted',freshEndpoint:'https://push.example.test/fresh-conflict'});await h.controller.refresh();let newKey;
@@ -369,7 +371,106 @@ test('a newer OFF generation arriving after registration is preserved and cannot
 });
 test('a native endpoint replaced during server confirmation is not reported as a completed connection',async()=>{
   const h=harness({inactive:true,permission:'granted',posts:false,freshEndpoint:'https://push.example.test/new'});await h.controller.refresh();h.options.onFetch=body=>{if(body.action==='subscribe')h.native.value={endpoint:'https://push.example.test/later-account'};};
-  assert.equal(await h.controller.enable(),false);assert.equal(h.controller.snapshot().errorCode,'device_changed');assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.controller.snapshot().reconnectRequired,true);assert.equal(h.memory.size,1);assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.requests.some(call=>call.body.endpoint==='https://push.example.test/later-account'),false);
+  assert.equal(await h.controller.enable(),false);assert.equal(h.controller.snapshot().errorCode,'device_changed');assert.equal(h.controller.snapshot().subscribed,false);assert.equal(h.controller.snapshot().reconnectRequired,true);assert.equal(repairEntries(h.memory).length,1);assert.equal(h.calls.unsubscribe,1);assert.equal(h.calls.requests.some(call=>call.body.endpoint==='https://push.example.test/later-account'),false);
+});
+function savedChoice(memory){const pair=[...memory].find(([name])=>name.startsWith('growell_push_choice_v1:'));assert.ok(pair);return {name:pair[0],value:JSON.parse(pair[1])};}
+async function remembered(options={}){const h=harness(Object.assign({permission:'granted'},options));await h.controller.refresh();assert.equal(await h.controller.enable(),true);h.controller.destroy();return h;}
+test('successful device consent and topic choices survive safe logout and restore only the same owner without a permission prompt',async()=>{
+  const first=harness({permission:'granted'});await first.controller.refresh();await first.controller.enable();await first.controller.preferences({posts:false,dailyVerse:true});
+  const record=savedChoice(first.memory),raw=JSON.stringify([...first.memory]);assert.deepEqual(Object.keys(record.value).sort(),['dailyVerse','enabled','posts','revision']);
+  assert.equal(record.value.enabled,true);assert.equal(record.value.posts,false);assert.doesNotMatch(raw,/SYNTHETIC_MEMBER|PRIVATE|endpoint|Bearer|auth|email|push\.example/);
+  assert.equal(await first.api.detach(first.adapter),true);assert.equal(first.calls.unsubscribe,1);assert.equal(first.native.value,null);assert.equal(savedChoice(first.memory).value.enabled,true);first.controller.destroy();
+  const next=harness({permission:'granted',memory:first.memory,native:first.native,freshEndpoint:'https://push.example.test/restored-owner'});await next.controller.refresh();
+  assert.deepEqual(json(next.controller.decision()),{enabled:true,owned:true});assert.equal(await next.controller.restore(),true);assert.equal(next.calls.prompts,0);assert.equal(next.calls.subscriptions,1);
+  assert.deepEqual(next.calls.requests.find(call=>call.body.action==='subscribe').body.preferences,{posts:false,dailyVerse:true});assert.equal(next.controller.snapshot().subscribed,true);
+});
+test('explicit device OFF remains a completed choice even when the disconnect request fails and cannot be auto-enabled later',async()=>{
+  for(const failure of [undefined,'unsubscribe']){
+    const first=harness({subscribed:true,permission:'granted',failure});await first.controller.refresh();await first.controller.disable();assert.equal(savedChoice(first.memory).value.enabled,false);first.controller.destroy();
+    const next=harness({permission:'granted',memory:first.memory,native:{value:null}});await next.controller.refresh();assert.deepEqual(json(next.controller.decision()),{enabled:false,owned:true});assert.equal(await next.controller.restore(),false);
+    assert.equal(next.calls.prompts,0);assert.equal(next.calls.subscriptions,0);assert.equal(next.calls.requests.some(call=>call.body.action==='subscribe'),false);
+  }
+});
+test('a browser permission or a previous member choice alone cannot automatically transfer another account subscription',async()=>{
+  const first=await remembered();const other=harness({permission:'granted',existing:true,memberKey:'ANOTHER_SYNTHETIC_MEMBER',memory:first.memory});await other.controller.refresh();
+  assert.equal(other.controller.decision(),null);assert.equal(await other.controller.restore(),false);assert.equal(other.calls.subscriptions,0);assert.equal(other.calls.requests.some(call=>call.body.action==='subscribe'),false);
+  assert.equal(await other.controller.enable(),true);other.controller.destroy();
+  const prior=harness({permission:'granted',memberKey:'SYNTHETIC_MEMBER',memory:first.memory});await prior.controller.refresh();assert.deepEqual(json(prior.controller.decision()),{enabled:true,owned:false});assert.equal(await prior.controller.restore(),false);assert.equal(prior.calls.subscriptions,0);
+});
+test('remembered ON never requests permission again after revocation, unsupported context or missing home-screen installation',async()=>{
+  const first=await remembered();
+  for(const options of [{permission:'default'},{permission:'denied'},{permission:'granted',unsupported:true},{permission:'granted',insecure:true},{permission:'granted',ios:true}]){
+    const h=harness(Object.assign({memory:new Map(first.memory)},options));await h.controller.refresh();assert.equal(await h.controller.restore(),false);assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);
+  }
+});
+test('malformed or unavailable local consent fails closed and never becomes origin-wide permission to connect',async()=>{
+  const first=await remembered();
+  for(const mode of ['malformed','unreadable','wrong-owner']){
+    const memory=new Map(first.memory),record=savedChoice(memory);if(mode==='malformed')memory.set(record.name,'{"enabled":true,"token":"DO_NOT_USE"}');if(mode==='wrong-owner')memory.set('growell_push_owner_v1','different-owner');
+    const h=harness({permission:'granted',memory,storageReadFailure:mode==='unreadable'});await h.controller.refresh();assert.equal(await h.controller.restore(),false);assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);
+  }
+});
+test('legacy active choices are adopted before logout without retaining the signed-out subscription or re-enabling an explicit OFF',async()=>{
+  const h=harness({subscribed:true,permission:'granted',posts:false,dailyVerse:false});assert.equal(await h.api.detach(h.adapter),true);
+  assert.deepEqual(h.calls.requests.map(call=>call.body.action),['status','unsubscribe']);assert.equal(h.native.value,null);assert.equal(savedChoice(h.memory).value.enabled,true);assert.equal(savedChoice(h.memory).value.posts,false);assert.equal(savedChoice(h.memory).value.dailyVerse,false);
+  const off=harness({subscribed:true,permission:'granted'});await off.controller.refresh();off.options.failure='unsubscribe';await off.controller.disable();off.options.failure=undefined;const before=off.calls.requests.length;await off.api.detach(off.adapter);
+  assert.deepEqual(off.calls.requests.slice(before).map(call=>call.body.action),[]);assert.equal(off.native.value,null);assert.equal(savedChoice(off.memory).value.enabled,false);
+});
+test('automatic renewal preserves remembered topic OFF choices on an expired subscription and a new endpoint',async()=>{
+  const first=await remembered({posts:false,dailyVerse:false});const record=savedChoice(first.memory);record.value.posts=false;record.value.dailyVerse=false;first.memory.set(record.name,JSON.stringify(record.value));
+  const h=harness({permission:'granted',inactive:true,memory:first.memory,posts:false,dailyVerse:false,freshEndpoint:'https://push.example.test/auto-renewed'});await h.controller.refresh();assert.equal(await h.controller.restore(),true);
+  assert.equal(h.calls.prompts,0);assert.equal(h.calls.unsubscribe,1);assert.deepEqual(h.calls.requests.find(call=>call.body.action==='subscribe').body.preferences,{posts:false,dailyVerse:false});assert.equal(h.controller.snapshot().subscribed,true);
+});
+test('network failure or a bounded automatic restoration timeout preserves intent without prompting or fabricating success',async()=>{
+  const first=await remembered();
+  const failed=harness({permission:'granted',memory:new Map(first.memory),failure:'subscribe'});await failed.controller.refresh();assert.equal(await failed.controller.restore(),false);assert.equal(failed.calls.prompts,0);assert.equal(failed.controller.snapshot().subscribed,false);assert.equal(savedChoice(failed.memory).value.enabled,true);
+  const slow=harness({permission:'granted',memory:new Map(first.memory),fastTimers:true});await slow.controller.refresh();slow.adapter.getAccessToken=()=>new Promise(()=>{});slow.controller.destroy();const controller=slow.api.createController(slow.adapter);
+  assert.equal(await controller.refresh(),false);assert.equal(controller.snapshot().errorCode,'timeout');assert.equal(controller.snapshot().busy,false);assert.equal(slow.calls.prompts,0);assert.equal(savedChoice(slow.memory).value.enabled,true);controller.destroy();
+});
+test('changing the account or saved OFF choice during automatic restoration stops before native or server registration',async()=>{
+  const first=await remembered();
+  for(const change of ['account','off','owner']){
+    const h=harness({permission:'granted',memory:new Map(first.memory)});await h.controller.refresh();let finish;h.registration.pushManager.getSubscription=()=>new Promise(resolve=>{finish=resolve;});
+    const pending=h.controller.restore();await new Promise(setImmediate);assert.equal(typeof finish,'function');
+    if(change==='account')h.endSession();else if(change==='owner')h.memory.set('growell_push_owner_v1','later-member');else{const record=savedChoice(h.memory);record.value.enabled=false;record.value.revision='f'.repeat(32);h.memory.set(record.name,JSON.stringify(record.value));}
+    finish(null);assert.equal(await pending,false);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.requests.some(call=>call.body.action==='subscribe'),false);
+  }
+});
+test('all ownership-changing transactions use one origin-wide device lock including another member and logout',async()=>{
+  const locks=createLocks(),h=harness({permission:'granted',locks});await h.controller.refresh();await h.controller.enable();await h.controller.preferences({posts:false,dailyVerse:true});await h.controller.disable();await h.controller.enable();await h.api.detach(h.adapter);
+  const other=harness({permission:'granted',memberKey:'ANOTHER_SYNTHETIC_MEMBER',locks});await other.controller.refresh();await other.controller.enable();
+  assert.equal(locks.calls.length,6);assert.equal(new Set(locks.calls).size,1);assert.equal(locks.calls[0],'growell-web-push-device-v1');assert.doesNotMatch(locks.calls.join(''),/SYNTHETIC|PRIVATE|endpoint/);
+});
+test('an OFF queued behind an in-flight automatic renewal cannot finish first or leave a receiving endpoint alive',async()=>{
+  const first=await remembered(),locks=createLocks(),backend={active:true,prefs:{posts:true,dailyVerse:true},endpoint:first.subscription.endpoint},native=first.native;
+  const off=harness({permission:'granted',locks,backend,native,memory:first.memory});await off.controller.refresh();assert.equal(off.controller.snapshot().subscribed,true);
+  backend.active=false;let finish;const pendingServer=new Promise(resolve=>{finish=resolve;});
+  const auto=harness({permission:'granted',inactive:true,locks,backend,native,memory:first.memory,freshEndpoint:'https://push.example.test/queued-auto-endpoint',fetchDeferred:pendingServer,fetchDeferredAction:'subscribe'});await auto.controller.refresh();
+  const restoring=auto.controller.restore();await new Promise(setImmediate);assert.equal(auto.calls.requests.at(-1).body.action,'subscribe');assert.equal(native.value.endpoint,'https://push.example.test/queued-auto-endpoint');
+  const disabling=off.controller.disable();await new Promise(setImmediate);assert.equal(off.calls.requests.some(call=>call.body.action==='unsubscribe'),false,'OFF must wait until the preceding subscribe transaction settles');
+  backend.active=true;backend.endpoint=native.value.endpoint;finish({ok:true,json:async()=>({ok:true})});assert.equal(await restoring,false);assert.equal(await disabling,true);
+  assert.equal(native.value,null);assert.equal(savedChoice(first.memory).value.enabled,false);assert.equal(auto.calls.unsubscribe,1,'the unconfirmed fresh automatic endpoint is retired before releasing the lock');
+});
+test('an uncertain automatic subscribe retires its exact fresh endpoint before a late server commit and a queued OFF',async()=>{
+  const first=await remembered(),locks=createLocks(),backend={active:true,prefs:{posts:true,dailyVerse:true},endpoint:first.subscription.endpoint},native=first.native;
+  const off=harness({permission:'granted',locks,backend,native,memory:first.memory});await off.controller.refresh();backend.active=false;
+  let finish;const response=new Promise(resolve=>{finish=resolve;}),auto=harness({permission:'granted',inactive:true,locks,backend,native,memory:first.memory,freshEndpoint:'https://push.example.test/uncertain-auto',fetchDeferred:response,fetchDeferredAction:'subscribe'});await auto.controller.refresh();const restoring=auto.controller.restore();await new Promise(setImmediate);
+  const created=native.value,disabling=off.controller.disable();finish({ok:false,status:503,json:async()=>({error:'timeout'})});assert.equal(await restoring,false);await disabling;
+  assert.equal(native.value,null);assert.equal(auto.calls.unsubscribe,1);assert.equal(savedChoice(first.memory).value.enabled,false);
+  backend.endpoint=created.endpoint;backend.active=true;assert.equal(native.value,null,'a commit after the uncertain response can only point at the retired native endpoint');
+});
+test('automatic failure cleanup never unsubscribes a different endpoint that appeared later',async()=>{
+  const first=await remembered(),h=harness({permission:'granted',memory:first.memory,failure:'subscribe',freshEndpoint:'https://push.example.test/failed-auto'});await h.controller.refresh();let touched=0;
+  h.options.onFetch=body=>{if(body.action==='subscribe')h.native.value={endpoint:'https://push.example.test/later-owner',unsubscribe(){touched++;return Promise.resolve(true);}};};
+  assert.equal(await h.controller.restore(),false);assert.equal(h.native.value.endpoint,'https://push.example.test/later-owner');assert.equal(touched,0);assert.equal(h.calls.unsubscribe,0);
+});
+test('without a cross-tab lock automatic restoration stays off while an explicit settings gesture remains available',async()=>{
+  const first=await remembered(),h=harness({permission:'granted',noLocks:true,memory:first.memory});await h.controller.refresh();assert.equal(await h.controller.restore(),false);assert.equal(h.calls.subscriptions,0);assert.equal(h.calls.prompts,0);
+  assert.equal(await h.controller.enable(),true);assert.equal(h.calls.subscriptions,1);assert.equal(h.calls.prompts,0);
+});
+test('a delayed legacy status cannot overwrite a device owner that changed while its request was pending',async()=>{
+  let finish;const delayed=new Promise(resolve=>{finish=resolve;}),h=harness({permission:'granted',subscribed:true,fetchDeferred:delayed,fetchDeferredAction:'status'});const refreshing=h.controller.refresh();await new Promise(setImmediate);h.memory.set('growell_push_owner_v1','later-owner');finish({ok:true,json:async()=>({configured:true,subscription:{active:true,preferences:{posts:true,dailyVerse:true}}})});assert.equal(await refreshing,true);
+  assert.equal(h.memory.get('growell_push_owner_v1'),'later-owner');assert.equal([...h.memory.keys()].some(name=>name.startsWith('growell_push_choice_v1:')),false);
 });
 function workerHarness(windows=[]){
   const events={},notifications=[],opened=[],c={URL,Promise,self:{location:{origin:'https://growell-book.vercel.app'},addEventListener:(name,fn)=>events[name]=fn,

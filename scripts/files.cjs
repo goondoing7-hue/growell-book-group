@@ -90,7 +90,7 @@ const PUBLISH_FILES = Object.freeze([
   'server/question-reply-editing.sql', 'server/question-reply-editing-verification.sql',
   ...DEPLOY_FILES, ...TEST_FILES,
   'package.json', 'package-lock.json', 'vercel.json', '.gitignore',
-  '.github/workflows/verify.yml', 'README.md', 'DEPLOYMENT.md', 'AGENTS.md', 'AUTH_SETUP.md', 'server/member-read-policy.sql', 'server/oauth-members.sql', 'server/oauth-interface.md',
+  '.github/workflows/verify.yml', 'README.md', 'DEPLOYMENT.md', 'AGENTS.md', 'AUTH_SETUP.md', 'server/member-read-policy.sql', 'server/oauth-members.sql', 'server/google-only-enrollment.sql', 'server/oauth-interface.md',
   'server/oauth-verification.sql', 'server/recovery-owner.sql', 'server/recovery-owner-verification.sql', 'server/member-read-verification.sql',
   'server/habit-kind.sql', 'server/community-questions.sql', 'server/community-questions-verification.sql',
   'server/worksheet-admin-only.sql', 'server/worksheet-admin-verification.sql',

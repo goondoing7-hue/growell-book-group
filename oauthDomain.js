@@ -63,5 +63,18 @@
     await verifyLinkedKey(password,salt,authUserId,existingKeyB64);
     return createVault(password,newSalt(),authUserId,existingKeyB64);
   }
-  return {newSalt:newSalt,createVault:createVault,createLinkedVault:createLinkedVault,verifyLinkedKey:verifyLinkedKey,unlockVault:unlockVault,validateEnvelope:validateEnvelope};
+  // A non-secret presentation preference only. Never use it to authenticate,
+  // recover a key, decide membership, or combine accounts on a shared device.
+  function loginPreference(user,profile){
+    if(!user||!profile||profile.auth_user_id!==user.id||profile.is_deleted||profile.approval_status!=='approved')return null;
+    var id;try{id=owner(user.id);}catch(error){return null;}
+    if(typeof profile.id!=='string'||!profile.id||profile.id.length>160)return null;
+    var identities=Array.isArray(user.identities)?user.identities:[];
+    if(!identities.some(function(identity){return identity&&identity.provider==='google'||identity&&identity.provider==='email';}))return null;
+    return {version:1,owner:id,profileId:profile.id,method:identities.some(function(identity){return identity&&identity.provider==='google';})?'google':'password'};
+  }
+  function knownGooglePreference(value){
+    try{return !!(value&&value.version===1&&value.method==='google'&&owner(value.owner)===value.owner&&typeof value.profileId==='string'&&value.profileId.length>0&&value.profileId.length<=160);}catch(error){return false;}
+  }
+  return {newSalt:newSalt,createVault:createVault,createLinkedVault:createLinkedVault,verifyLinkedKey:verifyLinkedKey,unlockVault:unlockVault,validateEnvelope:validateEnvelope,loginPreference:loginPreference,knownGooglePreference:knownGooglePreference};
 });

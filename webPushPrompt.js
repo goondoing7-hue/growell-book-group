@@ -71,12 +71,22 @@
       var key=memberHash(options.memberKey);if(!key||skipped.has(key)||retryAt[key]>now())return Promise.resolve(false);
       if(pending){if(pending.key===key&&valid(pending))return pending.promise;generation++;cancel(pending);pending=null;}
       var job={key:key,generation:generation,options:options,draw:null};
-      if(snoozed(key)||!canPresent(job))return Promise.resolve(false);
+      if(!canPresent(job))return Promise.resolve(false);
       var controller=Push.createController({memberKey:options.memberKey,isCurrent:function(){return valid(job);},getAccessToken:options.getAccessToken,onChange:function(state){if(job.draw)job.draw(state);}});job.controller=controller;pending=job;
       job.promise=controller.refresh().then(function(ok){
         if(!valid(job))return false;var state=controller.snapshot();
         if(!ok||state.errorCode||!state.loaded){retryAt[key]=now()+45000;return false;}
         if(state.permission==='denied'||state.subscribed||!state.iosNeedsInstall&&!state.supported){skipped.add(key);return false;}
+        var remembered=controller.decision();
+        if(remembered){
+          // A completed choice belongs to this member and device, survives logout, and never becomes a new permission prompt.
+          skipped.add(key);
+          if(remembered.enabled&&remembered.owned&&state.permission==='granted'&&state.configured&&!state.iosNeedsInstall){
+            return controller.restore().then(function(){return false;});
+          }
+          return false;
+        }
+        if(snoozed(key)){skipped.add(key);return false;}
         if(!state.iosNeedsInstall&&!state.configured){retryAt[key]=now()+45000;return false;}
         return afterArrival(job).then(function(ready){return ready&&show(job,controller,state);});
       }).catch(function(){if(valid(job))retryAt[key]=now()+45000;return false;}).finally(function(){if(pending===job)pending=null;if(!active||active.job!==job)controller.destroy();});

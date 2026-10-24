@@ -32,6 +32,8 @@ describe('existing member Google login link SQL preserves account and records',(
       create table public.private_entries(id text primary key,user_id text references public.profiles(id),created_at bigint,data text);
       create table public.posts(id text primary key,user_id text references public.profiles(id),body text);
       create table public.habits(id text primary key,user_id text references public.profiles(id),checked_dates jsonb);`);
+    await db.exec(`create table public.growell_signup_notifications(profile_id text primary key references public.profiles(id) on delete cascade,applicant_name text not null,login_id text not null);
+      create function public.growell_guard_member_approval() returns trigger language plpgsql as $$begin new.approval_status:='pending';new.is_admin:=false;return new;end$$;`);
     await db.exec(migration);
   });
   beforeEach(async()=>{
@@ -185,19 +187,44 @@ describe('existing member Google login link SQL preserves account and records',(
     await assert.rejects(asRole('anon',()=>db.query('select public.growell_oauth_link_rotate($1::jsonb,$2::jsonb)',[JSON.stringify(second),JSON.stringify(third)])),codeIs('42501'));
     await assert.rejects(asRole('service_role',()=>db.query('select public.growell_oauth_link_rotate($1::jsonb,$2::jsonb)',[JSON.stringify(second),JSON.stringify(third)])),codeIs('42501'));
   });
-  test('stateless Auth hook blocks only new Google users and trusts no user-editable provider claim',async()=>{
+  test('stateless Auth hook permits only new Google users and trusts no user-editable provider claim',async()=>{
     const hook=event=>asRole('supabase_auth_admin',async()=>(await db.query('select public.growell_before_user_created($1::jsonb) as value',[JSON.stringify(event)])).rows[0].value);
     const before=await snapshot();
-    const blocked=await hook({user:{app_metadata:{provider:'google'},user_metadata:{provider:'email'}}});
-    assert.equal(blocked.error.http_code,403);assert.match(blocked.error.message,/기존 GROWELL 아이디/);
-    for(const allowed of [
+    const allowed=await hook({user:{app_metadata:{provider:'google'},user_metadata:{provider:'email'}}});
+    assert.deepEqual(allowed,{});
+    for(const blocked of [
       {user:{app_metadata:{provider:'email'},user_metadata:{provider:'google',is_admin:true}}},
-      {user:{app_metadata:{provider:'kakao'}}},{user:{user_metadata:{provider:'google'}}},null
-    ])assert.deepEqual(await hook(allowed),{});
+      {user:{app_metadata:{provider:'kakao'}}},{user:{user_metadata:{provider:'google'}}},
+      {user:{app_metadata:{provider:'google'},is_anonymous:true}},null
+    ])assert.equal((await hook(blocked)).error.http_code,403);
     assert.equal(await snapshot(),before);
     for(const role of ['anon','authenticated','service_role'])await assert.rejects(asRole(role,()=>db.query("select public.growell_before_user_created('{}'::jsonb)")),codeIs('42501'));
     const meta=(await db.query("select prosecdef,provolatile,proconfig from pg_proc where oid='public.growell_before_user_created(jsonb)'::regprocedure")).rows[0];
     assert.equal(meta.prosecdef,false);assert.equal(meta.provolatile,'i');assert.deepEqual(meta.proconfig,['search_path=""']);
+  });
+  test('Google-only follow-up registers one pending member, exact vault and one notice while preserving old member records',async()=>{
+    const followup=fs.readFileSync(path.join(__dirname,'../server/google-only-enrollment.sql'),'utf8');await db.exec(followup);
+    const fresh='55555555-5555-4555-8555-555555555555',before=await snapshot();
+    await db.query('insert into auth.users values($1::uuid)',[fresh]);
+    await db.query("insert into auth.identities(provider_id,user_id,provider) values('fresh-google',$1::uuid,'google')",[fresh]);await claims({},fresh);
+    const register=value=>asRole('authenticated',async()=>(await db.query('select public.growell_oauth_register($1,$2,$3::jsonb) as value',['임시 별명',salt,JSON.stringify(value)])).rows[0].value);
+    const made=await register(envelope(fresh));assert.equal(made.status,'ready');assert.equal(made.profile.approval_status,'pending');assert.equal(made.profile.is_admin,false);assert.equal(made.profile.auth_user_id,fresh);assert.deepEqual(made.envelope,envelope(fresh));
+    assert.deepEqual(await register(envelope(fresh,{data:Buffer.alloc(96,8).toString('base64')})),made);
+    assert.equal((await db.query('select count(*)::int as n from public.growell_signup_notifications')).rows[0].n,1);
+    const existing=JSON.parse(before),after=JSON.parse(await snapshot());
+    for(const field of ['private_entries','posts','habits'])assert.deepEqual(after[field],existing[field]);
+    assert.deepEqual(after.profiles.filter(p=>p.auth_user_id!==fresh),existing.profiles);
+    assert.deepEqual(after.identities.filter(i=>i.user_id!==fresh),existing.identities);
+  });
+  test('existing Kakao profiles remain readable but an unregistered Kakao identity cannot become a member',async()=>{
+    await db.exec(fs.readFileSync(path.join(__dirname,'../server/google-only-enrollment.sql'),'utf8'));
+    await db.query("insert into auth.identities(provider_id,user_id,provider) values('old-kakao',$1::uuid,'kakao')",[OWNER]);
+    const before=await snapshot();const result=await asRole('authenticated',async()=>(await db.query('select public.growell_oauth_register($1,$2,$3::jsonb) as value',['ignored',salt,JSON.stringify(envelope())])).rows[0].value);
+    assert.equal(result.profile.id,'original-owner');assert.equal(result.status,'legacy');assert.equal(await snapshot(),before);
+    const fresh='66666666-6666-4666-8666-666666666666';await db.query('insert into auth.users values($1::uuid)',[fresh]);
+    await db.query("insert into auth.identities(provider_id,user_id,provider) values('new-kakao',$1::uuid,'kakao')",[fresh]);await claims({},fresh);
+    await assert.rejects(asRole('authenticated',()=>db.query('select public.growell_oauth_register($1,$2,$3::jsonb)',['blocked',salt,JSON.stringify(envelope(fresh))])),codeIs('42501'));
+    assert.equal((await db.query('select count(*)::int as n from public.profiles where auth_user_id=$1::uuid',[fresh])).rows[0].n,0);
   });
   test('standalone rollback verification succeeds without leaving synthetic Auth/profile/vault rows',async()=>{
     const verification=fs.readFileSync(path.join(__dirname,'../server/oauth-verification.sql'),'utf8');

@@ -76,6 +76,9 @@ begin
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(member_auth_id::text, 0));
   current_status := public.growell_oauth_profile();
   if current_status->>'status' <> 'new' then return current_status; end if;
+  if not exists(select 1 from auth.identities i where i.user_id=member_auth_id and i.provider='google') then
+    raise exception 'google_signup_required' using errcode='42501';
+  end if;
   if p_name is null or char_length(btrim(p_name)) not between 1 and 30 then
     raise exception 'invalid_display_name' using errcode='22023';
   end if;
@@ -102,11 +105,14 @@ begin
   end if;
   -- Deliberately no email/name matching and no caller-supplied id or admin flag.
   -- A pre-existing general account always returns status=legacy above.
-  insert into public.profiles(auth_user_id,login_id,name,is_admin,pbkdf2_salt)
-  values(member_auth_id,'social_'||replace(member_auth_id::text,'-',''),btrim(p_name),false,p_salt)
+  insert into public.profiles(auth_user_id,login_id,name,is_admin,pbkdf2_salt,approval_status)
+  values(member_auth_id,'social_'||replace(member_auth_id::text,'-',''),btrim(p_name),false,p_salt,'pending')
   returning id into member_profile_id;
   insert into public.growell_oauth_vaults(auth_user_id,profile_id,envelope)
   values(member_auth_id,member_profile_id,p_envelope);
+  insert into public.growell_signup_notifications(profile_id,applicant_name,login_id)
+  select p.id,p.name,p.login_id from public.profiles p where p.id=member_profile_id
+  on conflict(profile_id) do nothing;
   return public.growell_oauth_profile();
 end;
 $function$;
@@ -251,18 +257,16 @@ $function$;
 revoke all on function public.growell_oauth_link_rotate(jsonb,jsonb) from public,anon,authenticated,service_role;
 grant execute on function public.growell_oauth_link_rotate(jsonb,jsonb) to authenticated;
 
--- Optional Before User Created Auth hook. Activate only after verifying there
--- is no existing signup hook to replace. New Google Auth users must first join
--- through GROWELL's existing approval flow, then explicitly link their account.
--- Existing user login/linkIdentity does not create a user and is unaffected.
--- This stateless hook reads Auth-supplied app_metadata, not user_metadata.
+-- New Auth creation is Google-only. Login/linking of an existing Auth UUID
+-- never creates a user. Only Auth-supplied app_metadata is inspected here.
 create or replace function public.growell_before_user_created(event jsonb)
 returns jsonb language sql immutable security invoker set search_path = ''
 as $function$
   select case when lower(event#>>'{user,app_metadata,provider}')='google'
-    then jsonb_build_object('error',jsonb_build_object('http_code',403,
-      'message','기존 GROWELL 아이디로 로그인한 뒤 설정에서 Google 로그인을 연결해주세요.'))
-    else '{}'::jsonb end;
+    and coalesce((event#>>'{user,is_anonymous}')::boolean,false)=false
+    then '{}'::jsonb
+    else jsonb_build_object('error',jsonb_build_object('http_code',403,
+      'message','새 회원가입은 Google 계정으로 진행해주세요.')) end;
 $function$;
 revoke all on function public.growell_before_user_created(jsonb) from public,anon,authenticated,service_role;
 grant execute on function public.growell_before_user_created(jsonb) to supabase_auth_admin;

@@ -312,79 +312,15 @@ test('login recovery can await a queued save without waiting on its own auth pro
   assert.equal(c.STATE.privateEntries.p2.data,'recovered');
 });
 
-test('signup clears old keys and member data and stays signed out pending administrator approval',async()=>{
-  const {context:c,auth,reads}=harness();
-  c.STATE.privateEntries.p1={id:'p1',userId:'u1',data:'old'};
-  await c.doSignup('새 회원','newuser','password','password',validHint,'','data:image/png;base64,aGVsbG8=',{});
-  assert.equal(c.SESSION,null);
-  assert.equal(c.CURRENT_KEY,null);
-  assert.equal(Object.keys(c.STATE.privateEntries).length,0);
-  assert.equal(Object.keys(c.STATE.habits).length,0);
-  assert.equal(c.memberLoadState.privateEntries,'idle');assert.deepEqual(auth,['signOut']);assert.equal(reads.length,0);
-  assert.equal(c.oauthMessage,'');assert.equal(c.authMode,'signup-complete');
+test('retired ID signup never signs out a member, reads old data or sends a signup request',async()=>{
+  let sent=false;const {context:c,auth,reads,toasts}=harness({signup:()=>{sent=true;throw Error('must not send');}});
+  c.STATE.privateEntries.p1={id:'p1',userId:'u1',data:'opaque-original'};
+  const original=JSON.stringify(c.STATE),session=c.SESSION,key=c.CURRENT_KEY,epoch=c.authFlowEpoch;
+  assert.equal(await c.doSignup('임시','synthetic','fixture','fixture',validHint,'',null,{}),false);
+  assert.equal(sent,false);assert.equal(c.SESSION,session);assert.equal(c.CURRENT_KEY,key);assert.equal(c.authFlowEpoch,epoch);
+  assert.equal(JSON.stringify(c.STATE),original);assert.deepEqual(auth,[]);assert.deepEqual(reads,[]);assert.match(toasts[0][0],/Google 계정/);
 });
 
-test('logout during signup prevents its response from signing the user in later',async()=>{
-  const blocked=deferred();
-  const {context:c,auth}=harness({signup:()=>blocked.promise});
-  const signup=c.doSignup('새 회원','newuser','password','password',validHint,'','data:image/png;base64,aGVsbG8=',{});
-  await tick();
-  const logout=c.doLogout();
-  blocked.resolve({__status:200,ok:true,profile:{id:'u2',name:'새 회원',pbkdf2_salt:'salt'}});
-  await Promise.all([signup,logout]);
-  assert.equal(c.SESSION,null);
-  assert.deepEqual(auth,['signOut']);
-});
-
-test('signup rejects an unsafe supplied photo before sending a registration request',async()=>{
-  for(const avatar of [false,{},'javascript:alert(1)','data:image/svg+xml;base64,PHN2Zy8+']){
-    let called=false;const {context:c,toasts}=harness({signup:()=>{called=true;return Promise.resolve({});}});
-    await c.doSignup('새 회원','newuser','password','password',validHint,'',avatar,{});
-    assert.equal(called,false);assert.match(toasts[0][0],/프로필 사진/);assert.equal(c.SESSION.userId,'u1');
-  }
-});
-
-test('signup without a photo sends only a bounded question-and-answer digest and remains pending',async()=>{
-  for(const avatar of [null,undefined,'']){
-    const requests=[],h=harness({signup:async(name,body)=>{requests.push({name,body});return {__status:200,ok:true,profile:{}};}});
-    await h.context.doSignup('새 회원','newuser','password','password',validHint,'',avatar,{});
-    assert.equal(requests.length,1);assert.equal(requests[0].body.avatarDataUrl,null);
-    assert.equal(requests[0].body.pwHint,await PasswordHint.encode(validHint));assert.equal(requests[0].body.pwHint.length,69);
-    assert.doesNotMatch(JSON.stringify(requests[0].body),/테스트 학교|first_school/);
-    assert.equal(h.context.SESSION,null);assert.equal(h.context.authMode,'signup-complete');
-  }
-});
-test('signup requires both a selected question and answer without a raw or legacy fallback',async()=>{
-  for(const value of ['hint',{questionId:'',answer:'답'},{questionId:'first_school',answer:''},{questionId:'legacy',answer:'기존 힌트'}]){
-    const requests=[],h=harness({signup:async()=>{requests.push(true);return {};}});
-    await h.context.doSignup('새 회원','newuser','password','password',value,'',null,{});
-    assert.equal(requests.length,0);assert.equal(h.context.SESSION.userId,'u1');assert.match(h.toasts[0][0],/질문|답/);
-  }
-});
-test('intentional signup sign-out events do not cancel success feedback or advance the auth flow',async()=>{
-  for(const signOutEvent of ['sync','queued']){
-    const h=harness({signOutEvent}),c=h.context;
-    await c.doSignup('새 회원','newuser','password','password',validHint,'',null,{});
-    const flow=c.authFlowEpoch;await new Promise(resolve=>setTimeout(resolve,10));
-    assert.equal(c.authFlowEpoch,flow);assert.equal(c.SESSION,null);assert.equal(c.authMode,'signup-complete');
-    assert.equal(c.oauthMessage,'');
-  }
-});
-
-test('signup changes to its completion screen only after server success and leaves failed forms intact',async()=>{
-  for(const result of [{__status:200,ok:true,profile:{}},{__status:400,ok:false,error:'duplicate_id'}]){
-    const pending=deferred(),started=deferred();
-    const {context:c,toasts}=harness({signup:()=>{started.resolve();return pending.promise;}});
-    let renders=0;c.render=()=>{renders++;};
-    const avatar='data:image/png;base64,aGVsbG8=';c.pendingSignupAvatar=avatar;
-    const button={},work=c.doSignup('새 회원','newuser','password','password',validHint,'',avatar,button);
-    await started.promise;
-    assert.equal(c.authMode,'signup');assert.equal(renders,0);assert.equal(button.disabled,true);
-    pending.resolve(result);await work;
-    if(result.ok){assert.equal(c.authMode,'signup-complete');assert.equal(renders,1);assert.equal(c.pendingSignupAvatar,null);}
-    else{assert.equal(c.authMode,'signup');assert.equal(renders,0);assert.equal(c.pendingSignupAvatar,avatar);assert.equal(button.disabled,false);assert.match(toasts.at(-1)[0],/이미 사용 중/);}
-  }
-});
 test('pending login sign-out events preserve the precise approval message and never unlock records',async()=>{
   for(const signOutEvent of ['sync','queued']){
     const h=harness({signOutEvent,read:()=>({data:{id:'pending',auth_user_id:'pending-auth',approval_status:'pending'}})}),c=h.context;

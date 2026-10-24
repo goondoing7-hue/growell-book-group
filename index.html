@@ -1764,6 +1764,7 @@ function restoreMemberSession(linkEvidence){
     var row=profileResult.data,restored=null;
     if(linkEvidence&&(!row||row.id!==linkEvidence.profileId||row.auth_user_id!==linkEvidence.authUserId||row.pbkdf2_salt!==linkEvidence.profileSalt||!GrowellMemberAccess.approved(row)||!nativePasswordMember(user,row)))throw new Error('google-link-restore-unavailable');
     if(row&&row.auth_user_id!==user.id)throw memberSessionFailure(null,true);
+    if(row&&typeof rememberVerifiedLoginChoice==='function')rememberVerifiedLoginChoice(user,row);
     if(row&&!GrowellMemberAccess.approved(row)){
       forgetCachedSession();oauthMessage=GrowellMemberAccess.message(row.approval_status);
       await sb.auth.signOut();guard();return false;
@@ -2367,7 +2368,7 @@ function clearMemberSession(){
   if(typeof resetMemberPushPrompt==='function')resetMemberPushPrompt();
   if(SESSION&&typeof GrowellWebPush!=='undefined'&&typeof GrowellWebPush.detach==='function'){
     var pushSession=SESSION,pushEpoch=saveSessionEpoch,pushMember=STATE.users[pushSession.userId],pushAuthId=pushMember&&pushMember.authUserId;
-    pushDetachPending=GrowellWebPush.detach({isCurrent:function(){return saveSessionEpoch===pushEpoch&&(!SESSION||SESSION===pushSession);},getAccessToken:function(){
+    pushDetachPending=GrowellWebPush.detach({memberKey:pushSession.userId,isCurrent:function(){return saveSessionEpoch===pushEpoch&&(!SESSION||SESSION===pushSession);},getAccessToken:function(){
       return sb.auth.getSession().then(function(result){var auth=result&&result.data&&result.data.session;
         if(saveSessionEpoch!==pushEpoch||SESSION&&SESSION!==pushSession||!pushAuthId||result.error||!auth||!auth.user||auth.user.id!==pushAuthId||!auth.access_token)throw new Error('session_changed');
         return auth.access_token;
@@ -2810,67 +2811,9 @@ function callEdgeFunction(name, body, accessToken){
     });
 }
 
-function doSignup(name, id, pw, pw2, hint, adminCode, avatar, btn){
-  id = id.trim().toLowerCase();
-  name = name.trim();
-  if(avatar!==null&&avatar!==undefined&&avatar!==''&&!GrowellProfile.safeAvatarUrl(avatar)){showToast('프로필 사진을 다시 선택해주세요.',true);return;}
-  if(!name || !id || !pw){ showToast('별명, 아이디, 비밀번호를 모두 입력해주세요.', true); return; }
-  if(name.length>30){ showToast('별명은 30자 이내로 입력해주세요.', true); return; }
-  /* 아이디는 내부적으로 "아이디@growell.internal" 이메일로 바뀌어 Supabase Auth에 등록되는데,
-     이메일 로컬 파트에 한글 등 비ASCII 문자가 들어가면 "invalid format"으로 매번 거절당한다 —
-     그래서 영문/숫자/밑줄/하이픈만 허용하도록 미리 걸러서 안내한다. */
-  if(!/^[a-z0-9_-]+$/i.test(id)){ showToast('아이디는 영문, 숫자, -, _ 만 사용할 수 있어요.', true); return; }
-  /* Supabase Auth 프로젝트 기본 정책이 비밀번호 최소 길이를 요구해서(보통 6자 이상), 예전 기준인
-     4자로는 서버(auth.admin.createUser)에서 거절당해 가입 자체가 항상 실패했었다 — 여유 있게
-     8자 이상으로 올려서 이 문제를 막는다. */
-  if(pw.length<8){ showToast('비밀번호는 8자 이상으로 만들어주세요.', true); return; }
-  if(pw!==pw2){ showToast('비밀번호가 서로 달라요. 다시 확인해주세요.', true); return; }
-  /* 힌트는 비밀번호를 잊었을 때 본인 확인용 — 나중에 아무도(운영자 포함) 대신 알려줄 수
-     없으므로 가입 시점에 반드시 받아둔다. */
-  try{hint=GrowellPasswordHint.validate(hint);}catch(error){showToast(error.message,true);return;}
-  var dup = false;
-  for(var k in STATE.users){ if(STATE.users[k].loginId===id){ dup=true; break; } }
-  if(dup){ showToast('이미 사용 중인 아이디예요.', true); return; }
-  if(btn){ btn.disabled=true; btn.textContent='만드는 중…'; }
-  var flow = ++authFlowEpoch;
-  var pendingSave = resetSaveSession();
-  clearMemberSession();
-  function signupGuard(){ if(flow!==authFlowEpoch) throw new Error('auth-flow-cancelled'); }
-  var salt = randomSaltHex();
-  authTransition = authTransition.catch(function(){}).then(function(){ return pendingSave; }).then(function(){
-    signupGuard();
-    return GrowellPasswordHint.encode(hint).then(function(encodedHint){signupGuard();return callEdgeFunction('signup', {loginId:id, password:pw, name:name, adminCode:adminCode, salt:salt, avatarDataUrl:avatar||null, pwHint:encodedHint});});
-  })
-    .then(function(res){
-      signupGuard();
-      if(!res || res.__status!==200 || !res.ok){
-        var msg = '가입에 실패했어요. 다시 시도해주세요.';
-        if(res && res.error==='duplicate_id') msg = '이미 사용 중인 아이디예요.';
-        else if(res && res.error==='weak_password') msg = '비밀번호는 8자 이상으로 만들어주세요.';
-        else if(res && res.error==='invalid_id_format') msg = '아이디는 영문, 숫자, -, _ 만 사용할 수 있어요.';
-        else if(res && res.error==='missing_hint') msg = '비밀번호 힌트를 입력해주세요.';
-        else if(res && ['missing_avatar','invalid_avatar','avatar_upload_failed'].includes(res.error)) msg = '프로필 사진을 저장하지 못했어요. 사진을 다시 선택해주세요.';
-        /* 서버가 돌려준 구체적인 이유가 있으면 그대로 보여준다 — 다음에 또 실패하더라도
-           토스트만 보고 바로 원인을 알 수 있게(원래는 무조건 이 문구 하나였음). */
-        else if(res && res.detail) msg = '가입에 실패했어요: ' + res.detail;
-        throw new Error(msg);
-      }
-      return res.profile;
-    })
-    .then(async function(profileRow){
-      signupGuard();
-      await sb.auth.signOut();signupGuard();
-      pendingSignupAvatar=null;authMode='signup-complete';
-      oauthMessage='';
-      location.hash='#/login';render();
-    })
-    .catch(function(err){
-      if(btn){ btn.disabled=false; btn.textContent='가입 신청'; }
-      if(flow!==authFlowEpoch) return false;
-      showToast((err && err.message) || '가입에 실패했어요. 다시 시도해주세요.', true);
-      return false;
-    });
-  return authTransition;
+function doSignup(){
+  showToast('새 회원가입은 Google 계정으로 진행해주세요.',true);
+  return Promise.resolve(false);
 }
 /* 관리자 코드 승격 — 코드 검증은 grant-admin Edge Function이 서버에서 하고, is_admin 컬럼은
    트리거로 클라이언트 직접 수정을 막아뒀다(profiles.update RLS만으론 본인이 직접 켤 수 있었음). */
@@ -4961,9 +4904,8 @@ function welcomeHomeHtml(){
 }
 
 /* ---------------- OAuth login and private-space unlock ---------------- */
-// Keep provider configuration, callbacks and existing accounts for a later return.
-// This switch only controls new social sign-in entry points in this app.
-var SOCIAL_AUTH_VISIBLE=false;
+// New enrollment uses Google; existing member identities and key recovery stay intact.
+var SOCIAL_AUTH_VISIBLE=true;
 var GOOGLE_LOGIN_VISIBLE=true;
 var oauthProviders={state:'loading',google:false,kakao:false};
 var oauthPending=null,oauthBusy=false,oauthMessage='',oauthWatcherBound=false;
@@ -4971,6 +4913,16 @@ var googleLoginDialog=null,googleLoginDialogGeneration=0;
 var googleLoginTransferEngine=null,googleLoginTransferProof=null,googleLoginTransferDialog=null,googleLoginTransferGeneration=0;
 var googleTransferOpenAfterBoot=false,googleTransferNotice='',googleTransferCompleted=false,googleTransferRecoveryChecked=false;
 var GOOGLE_LINK_MARKER='growell_google_login_link_v1';
+var LOGIN_CHOICE_KEY='growell_login_choice_v1',authOtherAccount=false;
+function rememberVerifiedLoginChoice(user,profile){
+  var choice=GrowellOAuth.loginPreference(user,profile);if(!choice)return;
+  try{localStorage.setItem(LOGIN_CHOICE_KEY,JSON.stringify(choice));}catch(error){}
+  authOtherAccount=false;
+}
+function preferGoogleLogin(){
+  if(authOtherAccount)return false;
+  try{return GrowellOAuth.knownGooglePreference(JSON.parse(localStorage.getItem(LOGIN_CHOICE_KEY)||'null'));}catch(error){return false;}
+}
 function passwordMemberIdentity(user){return !!(user&&(user.identities||[]).some(function(identity){return identity.provider==='email';}));}
 function googleMemberIdentity(user){return !!(user&&(user.identities||[]).some(function(identity){return identity.provider==='google';}));}
 function nativePasswordMember(user,profile){
@@ -5095,7 +5047,8 @@ function finishOAuthCallback(){
       var cached;try{cached=JSON.parse(localStorage.getItem('growell_session')||'null');}catch(error){throw new Error('oauth-link-mismatch');}
       if(!cached||cached.userId!==linkMarker.profileId||await googleLinkKeyDigest(cached.keyB64)!==linkMarker.keyDigest)throw new Error('oauth-link-mismatch');guard();
     }
-    clearGoogleLinkMarker(linkMarker.nonce);oauthMessage='Google 로그인 연결이 완료됐어요. 기존 아이디 로그인도 계속 사용할 수 있어요.';
+    rememberVerifiedLoginChoice(user,profile.data);
+    clearGoogleLinkMarker(linkMarker.nonce);oauthMessage='Google 로그인 연결이 완료됐어요.';
   }).catch(async function(error){
     if(callbackFlow===authFlowEpoch&&linkNonces.length){clearGoogleLinkMarker(linkMarker&&linkMarker.nonce);try{await sb.auth.signOut({scope:'local'});}catch(ignored){}}
     throw error;
@@ -5151,7 +5104,7 @@ async function prepareOAuthMember(user,flow){
   return oauthPending;
 }
 async function startOAuth(provider,button){
-  if(!(SOCIAL_AUTH_VISIBLE||GOOGLE_LOGIN_VISIBLE&&provider==='google')||oauthBusy||!['google','kakao'].includes(provider)||!oauthProviders[provider])return;
+  if(!GOOGLE_LOGIN_VISIBLE||oauthBusy||provider!=='google'||!oauthProviders.google)return;
   oauthBusy=true;oauthMessage='';if(button){button.disabled=true;button.textContent='로그인 화면으로 이동 중…';}
   var flow=++authFlowEpoch,pending=resetSaveSession();clearMemberSession();oauthPending=null;
   try{
@@ -5175,7 +5128,7 @@ async function completeOAuthMember(name,password,confirmation,button){
   if(!oauthPending||oauthBusy)return false;
   var pending=oauthPending,flow=authFlowEpoch;
   function guard(){if(flow!==authFlowEpoch||oauthPending!==pending)throw new Error('auth-flow-cancelled');}
-  if(pending.status==='new'&&!SOCIAL_AUTH_VISIBLE){oauthMessage='먼저 기존 아이디로 로그인한 뒤 프로필 → 설정 → 연동에서 Google 로그인을 연결해주세요.';return false;}
+  if(pending.status==='new'&&!SOCIAL_AUTH_VISIBLE){oauthMessage='새 회원가입은 Google 계정으로 진행해주세요.';return false;}
   if(pending.status==='legacy'){oauthMessage='이 계정은 기존 아이디로 로그인해주세요.';return false;}
   name=(name||'').trim();
   if(pending.status==='new' && (!name||name.length>30)){showToast('별명은 1~30자로 입력해주세요.',true);return false;}
@@ -5185,6 +5138,7 @@ async function completeOAuthMember(name,password,confirmation,button){
   try{
     var verified=await sb.auth.getUser();guard();
     if(verified.error||!verified.data||!verified.data.user||verified.data.user.id!==pending.authUserId)throw new Error('oauth-session-mismatch');
+    if(pending.status==='new'&&!googleMemberIdentity(verified.data.user))throw new Error('google-signup-required');
     var response={status:pending.status,profile:pending.profile,envelope:pending.envelope};
     if(pending.status==='new'){
       var salt=GrowellOAuth.newSalt(),made=await GrowellOAuth.createVault(password,salt,pending.authUserId);guard();
@@ -5193,7 +5147,7 @@ async function completeOAuthMember(name,password,confirmation,button){
     }
     if(response.status==='legacy'){pending.status='legacy';pending.profile=response.profile;throw new Error('oauth-legacy');}
     if(['ready','native'].indexOf(response.status)<0||!response.profile||response.profile.auth_user_id!==pending.authUserId||response.profile.is_deleted)throw new Error('oauth-profile-mismatch');
-    if(!GrowellMemberAccess.approved(response.profile)){oauthMessage=GrowellMemberAccess.message(response.profile.approval_status);oauthPending=null;oauthBusy=false;await sb.auth.signOut();if(flow===authFlowEpoch)render();return false;}
+    if(!GrowellMemberAccess.approved(response.profile)){oauthMessage=GrowellMemberAccess.message(response.profile.approval_status);oauthPending=null;oauthBusy=false;await sb.auth.signOut({scope:'local'});if(flow===authFlowEpoch){if(pending.status==='new'&&response.profile.approval_status==='pending')authMode='signup-complete';render();}return false;}
     if(passwordMemberIdentity(verified.data.user)){
       // A previously issued envelope may survive an interrupted password
       // recovery. Prove the password against Auth before accepting that key.
@@ -5221,6 +5175,7 @@ async function completeOAuthMember(name,password,confirmation,button){
     // A reset/recovery may have rotated the password member's record key. An old
     // password must never reopen a stale Google vault and read/write with it.
     if(passwordMemberIdentity(verified.data.user)){await GrowellOAuth.verifyLinkedKey(password,response.profile.pbkdf2_salt,pending.authUserId,keyB64);guard();}
+    rememberVerifiedLoginChoice(verified.data.user,response.profile);
     var profile=mapProfileRow(response.profile);STATE.users[profile.id]=profile;
     SESSION={userId:profile.id,name:profile.name,keyB64:keyB64,authKind:passwordMemberIdentity(verified.data.user)?'password':'oauth'};
     if(typeof markMemberPushPromptSession==='function')markMemberPushPromptSession();
@@ -5246,11 +5201,11 @@ function oauthMemberHtml(){
   var pending=oauthPending,newMember=pending.status==='new',originalMember=pending.passwordMember===true;
   if(newMember&&!SOCIAL_AUTH_VISIBLE)return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>기존 회원 계정에서 연결해주세요</h2><p class="sub">Google로 새 회원을 만들지 않았어요. 먼저 가입한 아이디로 로그인한 뒤 프로필 → 설정 → 연동 → Google 로그인 설정에서 연결해주세요. 작성한 기록은 기존 계정에 그대로 있어요.</p><p class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button class="btn btn-primary btn-block" data-oauth-cancel type="button">아이디 로그인으로 돌아가기</button></section></div></div>';
   if(pending.status==='legacy')return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>기존 아이디로 이어가세요</h2><p class="sub">이미 연결된 일반 회원 기록이 있어요. 기존 아이디와 비밀번호로 로그인하면 그대로 이어갈 수 있어요.</p><button class="btn btn-primary btn-block" data-oauth-cancel type="button">아이디 로그인으로 돌아가기</button></section></div></div>';
-  return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>'+(newMember?'마지막으로, 나만의 기록을 준비해요':'나의 기록을 열어주세요')+'</h2><p class="sub">'+(newMember?'별명과 개인 기록 비밀번호를 정하면 가입이 완료돼요.':'간편 로그인은 완료됐어요. 개인 기록 비밀번호로 나의 공간을 열어주세요.')+'</p>'+
+  return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>'+(newMember?'마지막으로, 나만의 기록을 준비해요':'나의 기록을 열어주세요')+'</h2><p class="sub">'+(newMember?'별명과 개인 기록 비밀번호를 정하면 가입 신청이 완료돼요. 관리자 승인 후 이용할 수 있어요.':'간편 로그인은 완료됐어요. 개인 기록 비밀번호로 나의 공간을 열어주세요.')+'</p>'+
     (newMember?'<label class="field-label" for="oauth-name">별명</label><input id="oauth-name" maxlength="30" autocomplete="nickname" value="'+esc(pending.name||'')+'">':'<p class="profile-account-note">'+esc(pending.profile.name)+'님의 기록</p>')+
     '<label class="field-label" for="oauth-password">'+(originalMember?'현재 GROWELL 비밀번호':'개인 기록 비밀번호 (8자 이상)')+'</label><input id="oauth-password" type="password" autocomplete="'+(newMember?'new-password':'current-password')+'">'+
     (newMember?'<label class="field-label" for="oauth-confirm">개인 기록 비밀번호 확인</label><input id="oauth-confirm" type="password" autocomplete="new-password">':'')+
-    '<p class="profile-photo-help">'+(originalMember?'원래 아이디로 로그인할 때의 현재 비밀번호예요. Google 비밀번호를 입력하지 마세요. 비밀번호를 바꿨다면 아이디 로그인으로 기록 복구를 먼저 마쳐주세요.':'Google·카카오 비밀번호와는 별개예요. 다른 기기에서도 이 비밀번호로 기록을 열어요. 가입 후 프로필에서 복구 파일을 보관해주세요.')+'</p>'+
+    '<p class="profile-photo-help">'+(originalMember?'원래 아이디로 로그인할 때의 현재 비밀번호예요. Google 비밀번호를 입력하지 마세요. 비밀번호를 바꿨다면 아이디 로그인으로 기록 복구를 먼저 마쳐주세요.':'Google 비밀번호와는 별개예요. 다른 기기에서도 이 비밀번호로 기록을 열어요. 가입 후 프로필에서 복구 파일을 보관해주세요.')+'</p>'+
     '<p id="oauth-status" class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button id="btn-oauth-complete" class="btn btn-primary btn-block" type="button">'+(newMember?'가입하고 시작하기':'내 기록 열기')+'</button><button class="btn btn-ghost btn-block" data-oauth-cancel type="button">다른 방법으로 로그인</button></section></div></div>';
 }
 function waitForGoogleLoginDrafts(isCurrent){
@@ -5445,6 +5400,7 @@ async function syncGoogleLoginAfterPassword(password,authGuard){
   function guard(){authGuard();if(!session||!profile||SESSION!==session||SESSION.keyB64!==material||saveSessionEpoch!==epoch||STATE.users[session.userId]!==profile)throw new Error('google-link-session-changed');}
   guard();var verified=await sb.auth.getUser();guard();var user=verified&&verified.data&&verified.data.user;
   if(verified.error||!user||user.id!==profile.authUserId)throw new Error('google-link-session-changed');
+  rememberVerifiedLoginChoice(user,{id:profile.id,auth_user_id:profile.authUserId,approval_status:profile.approvalStatus,is_deleted:profile.isDeleted});
   if(!googleMemberIdentity(user)||!passwordMemberIdentity(user))return true;
   var made=await GrowellOAuth.createLinkedVault(password,profile.salt,profile.authUserId,material);guard();
   var prepared=await sb.rpc('growell_oauth_link_prepare',{p_envelope:made.envelope});guard();
@@ -5465,7 +5421,7 @@ async function connectExistingGoogleLogin(isCurrent){
   if(fresh.error||!fresh.data||fresh.data.id!==profile.id||fresh.data.auth_user_id!==profile.authUserId||fresh.data.pbkdf2_salt!==profile.salt||fresh.data.login_id!==profile.loginId||!GrowellMemberAccess.approved(fresh.data))throw new Error('google-link-session-changed');
   await keyFromB64(material);guard();var digest=await googleLinkKeyDigest(material);guard();
   checkedGoogleLinkCache(session,material,true);
-  guard();if(alreadyLinked)return {connected:true};
+  guard();if(alreadyLinked){rememberVerifiedLoginChoice(user,fresh.data);return {connected:true};}
   await waitForGoogleLoginDrafts(current);guard();
   var marker={authUserId:profile.authUserId,profileId:profile.id,profileSalt:profile.salt,keyDigest:digest,nonce:Array.from(crypto.getRandomValues(new Uint8Array(16)),function(value){return value.toString(16).padStart(2,'0');}).join(''),createdAt:Date.now()};
   var serialized=JSON.stringify(marker);sessionStorage.setItem(GOOGLE_LINK_MARKER,serialized);
@@ -5532,7 +5488,10 @@ function loginHtml(){
 }
 function loginFormHtml(){
   return '<h2>다시 만나 반가워요</h2><p class="sub">로그인하고 독서모임과 나의 기록을 이어가세요.</p>' +
-    (SOCIAL_AUTH_VISIBLE?socialSignupStatusHtml():googleLoginStatusHtml())+((SOCIAL_AUTH_VISIBLE||GOOGLE_LOGIN_VISIBLE)?'<div class="auth-email-heading">아이디로 로그인</div>':'') +
+    googleLoginStatusHtml()+(preferGoogleLogin()?'<button type="button" class="btn btn-ghost btn-block btn-sm" id="btn-other-login-account">다른 계정으로 로그인</button>':legacyLoginFormHtml());
+}
+function legacyLoginFormHtml(){
+  return '<div class="auth-email-heading">기존 아이디로 로그인</div>' +
     '<label class="field-label" for="li-id">아이디</label><input type="text" id="li-id" autocomplete="username">' +
     '<label class="field-label" for="li-pw">비밀번호</label><input type="password" id="li-pw" autocomplete="current-password">' +
     '<button class="btn btn-primary btn-block" style="margin-top:18px" id="btn-do-login" type="button">로그인</button>' +
@@ -5550,14 +5509,10 @@ function googleProviderIconHtml(){
 function googleLoginStatusHtml(){
   if(!GOOGLE_LOGIN_VISIBLE)return '';
   var enabled=oauthProviders.state==='ready'&&oauthProviders.google;
-  return '<div class="auth-provider-list" data-oauth-providers data-oauth-login aria-label="연결한 Google 계정으로 로그인"><button class="auth-provider auth-provider-google" data-oauth-provider="google" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>'+googleProviderIconHtml()+'Google로 로그인'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button><p class="auth-provider-note">기존 회원 계정에서 Google 로그인을 연결한 뒤 사용할 수 있어요. 처음 연결은 아이디 로그인 후 프로필 → 설정 → 연동에서 해주세요.</p></div>';
+  return '<div class="auth-provider-list" data-oauth-providers data-oauth-login aria-label="연결한 Google 계정으로 로그인"><button class="auth-provider auth-provider-google" data-oauth-provider="google" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>'+googleProviderIconHtml()+'Google로 로그인'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button><p class="auth-provider-note">처음 이용하는 분은 Google 계정으로 가입해주세요.</p></div>';
 }
 function socialSignupStatusHtml(){
-  if(!SOCIAL_AUTH_VISIBLE)return '';
-  return '<div class="auth-provider-list" data-oauth-providers aria-label="간편 로그인">'+['google','kakao'].map(function(provider){
-    var enabled=oauthProviders.state==='ready'&&oauthProviders[provider];
-    return '<button class="auth-provider'+(provider==='kakao'?' auth-provider-kakao':' auth-provider-google')+'" data-oauth-provider="'+provider+'" type="button"'+(enabled&&!oauthBusy?'':' disabled')+'>'+(provider==='google'?googleProviderIconHtml():'')+(provider==='google'?'Google':'카카오')+'로 계속하기'+(enabled?'':' <small>'+(oauthProviders.state==='loading'?'확인 중':oauthProviders.state==='error'?'연결 확인 필요':'준비 중')+'</small>')+'</button>';
-  }).join('')+'<p class="auth-provider-note">'+(oauthProviders.google||oauthProviders.kakao?'처음이면 간편 가입으로, 이미 가입했다면 로그인으로 이어져요.':'간편 가입 연결을 준비하고 있어요. 회원가입도 이용할 수 있어요.')+'</p></div>';
+  return SOCIAL_AUTH_VISIBLE?googleLoginStatusHtml():'';
 }
 function profilePhotoPickerHtml(prefix, avatar){
   var safe=GrowellProfile.safeAvatarUrl(avatar);
@@ -5570,17 +5525,7 @@ function profilePhotoPickerHtml(prefix, avatar){
     '<p class="profile-photo-status" id="'+prefix+'-avatar-status" role="status" aria-live="polite"></p></div>';
 }
 function signupFormHtml(){
-  return '<h2>함께 읽기 시작해요</h2><p class="sub">나눔 공간에는 생각을, 나의 공간에는 나만의 기록을 남겨보세요.</p>' +
-    socialSignupStatusHtml()+(SOCIAL_AUTH_VISIBLE?'<div class="auth-email-heading">회원가입 · 아이디 만들기</div>':'') +
-    '<label class="field-label" style="margin-top:0">프로필 사진</label>' +
-    profilePhotoPickerHtml('su',pendingSignupAvatar) +
-    '<label class="field-label" for="su-name">별명 (나눔 글에 표시돼요)</label><input type="text" id="su-name" autocomplete="name" maxlength="30">' +
-    '<label class="field-label" for="su-id">아이디 <span style="font-weight:400;color:var(--ink-faint)">(영문·숫자로 만들어주세요)</span></label><input type="text" id="su-id" autocomplete="username" placeholder="예) growell01" pattern="[A-Za-z0-9_-]+">' +
-    '<label class="field-label" for="su-pw">비밀번호 (8자 이상)</label><input type="password" id="su-pw" autocomplete="new-password">' +
-    '<label class="field-label" for="su-pw2">비밀번호 확인</label><input type="password" id="su-pw2" autocomplete="new-password">' +
-    GrowellPasswordHint.formHtml('su') +
-    '<p class="profile-account-note">사진은 선택 사항이에요. 나머지 항목을 입력해 가입 신청을 보내면 관리자가 확인해요. 승인 후 로그인할 수 있어요.</p>' +
-    '<button class="btn btn-primary btn-block" style="margin-top:18px" id="btn-do-signup" type="button">가입 신청</button>';
+  return '<h2>함께 읽기 시작해요</h2><p class="sub">Google 계정으로 가입해주세요. 기존 아이디 회원은 로그인 화면에서 계속 이용할 수 있어요.</p>'+googleLoginStatusHtml();
 }
 function forgotPasswordFormHtml(){
   return '<h2>비밀번호 찾기</h2>' +
@@ -8622,6 +8567,8 @@ function bindEvents(route){
   app.querySelectorAll('[data-auth-tab]').forEach(function(b){
     b.addEventListener('click', function(){ authMode = b.getAttribute('data-auth-tab'); oauthMessage=''; render(); });
   });
+  var otherLoginAccount=document.getElementById('btn-other-login-account');
+  if(otherLoginAccount)otherLoginAccount.addEventListener('click',function(){authOtherAccount=true;authMode='login';oauthMessage='';render();});
   var doLoginBtn = document.getElementById('btn-do-login');
   if(doLoginBtn) doLoginBtn.addEventListener('click', function(){
     doLogin(document.getElementById('li-id').value, document.getElementById('li-pw').value, doLoginBtn);

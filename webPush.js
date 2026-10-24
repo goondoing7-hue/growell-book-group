@@ -4,6 +4,34 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(root){
   'use strict';
   var epoch=0,views=new Set(),localSequence=0,actions=['config','status','subscribe','preferences','unsubscribe','test'];
+  var CHOICE_PREFIX='growell_push_choice_v1:',OWNER_KEY='growell_push_owner_v1',DEVICE_LOCK='growell-web-push-device-v1';
+  function ownerStamp(){try{return root.localStorage.getItem(OWNER_KEY);}catch(error){return undefined;}}
+  function hasDeviceLock(){return !!(root.navigator&&root.navigator.locks&&typeof root.navigator.locks.request==='function');}
+  function deviceTransaction(operation,isCurrent){
+    if(!hasDeviceLock())return Promise.resolve().then(operation);
+    var abort=new root.AbortController(),timer=root.setTimeout(function(){abort.abort();},18000);
+    return Promise.resolve().then(function(){return root.navigator.locks.request(DEVICE_LOCK,{mode:'exclusive',signal:abort.signal},function(){root.clearTimeout(timer);if(!isCurrent())throw fail('session_changed');return operation();});})
+      .catch(function(error){if(error&&error.name==='AbortError')throw fail('timeout');throw error;}).finally(function(){root.clearTimeout(timer);});
+  }
+  function memberHash(member){
+    if(typeof member!=='string'||!member||member.length>320)return '';
+    var a=2166136261,b=3339675911;for(var i=0;i<member.length;i++){a=Math.imul(a^member.charCodeAt(i),16777619);b=Math.imul(b^member.charCodeAt(i),2246822519);}
+    return (a>>>0).toString(16)+'-'+(b>>>0).toString(16);
+  }
+  function choice(member){
+    var hash=memberHash(member);if(!hash)return null;
+    try{var raw=root.localStorage.getItem(CHOICE_PREFIX+hash);if(!raw||raw.length>180)return null;var value=JSON.parse(raw);
+      if(!value||Object.keys(value).length!==4||typeof value.enabled!=='boolean'||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean'||typeof value.revision!=='string'||!/^[a-f0-9]{32}$/.test(value.revision))return null;
+      return {enabled:value.enabled,posts:value.posts,dailyVerse:value.dailyVerse,owned:root.localStorage.getItem(OWNER_KEY)===hash,raw:raw};
+    }catch(error){return null;}
+  }
+  function rememberChoice(member,enabled,preferences,onlyIfMissing){
+    var hash=memberHash(member);if(!hash)return false;
+    try{var storage=root.localStorage,name=CHOICE_PREFIX+hash,prior=storage.getItem(name);if(onlyIfMissing&&prior!==null)return false;
+      var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);var raw=JSON.stringify({enabled:enabled,posts:preferences.posts,dailyVerse:preferences.dailyVerse,revision:Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join('')});
+      storage.setItem(name,raw);if(storage.getItem(name)!==raw)return false;storage.setItem(OWNER_KEY,hash);return storage.getItem(OWNER_KEY)===hash;
+    }catch(error){return false;}
+  }
   function fail(code){var error=new Error(code);error.code=code;return error;}
   function bounded(promise,delay){
     return new Promise(function(resolve,reject){var timer=root.setTimeout(function(){reject(fail('timeout'));},delay);
@@ -50,8 +78,8 @@
       var controller=new root.AbortController(),timer=root.setTimeout(function(){controller.abort();},20000);pending.add(controller);
       return Promise.resolve().then(function(){guard();return bounded(options.getAccessToken(),20000);}).then(function(token){
         guard();if(typeof token!=='string'||!token)throw fail('auth_required');
-        return options.fetch('/api/web-push',{method:'POST',credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal,
-          headers:{Accept:'application/json','Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(Object.assign({},payload||{},{action:action}))});
+        return bounded(options.fetch('/api/web-push',{method:'POST',credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store',signal:controller.signal,
+          headers:{Accept:'application/json','Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify(Object.assign({},payload||{},{action:action}))}),20000);
       }).then(function(response){guard();return bounded(response.json(),20000).then(function(data){
         guard();if(!data||typeof data!=='object'||Array.isArray(data))throw fail('unavailable');
         if(!response.ok)throw fail(typeof data.error==='string'&&/^[a-z_-]{1,60}$/.test(data.error)?data.error:response.status===401?'auth_required':'unavailable');
@@ -77,11 +105,7 @@
     function snapshot(){return Object.assign({},state,{preferences:Object.assign({},state.preferences)});}
     function device(){guard();return bounded(root.navigator.serviceWorker.getRegistration('/'),12000).then(function(reg){guard();return reg&&reg.pushManager?bounded(reg.pushManager.getSubscription(),12000):null;});}
     function expired(value){return !!value&&typeof value.expirationTime==='number'&&Number.isFinite(value.expirationTime)&&value.expirationTime<=Date.now();}
-    function pendingPrefix(){
-      var member=options.memberKey;if(typeof member!=='string'||!member||member.length>320)return '';
-      var a=2166136261,b=3339675911;for(var i=0;i<member.length;i++){a=Math.imul(a^member.charCodeAt(i),16777619);b=Math.imul(b^member.charCodeAt(i),2246822519);}
-      return 'growell_push_repair_v1:'+(a>>>0).toString(16)+'-'+(b>>>0).toString(16)+':';
-    }
+    function pendingPrefix(){var hash=memberHash(options.memberKey);return hash?'growell_push_repair_v1:'+hash+':':'';}
     function pendingPreferences(){
       var prefix=pendingPrefix(),result={posts:true,dailyVerse:true};pendingInvalid=false;if(!prefix)return null;var found=false;pendingSeen=[];
       try{var storage=root.localStorage;for(var i=0;i<storage.length;i++){var name=storage.key(i);if(typeof name!=='string'||name.indexOf(prefix)!==0)continue;var raw=storage.getItem(name);if(typeof raw!=='string'||raw.length>80){pendingInvalid=true;continue;}var value;try{value=JSON.parse(raw);}catch(error){pendingInvalid=true;continue;}if(!value||Object.keys(value).length!==2||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean'){pendingInvalid=true;continue;}
@@ -110,61 +134,76 @@
         timer=root.setTimeout(function(){finish(fail('timeout'));},15000);if(worker.addEventListener)worker.addEventListener('statechange',ready);ready();
       });
     }
-    function run(operation){
+    function run(operation,mutating){
       if(!current())return Promise.reject(fail('session_changed'));if(state.busy)return Promise.resolve(false);
       state.busy=true;state.errorCode='';state.notice='';emit();
-      return Promise.resolve().then(operation).then(function(){guard();emit();return true;}).catch(function(error){
+      return Promise.resolve().then(function(){return mutating?deviceTransaction(operation,current):operation();}).then(function(){guard();emit();return true;}).catch(function(error){
         if(current()){state.errorCode=error&&error.code||'unavailable';state.permission=support().permission;emit();}return false;
       }).finally(function(){if(current()){state.busy=false;emit();}});
     }
-    function refresh(){return run(function(){
+    function refresh(){var priorOwner=ownerStamp();return run(function(){
       Object.assign(state,support());if(!state.supported||state.iosNeedsInstall){state.loaded=true;state.subscribed=false;return;}
       return client.request('config',{}).then(function(config){guard();if(typeof config.configured!=='boolean')throw fail('unavailable');state.configured=config.configured;
         if(!config.configured){state.subscribed=false;state.loaded=true;return;}
         publicKey(config.publicKey);key=config.publicKey;
-        return device().then(function(value){guard();subscription=value;return client.request('status',value?{endpoint:value.endpoint}:{});}).then(function(value){apply(value);state.loaded=true;});
+        return device().then(function(value){guard();subscription=value;return client.request('status',value?{endpoint:value.endpoint}:{});}).then(function(value){apply(value);state.loaded=true;
+          // Adopt an existing confirmed connection once; an explicit OFF choice is never overwritten by a refresh.
+          if(state.subscribed&&state.permission==='granted'&&priorOwner===ownerStamp())rememberChoice(options.memberKey,true,state.preferences,true);
+          var saved=choice(options.memberKey);if(!state.subscribed&&saved)state.preferences={posts:saved.posts&&state.preferences.posts,dailyVerse:saved.dailyVerse&&state.preferences.dailyVerse};
+        });
       });
     });}
-    function enable(){
+    function enable(automatic){
       if(!current()||state.busy)return Promise.resolve(false);
-      Object.assign(state,support());var permission,expectedEndpoint=subscription?subscription.endpoint:null,desired=Object.assign({},state.preferences),renewed=state.reconnectRequired,regForEnable,pendingForEnable=[];
+      automatic=automatic===true;var remembered=choice(options.memberKey);
+      // Permission granted to the origin is not consent for another member. Automatic restoration is allowed only for this device's remembered owner.
+      if(automatic&&(!hasDeviceLock()||!remembered||!remembered.enabled||!remembered.owned||support().permission!=='granted'))return Promise.resolve(false);
+      Object.assign(state,support());var permission,expectedEndpoint=subscription?subscription.endpoint:null,desired=Object.assign({},state.preferences),renewed=state.reconnectRequired,regForEnable,createdForEnable=null,pendingForEnable=[];
+      if(automatic){desired.posts=remembered.posts&&desired.posts;desired.dailyVerse=remembered.dailyVerse&&desired.dailyVerse;}
+      function unchangedChoice(){if(!automatic)return;var latest=choice(options.memberKey);if(!latest||latest.raw!==remembered.raw||!latest.owned||!latest.enabled){state.subscribed=false;state.reconnectRequired=true;throw fail('device_changed');}if(support().permission!=='granted')throw fail('permission_denied');}
+      function abandonUnconfirmed(error){
+        if(!automatic||!createdForEnable||!regForEnable)return Promise.reject(error);
+        var exact=createdForEnable;
+        // The server can finish a request after an uncertain response. Retire only the exact native endpoint created by this failed automatic attempt while the device lock is still held.
+        return bounded(regForEnable.pushManager.getSubscription(),3000).then(function(actual){if(!actual||actual.endpoint!==exact.endpoint)return false;return bounded(exact.unsubscribe(),3000);}).catch(function(){return false;}).then(function(removed){if(removed===true){state.subscribed=false;state.reconnectRequired=true;if(subscription&&subscription.endpoint===exact.endpoint)subscription=null;}throw error;});
+      }
       if(!state.supported)permission=Promise.reject(fail('unsupported'));
       else if(state.iosNeedsInstall)permission=Promise.reject(fail('install_required'));
       else if(!state.loaded||!state.configured||!key)permission=Promise.reject(fail('not_configured'));
       else if(state.permission==='denied')permission=Promise.reject(fail('permission_denied'));
       else{
         // Keep requestPermission in the original button gesture, before any token or network await.
-        try{permission=state.permission==='granted'?Promise.resolve('granted'):Promise.resolve(root.Notification.requestPermission());}catch(error){permission=Promise.reject(fail('unavailable'));}
+        try{permission=state.permission==='granted'?Promise.resolve('granted'):automatic?Promise.reject(fail('permission_dismissed')):Promise.resolve(root.Notification.requestPermission());}catch(error){permission=Promise.reject(fail('unavailable'));}
       }
       // Attach the permission rejection immediately; run starts its async operation on a microtask.
       permission.catch(function(){});
       return run(function(){return permission.then(function(answer){
-        guard();state.permission=answer;if(answer!=='granted')throw fail(answer==='denied'?'permission_denied':'permission_dismissed');
+        guard();unchangedChoice();state.permission=answer;if(answer!=='granted')throw fail(answer==='denied'?'permission_denied':'permission_dismissed');
         return bounded(root.navigator.serviceWorker.register('/timer-alert-sw.js',{scope:'/',updateViaCache:'none'}),15000);
       }).then(function(reg){
         guard();return (typeof reg.update==='function'?bounded(reg.update(),15000):Promise.resolve()).then(function(){guard();return activated(reg);});
       }).then(function(reg){guard();exactRegistration(reg);regForEnable=reg;return bounded(reg.pushManager.getSubscription(),12000).then(function(existing){
-        guard();if((existing?existing.endpoint:null)!==expectedEndpoint)throw fail('device_changed');
+        guard();unchangedChoice();if((existing?existing.endpoint:null)!==expectedEndpoint)throw fail('device_changed');
         var pending=pendingPreferences();if(pendingInvalid)throw fail('reconnect_failed');if(pending){desired.posts=desired.posts&&pending.posts;desired.dailyVerse=desired.dailyVerse&&pending.dailyVerse;}
         var repair=!!existing&&(existing.endpoint===inactiveEndpoint||expired(existing));
-        function subscribe(){guard();return bounded(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKey(key)}),15000);}
+        function subscribe(){guard();unchangedChoice();return bounded(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKey(key)}),15000).then(function(value){createdForEnable=value;return value;});}
         if(!existing){if(state.reconnectRequired||pending)preservePreferences(desired);return subscribe();}
         if(!repair)return existing;
         preservePreferences(desired);state.subscribed=false;renewed=true;
         return bounded(existing.unsubscribe(),12000).then(function(removed){guard();if(removed!==true)throw fail('reconnect_failed');return bounded(reg.pushManager.getSubscription(),12000);}).then(function(remaining){guard();if(remaining)throw fail(remaining.endpoint===expectedEndpoint?'reconnect_failed':'device_changed');subscription=null;inactiveEndpoint='';return subscribe();});
       });})
-        .then(function(value){guard();if(!value||expired(value))throw fail('reconnect_failed');subscription=value;return bounded(regForEnable.pushManager.getSubscription(),12000).then(function(actual){guard();if(!actual||actual.endpoint!==value.endpoint)throw fail('device_changed');pendingForEnable=pendingSeen.slice();return client.request('subscribe',{subscription:value.toJSON(),preferences:desired});});})
+        .then(function(value){guard();unchangedChoice();if(!value||expired(value))throw fail('reconnect_failed');subscription=value;return bounded(regForEnable.pushManager.getSubscription(),12000).then(function(actual){guard();unchangedChoice();if(!actual||actual.endpoint!==value.endpoint)throw fail('device_changed');pendingForEnable=pendingSeen.slice();return client.request('subscribe',{subscription:value.toJSON(),preferences:desired});});})
         .then(function(){guard();return client.request('status',{endpoint:subscription.endpoint});}).then(function(raw){
           apply(raw);var confirmed=subscriptionStatus(raw);if(!confirmed.subscribed||expired(subscription))throw fail('reconnect_failed');
           if(!desired.posts&&confirmed.preferences.posts||!desired.dailyVerse&&confirmed.preferences.dailyVerse)return client.request('preferences',{endpoint:subscription.endpoint,preferences:desired}).then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(function(value){apply(value);var checked=subscriptionStatus(value);if(!state.subscribed||!desired.posts&&checked.preferences.posts||!desired.dailyVerse&&checked.preferences.dailyVerse)throw fail('reconnect_failed');});
-        }).then(function(){guard();if(!state.subscribed)throw fail('reconnect_failed');return bounded(regForEnable.pushManager.getSubscription(),12000);}).then(function(actual){guard();if(!actual||!subscription||actual.endpoint!==subscription.endpoint){state.subscribed=false;state.reconnectRequired=true;throw fail('device_changed');}clearPending(pendingForEnable);state.reconnectRequired=false;state.inactive=false;state.expired=false;state.notice=renewed?'이 기기의 알림을 다시 연결했어요. 수신 설정은 그대로 유지했어요.':'이 기기에서 알림을 받을 수 있어요.';});});
+        }).then(function(){guard();unchangedChoice();if(!state.subscribed)throw fail('reconnect_failed');return bounded(regForEnable.pushManager.getSubscription(),12000);}).then(function(actual){guard();unchangedChoice();if(!actual||!subscription||actual.endpoint!==subscription.endpoint){state.subscribed=false;state.reconnectRequired=true;throw fail('device_changed');}clearPending(pendingForEnable);rememberChoice(options.memberKey,true,state.preferences,false);state.reconnectRequired=false;state.inactive=false;state.expired=false;state.notice=renewed?'이 기기의 알림을 다시 연결했어요. 수신 설정은 그대로 유지했어요.':'이 기기에서 알림을 받을 수 있어요.';}).catch(abandonUnconfirmed);},true);
     }
     function preferences(value){return run(function(){
       if(!state.subscribed||!subscription)throw fail('subscription_required');
       if(!value||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean')throw fail('invalid_settings');
-      return client.request('preferences',{endpoint:subscription.endpoint,preferences:{posts:value.posts,dailyVerse:value.dailyVerse}})
-        .then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(apply);
-    });}
+      return device().then(function(actual){guard();if(!actual||actual.endpoint!==subscription.endpoint)throw fail('device_changed');return client.request('preferences',{endpoint:subscription.endpoint,preferences:{posts:value.posts,dailyVerse:value.dailyVerse}});})
+        .then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(function(raw){apply(raw);guard();var saved=choice(options.memberKey);if(state.subscribed)rememberChoice(options.memberKey,saved?saved.enabled:true,state.preferences,false);});
+    },true);}
     function testingRegistration(local){
       if(!state.subscribed||!subscription)throw fail('subscription_required');
       if(support().permission!=='granted')throw fail('permission_denied');
@@ -187,10 +226,15 @@
           .catch(function(error){if(error&&/^(session_changed|permission_denied)$/.test(error.code))throw error;throw fail('device_display_failed');});
       }).then(function(){guard();state.notice='이 기기에 알림 표시를 요청했어요. 화면 상단의 알림창을 내려 확인해주세요. 이 검사는 서버 전송과 별개예요.';});
     });}
-    function disable(){return run(function(){if(!subscription)throw fail('subscription_required');var target=subscription;
-      return client.request('unsubscribe',{endpoint:target.endpoint}).then(function(){guard();state.subscribed=false;subscription=null;state.notice='이 기기의 GROWELL 푸시 알림을 껐어요.';return bounded(target.unsubscribe(),10000).catch(function(){return false;});});
-    });}
-    return {refresh:refresh,enable:enable,preferences:preferences,test:test,testDelayed:testDelayed,localTest:localTest,disable:disable,snapshot:snapshot,destroy:function(){disposed=true;client.dispose();}};
+    function disable(){if(current())rememberChoice(options.memberKey,false,state.preferences,false);return run(function(){guard();rememberChoice(options.memberKey,false,state.preferences,false);var target=subscription,remoteError;
+      // A waiting OFF must capture the latest endpoint created by an earlier automatic renewal, not its stale view's endpoint.
+      return device().then(function(actual){guard();if(!actual&&!target)throw fail('subscription_required');if(actual&&(!target||actual.endpoint!==target.endpoint))return client.request('status',{endpoint:actual.endpoint}).then(function(raw){guard();if(!subscriptionStatus(raw).hasPreferences)throw fail('device_changed');target=actual;});if(actual)target=actual;
+      }).then(function(){guard();return client.request('unsubscribe',{endpoint:target.endpoint}).catch(function(error){remoteError=error;});}).then(function(){
+        // Native unsubscribe is still necessary after an unknown server response: any late connect then targets a dead endpoint.
+        return bounded(target.unsubscribe(),10000).catch(function(){return false;}).then(function(removed){if(current()&&removed===true){state.subscribed=false;subscription=null;}if(remoteError)throw remoteError;guard();state.subscribed=false;subscription=null;state.notice='이 기기의 GROWELL 푸시 알림을 껐어요.';});
+      });
+    },true);}
+    return {refresh:refresh,enable:enable,restore:function(){return enable(true);},decision:function(){var saved=current()?choice(options.memberKey):null;return saved?{enabled:saved.enabled,owned:saved.owned}:null;},preferences:preferences,test:test,testDelayed:testDelayed,localTest:localTest,disable:disable,snapshot:snapshot,destroy:function(){disposed=true;client.dispose();}};
   }
   function compactMessage(code){
     code=typeof code==='string'?code.replace(/-/g,'_'):'';
@@ -268,18 +312,21 @@
     var nav=root.navigator||{};if(!nav.serviceWorker)return Promise.resolve(false);
     var token;try{token=options&&typeof options.getAccessToken==='function'?Promise.resolve(options.getAccessToken()).catch(function(){return '';}):Promise.resolve('');}catch(error){token=Promise.resolve('');}
     function current(){return !options||typeof options.isCurrent!=='function'||options.isCurrent();}
-    var registration;try{registration=nav.serviceWorker.getRegistration('/');}catch(error){return Promise.resolve(false);}
-    var detached=bounded(registration,1500).then(function(reg){if(!current())return null;return reg&&reg.pushManager?bounded(reg.pushManager.getSubscription(),1500):null;}).then(function(subscription){
+    var detached=deviceTransaction(function(){var registration,priorOwner=ownerStamp();try{registration=nav.serviceWorker.getRegistration('/');}catch(error){return false;}
+    return bounded(registration,1500).then(function(reg){if(!current())return null;return reg&&reg.pushManager?bounded(reg.pushManager.getSubscription(),1500):null;}).then(function(subscription){
       if(!current())return false;
       if(!subscription)return false;
       // After capturing this exact object, finish its unsubscribe even if the former session is cleared.
       var local=bounded(subscription.unsubscribe(),2000).catch(function(){return false;});
       var remote=bounded(token,1500).then(function(value){if(!value)return false;
-        return bounded(root.fetch('/api/web-push',{method:'POST',credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store',headers:{Accept:'application/json','Content-Type':'application/json',Authorization:'Bearer '+value},body:JSON.stringify({action:'unsubscribe',endpoint:subscription.endpoint})}),2000).then(function(response){return response.ok;});
+        function request(action){return bounded(root.fetch('/api/web-push',{method:'POST',credentials:'same-origin',mode:'same-origin',redirect:'error',cache:'no-store',headers:{Accept:'application/json','Content-Type':'application/json',Authorization:'Bearer '+value},body:JSON.stringify({action:action,endpoint:subscription.endpoint})}),2000);}
+        // Upgrade a pre-existing confirmed choice before detaching, without keeping the signed-out subscription alive.
+        var adopt=current()&&options&&memberHash(options.memberKey)&&!choice(options.memberKey)&&support().permission==='granted'?request('status').then(function(response){if(!response.ok)return;return bounded(response.json(),1000).then(function(raw){if(!current()||priorOwner!==ownerStamp())return;var saved=subscriptionStatus(raw);if(saved.subscribed)rememberChoice(options.memberKey,true,saved.preferences,true);});}).catch(function(){}):Promise.resolve();
+        return adopt.then(function(){return request('unsubscribe');}).then(function(response){return response.ok;});
       }).catch(function(){return false;});
       return Promise.all([local,remote]).then(function(result){return result[0]||result[1];});
-    }).catch(function(){return false;});
-    return bounded(detached,3800).catch(function(){return false;});
+    });},current).catch(function(){return false;});
+    return bounded(detached,23000).catch(function(){return false;});
   }
   return {mount:mount,reset:reset,detach:detach,createClient:createClient,createController:createController,support:support,subscriptionStatus:subscriptionStatus,message:message};
 });

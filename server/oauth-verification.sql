@@ -246,8 +246,8 @@ begin
        or has_function_privilege('authenticated','public.growell_before_user_created(jsonb)','EXECUTE')
        or has_table_privilege('authenticated','public.growell_oauth_vault_history','SELECT,INSERT,UPDATE,DELETE') then
       raise exception 'FAIL client vault/history/hook privileges'; end if;
-    if public.growell_before_user_created('{"user":{"app_metadata":{"provider":"google"}}}')#>>'{error,http_code}' is distinct from '403'
-       or public.growell_before_user_created('{"user":{"app_metadata":{"provider":"email"},"user_metadata":{"provider":"google"}}}') is distinct from '{}'::jsonb then
+    if public.growell_before_user_created('{"user":{"app_metadata":{"provider":"google"}}}') is distinct from '{}'::jsonb
+       or public.growell_before_user_created('{"user":{"app_metadata":{"provider":"email"},"user_metadata":{"provider":"google"}}}')#>>'{error,http_code}' is distinct from '403' then
       raise exception 'FAIL stateless Google signup hook'; end if;
     raise exception 'GROWELL_LINK_VERIFICATION_SUCCESS_ROLLBACK' using errcode='GW002';
   exception

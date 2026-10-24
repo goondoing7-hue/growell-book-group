@@ -26,14 +26,14 @@ class Element{
 function harness(options={}){
   const storage=options.storage||new Map(),dialogs=[],events={},calls={prompts:0,requests:[],subscribe:0,history:[]};
   let current=true,present=options.canPresent!==false,active=!!options.subscribed,clock=Date.parse('2026-10-17T00:00:00Z');
-  const subscription={endpoint:'https://push.example.invalid/PRIVATE_DEVICE',toJSON(){return {endpoint:this.endpoint,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};}};
+  const subscription={endpoint:'https://push.example.invalid/PRIVATE_DEVICE',toJSON(){return {endpoint:this.endpoint,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};},unsubscribe(){native=null;return Promise.resolve(true);}};
   let native=options.existing||active?subscription:null;
   const reg={scope:origin+'/',active:{state:'activated',scriptURL:origin+'/timer-alert-sw.js'},showNotification:async()=>{},pushManager:{getSubscription:async()=>native,subscribe:async()=>{calls.subscribe++;native=subscription;return subscription;}}};
   const permission={permission:options.permission||'default',requestPermission(){calls.prompts++;permission.permission=options.answer||'granted';return Promise.resolve(permission.permission);}};
   const document={activeElement:new Element('button'),body:{appendChild(node){dialogs.push(node);}},createElement:tag=>new Element(tag),querySelector(){return options.otherModal||dialogs.find(dialog=>dialog.open&&!dialog.removed)||null;}};
   const timers=[],c={document,URL,Promise,Date,Math,JSON,Object,Array,Number,Set,Uint8Array,AbortController,setTimeout:options.manualArrival?(fn,delay)=>{if(delay===800){timers.push(fn);return -timers.length;}return setTimeout(fn,delay);}:(fn,delay)=>setTimeout(fn,delay===800?0:delay),clearTimeout:id=>{if(id<0)timers[-id-1]=null;else clearTimeout(id);},isSecureContext:!options.insecure,
     atob:value=>Buffer.from(value,'base64').toString('binary'),location:{origin},PushManager:options.unsupported?undefined:function(){},Notification:options.unsupported?undefined:permission,
-    matchMedia:()=>({matches:!!options.standalone}),navigator:{userAgent:options.ios?'iPhone':'Windows',standalone:!!options.standalone,serviceWorker:{getRegistration:async()=>reg,register:async()=>reg}},
+    matchMedia:()=>({matches:!!options.standalone}),navigator:{locks:options.noLocks?undefined:{request(name,settings,callback){return Promise.resolve().then(callback);}},userAgent:options.ios?'iPhone':'Windows',standalone:!!options.standalone,serviceWorker:{getRegistration:async()=>reg,register:async()=>reg}},
     crypto:require('node:crypto').webcrypto,localStorage:{get length(){if(options.storageBlocked)throw Error('blocked');return storage.size;},key:index=>[...storage.keys()][index]??null,getItem(name){if(options.storageBlocked)throw Error('blocked');return storage.get(name)||null;},setItem(name,value){if(options.storageBlocked)throw Error('blocked');storage.set(name,value);},removeItem:name=>storage.delete(name)},
     addEventListener(name,fn){(events[name]||=[]).push(fn);},removeEventListener(name,fn){events[name]=(events[name]||[]).filter(value=>value!==fn);},
     GrowellPopupHistory:{open(name,settings){calls.history.push(['open',name]);calls.historyClose=settings.close;},closed(name){calls.history.push(['close',name]);}},
@@ -41,8 +41,10 @@ function harness(options={}){
       const body=JSON.parse(settings.body);calls.requests.push({url,body,settings});
       if(options.delayed&&body.action===options.delayedAction)return options.delayed;
       if(options.networkError)throw Error('PRIVATE_FETCH_ERROR');
+      if(options.failSubscribe&&body.action==='subscribe')return {ok:false,status:503,json:async()=>({error:'unavailable'})};
       let value=body.action==='config'?{configured:options.configured!==false,publicKey:key}:body.action==='status'?{configured:true,subscription:active?{active:true,preferences:{posts:true,dailyVerse:true}}:null}:{ok:true};
       if(body.action==='subscribe')active=true;
+      if(body.action==='unsubscribe')active=false;
       return {ok:true,json:async()=>value};
     }};
   vm.createContext(c);vm.runInContext(pushSource,c);vm.runInContext(source,c);
@@ -56,7 +58,8 @@ test('an eligible returning member sees a single explanation without automatic p
 });
 test('the explicit enable button preserves the synchronous permission gesture and then closes on confirmed connection',async()=>{
   const h=harness();await h.manager.maybeShow(h.adapter);h.q('[data-push-prompt-enable]').onclick();assert.equal(h.calls.prompts,1);assert.equal(h.calls.subscribe,0);
-  await flush();assert.equal(h.calls.subscribe,1);assert.equal(h.node.removed,true);assert.equal(h.storage.size,0);
+  await flush();assert.equal(h.calls.subscribe,1);assert.equal(h.node.removed,true);assert.equal(h.storage.size,2);
+  assert.ok([...h.storage.keys()].some(name=>name.startsWith('growell_push_choice_v1:')));
   const subscribe=h.calls.requests.find(call=>call.body.action==='subscribe');assert.deepEqual(subscribe.body.preferences,{posts:true,dailyVerse:true});h.manager.destroy();
 });
 test('granted browser permission without this member subscription still requires an explicit connect button',async()=>{
@@ -119,11 +122,12 @@ test('network failures have a bounded 45 second cooldown instead of repeating on
   for(let i=0;i<10;i++)assert.equal(await h.manager.maybeShow(h.adapter),false);assert.equal(h.calls.requests.length,before);
   h.setNow(Date.parse('2026-10-17T00:00:46Z'));assert.equal(await h.manager.maybeShow(h.adapter),false);assert.equal(h.calls.requests.length,before+1);h.manager.destroy();
 });
-test('connected or denied device checks are skipped for this session and reset allows a later login to recheck',async()=>{
+test('connected or denied device checks are skipped for this session and reset restores only remembered consent',async()=>{
   for(const options of [{subscribed:true,permission:'granted'},{permission:'denied'}]){
     const h=harness(options);await h.manager.maybeShow(h.adapter);const before=h.calls.requests.length;
     for(let i=0;i<10;i++)await h.manager.maybeShow(h.adapter);assert.equal(h.calls.requests.length,before);
-    h.manager.reset();h.setSubscribed(false);h.permission.permission='granted';assert.equal(await h.manager.maybeShow(h.adapter),true);h.manager.destroy();
+    h.manager.reset();h.setSubscribed(false);h.permission.permission='granted';assert.equal(await h.manager.maybeShow(h.adapter),options.subscribed?false:true);
+    assert.equal(h.calls.requests.filter(call=>call.body.action==='subscribe').length,options.subscribed?1:0);h.manager.destroy();
   }
 });
 test('session reset clears shown state without permanent success dismissal or snoozing a different member',async()=>{
@@ -134,4 +138,28 @@ test('the 800 ms arrival pause checks writing again and pending timers are cance
   const h=harness({manualArrival:true});const first=h.manager.maybeShow(h.adapter);await flush();assert.equal(h.timers.length,1);assert.equal(h.dialogs.length,0);
   h.setPresent(false);h.timers[0]();assert.equal(await first,false);assert.equal(h.dialogs.length,0);
   h.setPresent(true);const second=h.manager.maybeShow(h.adapter);await flush();assert.equal(h.timers.length,2);h.manager.reset();assert.equal(h.timers[1],null);assert.equal(await second,false);assert.equal(h.dialogs.length,0);h.manager.destroy();
+});
+test('a once-enabled member is restored on a later login without another invitation or permission prompt',async()=>{
+  const first=harness();await first.manager.maybeShow(first.adapter);first.q('[data-push-prompt-enable]').onclick();await flush();assert.equal(first.node.removed,true);first.manager.destroy();
+  const next=harness({storage:first.storage,permission:'granted'});assert.equal(await next.manager.maybeShow(next.adapter),false);
+  assert.equal(next.dialogs.length,0);assert.equal(next.calls.prompts,0);assert.equal(next.calls.requests.filter(call=>call.body.action==='subscribe').length,1);
+  for(let i=0;i<5;i++)assert.equal(await next.manager.maybeShow(next.adapter),false);assert.equal(next.calls.requests.filter(call=>call.body.action==='subscribe').length,1);next.manager.destroy();
+});
+test('explicit device OFF suppresses later invitations without restoring even when browser permission remains granted',async()=>{
+  const first=harness({subscribed:true,permission:'granted'}),controller=first.c.GrowellWebPush.createController(first.adapter);await controller.refresh();assert.equal(await controller.disable(),true);controller.destroy();first.manager.destroy();
+  const next=harness({storage:first.storage,permission:'granted'});assert.equal(await next.manager.maybeShow(next.adapter),false);assert.equal(next.dialogs.length,0);assert.equal(next.calls.prompts,0);assert.equal(next.calls.subscribe,0);assert.equal(next.calls.requests.some(call=>call.body.action==='subscribe'),false);next.manager.destroy();
+});
+test('another member never inherits the prior member consent despite origin-wide granted permission',async()=>{
+  const first=harness({subscribed:true,permission:'granted'});await first.manager.maybeShow(first.adapter);first.manager.destroy();
+  const next=harness({storage:first.storage,permission:'granted'});next.adapter.memberKey='DIFFERENT_PRIVATE_MEMBER';assert.equal(await next.manager.maybeShow(next.adapter),true);
+  assert.equal(next.calls.subscribe,0);assert.equal(next.calls.prompts,0);assert.equal(next.calls.requests.some(call=>call.body.action==='subscribe'),false);next.manager.destroy();
+});
+test('remembered consent restoration failures preserve the choice and do not reopen the onboarding on every render',async()=>{
+  const first=harness({subscribed:true,permission:'granted'});await first.manager.maybeShow(first.adapter);first.manager.destroy();
+  const next=harness({storage:first.storage,permission:'granted',failSubscribe:true});assert.equal(await next.manager.maybeShow(next.adapter),false);assert.equal(next.dialogs.length,0);assert.equal(next.calls.prompts,0);
+  const before=next.calls.requests.length;for(let i=0;i<8;i++)assert.equal(await next.manager.maybeShow(next.adapter),false);assert.equal(next.calls.requests.length,before);assert.ok([...next.storage.keys()].some(name=>name.startsWith('growell_push_choice_v1:')));next.manager.destroy();
+});
+test('a later explicit ON in settings is restored even while an older seven-day invitation snooze remains',async()=>{
+  const h=harness();await h.manager.maybeShow(h.adapter);h.q('[data-push-prompt-later]').onclick();const controller=h.c.GrowellWebPush.createController(h.adapter);await controller.refresh();assert.equal(await controller.enable(),true);controller.destroy();h.manager.reset();h.setSubscribed(false);
+  const before=h.calls.requests.filter(call=>call.body.action==='subscribe').length;assert.equal(await h.manager.maybeShow(h.adapter),false);assert.equal(h.calls.requests.filter(call=>call.body.action==='subscribe').length,before+1);assert.equal(h.dialogs.filter(node=>node.open).length,0);h.manager.destroy();
 });

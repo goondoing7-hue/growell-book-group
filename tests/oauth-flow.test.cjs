@@ -53,26 +53,28 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 async function settle(){await new Promise(resolve=>setTimeout(resolve,5));}
 async function until(check){for(let n=0;n<100;n++){if(check())return;await settle();}assert.ok(check(),'the pending UI action should settle');}
 async function cacheMember(h,extra={}){const keyB64=await Private.exportKey(await Private.newKey());const saved=JSON.stringify({userId:profile.id,name:'old name',keyB64,authKind:'password',...extra});h.memory.set('growell_session',saved);return {keyB64,saved};}
-test('Google entry is existing-link login only while Kakao and social signup remain hidden',async()=>{
+test('new enrollment offers Google only while unknown devices retain existing ID login',async()=>{
   const {c,calls}=harness({guest:true});
   vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
   vm.runInContext(section('function signupFormHtml(){','function forgotPasswordFormHtml('),c);
-  c.profilePhotoPickerHtml=()=>'';c.pendingSignupAvatar=null;
-  await c.loadOAuthProviderSettings();
-  c.oauthProviders={state:'ready',google:true,kakao:true};
-  await c.startOAuth('kakao');
-  assert.equal(c.SOCIAL_AUTH_VISIBLE,false);
-  assert.equal(c.socialSignupStatusHtml(),'');
+  await c.loadOAuthProviderSettings();c.oauthProviders={state:'ready',google:true,kakao:true};
+  await c.startOAuth('kakao');assert.equal(c.SOCIAL_AUTH_VISIBLE,true);
   for(const mode of ['login','signup']){
-    c.authMode=mode;const markup=c.loginHtml();
-    if(mode==='login'){assert.match(markup,/Google로 로그인/);assert.match(markup,/기존 회원 계정에서 Google 로그인을 연결/);assert.doesNotMatch(markup,/data-oauth-provider="kakao"/);
-      assert.match(markup,/<svg class="auth-provider-icon"[^>]*aria-hidden="true"[^>]*focusable="false"/);
-      for(const color of ['#EA4335','#4285F4','#FBBC05','#34A853'])assert.ok(markup.includes('fill="'+color+'"'));}
-    else assert.doesNotMatch(markup,/data-oauth-provider|Google|카카오/);
-    assert.match(markup,/>회원가입<\/button>/);
-    assert.match(markup,mode==='login'?/id="li-pw"/:/id="su-pw"/);
+    c.authMode=mode;const markup=c.loginHtml();assert.match(markup,/Google로 로그인/);assert.doesNotMatch(markup,/data-oauth-provider="kakao"|id="su-(?:id|pw)"/);
+    for(const color of ['#EA4335','#4285F4','#FBBC05','#34A853'])assert.ok(markup.includes('fill="'+color+'"'));
+    if(mode==='login')assert.match(markup,/id="li-pw"/);else assert.doesNotMatch(markup,/id="li-pw"|btn-do-signup/);
   }
   assert.ok(!calls.some(call=>['oauth','redirect','signout','clear'].includes(call[0])));
+});
+
+test('verified Google preference hides ID fields after logout and offers a shared-device escape',()=>{
+  const {c,memory}=harness({guest:true});vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
+  c.rememberVerifiedLoginChoice(user,profile);
+  assert.match(c.loginFormHtml(),/Google로 로그인|btn-other-login-account/);assert.doesNotMatch(c.loginFormHtml(),/li-id|li-pw|btn-do-login/);
+  const preference=memory.get(c.LOGIN_CHOICE_KEY);assert.doesNotMatch(preference,/keyB64|password|email/);
+  c.authOtherAccount=true;assert.match(c.loginFormHtml(),/li-id|li-pw/);assert.equal(memory.get(c.LOGIN_CHOICE_KEY),preference);
+  c.rememberVerifiedLoginChoice({id:'wrong',identities:[{provider:'google'}]},profile);assert.equal(memory.get(c.LOGIN_CHOICE_KEY),preference);
+  c.rememberVerifiedLoginChoice({id:authId,identities:[{provider:'email'}]},profile);c.authOtherAccount=false;assert.match(c.loginFormHtml(),/li-id/);
 });
 
 test('choosing another authentication form clears only the previous status message',()=>{
@@ -437,12 +439,13 @@ test('provider status controls launch and returned redirect stays on configured 
   assert.ok(calls.some(v=>v[0]==='redirect'&&v[1].startsWith('https://project.supabase.co/auth/v1/authorize')));
 });
 
-test('Kakao overrides provider scope to nickname only while Google keeps its original OAuth options',async()=>{
+test('new enrollment launches Google only while keeping its original OAuth options',async()=>{
   for(const provider of ['kakao','google']){
     const {c,calls}=harness({href:'https://app.example/?obsolete=discard#/book/emotion/share'});
     c.SOCIAL_AUTH_VISIBLE=true;
     c.oauthProviders={state:'ready',google:true,kakao:true};
     await c.startOAuth(provider);
+    if(provider==='kakao'){assert.ok(!calls.some(call=>['oauth','redirect','clear'].includes(call[0])));continue;}
     const requests=calls.filter(call=>call[0]==='oauth');assert.equal(requests.length,1);
     const requested=JSON.parse(JSON.stringify(requests[0][1]));
     const expected={provider,options:{redirectTo:'https://app.example/',skipBrowserRedirect:true}};
@@ -494,10 +497,22 @@ async function linkingHarness(options={}){
   return h;
 }
 test('new Google identities never register a member while social signup is disabled',async()=>{
-  const h=harness();h.c.oauthPending={status:'new',authUserId:authId};
+  const h=harness();h.c.SOCIAL_AUTH_VISIBLE=false;h.c.oauthPending={status:'new',authUserId:authId};
   assert.equal(await h.c.completeOAuthMember('ignored',memberPassword,memberPassword),false);
   assert.ok(!h.calls.some(call=>call[0]==='rpc'||call[0]==='load-member'));
   assert.match(h.c.oauthMemberHtml(),/기존 회원 계정에서 연결/);assert.doesNotMatch(h.c.oauthMemberHtml(),/id="oauth-password"|가입하고 시작/);
+});
+
+test('Google registration waits for approval without loading member data or accepting a non-Google identity',async()=>{
+  let proposed;
+  const pendingProfile={...profile,approval_status:'pending'};
+  const h=harness({rpc:async(name,args)=>{assert.equal(name,'growell_oauth_register');proposed=args;return {data:{status:'ready',profile:pendingProfile,envelope:args.p_envelope}};}});
+  h.c.oauthPending={status:'new',authUserId:authId};
+  assert.equal(await h.c.completeOAuthMember('임시 회원','synthetic-password','synthetic-password'),false);
+  assert.ok(proposed);assert.equal(h.c.SESSION,null);assert.equal(h.c.authMode,'signup-complete');assert.equal(h.c.oauthPending,null);
+  assert.ok(!h.calls.some(call=>call[0]==='load-member'));assert.ok(h.calls.some(call=>call[0]==='signout'&&call[1].scope==='local'));
+  const other=harness({user:{id:authId,identities:[{provider:'kakao'}],user_metadata:{provider:'google'}}});other.c.oauthPending={status:'new',authUserId:authId};
+  assert.equal(await other.c.completeOAuthMember('임시','synthetic-password','synthetic-password'),false);assert.ok(!other.calls.some(call=>call[0]==='rpc'||call[0]==='load-member'));
 });
 test('existing member linking uses their verified session without a password or any vault write',async()=>{
   const h=await linkingHarness(),before=JSON.stringify(h.c.STATE),material=h.c.SESSION.keyB64;
