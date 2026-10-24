@@ -55,7 +55,7 @@
       var parts=domain&&typeof domain.detailParts==='function'?domain.detailParts(item.detail):{question:'',body:item.detail};
       var sharing=domain&&typeof domain.sharingParts==='function'?domain.sharingParts(item.summary,item.detail):null;
       if(sharing)sharing.forEach(function(part){
-        var card=node(document,'article','mr-print-sharing-card');card.appendChild(node(document,'h4','',part.name));paragraph(document,card,part.body);story.appendChild(card);
+        var card=node(document,'article','mr-print-sharing-card'+(part.name==='리더 나눔'?' mr-print-sharing-card-leader':''));card.appendChild(node(document,'h4','',part.name));paragraph(document,card,part.body);story.appendChild(card);
       });
       else {
         if(parts.question)paragraph(document,story,'생각 질문: '+parts.question,'mr-print-topic-question');

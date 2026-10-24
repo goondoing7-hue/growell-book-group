@@ -56,14 +56,17 @@ test('a topic question prints as safe small text directly below its title with i
   assert.equal(JSON.stringify(row),before);
 });
 
-test('print gives participants and repeated leader explanations the same cards in source order with complete safe text',()=>{
+test('print keeps all sharing cards in source order with only leader explanations visually softened and complete safe text',()=>{
   const b=browser(),row=record(),parts=[{name:'가람',body:'  소감 원문\n다음 문장  '},{name:'리더 나눔',body:'<script>설명 원문</script>'},{name:'다온',body:('긴 소감도 자르지 않는다. ').repeat(400)+'끝 문장'},{name:'리더 나눔',body:'두 번째 설명'}];
   row.sections=[{id:'sharing',summary:'책 나눔: 가람 · 다온',detail:parts.map(part=>part.name+'\n'+part.body).join('\n\n')}];
-  const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),cards=walk(sheet).filter(item=>item.className==='mr-print-sharing-card');
+  const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),cards=walk(sheet).filter(item=>(item.className||'').split(' ').includes('mr-print-sharing-card'));
   assert.equal(cards.length,4);assert.deepEqual(cards.map(card=>({name:card.children[0].textContent,body:card.children[1].textContent})),parts);
+  assert.deepEqual(cards.map(card=>card.className),['mr-print-sharing-card','mr-print-sharing-card mr-print-sharing-card-leader','mr-print-sharing-card','mr-print-sharing-card mr-print-sharing-card-leader']);
   assert.equal(walk(sheet).some(item=>item.tagName==='SCRIPT'),false);assert.equal(JSON.stringify(row),before);
   const css=require('node:fs').readFileSync(require('node:path').join(__dirname,'../meetingRecordsPrint.css'),'utf8');
   assert.match(css,/\.mr-print-sharing-card\{[^}]*break-inside:auto;page-break-inside:auto/);assert.match(css,/\.mr-print-sharing-card\+\.mr-print-sharing-card\{margin-top:9pt/);
+  assert.match(css,/\.mr-print-sharing-card-leader\{background:#f8f9f7;border-color:#eef0eb;color:#626f66\}/);
+  assert.match(css,/\.mr-print-sharing-card-leader \.mr-print-text\{font-size:9\.8pt;line-height:1\.5;color:inherit\}/);
 });
 
 test('print preserves the whole original sharing body when participant labels do not form a complete structure',()=>{

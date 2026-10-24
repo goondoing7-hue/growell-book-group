@@ -212,7 +212,7 @@ test('an explicit topic question displays below its matching title in read and p
   h.click('preview-mode');assert.ok(h.html().includes(question));assert.equal(JSON.stringify(selected),snapshot);
 });
 
-test('book sharing and intervening leader explanations use equal safe cards in read and preview while core contains only participant names',async t=>{
+test('book sharing keeps participant cards primary and gives only intervening leader cards a softer modifier in read and preview',async t=>{
   const names=['가람','다온','라온','마루','바다'],parts=[];
   names.forEach((name,index)=>{parts.push({name,body:'  '+name+' 소감 <img src=x onerror=bad>  '});if(index<4)parts.push({name:'리더 나눔',body:'설명 '+(index+1)+' <script>글자 그대로</script>'});});
   const summary='책 나눔: '+names.join(' · '),detail=parts.map(part=>part.name+'\n'+part.body).join('\n\n');
@@ -221,12 +221,19 @@ test('book sharing and intervening leader explanations use equal safe cards in r
   function verify(){
     const html=h.html(),core=html.slice(html.indexOf('mr-core-list'),html.indexOf('함께 살펴본 개념'));
     assert.match(core,/책 나눔: 가람 · 다온 · 라온 · 마루 · 바다/);assert.doesNotMatch(core,/소감|설명|리더 나눔/);
-    assert.equal((html.match(/class="mr-sharing-card"/g)||[]).length,9);assert.equal((html.match(/<h4>리더 나눔<\/h4>/g)||[]).length,4);
+    assert.equal((html.match(/class="mr-sharing-card(?: mr-sharing-card-leader)?"/g)||[]).length,9);
+    assert.equal((html.match(/class="mr-sharing-card mr-sharing-card-leader"><h4>리더 나눔<\/h4>/g)||[]).length,4);
+    assert.equal((html.match(/class="mr-sharing-card"><h4>/g)||[]).length,5,'participant cards retain the original main style');
     let last=-1;for(const part of parts){const needle='<h4>'+part.name+'</h4><p class="mr-summary">'+part.body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</p>';const at=html.indexOf(needle);assert.ok(at>last);last=at;}
     assert.doesNotMatch(html,/<script>|<img src=x/);
   }
   verify();h.click('edit');assert.doesNotMatch(h.html(),/class="mr-sharing-card"/);assert.match(h.html(),/가람\n  가람 소감/);
   h.click('preview-mode');verify();assert.equal(JSON.stringify(selected),snapshot);assert.deepEqual(h.calls.writes,[]);
+  const css=fs.readFileSync(path.join(__dirname,'../meetingRecords.css'),'utf8');
+  assert.match(css,/\.mr-sharing-cards\{display:grid;gap:14px\}/);
+  assert.match(css,/\.mr-sharing-card-leader\{background:#f8f9f7;border-color:#eef0eb;color:#626f66\}/);
+  assert.match(css,/\.mr-sharing-card-leader h4\{font-size:13px/);assert.match(css,/\.mr-sharing-card-leader \.mr-summary\{font-size:14px/);
+  assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card-leader\{[^}]*color:var\(--ink-soft/,'dark-mode leader text must keep a readable contrast');
 });
 
 test('incomplete sharing structure falls back to the entire escaped original text rather than hiding or inventing cards',async t=>{
