@@ -5492,7 +5492,7 @@ function loginHtml(){
 }
 function loginFormHtml(){
   return '<h2>다시 만나 반가워요</h2><p class="sub">로그인하고 독서모임과 나의 기록을 이어가세요.</p>' +
-    googleLoginStatusHtml()+(preferGoogleLogin()?'<button type="button" class="btn btn-ghost btn-block btn-sm" id="btn-other-login-account">다른 계정으로 로그인</button>':legacyLoginFormHtml());
+    googleLoginStatusHtml()+(preferGoogleLogin()?'<button type="button" class="btn btn-ghost btn-block btn-sm" id="btn-other-login-account">다른 계정으로 로그인</button>':legacyLoginFormHtml()+(authOtherAccount?'<button type="button" class="btn btn-ghost btn-block btn-sm" id="btn-other-login-account">Google 로그인으로 돌아가기</button>':''));
 }
 function legacyLoginFormHtml(){
   return '<div class="auth-email-heading">기존 아이디로 로그인</div>' +
@@ -8573,7 +8573,7 @@ function bindEvents(route){
     b.addEventListener('click', function(){ authMode = b.getAttribute('data-auth-tab'); oauthMessage=''; render(); });
   });
   var otherLoginAccount=document.getElementById('btn-other-login-account');
-  if(otherLoginAccount)otherLoginAccount.addEventListener('click',function(){authOtherAccount=true;authMode='login';oauthMessage='';render();});
+  if(otherLoginAccount)otherLoginAccount.addEventListener('click',function(){authOtherAccount=!authOtherAccount;authMode='login';oauthMessage='';render();});
   var doLoginBtn = document.getElementById('btn-do-login');
   if(doLoginBtn) doLoginBtn.addEventListener('click', function(){
     doLogin(document.getElementById('li-id').value, document.getElementById('li-pw').value, doLoginBtn);

@@ -77,6 +77,40 @@ test('verified Google preference hides ID fields after logout and offers a share
   c.rememberVerifiedLoginChoice({id:authId,identities:[{provider:'email'}]},profile);c.authOtherAccount=false;assert.match(c.loginFormHtml(),/li-id/);
 });
 
+test('the other-account control returns from existing ID login to Google-only login without changing authentication or stored data',()=>{
+  const h=harness({guest:true}),{c,memory,sessionMemory,calls}=h;
+  vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
+  c.rememberVerifiedLoginChoice(user,profile);
+  memory.set('growell_session','synthetic-existing-session-kept-exactly');
+  sessionMemory.set('synthetic-private-data','synthetic-encrypted-data-kept-exactly');
+  const beforeMemory=[...memory],beforeSessionMemory=[...sessionMemory],sessionBefore=c.SESSION;
+  const handlers=new Map();let markup='',renders=0;
+  c.app={querySelectorAll:()=>[]};c.bindProfilePhotoPicker=()=>{};
+  c.document.getElementById=id=>id==='btn-other-login-account'&&markup.includes('id="'+id+'"')?{addEventListener:(event,callback)=>{assert.equal(event,'click');handlers.set(id,callback);}}:null;
+  c.render=()=>{markup=c.loginFormHtml();renders++;};
+  function bind(){handlers.clear();vm.runInContext(section("  app.querySelectorAll('[data-auth-tab]')",'  var grantAdminBtn ='),c);}
+  c.render();bind();
+  for(let cycle=0;cycle<2;cycle++){
+    assert.match(markup,/id="btn-other-login-account">다른 계정으로 로그인/);assert.doesNotMatch(markup,/id="li-(?:id|pw)"/);
+    c.oauthMessage='이전 안내';handlers.get('btn-other-login-account')();bind();
+    assert.equal(c.authOtherAccount,true);assert.equal(c.authMode,'login');assert.equal(c.oauthMessage,'');
+    assert.match(markup,/id="li-id"/);assert.match(markup,/id="li-pw"/);assert.match(markup,/id="btn-other-login-account">Google 로그인으로 돌아가기/);assert.match(markup,/Google로 로그인/);
+    c.oauthMessage='다른 안내';handlers.get('btn-other-login-account')();bind();
+    assert.equal(c.authOtherAccount,false);assert.equal(c.authMode,'login');assert.equal(c.oauthMessage,'');
+  }
+  assert.equal(renders,5);assert.deepEqual([...memory],beforeMemory);assert.deepEqual([...sessionMemory],beforeSessionMemory);assert.equal(c.SESSION,sessionBefore);
+  assert.ok(!calls.some(call=>['oauth','password-auth','rpc','signout','clear','redirect'].includes(call[0])),'switching presentation must not authenticate, link accounts, clear keys or change stored data');
+});
+
+test('unknown devices and verified ID-only members retain the existing ID form without an unnecessary return toggle',()=>{
+  for(const choice of ['unknown','password']){
+    const {c}=harness({guest:true});vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),c);
+    if(choice==='password')c.rememberVerifiedLoginChoice({id:authId,identities:[{provider:'email'}]},profile);
+    const markup=c.loginFormHtml();assert.match(markup,/id="li-id"/);assert.match(markup,/id="li-pw"/);assert.match(markup,/id="btn-do-login"/);
+    assert.doesNotMatch(markup,/btn-other-login-account|Google 로그인으로 돌아가기/);
+  }
+});
+
 test('choosing another authentication form clears only the previous status message',()=>{
   const handlers={},nodes={};
   for(const id of ['link-forgot-password','link-back-to-login'])nodes[id]={addEventListener:(event,callback)=>{handlers[id]=callback;}};
