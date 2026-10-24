@@ -31,7 +31,7 @@ async function fixture(options={}){
     encryptText:async(key,text)=>{const iv=webcrypto.getRandomValues(new Uint8Array(12)),cipher=await webcrypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(text));return {iv:Buffer.from(iv).toString('base64'),data:Buffer.from(cipher).toString('base64')};}
   };
   c.sb={auth:{getUser:async()=>{calls.push(['user']);return options.getUser?options.getUser():{data:{user},error:null};},getSession:async()=>({data:{session:{user}},error:null}),signOut:async()=>{calls.push(['signout']);return {};},signInWithOAuth:async input=>{calls.push(['oauth',input]);return {data:{url:'https://project.supabase.co/auth/v1/authorize?provider=google'}};},signInWithPassword:async()=>{calls.push(['password']);return {data:{user}};}},
-    from(table){const q={select:()=>q,eq:()=>q,order:()=>q,maybeSingle:async()=>({data:clone(profile),error:null}),range:async(start,end)=>({data:clone(rows.slice(start,end+1)),count:rows.length,error:null})};return q;},
+    from(table){const q={select:()=>q,eq:()=>q,order:()=>q,maybeSingle:async()=>options.getProfile?options.getProfile():({data:clone(profile),error:null}),range:async(start,end)=>options.page?options.page({start,end,rows}):({data:clone(rows.slice(start,end+1)),count:rows.length,error:null})};return q;},
     rpc:async(name,args)=>{calls.push(['rpc',name,clone(args||{})]);if(options.rpc)return options.rpc(name,args,{material,profile,record});
       if(name==='growell_oauth_profile')return {data:options.newMember?{status:'new',profile:null,envelope:null}:{status:'ready',profile:clone(profile),envelope:{invalid:'unused v1 envelope'}}};
       if(name==='growell_google_register')return {data:{status:'approval-required',profile:{...profile,approval_status:'pending'},keyB64:null,keyDigest:null,accessId:null,version:1}};
@@ -56,8 +56,62 @@ test('a verified Google member opens their original records without native passw
   assert.equal(JSON.parse(h.memory.get('growell_session')).keyB64,h.material);assert.ok(!JSON.stringify(h.logs).includes(h.material));
 });
 test('missing server access offers migration/retry and preserves the existing ID login escape',async()=>{
-  const h=await fixture({missing:true});h.pending();assert.equal(await h.c.completeGoogleOnlyMember(''),false);assert.equal(h.c.SESSION,null);assert.equal(h.c.oauthPending.recordAccessState,'missing');assert.match(h.c.oauthMessage,/기존에 로그인한 기기/);assert.match(h.c.oauthMemberHtml(),/연결 다시 확인/);
+  const h=await fixture({missing:true});h.pending();assert.equal(await h.c.completeGoogleOnlyMember(''),false);assert.equal(h.c.SESSION,null);assert.equal(h.c.oauthPending.recordAccessState,'missing');assert.match(h.c.oauthMessage,/처음 한 번 기존 아이디로 로그인/);assert.match(h.c.oauthMessage,/그다음부터는 Google 로그인만/);assert.match(h.c.oauthMemberHtml(),/연결 다시 확인|기존 아이디로 한 번 로그인/);
   assert.ok(!h.calls.some(c=>c[0]==='rpc'&&/register|prepare|rotate/.test(c[1])));await h.c.cancelOAuth();assert.equal(h.c.authOtherAccount,true);
+});
+test('missing retry adopts the original cache restored later by the same member after proving every record',async()=>{
+  const h=await fixture({missing:true});h.pending();const before=JSON.stringify(h.record);assert.equal(await h.c.completeGoogleOnlyMember(''),false);
+  const cached=JSON.stringify({userId:profile.id,keyB64:h.material,name:'복원된 기존 계정'});h.memory.set('growell_session',cached);
+  assert.equal(await h.c.completeGoogleOnlyMember(''),true);assert.equal(h.c.SESSION.userId,profile.id);assert.equal(h.c.SESSION.keyB64,h.material);assert.equal(JSON.stringify(h.record),before);
+  const prepare=h.calls.filter(c=>c[0]==='rpc'&&c[1]==='growell_google_record_access_prepare');assert.equal(prepare.length,1);assert.equal(prepare[0][2].p_key_b64,h.material);
+  assert.ok(!h.calls.some(c=>c[0]==='password'||c[0]==='rpc'&&/register|rotate/.test(c[1])));assert.ok(!JSON.stringify(h.logs).includes(h.material));
+});
+test('selecting existing ID login immediately shows its fields without waiting for saves or network signout',async()=>{
+  const h=await fixture({missing:true}),gate=deferred();h.pending();h.c.oauthBusy=true;h.c.authRestoreState='checking';h.c.authRestoreUserId=authId;
+  const cached=JSON.stringify({userId:profile.id,keyB64:h.material}),opaqueDraft='original encrypted draft bytes';h.memory.set('growell_session',cached);h.memory.set('growell_draft_v33:synthetic',opaqueDraft);
+  h.c.rememberVerifiedLoginChoice(user,profile);vm.runInContext(section('function loginHtml(){','function profilePhotoPickerHtml('),h.c);assert.doesNotMatch(h.c.loginFormHtml(),/id="li-id"/);
+  h.c.resetSaveSession=()=>{h.c.saveSessionEpoch++;return gate.promise;};h.c.sb.auth.signOut=()=>{h.calls.push(['must-not-signout']);return gate.promise;};
+  let markup='';h.c.render=()=>{markup=h.c.loginHtml();};const oldFlow=h.c.authFlowEpoch,oldEpoch=h.c.saveSessionEpoch,result=h.c.cancelOAuth();
+  assert.match(markup,/id="li-id"/);assert.match(markup,/id="li-pw"/);assert.equal(h.c.authRestoreState,'idle');assert.equal(h.c.authRestoreUserId,null);assert.equal(h.c.oauthPending,null);assert.equal(h.c.oauthBusy,false);
+  assert.equal(h.c.authFlowEpoch,oldFlow+1);assert.equal(h.c.saveSessionEpoch,oldEpoch+1);assert.equal(h.memory.get('growell_session'),cached);assert.equal(h.memory.get('growell_draft_v33:synthetic'),opaqueDraft);assert.ok(!h.calls.some(c=>c[0]==='signout'||c[0]==='must-not-signout'));
+  assert.equal(await result,true);gate.resolve();
+});
+test('a delayed cancelled Google proof or save completion cannot sign out the next successful ID login',async()=>{
+  const proof=deferred(),save=deferred();let userReads=0;const h=await fixture({missing:true,getUser:async()=>++userReads===1?proof.promise:{data:{user},error:null}});h.pending();const oldGoogle=h.c.completeGoogleOnlyMember('');
+  h.c.resetSaveSession=()=>{h.c.saveSessionEpoch++;return save.promise;};h.c.sb.auth.signOut=()=>{h.calls.push(['must-not-signout']);return Promise.resolve();};assert.equal(await h.c.cancelOAuth(),true);
+  h.c.resetSaveSession=()=>{h.c.saveSessionEpoch++;return Promise.resolve();};h.c.authTransition=Promise.resolve();h.c.deriveKey=async()=>Private.importKey(h.material);h.c.completePendingPrivateRecovery=async()=>true;h.c.syncGoogleLoginAfterPassword=async()=>true;h.c.currentRoute=()=>({view:'login'});
+  vm.runInContext(section('function doLogin(','function doLogout('),h.c);await h.c.doLogin(profile.login_id,'synthetic-existing-password');const currentSession=h.c.SESSION;assert.equal(currentSession.keyB64,h.material);
+  save.resolve();proof.resolve({data:{user},error:null});assert.equal(await oldGoogle,false);await Promise.resolve();
+  assert.equal(h.c.SESSION,currentSession);assert.equal(JSON.parse(h.memory.get('growell_session')).keyB64,h.material);assert.ok(!h.calls.some(c=>c[0]==='signout'||c[0]==='must-not-signout'));assert.ok(!h.calls.some(c=>c[0]==='rpc'));
+});
+test('missing retry preserves foreign and malformed cache bytes without preparing or accepting a session',async()=>{
+  for(const value of ['broken-json',JSON.stringify({userId:'another-member',keyB64:'foreign-key'}),JSON.stringify({userId:profile.id,keyB64:'broken-key'}),JSON.stringify({userId:profile.id}),JSON.stringify({userId:profile.id,keyB64:Buffer.alloc(31).toString('base64')})]){
+    const h=await fixture({missing:true});h.pending();h.memory.set('growell_session',value);assert.equal(await h.c.completeGoogleOnlyMember(''),false);assert.equal(h.c.SESSION,null);assert.equal(h.memory.get('growell_session'),value);
+    assert.ok(!h.calls.some(c=>c[0]==='rpc'&&/prepare|register|rotate/.test(c[1])));assert.equal(h.c.oauthBusy,false);
+  }
+});
+test('a canonical but wrong cached key cannot enroll or change private records during a missing retry',async()=>{
+  const h=await fixture({missing:true}),wrong=await Private.exportKey(await Private.newKey()),cached=JSON.stringify({userId:profile.id,keyB64:wrong}),before=JSON.stringify(h.record);h.pending();h.memory.set('growell_session',cached);
+  assert.equal(await h.c.completeGoogleOnlyMember(''),false);assert.equal(h.c.SESSION,null);assert.equal(h.memory.get('growell_session'),cached);assert.equal(JSON.stringify(h.record),before);assert.equal(h.c.oauthBusy,false);
+  assert.ok(!h.calls.some(c=>c[0]==='rpc'&&/prepare|rotate/.test(c[1])));assert.ok(!h.c.oauthMessage.includes(wrong));
+});
+test('missing retry checks fresh Google ownership and the unchanged approved profile before key proof',async()=>{
+  for(const changed of [{id:'other'},{auth_user_id:'99999999-2222-4333-8444-555555555555'},{pbkdf2_salt:'ffffffffffffffffffffffffffffffff'},{login_id:'other'},{approval_status:'pending'},{is_deleted:true}]){
+    let reads=0;const h=await fixture({missing:true,getProfile:async()=>({data:{...profile,...(++reads>=3?changed:{})},error:null})});h.pending();const cached=JSON.stringify({userId:profile.id,keyB64:h.material});h.memory.set('growell_session',cached);
+    assert.equal(await h.c.completeGoogleOnlyMember(''),false);assert.equal(h.c.SESSION,null);assert.equal(h.memory.get('growell_session'),cached);assert.ok(!h.calls.some(c=>c[0]==='rpc'&&/prepare|rotate/.test(c[1])));
+  }
+  let reads=0;const h=await fixture({missing:true,getUser:async()=>({data:{user:++reads>=4?{...user,id:'99999999-2222-4333-8444-555555555555'}:user},error:null})});h.pending();const cached=JSON.stringify({userId:profile.id,keyB64:h.material});h.memory.set('growell_session',cached);
+  assert.equal(await h.c.completeGoogleOnlyMember(''),false);assert.equal(h.c.SESSION,null);assert.equal(h.memory.get('growell_session'),cached);assert.ok(!h.calls.some(c=>c[0]==='rpc'&&/prepare|rotate/.test(c[1])));
+});
+test('changing raw cache during missing-retry verification or proof preserves the newer cache and re-enables retry',async()=>{
+  for(const stage of ['verify','proof']){
+    const gate=deferred(),entered=deferred();let reads=0;
+    const options={missing:true,getUser:async()=>{if(stage==='verify'&&++reads===4){entered.resolve();return gate.promise;}return {data:{user},error:null};}};
+    if(stage==='proof')options.page=async({rows})=>{entered.resolve();await gate.promise;return {data:clone(rows),count:rows.length,error:null};};
+    const h=await fixture(options);h.pending();h.memory.set('growell_session',JSON.stringify({userId:profile.id,keyB64:h.material}));const result=h.c.completeGoogleOnlyMember('');await entered.promise;
+    const newer=JSON.stringify({userId:'another-tab-member',keyB64:'newer-cache-must-survive'});h.memory.set('growell_session',newer);gate.resolve({data:{user},error:null});
+    assert.equal(await result,false);assert.equal(h.c.SESSION,null);assert.equal(h.memory.get('growell_session'),newer);assert.equal(h.c.oauthBusy,false);assert.ok(!h.calls.some(c=>c[0]==='rpc'&&/prepare|rotate/.test(c[1])));assert.doesNotMatch(h.c.oauthMemberHtml(),/id="btn-oauth-complete"[^>]* disabled/);
+  }
 });
 test('new Google signup sends a nickname and returns approval confirmation without a password step',async()=>{
   const h=await fixture({newMember:true});h.pending('new');assert.equal(await h.c.completeGoogleOnlyMember('새회원'),false);assert.equal(h.c.authMode,'signup-complete');assert.equal(h.c.SESSION,null);assert.equal(h.c.oauthPending,null);
@@ -116,7 +170,7 @@ test('a failed draft write protects its final key before the ID-login fallback c
   assert.equal(await h.c.completeGoogleOnlyMember(''),false);assert.equal(h.c.SESSION,null);assert.equal(h.memory.get('growell_session'),cached);
   const backupPath='growell_draft_key_recovery_v1:'+encodeURIComponent(profile.id),backup=h.memory.get(backupPath);assert.ok(backup);assert.ok(!backup.includes(old));assert.ok(!backup.includes('작성 중이던 원본 글'));
   assert.deepEqual(await Access.openDraftKeys(h.c.mapProfileRow(profile),h.material,JSON.parse(backup)),[old]);
-  await h.c.cancelOAuth();assert.equal(h.c.authOtherAccount,true);assert.equal(h.memory.has('growell_session'),false);assert.equal(h.memory.get(draft.name),draft.raw);assert.equal(h.memory.get(backupPath),backup);
+  await h.c.cancelOAuth();assert.equal(h.c.authOtherAccount,true);assert.equal(h.memory.get('growell_session'),cached);assert.equal(h.memory.get(draft.name),draft.raw);assert.equal(h.memory.get(backupPath),backup);
   // The existing ID-login path can later decrypt the protected recovery box and
   // migrate the draft after local storage becomes writable again.
   options.writeFailure=false;h.c.authTransition=Promise.resolve();h.c.deriveKey=async()=>Private.importKey(h.material);h.c.completePendingPrivateRecovery=async()=>true;h.c.syncGoogleLoginAfterPassword=async()=>true;h.c.currentRoute=()=>({view:'login'});
@@ -125,7 +179,7 @@ test('a failed draft write protects its final key before the ID-login fallback c
 });
 test('a fresh Google connection restores the protected draft key even after its old session cache was cleared',async()=>{
   const options={writeFailure:true},h=await fixture(options),old=await Private.exportKey(await Private.newKey()),draft=await staleDraft(h,old);h.memory.set('growell_session',JSON.stringify({userId:profile.id,keyB64:old}));h.pending();
-  assert.equal(await h.c.completeGoogleOnlyMember(''),false);await h.c.cancelOAuth();options.writeFailure=false;h.pending();
+  assert.equal(await h.c.completeGoogleOnlyMember(''),false);await h.c.cancelOAuth();h.memory.delete('growell_session');options.writeFailure=false;h.pending();
   assert.equal(await h.c.completeGoogleOnlyMember(''),true);const box=JSON.parse(h.memory.get(draft.name));assert.deepEqual(JSON.parse(await h.c.decryptText(await Private.importKey(h.material),box.iv,box.data)),draft.draft);
 });
 test('if even encrypted key backup fails, all fallback paths keep the final old key and require a retry',async()=>{

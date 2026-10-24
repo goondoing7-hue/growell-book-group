@@ -5027,8 +5027,13 @@ function maybePrepareGoogleRecordAccess(){
 }
 async function completeGoogleOnlyMember(name,button){
   if(!oauthPending||oauthBusy)return false;
-  var pending=oauthPending,flow=authFlowEpoch,epoch=saveSessionEpoch,originalSession=SESSION,acceptedSession=null,newMember=pending.status==='new';
-  function current(){return authFlowEpoch===flow&&saveSessionEpoch===epoch&&oauthPending===pending&&SESSION===(acceptedSession||originalSession);}
+  var pending=oauthPending,flow=authFlowEpoch,epoch=saveSessionEpoch,originalSession=SESSION,acceptedSession=null,newMember=pending.status==='new',cacheEvidence=null;
+  function baseCurrent(){return authFlowEpoch===flow&&saveSessionEpoch===epoch&&oauthPending===pending&&SESSION===(acceptedSession||originalSession);}
+  function current(){
+    if(!baseCurrent())return false;
+    if(cacheEvidence!==null){try{return localStorage.getItem('growell_session')===cacheEvidence;}catch(_){return false;}}
+    return true;
+  }
   function guard(){if(!current())throw new Error('auth-flow-cancelled');}
   if(googleDraftMigrationBlocked&&(!pending.profile||pending.profile.id!==googleDraftMigrationBlocked.owner||pending.authUserId!==googleDraftMigrationBlocked.authUserId)){canLeaveGoogleDraftMigration();return false;}
   if(googleRecordAccessBlocked()){oauthMessage='작성 중인 내용이나 개인 기록 복구를 먼저 마쳐주세요.';return false;}
@@ -5044,7 +5049,22 @@ async function completeGoogleOnlyMember(name,button){
       await sb.auth.signOut({scope:'local'}).catch(function(){});if(flow===authFlowEpoch)render();return false;
     }
     if(response.status==='missing'){
-      pending.recordAccessState='missing';oauthBusy=false;oauthMessage='기존에 로그인한 기기에서 GROWELL을 한 번 열어주세요. 연결이 준비되면 이 기기에서도 Google로 기록을 열 수 있어요.';render();return false;
+      // Another normal tab may have restored this member's original cache since
+      // the first missing response. Recheck it without replacing or deleting it.
+      var raw=null,candidate=null;try{raw=localStorage.getItem('growell_session');candidate=JSON.parse(raw||'null');}catch(_){}
+      if(candidate&&candidate.userId===response.profile.id){
+        try{GrowellGoogleRecordAccess.keyBytes(candidate.keyB64);}catch(_){candidate=null;}
+      }else candidate=null;
+      if(candidate){
+        cacheEvidence=raw;guard();var expectedProfile=response.profile;
+        var freshUser=await sb.auth.getUser();guard();account=freshUser&&freshUser.data&&freshUser.data.user;
+        if(!freshUser||freshUser.error||!account||account.id!==pending.authUserId||!googleMemberIdentity(account))throw new Error('record-access-identity');
+        var freshProfile=await sb.from('profiles').select('*').eq('auth_user_id',pending.authUserId).maybeSingle();guard();
+        if(!freshProfile||freshProfile.error||!freshProfile.data||!sameGoogleLinkProfile(mapProfileRow(freshProfile.data),mapProfileRow(expectedProfile)))throw new Error('record-access-profile');
+        response=await client.prepare({authUserId:pending.authUserId,profile:freshProfile.data,keyB64:candidate.keyB64,current:current});guard();
+      }else{
+        pending.recordAccessState='missing';oauthBusy=false;oauthMessage='처음 한 번 기존 아이디로 로그인하면 기존 기록이 이 Google 계정에 연결돼요. 그다음부터는 Google 로그인만 사용하면 돼요.';render();return false;
+      }
     }
     if(response.status!=='ready'||!GrowellMemberAccess.approved(response.profile)||response.profile.auth_user_id!==pending.authUserId)throw new Error('record-access-profile');
     await keyFromB64(response.keyB64);guard();
@@ -5054,13 +5074,14 @@ async function completeGoogleOnlyMember(name,button){
     acceptedSession={userId:member.id,name:member.name,keyB64:response.keyB64,authKind:passwordMemberIdentity(account)?'password':'oauth'};SESSION=acceptedSession;
     await migrateGoogleRecordDrafts(previousCache&&previousCache.userId===member.id?previousCache.keyB64:null,guard);guard();
     if(typeof markMemberPushPromptSession==='function')markMemberPushPromptSession();
+    guard();cacheEvidence=null;
     try{localStorage.setItem('growell_session',JSON.stringify(SESSION));}catch(_){}
     await loadMemberData();guard();
     googleRecordAccessPrepared=googleRecordSessionContext();oauthPending=null;oauthMessage='';oauthBusy=false;authRestoreState='idle';authRestoreRetryCount=0;sharedPostsLoadState='idle';
     var destination='#/';try{var saved=sessionStorage.getItem('growell_oauth_return');if(/^#\/book\/[a-z]+\/(share|mine|worksheet|materials|habit)$/.test(saved))destination=saved;sessionStorage.removeItem('growell_oauth_return');}catch(_){}
     location.hash=destination;render();showToast(member.name+'님, 환영해요.');return true;
   }catch(_){
-    if(!current())return false;
+    if(!baseCurrent())return false;
     if(acceptedSession&&SESSION===acceptedSession){SESSION=originalSession;acceptedSession=null;}
     oauthBusy=false;pending.recordAccessState='unavailable';oauthMessage='Google 기록 연결을 확인하지 못했어요. 기존 기록은 그대로예요. 잠시 후 다시 시도하거나 기존 아이디로 로그인해주세요.';render();return false;
   }
@@ -5362,6 +5383,14 @@ async function completeOAuthMember(name,password,confirmation,button){
 }
 async function cancelOAuth(){
   if(!canLeaveGoogleDraftMigration())return false;
+  if(!SESSION&&oauthPending){
+    // Selecting a login method does not revoke an authenticated app session.
+    // Avoid a delayed signOut that could erase the next ID-login session.
+    ++authFlowEpoch;Promise.resolve(resetSaveSession()).catch(function(){});cancelMemberSessionRestore();
+    googleRecordAccessTask=null;googleRecordAccessPrepared=null;
+    oauthPending=null;oauthBusy=false;oauthMessage='';authOtherAccount=true;authMode='login';
+    location.hash='#/login';render();return true;
+  }
   ++authFlowEpoch;var pending=resetSaveSession();clearMemberSession();oauthPending=null;oauthBusy=false;oauthMessage='';
   await pending;await sb.auth.signOut({scope:'local'}).catch(function(){});authOtherAccount=true;authMode='login';location.hash='#/login';render();
 }
@@ -5370,7 +5399,7 @@ function oauthMemberHtml(){
   if(newMember&&!SOCIAL_AUTH_VISIBLE)return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>기존 회원 계정에서 연결해주세요</h2><p class="sub">Google로 새 회원을 만들지 않았어요. 먼저 가입한 아이디로 로그인한 뒤 프로필 → 설정 → 연동 → Google 로그인 설정에서 연결해주세요. 작성한 기록은 기존 계정에 그대로 있어요.</p><p class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button class="btn btn-primary btn-block" data-oauth-cancel type="button">아이디 로그인으로 돌아가기</button></section></div></div>';
   return '<div class="wrap"><div class="auth-wrap"><section class="card auth-card"><h2>'+(newMember?'사용할 별명을 알려주세요':'Google 기록 연결')+'</h2><p class="sub">'+(newMember?'별명을 정하면 가입 신청이 완료돼요. 관리자 승인 후 이용할 수 있어요.':'연결한 Google 계정으로 기존 기록을 이어가요.')+'</p>'+
     (newMember?'<label class="field-label" for="oauth-name">별명</label><input id="oauth-name" maxlength="30" autocomplete="nickname" value="'+esc(pending.name||'')+'">':'')+
-    '<p id="oauth-status" class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button id="btn-oauth-complete" class="btn btn-primary btn-block" type="button"'+(oauthBusy?' disabled':'')+'>'+(newMember?'가입하고 시작하기':oauthBusy?'기록 연결 중…':'연결 다시 확인')+'</button><button class="btn btn-ghost btn-block" data-oauth-cancel type="button">기존 아이디로 로그인</button></section></div></div>';
+    '<p id="oauth-status" class="profile-photo-status" role="status">'+esc(oauthMessage)+'</p><button id="btn-oauth-complete" class="btn btn-primary btn-block" type="button"'+(oauthBusy?' disabled':'')+'>'+(newMember?'가입하고 시작하기':oauthBusy?'기록 연결 중…':'연결 다시 확인')+'</button><button class="btn btn-ghost btn-block" data-oauth-cancel type="button">'+(pending.recordAccessState==='missing'?'기존 아이디로 한 번 로그인':'기존 아이디로 로그인')+'</button></section></div></div>';
 }
 function waitForGoogleLoginDrafts(isCurrent){
   if(typeof pendingPrivateRecovery!=='undefined'&&pendingPrivateRecovery||typeof privateRecoveryBusy!=='undefined'&&privateRecoveryBusy)return Promise.reject(new Error('google-link-recovery'));
