@@ -64,11 +64,11 @@
 .meeting-records-dialog .mr-sharing-card h4{margin:0 0 7px;font-size:14px;font-weight:650;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-sharing-card:not(.mr-sharing-card-leader) h4{color:#7c633d}
 .meeting-records-dialog .mr-summary{font-size:15px;line-height:1.95}
-.meeting-records-dialog .mr-sharing-card-leader{background:#f8f9f7;border-color:#eef0eb;color:#626f66}
+.meeting-records-dialog .mr-sharing-card-leader{background:#f7f7f7;border-color:#eaeaea;color:#6b6b6b}
 .meeting-records-dialog .mr-sharing-card-leader h4{font-size:13px;font-weight:600;color:inherit}
 .meeting-records-dialog .mr-sharing-card-leader .mr-summary{font-size:14px;line-height:1.85;color:inherit}
-:root[data-theme="dark"] .meeting-records-dialog .mr-sharing-card-leader{background:color-mix(in srgb,var(--surface,#20332b) 98%,var(--ink,#f0f3eb) 2%);border-color:var(--line);color:var(--ink-soft,#c1ccbf)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .meeting-records-dialog .mr-sharing-card-leader{background:color-mix(in srgb,var(--surface,#20332b) 98%,var(--ink,#f0f3eb) 2%);border-color:var(--line);color:var(--ink-soft,#c1ccbf)}}
+:root[data-theme="dark"] .meeting-records-dialog .mr-sharing-card-leader{background:#303030;border-color:#494949;color:#c7c7c7}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .meeting-records-dialog .mr-sharing-card-leader{background:#303030;border-color:#494949;color:#c7c7c7}}
 :root[data-theme="dark"] .meeting-records-dialog .mr-sharing-card:not(.mr-sharing-card-leader){background:#3c3527;border-color:#66583b}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .meeting-records-dialog .mr-sharing-card:not(.mr-sharing-card-leader){background:#3c3527;border-color:#66583b}}
 :root[data-theme="dark"] .meeting-records-dialog .mr-sharing-card:not(.mr-sharing-card-leader) h4{color:#e5cba1}

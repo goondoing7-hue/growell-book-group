@@ -67,7 +67,7 @@ test('print keeps all sharing cards in source order with only leader explanation
   assert.match(css,/\.mr-print-sharing-card\{[^}]*break-inside:auto;page-break-inside:auto/);assert.match(css,/\.mr-print-sharing-card\+\.mr-print-sharing-card\{margin-top:9pt/);
   assert.match(css,/\.mr-print-sharing-card\{[^}]*border:\.6pt solid #f2e8ce[^}]*background:#fffbef/);
   assert.match(css,/\.mr-print-sharing-card:not\(\.mr-print-sharing-card-leader\) h4\{color:#7c633d\}/);
-  assert.match(css,/\.mr-print-sharing-card-leader\{background:#f8f9f7;border-color:#eef0eb;color:#626f66\}/);
+  assert.match(css,/\.mr-print-sharing-card-leader\{background:#f7f7f7;border-color:#eaeaea;color:#6b6b6b\}/);
   assert.match(css,/\.mr-print-sharing-card-leader \.mr-print-text\{font-size:9\.8pt;line-height:1\.5;color:inherit\}/);
 });
 

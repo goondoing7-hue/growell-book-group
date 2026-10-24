@@ -233,9 +233,9 @@ test('book sharing keeps participant cards primary and gives only intervening le
   assert.match(css,/\.mr-sharing-cards\{display:grid;gap:14px\}/);
   assert.match(css,/\.mr-sharing-card\{[^}]*border:1px solid #f2e8ce[^}]*background:#fffbef/);
   assert.match(css,/\.mr-sharing-card:not\(\.mr-sharing-card-leader\) h4\{color:#7c633d\}/);
-  assert.match(css,/\.mr-sharing-card-leader\{background:#f8f9f7;border-color:#eef0eb;color:#626f66\}/);
+  assert.match(css,/\.mr-sharing-card-leader\{background:#f7f7f7;border-color:#eaeaea;color:#6b6b6b\}/);
   assert.match(css,/\.mr-sharing-card-leader h4\{font-size:13px/);assert.match(css,/\.mr-sharing-card-leader \.mr-summary\{font-size:14px/);
-  assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card-leader\{[^}]*color:var\(--ink-soft/,'dark-mode leader text must keep a readable contrast');
+  assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card-leader\{background:#303030;border-color:#494949;color:#c7c7c7\}/,'dark-mode leader styling must remain neutral and readable');
   assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card:not\(\.mr-sharing-card-leader\)\{background:#3c3527;border-color:#66583b\}/);
   assert.match(css,/:root\[data-theme="dark"\] \.meeting-records-dialog \.mr-sharing-card:not\(\.mr-sharing-card-leader\) h4\{color:#e5cba1\}/);
 });
