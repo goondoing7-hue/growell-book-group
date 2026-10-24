@@ -38,6 +38,24 @@ test('A4 print builds complete safe text without mutating or shortening the reco
   assert.equal(JSON.stringify({row,options}),before);
 });
 
+test('preparation print shows an explicit time range without inventing an old record end time',()=>{
+  const b=browser(),row=record();
+  assert.match(api.buildPrintSheet(b.document,row).textContent,/2026\.10\.18 · 13:00/);
+  assert.doesNotMatch(api.buildPrintSheet(b.document,row).textContent,/13:00~/);
+  row.nextMeeting.endTime='15:00';const snapshot=JSON.stringify(row);
+  assert.match(api.buildPrintSheet(b.document,row).textContent,/2026\.10\.18 · 13:00~15:00/);
+  assert.equal(JSON.stringify(row),snapshot);
+});
+
+test('a topic question prints as safe small text directly below its title with its exact body intact',()=>{
+  const b=browser(),row=record();row.sections=[{id:'one',summary:'책 내용 주제',detail:'생각 질문: <script>질문 원문</script>\n\n  원문 본문\n다음 문장  '}];
+  const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),story=walk(sheet).find(item=>item.className==='mr-print-story');
+  assert.equal(story.children[0].textContent,'1. 책 내용 주제');
+  assert.equal(story.children[1].className,'mr-print-topic-question');assert.equal(story.children[1].textContent,'생각 질문: <script>질문 원문</script>');
+  assert.equal(story.children[2].textContent,'  원문 본문\n다음 문장  ');assert.equal(walk(story).some(item=>item.tagName==='SCRIPT'),false);
+  assert.equal(JSON.stringify(row),before);
+});
+
 test('printing and canceling restore title and remove only the temporary print sheet',()=>{
   const b=browser(),app=new Element('main');b.document.body.appendChild(app);
   const cleanup=api.printRecord(b,record(),{bookTitle:'감정의 책'});
@@ -145,8 +163,8 @@ test('failed, partial or non-PDF responses never download or expose server detai
   }
 });
 
-test('a record exceeding readable five-page limits reports preservation instead of downloading a clipped file',async()=>{
+test('a record exceeding PDF resource limits reports preservation instead of downloading a clipped file',async()=>{
   const b=downloadBrowser(async()=>pdfResponse({ok:false,json:async()=>({error:'pdf-layout-overflow'})})),row=record(),before=JSON.stringify(row);
-  await assert.rejects(api.downloadRecord(b,row,{getAccessToken:async()=> 'synthetic-token',isCurrent:()=>true}),/5페이지.*그대로 보존/);
+  await assert.rejects(api.downloadRecord(b,row,{getAccessToken:async()=> 'synthetic-token',isCurrent:()=>true}),/분량을 초과.*그대로 보존/);
   assert.deepEqual(b.clicked,[]);assert.deepEqual(b.created,[]);assert.equal(JSON.stringify(row),before);
 });

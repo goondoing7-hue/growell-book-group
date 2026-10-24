@@ -728,7 +728,7 @@ function mockGoogleLoginDialog(h){
   };};return dialogs;
 }
 test('opening Google login directly starts account selection without any password form',async()=>{
-  const h=await linkingHarness(),dialogs=mockGoogleLoginDialog(h);h.c.openGoogleLoginSettings(null,false);await settle();
+  const h=await linkingHarness(),dialogs=mockGoogleLoginDialog(h);h.c.openGoogleLoginSettings(null,false);await until(()=>h.calls.some(call=>call[0]==='redirect'));
   const node=dialogs[0];assert.ok(node);assert.doesNotMatch(node.markup,/<input|<form|type="password"|현재 GROWELL 비밀번호|비밀번호 확인/);
   assert.ok(h.calls.some(call=>call[0]==='link-identity'));assert.ok(h.calls.some(call=>call[0]==='redirect'));
   assert.ok(!h.calls.some(call=>call[0]==='password-auth'||call[0]==='rpc'));
@@ -736,7 +736,7 @@ test('opening Google login directly starts account selection without any passwor
 });
 test('closing a pending no-password dialog leaves a newer dialog marker and busy state intact',async()=>{
   const pending=deferred(),h=await linkingHarness({linkIdentity:()=>pending.promise}),dialogs=mockGoogleLoginDialog(h);
-  h.c.openGoogleLoginSettings(null,false);await settle();const original=dialogs[0];h.c.closeGoogleLoginSettings(false);
+  h.c.openGoogleLoginSettings(null,false);await until(()=>h.calls.some(call=>call[0]==='link-identity'));const original=dialogs[0];h.c.closeGoogleLoginSettings(false);
   const replacement={authUserId:authId,profileId:profile.id,nonce:'f'.repeat(32),createdAt:Date.now()};h.sessionMemory.set('growell_google_login_link_v1',JSON.stringify(replacement));h.c.oauthBusy=true;
   pending.resolve({error:{code:'identity_already_exists'}});await settle();
   assert.equal(original.removed,true);assert.equal(h.sessionMemory.get('growell_google_login_link_v1'),JSON.stringify(replacement));assert.equal(h.c.oauthBusy,true);
@@ -744,7 +744,7 @@ test('closing a pending no-password dialog leaves a newer dialog marker and busy
 });
 test('no-password dialog failures offer retry and close while an already linked member gets only its state',async()=>{
   const failed=await linkingHarness({getUser:async()=>({error:{status:503}})}),dialogs=mockGoogleLoginDialog(failed);
-  failed.c.openGoogleLoginSettings(null,false);await settle();assert.equal(dialogs[0].querySelector('[data-google-login-retry]').hidden,false);
+  failed.c.openGoogleLoginSettings(null,false);await until(()=>dialogs[0].querySelector('[data-google-login-retry]').hidden===false);assert.equal(dialogs[0].querySelector('[data-google-login-retry]').hidden,false);
   assert.equal(typeof dialogs[0].querySelector('[data-google-login-retry]').onclick,'function');failed.c.closeGoogleLoginSettings(false);
   const linked=await linkingHarness({user:linkedUser}),connected=mockGoogleLoginDialog(linked);linked.c.openGoogleLoginSettings(null,false);await until(()=>/이미 Google 로그인이 연결/.test(connected[0].querySelector('[data-google-login-status]').textContent));
   assert.match(connected[0].querySelector('[data-google-login-status]').textContent,/이미 Google 로그인이 연결/);assert.equal(connected[0].querySelector('[data-google-login-retry]').hidden,true);

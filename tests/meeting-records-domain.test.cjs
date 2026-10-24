@@ -163,6 +163,20 @@ test('optional next meeting preparation preserves legacy records and exact edita
   assert.equal(domain.validateRecord(record({nextMeeting:{date:'',time:'',place:'',reading:'',sharing:'',habit:''}})).ok,true);
 });
 
+test('optional preparation end time preserves omission and rejects invalid or reversed ranges',()=>{
+  const nextMeeting={date:'2026-11-07',time:'13:30',place:'모임 장소',reading:'2장',sharing:'',habit:''};
+  const legacy=domain.normalizeRecord(record({nextMeeting}));
+  assert.equal(Object.hasOwn(legacy.nextMeeting,'endTime'),false);
+  for(const endTime of ['', '15:00','23:59']){
+    const value=record({nextMeeting:{...nextMeeting,endTime}});
+    assert.equal(domain.validateRecord(value).ok,true);assert.deepEqual(domain.normalizeRecord(value).nextMeeting,value.nextMeeting);
+  }
+  for(const endTime of ['13:30','13:29','00:00','24:00','15:60','3:00',null,15,{},undefined,'15:00\u0000']){
+    assert.equal(domain.validateRecord(record({nextMeeting:{...nextMeeting,endTime}})).ok,false,String(endTime));
+  }
+  assert.equal(domain.validateRecord(record({nextMeeting:{...nextMeeting,time:'',endTime:'15:00'}})).ok,true);
+});
+
 test('preparation rejects invalid dates, times, shapes and oversized text without coercing or truncating',()=>{
   const good={date:'2024-02-29',time:'00:00',place:'',reading:'',sharing:'',habit:''};
   assert.equal(domain.validateRecord(record({nextMeeting:good})).ok,true);
@@ -197,4 +211,17 @@ test('thought questions reject malformed, duplicate, unknown and oversized input
     const source=record({thoughtQuestions});assert.equal(domain.validateRecord(domain.normalizeRecord(source)).ok,false);
     assert.deepEqual(domain.normalizeRecord(source).thoughtQuestions,thoughtQuestions);
   }
+});
+
+test('topic questions are presentation-only first-line prefixes and preserve the remaining exact body',()=>{
+  const detail='생각 질문: 내 감정은 무엇을 알려주는가?\n\n  원문 본문\n\n다음 문장이다.  ';
+  assert.deepEqual(domain.detailParts(detail),{question:'내 감정은 무엇을 알려주는가?',body:'  원문 본문\n\n다음 문장이다.  '});
+  assert.deepEqual(domain.detailParts('생각 질문: 질문이다.\r\n\r\n본문\r\n  '),{question:'질문이다.',body:'본문\r\n  '});
+  assert.deepEqual(domain.detailParts('생각 질문: 단독 질문이다.'),{question:'단독 질문이다.',body:''});
+  assert.deepEqual(domain.detailParts('생각 질문: <b>글자 그대로</b>\n본문'),{question:'<b>글자 그대로</b>',body:'본문'});
+  for(const source of ['원문 첫 줄\n생각 질문: 질문',' 생각 질문: 질문\n본문','생각 질문: \n\n본문','생각 질문:   \n본문','생각 질문: '+ '😀'.repeat(1001)+'\n본문'])
+    assert.deepEqual(domain.detailParts(source),{question:'',body:source});
+  assert.equal(domain.detailParts('생각 질문: '+'😀'.repeat(1000)+'\n본문').question,'😀'.repeat(1000));
+  const row=record({sections:[{id:'one',summary:'주제',detail}]}),before=JSON.stringify(row);domain.detailParts(row.sections[0].detail);
+  assert.equal(JSON.stringify(row),before);
 });

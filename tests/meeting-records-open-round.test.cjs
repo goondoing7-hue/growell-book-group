@@ -84,7 +84,7 @@ function harness(t,options={}){
     deleteRecord(...args){calls.writes.push(['delete',...args]);throw new Error('Viewing must not delete');},
     getInsights:()=>[],getMaterials:()=>[],openPost:(...args)=>calls.navigation.push(['post',...args]),
     openMaterial:(...args)=>calls.navigation.push(['material',...args]),showToast:value=>calls.toasts.push(value)};
-  const context={document,GrowellMeetingRecordsDomain:domain,GrowellMeetingRecordsPrint:options.printer};context.window=context;
+  const context={document,GrowellMeetingRecordsDomain:domain,GrowellMeetingRecordsPrint:options.printer,GrowellMeetingRecordShare:options.sharing};context.window=context;
   vm.runInNewContext(source,context,{filename:'meetingRecords.js'});
   const api=context.GrowellMeetingRecords;
   if(options.configure!==false)api.configure(adapter);
@@ -107,6 +107,34 @@ function harness(t,options={}){
   });
   return {api,adapter,document,session,calls,current,click,input,html:()=>current()?.innerHTML||''};
 }
+
+test('published record sharing uses routing fields only and preserves the original record',async t=>{
+  const selected=record(2),before=JSON.stringify(selected),sent=[];
+  const h=harness(t,{rows:[selected],sharing:{shareRecord:async (root,payload,options)=>{assert.equal(options.isCurrent(),true);sent.push(payload);return {status:'copied'};}}});
+  h.api.openRound('emotion',2);await tick();h.click('share-record');await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(sent)),[{bookId:'emotion',round:2,status:'published'}]);
+  assert.deepEqual(h.calls.toasts,['링크를 복사했어요.']);assert.equal(JSON.stringify(selected),before);
+});
+
+test('draft record, editor and preview have no public share action',async t=>{
+  const selected=record(2,{userId:'reader',status:'draft'});
+  const h=harness(t,{rows:[selected],session:{admin:true}});
+  h.api.openList('emotion');await tick();h.click('record',selected.id);
+  assert.doesNotMatch(h.html(),/data-mr-action="share-record"/);
+  h.click('edit');assert.doesNotMatch(h.html(),/data-mr-action="share-record"/);
+  h.click('preview-mode');assert.doesNotMatch(h.html(),/data-mr-action="share-record"/);
+  const published=harness(t,{rows:[record(1,{userId:'reader'})],session:{admin:true}});
+  published.api.openRound('emotion',1);await tick();published.click('edit');published.click('preview-mode');
+  assert.doesNotMatch(published.html(),/data-mr-action="share-record"/);
+});
+
+test('pending record share loses its owner/view authorization after logout',async t=>{
+  const task=deferred();let allowed;
+  const h=harness(t,{rows:[record(2)],sharing:{shareRecord(root,payload,options){allowed=options.isCurrent;return task.promise;}}});
+  h.api.openRound('emotion',2);await tick();h.click('share-record');assert.equal(allowed(),true);
+  h.session.userId='another-reader';h.session.epoch++;assert.equal(allowed(),false);
+  task.resolve({status:'copied'});await tick();assert.deepEqual(h.calls.toasts,[]);
+});
 
 test('thought questions appear after concepts and before stories, escape text and leave legacy records unchanged',async t=>{
   const source=record(1,{thoughtQuestions:[{id:'question-1',text:'<script>감정을 어떻게 보는가?</script>\n그 이유는 무엇인가?'},{id:'question-2',text:'나의 생각과 감정은 어떻게 다른가?'}]}),before=JSON.stringify(source);
@@ -171,6 +199,17 @@ test('core-summary buttons focus and scroll the matching content without navigat
   assert.match(h.html(),/aria-controls="mr-story-second"/);h.click('jump-section','second');
   assert.equal(target.focusCount,1);assert.equal(body.lastScroll.top,426);assert.equal(body.lastScroll.behavior,'smooth');
   assert.equal(JSON.stringify(row),before);assert.deepEqual(h.calls.navigation,[]);
+});
+
+test('an explicit topic question displays below its matching title in read and preview without changing saved detail',async t=>{
+  const detail='생각 질문: <script>질문 원문</script>\n\n  원문 본문\n다음 문장  ';
+  const selected=record(1,{userId:'reader',sections:[{id:'one',summary:'연결된 주제',detail}]}),snapshot=JSON.stringify(selected);
+  const h=harness(t,{session:{admin:true},rows:[selected]});h.api.openRound('emotion',1);await tick();
+  const question='<p class="mr-topic-question">생각 질문: &lt;script&gt;질문 원문&lt;/script&gt;</p>';
+  assert.ok(h.html().indexOf(question)>h.html().indexOf('id="mr-story-heading-one"'));
+  assert.ok(h.html().indexOf(question)<h.html().indexOf('<p class="mr-summary">  원문 본문'));
+  assert.doesNotMatch(h.html(),/<script>/);h.click('edit');assert.match(h.html(),/생각 질문: &lt;script&gt;질문 원문/);
+  h.click('preview-mode');assert.ok(h.html().includes(question));assert.equal(JSON.stringify(selected),snapshot);
 });
 
 test('record PDF action downloads directly without copying client-side insights or writing source records',async t=>{
@@ -371,7 +410,7 @@ test('legacy and blank preparation stay hidden in reading view but the owner can
     assert.doesNotMatch(h.html(),/data-mr-preparation|다음 모임 준비/);
     h.click('edit');
     assert.match(h.html(),/data-mr-preparation/);
-    assert.equal(h.current().querySelectorAll('[data-mr-next]').length,6);
+    assert.equal(h.current().querySelectorAll('[data-mr-next]').length,7);
     h.click('preview-mode');
     assert.doesNotMatch(h.html(),/data-mr-preparation|다음 모임 준비/,'opening the editor alone does not create empty published content');
   }
@@ -394,6 +433,18 @@ test('preparation input survives preview, return to editor and saving without ch
   assert.match(h.html(),/<h2>다음 모임 준비<\/h2>/);assert.match(h.html(),/<mark>  나눔 글 1편/);
   assert.doesNotMatch(h.html(),/data-mr-next=/,'committed result returns to reading view');
   assert.equal(JSON.stringify(selected),snapshot,'the original loaded record was never edited in place');
+});
+
+test('an optional preparation end time is editable, previewed and saved without mutating a legacy source',async t=>{
+  const nextMeeting={date:'2026-11-07',time:'13:30',place:'모임 장소',reading:'2장',sharing:'',habit:''};
+  const selected=record(1,{userId:'reader',nextMeeting}),snapshot=JSON.stringify(selected);
+  const h=harness(t,{session:{admin:true},rows:[selected],save:payload=>({...payload,revision:payload.revision+1})});
+  h.api.openRound('emotion',1);await tick();h.click('edit');
+  assert.match(h.html(),/종료 시간/);assert.match(h.html(),/data-mr-next="endTime" value=""/);
+  h.input('[data-mr-next="endTime"]','15:00');h.click('preview-mode');assert.match(h.html(),/2026\.11\.07 · 13:30~15:00/);
+  h.click('editor-mode');h.click('publish');await tick();
+  assert.equal(h.calls.writes.length,1);assert.deepEqual(h.calls.writes[0][1].nextMeeting,{...nextMeeting,endTime:'15:00'});
+  assert.equal(JSON.stringify(selected),snapshot);
 });
 
 test('failed preparation save retains the draft, supports retry and leaves the original intact',async t=>{

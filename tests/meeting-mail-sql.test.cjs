@@ -119,6 +119,14 @@ describe('Automatic meeting PDF mail SQL preserves authored records and delivery
     const encoded=JSON.stringify(snapshot);for(const value of ['PUBLIC STORY','ENCRYPTED PRIVATE','COMPLETE MATERIAL BODY','operator','auth_user_id','q1'])assert.equal(encoded.includes(value),false,value);
     assert.equal((await rows())[0].status,'claimed','PDF rendering alone cannot start delivery');
   });
+  test('mail snapshots retain optional preparation end time and fence older hashes without enqueueing duplicate mail',async()=>{
+    await configure();const work=(await claim())[0],original=await apply(work,'snapshot'),jobs=await rows();
+    const nextMeeting={...original.record.nextMeeting,time:'13:30',endTime:'15:00'};
+    await db.query('update public.growell_meeting_records set next_meeting=$1::jsonb where id=$2::uuid',[JSON.stringify(nextMeeting),R2]);
+    const revised=await apply(work,'snapshot');assert.deepEqual(revised.record.nextMeeting,nextMeeting);assert.notEqual(revised.content_hash,original.content_hash);
+    assert.deepEqual(await apply(work,'prepare',{record_revision:original.record.revision,content_hash:original.content_hash}),{applied:false});
+    assert.deepEqual(await rows(),jobs,'preparation representation must not alter delivery jobs or receipts');
+  });
   test('thought questions enter the canonical mail snapshot and hash without changing queue or delivery receipts',async()=>{
     await configure();const work=(await claim())[0],legacy=await apply(work,'snapshot');assert.deepEqual(legacy.record.thoughtQuestions,[]);
     const questions=[{id:'question-1',text:'  감정은 무엇을 알려주는가?\n생각과 어떻게 연결되는가?  '}];

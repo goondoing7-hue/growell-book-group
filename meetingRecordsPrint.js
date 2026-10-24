@@ -1,9 +1,9 @@
 (function(root,factory){
   'use strict';
-  var api=factory();
+  var api=factory(root.GrowellMeetingRecordsDomain||(typeof module==='object'&&module.exports?require('./meetingRecordsDomain.js'):null));
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.GrowellMeetingRecordsPrint=api;
-})(typeof window!=='undefined'?window:globalThis,function(){
+})(typeof window!=='undefined'?window:globalThis,function(domain){
   'use strict';
   function node(document,tag,classes,text){
     var item=document.createElement(tag);if(classes)item.className=classes;
@@ -19,7 +19,7 @@
   function dateLabel(value){return value?String(value).replace(/-/g,'.'):'날짜 미정';}
   function preparationRows(next){
     if(!next||typeof next!=='object')return [];
-    var rows=[],when=[next.date?dateLabel(next.date):'',next.time||''].filter(Boolean).join(' · ');
+    var rows=[],time=next.time?(next.time+(next.endTime?'~'+next.endTime:'')):(next.endTime?next.endTime+' 종료':''),when=[next.date?dateLabel(next.date):'',time].filter(Boolean).join(' · ');
     if(when)rows.push(['일시',when]);
     [['place','장소'],['reading','읽기 범위'],['sharing','나눔'],['habit','독서 습관']].forEach(function(entry){
       if(typeof next[entry[0]]==='string'&&next[entry[0]].trim())rows.push([entry[1],next[entry[0]]]);
@@ -52,7 +52,9 @@
     var details=section(document,sheet,'모임 내용');
     record.sections.forEach(function(item,index){
       var story=node(document,'article','mr-print-story');story.appendChild(node(document,'h3','',(index+1)+'. '+item.summary));
-      paragraph(document,story,item.detail);details.appendChild(story);
+      var parts=domain&&typeof domain.detailParts==='function'?domain.detailParts(item.detail):{question:'',body:item.detail};
+      if(parts.question)paragraph(document,story,'생각 질문: '+parts.question,'mr-print-topic-question');
+      paragraph(document,story,parts.body);details.appendChild(story);
     });
     var preparation=preparationRows(record.nextMeeting);
     if(preparation.length){
@@ -136,7 +138,7 @@
           'record-unavailable':'모임 기록을 다시 연 뒤 PDF를 저장해주세요.','record-changed':'모임 기록이 변경됐어요. 다시 연 뒤 PDF를 저장해주세요.',
           'not-configured':'PDF 다운로드 준비가 아직 완료되지 않았어요.','invalid-request':'모임 기록 내용을 확인한 뒤 다시 저장해주세요.',
           'pdf-glyph-unsupported':'PDF 글꼴에서 지원하지 않는 문자가 있어요. 원문은 그대로 보존돼 있어요.',
-          'pdf-layout-overflow':'5페이지 안에 담기에는 내용이 너무 많아요. 작성 내용은 그대로 보존되어 있어요.','rate-limited':'잠시 후 다시 PDF를 저장해주세요.'};
+          'pdf-layout-overflow':'PDF를 만들 수 있는 분량을 초과했어요. 작성 내용은 그대로 보존되어 있어요.','rate-limited':'잠시 후 다시 PDF를 저장해주세요.'};
         throw new Error(messages[result&&result.error]||'PDF를 만들지 못했어요. 잠시 후 다시 저장해주세요.');
       }
       var type=response.headers&&response.headers.get('Content-Type')||'',length=Number(response.headers&&response.headers.get('Content-Length'));

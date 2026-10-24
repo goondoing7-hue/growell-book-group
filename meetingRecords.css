@@ -58,6 +58,7 @@
 .meeting-records-dialog .mr-story{margin-top:21px}
 .meeting-records-dialog .mr-story h3{display:flex;align-items:flex-start;gap:11px;font-size:16px;font-weight:650;line-height:1.7;margin-bottom:10px}
 .meeting-records-dialog .mr-story h3>span:last-child{min-width:0}
+.meeting-records-dialog .mr-topic-question{font-size:13px;line-height:1.7;color:var(--ink-soft);margin:0 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-summary{font-size:15px;line-height:1.95}
 .meeting-records-dialog .mr-preparation-list{display:grid;gap:0;margin:0;padding:0;border:1px solid var(--line);border-radius:13px;overflow:hidden}
 .meeting-records-dialog .mr-preparation-row{display:grid;grid-template-columns:76px minmax(0,1fr);gap:12px;align-items:start;margin:0;padding:15px 18px}

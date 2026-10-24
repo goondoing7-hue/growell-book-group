@@ -43,6 +43,31 @@ test('thought-question PDF projection keeps exact text and excludes IDs, answers
   }
 });
 
+test('optional next-meeting end time keeps old records compatible and renders the complete same-day range', async () => {
+  const source = fixture(), drawn = [], originalText = PDFDocument.prototype.text;
+  assert.equal(Object.hasOwn(editorialContent(source).nextMeeting, 'endTime'), false);
+  source.record.nextMeeting = { date: '2026-11-07', time: '13:30', endTime: '15:00', place: '교회 1층 자작나무카페', reading: '2장 66~122페이지', sharing: '', habit: '매일 10분 읽는다.' };
+  const before = JSON.stringify(source);assert.equal(editorialContent(source).nextMeeting.endTime, '15:00');
+  PDFDocument.prototype.text = function(value, ...args) { if (typeof value === 'string') drawn.push(value);return originalText.call(this, value, ...args); };
+  try { await createMeetingRecordPdf(source); } finally { PDFDocument.prototype.text = originalText; }
+  assert.ok(drawn.includes('2026.11.07 · 13:30~15:00'));assert.ok(drawn.includes('교회 1층 자작나무카페'));assert.ok(drawn.includes('2장 66~122페이지'));assert.equal(JSON.stringify(source), before);
+  for (const times of [{ time: '13:30', endTime: '25:00' }, { time: '13:30', endTime: '13:30' }, { time: '13:30', endTime: '12:00' }, { time: '13:90', endTime: '' }]) assert.throws(() => editorialContent({ ...source, record: { ...source.record, nextMeeting: { ...source.record.nextMeeting, ...times } } }), /시각/);
+  assert.equal(editorialContent({...source,record:{...source.record,nextMeeting:{...source.record.nextMeeting,time:'',endTime:'15:00'}}}).nextMeeting.endTime,'15:00');
+});
+
+test('a retained end time without a start remains downloadable and is labelled as an end time', async () => {
+  const source = fixture(), drawn = [], originalText = PDFDocument.prototype.text;
+  source.record.nextMeeting = { ...source.record.nextMeeting, time: '', endTime: '15:00' };
+  const before = JSON.stringify(source);
+  PDFDocument.prototype.text = function(value, ...args) { if (typeof value === 'string') drawn.push(value);return originalText.call(this, value, ...args); };
+  let pdf;
+  try { pdf = await createMeetingRecordPdf(source); } finally { PDFDocument.prototype.text = originalText; }
+  assert.equal(Buffer.isBuffer(pdf), true);assert.match(pdf.subarray(-80).toString('latin1'), /%%EOF/);
+  assert.ok(drawn.includes('2026.10.24 · 15:00 종료'));
+  assert.equal(drawn.some(value => value.includes('~15:00')), false, 'no missing start is invented');
+  assert.equal(JSON.stringify(source), before);
+});
+
 test('a second meeting overview with seven summaries, three concepts and five questions stays on page one of five',async()=>{
   const source=fixture(),drawn=[];
   source.record.round=2;source.record.topic='감정을 알아차리고 나의 경험 이해하기';
@@ -72,6 +97,17 @@ test('actual PDF is a binary A4 attachment with embedded Korean/emoji fonts', as
   assert.match(pdf.toString('latin1'), /\/ToUnicode/);
   assert.match(pdf.subarray(-80).toString('latin1'), /%%EOF/);
   assert.equal(JSON.stringify(source), before);
+});
+
+test('an explicitly labelled topic question is small below its heading without changing stored prose', async()=>{
+  const source=fixture(),drawn=[],originalText=PDFDocument.prototype.text;
+  source.record.sections=[{summary:'내가 느낀 경험 살피기',detail:'생각 질문: 나는 무엇을 느꼈는가?\n\n느낀 감정을 판단하지 않고 살피는 내용이다.'}];
+  const before=JSON.stringify(source);
+  PDFDocument.prototype.text=function(value,...args){if(typeof value==='string')drawn.push({value,page:this.page,document:this,size:this._fontSize,y:this.y});return originalText.call(this,value,...args);};
+  try{await createMeetingRecordPdf(source);}finally{PDFDocument.prototype.text=originalText;}
+  const successful=drawn.findLast(x=>x.value==='GROWELL  |  모임별 기록').document,items=drawn.filter(x=>x.document===successful);
+  const heading=items.findLast(x=>x.value==='1. '+source.record.sections[0].summary),question=items.find(x=>x.value==='생각 질문: 나는 무엇을 느꼈는가?'),body=items.find(x=>x.value==='느낀 감정을 판단하지 않고 살피는 내용이다.');
+  assert.equal(question.page,heading.page);assert.equal(body.page,heading.page);assert.ok(question.y>heading.y);assert.ok(body.y>question.y);assert.equal(question.size,9.5);assert.equal(body.size,10.5);assert.equal(JSON.stringify(source),before);
 });
 
 test('eight glossary definitions retain readable text on overview and seven topics stay on page two of five', async () => {
@@ -118,24 +154,69 @@ test('a traced deployment without any implicit standard-font module still render
   assert.equal(result.rendered, true); assert.ok(result.bytes > 100); assert.equal(result.blocked, 0);
 });
 
-test('unfit content fails with a safe group error and leaves every original field intact', async () => {
+test('long valid groups gain natural A4 pages with complete readable text and unchanged source fields', async () => {
   for (const group of ['overview', 'details', 'insights', 'preparation']) {
-    const source = fixture(), documents = new Set();
+    const source = fixture(), documents = new Set(), drawn = [];
     if (group === 'overview') source.record.concepts = [{ word: '매우 긴 개념', meaning: '개념의 원문을 그대로 보존한다. '.repeat(180) }];
     if (group === 'details') source.record.sections[0].detail = '감정과 생각과 몸의 관계를 원문 그대로 보존한다. '.repeat(170);
     if (group === 'insights') source.insights[0].q2 = '각자의 경험과 감정을 판단하지 않고 구체적으로 살펴보는 과정이다. '.repeat(350);
     if (group === 'preparation') source.record.nextMeeting.sharing = '다음 모임을 위한 나눔 내용을 원문 그대로 보존한다. '.repeat(120);
+    const expected = { overview: source.record.concepts[0].meaning, details: source.record.sections[0].detail, insights: source.insights[0].q2, preparation: source.record.nextMeeting.sharing }[group];
     const before = JSON.stringify(source), originalText = PDFDocument.prototype.text;
     PDFDocument.prototype.text = function(value, ...args) {
       documents.add(this);
+      if (typeof value === 'string') drawn.push({ value, document: this, size: this._fontSize, options: args.at(-1) });
       return originalText.call(this, value, ...args);
     };
-    try { await assert.rejects(createMeetingRecordPdf(source), error => error.code === 'PDF_LAYOUT_OVERFLOW' && error.group === group); }
+    let pdf;
+    try { pdf = await createMeetingRecordPdf(source); }
     finally { PDFDocument.prototype.text = originalText; }
+    assert.ok((pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length >= 5, `${group} gains its required pages without forcing an extra empty insight page`);
+    const successful = drawn.findLast(item => item.value === 'GROWELL  |  모임별 기록').document;
+    const body = drawn.find(item => item.document === successful && item.value === expected);
+    assert.ok(body, `${group} source reaches the writer in full`);
+    assert.equal(body.size, 10.5);assert.equal(body.options.height, undefined, 'flowing body text has no clipping box');
     assert.equal(JSON.stringify(source), before);
-    assert.ok(documents.size >= 3 && documents.size <= 6, 'fit attempts are bounded');
-    assert.ok([...documents].every(document => document.destroyed), 'every rejected private stream is closed');
+    assert.ok(documents.size >= 2 && documents.size <= 4, 'fixed fit attempts and one natural fallback are bounded');
+    assert.ok([...documents].filter(document => document !== successful).every(document => document.destroyed), 'every rejected private stream is closed');
   }
+});
+
+test('sixteen full topics, eight definitions and questions keep all text in ordered natural reading groups', async () => {
+  const source = fixture(), drawn = [], originalText = PDFDocument.prototype.text;
+  source.record.round = 2;
+  source.record.sections = Array.from({ length: 16 }, (_, index) => ({
+    summary: `${index + 1}번째 주제에서 감정과 관계의 여러 반응을 이해한다.`,
+    detail: `${index + 1}번째 내용이다. ` + '자신의 감정과 생각이 어떤 경험에서 비롯되었는지 구체적으로 살핀다. 관계에서 반복되는 반응을 하나의 원인으로 단정하지 않고 현재의 맥락을 함께 이해한다. 불편한 감정에도 나의 바람과 필요를 알려주는 의미가 있으며 안전한 관계와 작은 행동으로 돌봄을 이어 간다.'
+  }));
+  source.record.concepts = Array.from({ length: 8 }, (_, index) => ({ word: `${index + 1}번째 개념`, meaning: `${index + 1}번째 뜻이다. ` + '반복된 경험에서 형성된 감정과 생각의 틀을 살피며 현재의 반응을 이해하는 개념이다. 개인의 경험은 다양하므로 특정 반응만으로 진단하거나 다른 사람에게 같은 결과를 일반화하지 않는다.' }));
+  source.record.thoughtQuestions = Array.from({ length: 5 }, (_, index) => ({ text: `${index + 1}. 나의 경험에서 반복되는 감정과 관계의 반응은 무엇이며, 지금 어떤 바람과 도움이 필요한가?` }));
+  source.insights = [];
+  const before = JSON.stringify(source);
+  PDFDocument.prototype.text = function(value, ...args) { if (typeof value === 'string') drawn.push({ value, document: this, page: this.page, size: this._fontSize, options: args.at(-1) }); return originalText.call(this, value, ...args); };
+  let pdf;try { pdf = await createMeetingRecordPdf(source); } finally { PDFDocument.prototype.text = originalText; }
+  const count = (pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length;
+  assert.ok(count > 5 && count <= 12);
+  const successful = drawn.findLast(item => item.value === 'GROWELL  |  모임별 기록').document, items = drawn.filter(item => item.document === successful);
+  const byOrder = items.filter(item => /^\d+ \/ \d+$/.test(item.value)).map(item => item.page), indexOf = page => byOrder.indexOf(page);
+  const overview = items.find(item => item.value === source.record.topic), details = items.find(item => item.value === '모임 내용'), insights = items.find(item => item.value === '함께 나눈 통찰'), prep = items.find(item => item.value === '다음 모임 준비');
+  assert.ok(indexOf(overview.page) < indexOf(details.page));assert.ok(indexOf(details.page) < indexOf(insights.page));assert.ok(indexOf(insights.page) < indexOf(prep.page));
+  source.record.sections.forEach((item, index) => { assert.ok(items.some(value => value.value === `${index + 1}. ${item.summary}`)); const body = items.find(value => value.value === item.detail); assert.ok(body);assert.equal(body.size, 10.5);assert.equal(body.options.height, undefined);assert.ok(indexOf(body.page) >= indexOf(details.page) && indexOf(body.page) < indexOf(insights.page)); });
+  source.record.concepts.forEach(item => { assert.ok(items.some(value => value.value === item.word));const body = items.find(value => value.value === item.meaning);assert.ok(body);assert.equal(body.size, 10.5);assert.ok(indexOf(body.page) < indexOf(details.page)); });
+  source.record.thoughtQuestions.forEach((item, index) => assert.ok(items.some(value => value.value === `${index + 1}. ${item.text}`)));
+  assert.equal(items.filter(item => item.value === '등록된 공개 통찰이 없습니다.').length, 1, 'natural fallback adds no empty second insight page');
+  for (let index = 0; index < count; index += 1) assert.ok(items.some(item => item.value === `${index + 1} / ${count}`));
+  assert.equal(JSON.stringify(source), before);assert.doesNotMatch(JSON.stringify(editorialContent(source)), /MEMBER PRIVATE|SECRET JOURNAL|PRIVATE_PHOTO/);
+});
+
+test('absurd but individually valid content stops at a bounded rendering limit without shortening any source', async () => {
+  const source = fixture();source.insights = [{ authorName: '긴 원문 작성자', q1: '', q2: '긴 원문을 모두 보존하며 생성 한도를 확인한다. '.repeat(3700), q3: '' }];
+  assert.ok(source.insights[0].q2.length <= 100000);
+  const before = JSON.stringify(source), documents = new Set(), originalText = PDFDocument.prototype.text;
+  PDFDocument.prototype.text = function(value, ...args) { documents.add(this);return originalText.call(this, value, ...args); };
+  try { await assert.rejects(createMeetingRecordPdf(source), error => error.code === 'PDF_LAYOUT_OVERFLOW' && error.group === 'resource' && ['page_limit', 'time_limit', 'byte_limit'].includes(error.reason) && !error.message.includes(source.insights[0].q2)); }
+  finally { PDFDocument.prototype.text = originalText; }
+  assert.equal(JSON.stringify(source), before);assert.ok(documents.size <= 4);assert.ok([...documents].every(document => document.destroyed));
 });
 
 test('drafts, malformed fields, unsupported glyphs, and unsafe URLs fail before delivery', async () => {
@@ -326,5 +407,17 @@ test('a new public author moved to the next page starts a fresh note without a f
   assert.ok(firstAuthor && nextAuthor);
   assert.notEqual(firstAuthor.page, nextAuthor.page, 'the second author starts on a new page');
   assert.equal(drawn.some(item => item.page === nextAuthor.page && item.value.endsWith(' · 이어서')), false, 'a fresh note is never labelled as a continued answer');
+  assert.equal(JSON.stringify(source), before);
+});
+
+test('an emoji author keeps the complete font-fallback name while continuation navigation uses supported glyphs', async () => {
+  const source = fixture(), drawn = [], originalText = PDFDocument.prototype.text;
+  source.insights = [{ authorName: '마음 😊 작성자', q1: '첫 답변이다.', q2: '서로의 마음을 천천히 살피며 생각과 감정의 차이를 이해하는 내용이다. '.repeat(90), q3: '마지막 답변이다.' }];
+  const before = JSON.stringify(source);
+  PDFDocument.prototype.text = function(value, ...args) { if (typeof value === 'string') drawn.push({ value, document: this, size: this._fontSize }); return originalText.call(this, value, ...args); };
+  try { await createMeetingRecordPdf(source); } finally { PDFDocument.prototype.text = originalText; }
+  const successful = drawn.findLast(item => item.value === 'GROWELL  |  모임별 기록').document, items = drawn.filter(item => item.document === successful);
+  assert.ok(items.some(item => item.value === '😊' && item.size === 11.5), 'the original author bar preserves the emoji name');
+  const continued = items.filter(item => item.value.endsWith(' · 이어서'));assert.ok(continued.length > 0);assert.ok(continued.every(item => !item.value.includes('😊')));assert.ok(continued.some(item => item.value === '통찰 정리 · 새로운 깨달음 · 이어서'));
   assert.equal(JSON.stringify(source), before);
 });

@@ -86,15 +86,20 @@
     } else if(!validDate(record.date)) errors.push('모임 날짜가 올바르지 않습니다.');
     text(record.topic,LIMITS.topic,'모임 주제',published);
     if(record.nextMeeting!==undefined && record.nextMeeting!==null){
-      var preparation=record.nextMeeting, preparationFields=['date','time','place','reading','sharing','habit'];
+      var preparation=record.nextMeeting, preparationFields=['date','time','endTime','place','reading','sharing','habit'];
       if(!plainObject(preparation)) errors.push('다음 모임 준비 형식이 올바르지 않습니다.');
       else {
         if(Object.keys(preparation).some(function(key){return preparationFields.indexOf(key)===-1;})) errors.push('다음 모임 준비에 알 수 없는 항목이 있습니다.');
         preparationFields.forEach(function(key){
-          text(preparation[key],key==='date'?10:key==='time'?5:key==='place'?LIMITS.nextPlace:LIMITS.nextText,'다음 모임 준비',false);
+          if(key==='endTime'&&!own(preparation,key))return;
+          text(preparation[key],key==='date'?10:key==='time'||key==='endTime'?5:key==='place'?LIMITS.nextPlace:LIMITS.nextText,'다음 모임 준비',false);
         });
         if(typeof preparation.date==='string' && preparation.date!=='' && !validDate(preparation.date)) errors.push('다음 모임 날짜가 올바르지 않습니다.');
         if(typeof preparation.time==='string' && preparation.time!=='' && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(preparation.time)) errors.push('다음 모임 시간은 24시간 형식으로 입력해주세요.');
+        if(own(preparation,'endTime')&&typeof preparation.endTime==='string'&&preparation.endTime!==''){
+          if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(preparation.endTime))errors.push('다음 모임 종료 시간은 24시간 형식으로 입력해주세요.');
+          else if(typeof preparation.time==='string'&&/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(preparation.time)&&preparation.endTime<=preparation.time)errors.push('다음 모임 종료 시간은 시작 시간보다 늦게 입력해주세요.');
+        }
       }
     }
     ['createdAt','updatedAt'].forEach(function(key){
@@ -156,5 +161,18 @@
     return {id:newId(),bookId:bookId,round:1,date:null,topic:'',sections:[],concepts:[],thoughtQuestions:[],materialIds:[],nextMeeting:null,status:'draft',userId:userId || '',revision:0,createdAt:null,updatedAt:null};
   }
 
-  return Object.freeze({LIMITS:LIMITS,normalizeRecord:normalizeRecord,validateRecord:validateRecord,newRecord:newRecord,newId:newId,isUuid:isUuid,validDate:validDate});
+  // This is a presentation-only convention for an explicitly authored first
+  // line. Stored detail text is never modified, normalized, or interpreted as
+  // markup, and matching words later in an ordinary paragraph remain content.
+  function detailParts(detail){
+    if(typeof detail!=='string')return {question:'',body:''};
+    var end=detail.indexOf('\n'),line=(end<0?detail:detail.slice(0,end)).replace(/\r$/,''),prefix='생각 질문: ';
+    if(line.indexOf(prefix)!==0)return {question:'',body:detail};
+    var question=line.slice(prefix.length);
+    if(!question.trim()||Array.from(question).length>1000)return {question:'',body:detail};
+    var body=end<0?'':detail.slice(end+1).replace(/^\r?\n/,'');
+    return {question:question,body:body};
+  }
+
+  return Object.freeze({LIMITS:LIMITS,normalizeRecord:normalizeRecord,validateRecord:validateRecord,newRecord:newRecord,newId:newId,isUuid:isUuid,validDate:validDate,detailParts:detailParts});
 });

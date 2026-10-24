@@ -22,6 +22,7 @@
   .mr-print-sheet h3{font-size:11pt;line-height:1.4;margin:7pt 0 4pt}
   .mr-print-sheet h4{font-size:9pt;line-height:1.4;margin:5pt 0 2pt;color:#526156}
   .mr-print-text{margin:0 0 4pt;white-space:pre-wrap;word-break:normal;overflow-wrap:anywhere;orphans:2;widows:2;break-inside:auto;page-break-inside:auto}
+  .mr-print-topic-question{font-size:9pt;line-height:1.45;color:#5f7168;margin:0 0 5pt;white-space:pre-wrap;overflow-wrap:anywhere;break-after:avoid;page-break-after:avoid}
   .mr-print-outline{margin:0;padding:6pt 9pt 3pt 26pt;list-style:decimal;background:#f3f5f0;border-left:2pt solid #3c634d}
   .mr-print-outline li{padding-left:3pt;break-inside:avoid-page;page-break-inside:avoid}
   .mr-print-thought-questions{margin:0;padding:0 0 0 20pt;list-style:decimal}

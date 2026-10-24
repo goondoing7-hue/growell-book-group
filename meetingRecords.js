@@ -171,7 +171,7 @@
       return row.missing?'<div class="mr-empty">'+esc(row.title)+'</div>':button('<span class="mr-resource-icon">'+icon(materialIcon(row))+'</span><span class="mr-resource-body"><strong>'+esc(row.title||'자료실 글')+'</strong><small>'+esc(materialType(row))+' · 자료실</small></span><span class="mr-resource-tail">'+icon('out')+'</span>','material','mr-resource','data-id="'+esc(row.id)+'"');
     }).join('')||'<div class="mr-empty">연결된 자료가 없어요.</div>')+'</div><p class="mr-note">'+(editing?'내가 올린 자료를 연결해요. 연결을 해제해도 자료실의 원본 글은 유지돼요.':'자료를 누르면 자료실의 해당 글을 볼 수 있어요.')+'</p></section>';
   }
-  var preparationFields=['date','time','place','reading','sharing','habit'];
+  var preparationFields=['date','time','endTime','place','reading','sharing','habit'];
   function emptyPreparation(){return {date:'',time:'',place:'',reading:'',sharing:'',habit:''};}
   function preparationHtml(record,editing){
     var next=record.nextMeeting||emptyPreparation();
@@ -183,9 +183,9 @@
         var control=type?'<input type="'+type+'"'+attrs+' value="'+esc(next[key])+'">':'<textarea rows="2" maxlength="'+(key==='place'?1000:4000)+'"'+attrs+'>'+esc(next[key])+'</textarea>';
         return '<label class="mr-field'+(key==='sharing'?' mr-preparation-sharing-field':'')+'"><span>'+label+'</span>'+control+(key==='sharing'?'<small>나눔 과제는 하이라이트로 강조돼요.</small>':'')+'</label>';
       }
-      return '<section class="mr-edit-section mr-divider" data-mr-preparation>'+heading+'<p class="mr-subtitle">다음 만남의 일정과 준비할 내용을 적어주세요. 작성한 항목만 보여요.</p><div class="mr-fields-row">'+field('date','다음 모임 날짜','date')+field('time','다음 모임 시간','time')+'</div>'+field('place','장소')+field('reading','읽기 범위')+field('sharing','나눔')+field('habit','독서 습관')+'</section>';
+      return '<section class="mr-edit-section mr-divider" data-mr-preparation>'+heading+'<p class="mr-subtitle">다음 만남의 일정과 준비할 내용을 적어주세요. 작성한 항목만 보여요.</p>'+field('date','다음 모임 날짜','date')+'<div class="mr-fields-row">'+field('time','시작 시간','time')+field('endTime','종료 시간','time')+'</div>'+field('place','장소')+field('reading','읽기 범위')+field('sharing','나눔')+field('habit','독서 습관')+'</section>';
     }
-    var rows=[],when=[next.date?dateText(next.date):'',next.time||''].filter(Boolean).join(' · ');
+    var rows=[],time=next.time?(next.time+(next.endTime?'~'+next.endTime:'')):(next.endTime?next.endTime+' 종료':''),when=[next.date?dateText(next.date):'',time].filter(Boolean).join(' · ');
     if(when)rows.push('<div class="mr-preparation-row"><dt>일시</dt><dd>'+esc(when)+'</dd></div>');
     [['place','장소'],['reading','읽기 범위'],['sharing','나눔'],['habit','독서 습관']].forEach(function(entry){
       var value=next[entry[0]];if(typeof value!=='string'||!value.trim())return;
@@ -198,7 +198,8 @@
       return '<li><span class="mr-number" aria-hidden="true">'+(i+1)+'.</span>'+button(esc(section.summary||'핵심 내용을 입력해주세요.'),'jump-section','mr-core-jump','data-id="'+esc(section.id)+'" aria-controls="mr-story-'+esc(section.id)+'"')+'</li>';
     }).join('');
     var stories=record.sections.map(function(section,i){
-      return '<article class="mr-story" id="mr-story-'+esc(section.id)+'" data-mr-story="'+esc(section.id)+'" tabindex="-1" aria-labelledby="mr-story-heading-'+esc(section.id)+'"><h3 id="mr-story-heading-'+esc(section.id)+'"><span class="mr-number">'+(i+1)+'.</span><span>'+esc(section.summary||'새 주제')+'</span></h3><p class="mr-summary">'+esc(section.detail||'아직 작성한 내용이 없어요.')+'</p></article>';
+      var domain=root.GrowellMeetingRecordsDomain,parts=domain&&typeof domain.detailParts==='function'?domain.detailParts(section.detail):{question:'',body:section.detail};
+      return '<article class="mr-story" id="mr-story-'+esc(section.id)+'" data-mr-story="'+esc(section.id)+'" tabindex="-1" aria-labelledby="mr-story-heading-'+esc(section.id)+'"><h3 id="mr-story-heading-'+esc(section.id)+'"><span class="mr-number">'+(i+1)+'.</span><span>'+esc(section.summary||'새 주제')+'</span></h3>'+(parts.question?'<p class="mr-topic-question">'+esc('생각 질문: '+parts.question)+'</p>':'')+'<p class="mr-summary">'+esc(parts.body||'아직 작성한 내용이 없어요.')+'</p></article>';
     }).join('');
     return '<div class="mr-body">'+(state.preview?'<div class="mr-notice">작성 중인 내용의 미리보기예요. 저장하거나 게시하면 반영돼요.</div>':'')+'<div class="mr-eyebrow"><span class="mr-round">'+esc(record.round)+'번째 모임</span><span>'+esc(dateText(record.date))+'</span><span class="mr-owner">'+(record.status==='draft'?'임시 저장 · 나에게만 공개':'운영자 정리')+'</span></div><h1 id="mr-dialog-title" class="mr-topic">'+esc(record.topic||'모임 주제')+'</h1><p class="mr-book">'+icon('book')+esc(book().title)+'</p><section class="mr-section mr-core"><div class="mr-section-head"><h2>핵심 요약</h2></div><ol class="mr-core-list">'+outline+'</ol>'+(!record.sections.length?'<p class="mr-note">아직 작성된 핵심 요약이 없어요.</p>':'')+'</section><section class="mr-section"><div class="mr-section-head"><h2>함께 살펴본 개념</h2></div><div class="mr-keywords">'+record.concepts.map(function(concept){return button(esc(concept.word||'새 키워드'),'concept','mr-keyword','data-id="'+esc(concept.id)+'" aria-haspopup="dialog"');}).join('')+'</div><p class="mr-note">'+(record.concepts.length?'키워드를 누르면 의미를 팝업으로 볼 수 있어요.':'아직 정리한 개념이 없어요.')+'</p></section>'+questionsHtml(record,false)+'<section class="mr-section mr-divider"><div class="mr-section-head"><h2>모임 내용</h2></div>'+stories+'</section>'+preparationHtml(record,false)+carouselHtml(record)+resourcesHtml(record,false)+'</div>';
   }
@@ -222,7 +223,7 @@
   function actionsHtml(){
     if(state.view==='list')return '';
     if(state.view==='edit'||state.preview){var published=state.record&&state.record.status==='published';return '<div class="mr-actions"><span class="mr-note" data-mr-save-note>'+ (published?'저장하면 게시한 기록에 반영돼요.':'임시 저장한 기록은 나에게만 보여요.')+'</span>'+(state.preview?button('PDF 저장','download-record'):'')+(!published?button('임시 저장','save-draft'):'')+button(published?'수정 저장':'게시하기','publish','mr-button mr-primary')+'</div>';}
-    return '<div class="mr-actions"><p class="mr-print-help">PDF 파일을 바로 내려받습니다.</p>'+button('PDF 저장','download-record')+(editable(state.record)?button('기록 삭제','delete','mr-link mr-danger')+button(state.record.status==='draft'?'이어서 작성':'내용 수정','edit'):'')+'</div>';
+    return '<div class="mr-actions"><p class="mr-print-help">PDF 파일을 바로 내려받습니다.</p>'+(state.record&&state.record.status==='published'?button('공유','share-record'):'')+button('PDF 저장','download-record')+(editable(state.record)?button('기록 삭제','delete','mr-link mr-danger')+button(state.record.status==='draft'?'이어서 작성':'내용 수정','edit'):'')+'</div>';
   }
   function render(preserveScroll,focus){
     if(!dialog||!state)return;
@@ -262,6 +263,7 @@
     if(action==='edit'){beginEdit(state.record);return;}
     if(action==='jump-section'){jumpToSection(id);return;}
     if(action==='download-record'){downloadMeeting();return;}
+    if(action==='share-record'){shareMeeting();return;}
     if(action==='concept'){openConcept(id,target);return;}
     if(action==='material'){navigateOriginal('material',id);return;}
     if(action==='delete'){confirmDelete(target);return;}
@@ -291,6 +293,17 @@
     target.focus({preventScroll:true});
     var reduced=root.matchMedia&&root.matchMedia('(prefers-reduced-motion: reduce)').matches;
     body.scrollTo({top:Math.max(0,top),behavior:reduced?'instant':'smooth'});
+  }
+  function shareMeeting(){
+    if(busy||!state||state.view!=='read'||state.preview||!allowed(state.bookId)||!state.record||state.record.status!=='published')return;
+    var sharing=root.GrowellMeetingRecordShare;
+    if(!sharing||typeof sharing.shareRecord!=='function'){setMessage('공유 기능을 불러오지 못했어요. 페이지를 새로 열어주세요.');return;}
+    var node=dialog,viewState=state,record=state.record,bookId=state.bookId;
+    function active(){return dialog===node&&state===viewState&&state.record===record&&state.view==='read'&&!state.preview&&allowed(bookId);}
+    // Pass only the routing fields. Organizer/member text never enters a share payload.
+    sharing.shareRecord(root,{bookId:record.bookId,round:record.round,status:record.status},{isCurrent:active}).then(function(result){
+      if(active()&&result.status==='copied')app.showToast('링크를 복사했어요.');
+    }).catch(function(){if(active())setMessage('공유하지 못했어요. 다시 눌러주세요.');});
   }
   function downloadMeeting(){
     if(busy||!state||!allowed(state.bookId))return;

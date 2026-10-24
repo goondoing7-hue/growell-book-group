@@ -3,7 +3,13 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/meeting/:bookId/:round", "destination": "/api/meeting-share?bookId=:bookId&round=:round" }
+  ],
   "functions": {
+    "api/meeting-share.js": {
+      "includeFiles": "{server/meetingShareService.cjs,meetingRecordShare.js}"
+    },
     "api/web-push.js": {
       "maxDuration": 60,
       "includeFiles": "{server/webPush*.cjs,server/driveBackupDomain.cjs,dailyVerseDomain.js,dailyVerses.js}"
