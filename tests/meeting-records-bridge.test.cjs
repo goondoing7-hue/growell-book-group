@@ -19,6 +19,16 @@ test('only public insight posts matching book and round become carousel cards, s
  f.bridge.openPost('missing','emotion');assert.equal(f.opened.length,1);
  assert.equal(f.bridge.getMaterials('emotion')[0].id,'mn_one');
 });
+
+test('popup source getter preserves full permitted insight rows and is fenced by session, book access and reset',async()=>{
+ const f=fixture();Object.assign(f.rows.posts[0],{html:'legacy full body',photo:{dataUrl:'https://example.test/photo.jpg'},q3:'complete tail'});
+ const before=JSON.stringify(f.rows);await f.bridge.loadRecords('emotion');
+ const rows=f.bridge.getInsightPosts('emotion');assert.deepEqual(rows.map(p=>p.id),['p1','p3']);assert.equal(rows[0].html,'legacy full body');assert.equal(rows[0].q3,'complete tail');assert.deepEqual(rows[0].photo,{dataUrl:'https://example.test/photo.jpg'});
+ assert.deepEqual(f.bridge.getInsightPosts('thought'),[]);assert.equal(JSON.stringify(f.rows),before);
+ f.block();assert.deepEqual(f.bridge.getInsightPosts('emotion'),[]);
+ const second=fixture();await second.bridge.loadRecords('emotion');second.change();assert.deepEqual(second.bridge.getInsightPosts('emotion'),[]);
+ const third=fixture();await third.bridge.loadRecords('emotion');third.bridge.reset();assert.deepEqual(third.bridge.getInsightPosts('emotion'),[]);
+});
 test('late load cannot cross login session or reset and cannot populate source cache',async()=>{
  for(const action of ['change','reset']){const f=fixture();f.hold();const load=f.bridge.loadRecords('emotion');
  if(action==='change')f.change();else f.bridge.reset();

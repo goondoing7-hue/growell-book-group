@@ -49,11 +49,14 @@
       var questions=section(document,sheet,'생각 질문'),questionList=node(document,'ol','mr-print-thought-questions');questions.appendChild(questionList);
       record.thoughtQuestions.forEach(function(item){questionList.appendChild(node(document,'li','mr-print-text',item.text));});
     }
-    var details=section(document,sheet,'모임 내용');
+    var firstSharing=record.sections.length&&domain&&typeof domain.sharingParts==='function'?domain.sharingParts(record.sections[0].summary,record.sections[0].detail):null;
+    var groupedSharing=Boolean(firstSharing),details=section(document,sheet,groupedSharing?'책 나눔':'모임 내용');
     record.sections.forEach(function(item,index){
-      var story=node(document,'article','mr-print-story');story.appendChild(node(document,'h3','',(index+1)+'. '+item.summary));
+      if(groupedSharing&&index===1)details=section(document,sheet,'책 내용 및 생각 질문');
+      var story=node(document,'article','mr-print-story');
+      if(!groupedSharing||index!==0)story.appendChild(node(document,'h3','',(index+1)+'. '+item.summary));
       var parts=domain&&typeof domain.detailParts==='function'?domain.detailParts(item.detail):{question:'',body:item.detail};
-      var sharing=domain&&typeof domain.sharingParts==='function'?domain.sharingParts(item.summary,item.detail):null;
+      var sharing=index===0?firstSharing:(domain&&typeof domain.sharingParts==='function'?domain.sharingParts(item.summary,item.detail):null);
       if(sharing)sharing.forEach(function(part){
         var card=node(document,'article','mr-print-sharing-card'+(part.name==='리더 나눔'?' mr-print-sharing-card-leader':''));card.appendChild(node(document,'h4','',part.name));paragraph(document,card,part.body);story.appendChild(card);
       });

@@ -116,6 +116,32 @@ test('published record sharing uses routing fields only and preserves the origin
   assert.deepEqual(h.calls.toasts,['링크를 복사했어요.']);assert.equal(JSON.stringify(selected),before);
 });
 
+test('book sharing and chapter questions retain separate body headings and all question links jump to their actual topic',async t=>{
+  const sections=[{id:'sharing-part',summary:'책 나눔: 가 · 나',detail:'가\n첫 소감\n\n리더 나눔\n중간 설명\n\n나\n다음 소감'},
+    {id:'chapter-one',summary:'첫 책 주제',detail:'생각 질문: 첫 질문?\n\n첫 내용 전문'},
+    {id:'chapter-two',summary:'둘째 책 주제',detail:'생각 질문: 둘째 질문?\n\n둘째 내용 전문'}];
+  const selected=record(2,{userId:'reader',sections,thoughtQuestions:[{id:'one',text:'첫 질문?'},{id:'two',text:'둘째 질문?'},{id:'unmapped',text:'아직 연결하지 않은 질문?'}]}),snapshot=JSON.stringify(selected);
+  const h=harness(t,{session:{admin:true},rows:[selected]});h.api.openRound('emotion',2);await tick();
+  const html=h.html();assert.match(html,/<h2>책 나눔<\/h2>/);assert.match(html,/<h2>책 내용 및 생각 질문<\/h2>/);assert.doesNotMatch(html,/<h2>모임 내용<\/h2>/);
+  assert.ok(html.indexOf('data-mr-book-sharing')<html.indexOf('첫 소감'));assert.ok(html.indexOf('첫 소감')<html.indexOf('data-mr-book-questions'));assert.ok(html.indexOf('data-mr-book-questions')<html.indexOf('첫 내용 전문'));
+  assert.equal((html.match(/class="mr-core-jump"/g)||[]).length,3);assert.equal((html.match(/data-mr-question-target=/g)||[]).length,2);
+  const target=h.current().querySelectorAll('[data-mr-story]').find(node=>node.getAttribute('data-mr-story')==='chapter-two');
+  h.current().querySelector('[data-mr-question-target="chapter-two"]').click();assert.equal(target.focusCount,1,'question must focus its own body topic');
+  assert.match(html,/<p>아직 연결하지 않은 질문\?<\/p>/,'unmapped questions never link to a guessed topic');
+  h.click('edit');assert.match(h.html(),/<h2>책 나눔<\/h2>/);assert.match(h.html(),/<h2>책 내용 및 생각 질문<\/h2>/);h.click('preview-mode');assert.match(h.html(),/data-mr-question-target="chapter-one"/);
+  assert.equal(JSON.stringify(selected),snapshot);
+});
+
+test('opening a meeting insight popup keeps the parent, carousel and source order intact',async t=>{
+  const selected=record(2),h=harness(t,{rows:[selected]}),opened=[];
+  h.adapter.getInsights=()=>[{id:'post-a',bookId:'emotion',round:2,name:'가',answers:['첫 답','둘 답','셋 답']},{id:'post-b',bookId:'emotion',round:2,name:'나',answers:['A','B','C']}];
+  h.adapter.openInsight=(...args)=>opened.push(args);
+  h.api.openRound('emotion',2);await tick();const parent=h.current(),before=parent.innerHTML;
+  parent.querySelector('[data-mr-post="post-b"]').click();
+  assert.equal(opened.length,1);assert.equal(opened[0][0],'post-b');assert.equal(opened[0][1],'emotion');assert.equal(opened[0][2].parent,parent);
+  assert.deepEqual(Array.from(opened[0][2].postIds),['post-a','post-b']);assert.equal(h.current(),parent);assert.equal(parent.innerHTML,before);assert.deepEqual(h.calls.navigation,[]);
+});
+
 test('draft record, editor and preview have no public share action',async t=>{
   const selected=record(2,{userId:'reader',status:'draft'});
   const h=harness(t,{rows:[selected],session:{admin:true}});

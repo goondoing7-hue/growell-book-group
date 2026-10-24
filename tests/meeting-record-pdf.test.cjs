@@ -426,7 +426,7 @@ test('authored book sharing keeps five participant and four interleaved leader b
   const source = fixture(), names = ['별명 하나', '별명 둘', '별명 셋', '별명 넷', '별명 다섯'], drawn = [], boxes = [];
   const order = [names[0], names[1], '리더 나눔', names[2], '리더 나눔', '리더 나눔', names[3], names[4], '리더 나눔'];
   const blocks = order.map((name, index) => ({ name, body: `${index + 1}번째 나눔의 원문이다. ` + '감정과 생각이 어떤 경험에서 비롯되었는지 살피며 마음의 필요를 구체적으로 이해한다. 관계에서 반복되는 반응을 하나의 원인으로 단정하지 않고 현재 상황을 함께 살펴 작은 행동을 선택한다.' }));
-  source.record.sections = [{ summary: '책 나눔: ' + names.join(' · '), detail: blocks.map(block => block.name + '\n' + block.body).join('\n\n') }, { summary: '다음 내용', detail: '다음 주제의 원문도 그대로 이어진다.' }];source.insights = [];
+  source.record.sections = [{ summary: '책 나눔: ' + names.join(' · '), detail: blocks.map(block => block.name + '\n' + block.body).join('\n\n') }, ...Array.from({ length: 7 }, (_, index) => ({ summary: `다음 내용 ${index + 1}`, detail: `${index + 1}번째 다음 주제의 원문도 그대로 이어진다.` }))];source.insights = [];
   const before = JSON.stringify(source), originalText = PDFDocument.prototype.text, originalBox = PDFDocument.prototype.roundedRect, originalFill = PDFDocument.prototype.fill, originalFillColor = PDFDocument.prototype.fillColor;
   const pendingBox = new WeakMap(), textColors = new WeakMap();
   PDFDocument.prototype.text = function(value, ...args) { if (typeof value === 'string') drawn.push({ value, document: this, page: this.page, size: this._fontSize, color: textColors.get(this), y: this.y, options: args.at(-1) });return originalText.call(this, value, ...args); };
@@ -436,10 +436,18 @@ test('authored book sharing keeps five participant and four interleaved leader b
   let pdf;try { pdf = await createMeetingRecordPdf(source); } finally { PDFDocument.prototype.text = originalText;PDFDocument.prototype.roundedRect = originalBox;PDFDocument.prototype.fill = originalFill;PDFDocument.prototype.fillColor = originalFillColor; }
   const successful = drawn.findLast(item => item.value === 'GROWELL  |  모임별 기록').document, items = drawn.filter(item => item.document === successful), cards = boxes.filter(item => item.document === successful);
   assert.equal(cards.length, 9);assert.equal(items.filter(item => item.value === '리더 나눔').length, 4);
+  const sharingHeading = items.findIndex(item => item.value === '책 나눔'), contentHeading = items.findIndex(item => item.value === '책 내용 및 생각 질문');
+  assert.ok(sharingHeading >= 0 && contentHeading > sharingHeading);assert.equal(items.some(item => item.value === '모임 내용'), false);
+  assert.equal(items.filter(item => item.value === `1. ${source.record.sections[0].summary}`).length, 1, 'the nickname list belongs only in the unchanged core outline');
+  source.record.sections.slice(1).forEach((item, index) => {
+    const title = `${index + 2}. ${item.summary}`, occurrences = items.map((entry, position) => entry.value === title ? position : -1).filter(position => position >= 0);
+    assert.equal(occurrences.length, 2, 'the original outline numbering and full topic heading both remain');assert.ok(occurrences[1] > contentHeading);
+    assert.ok(items.some(entry => entry.value === item.detail));
+  });
   let last = -1;
   blocks.forEach((block, index) => { const leader = block.name === '리더 나눔', position = items.findIndex(item => item.value === block.body);assert.ok(position > last);last = position;const body = items[position];assert.equal(body.size, leader ? 10 : 10.5);assert.equal(body.color, leader ? '#6B6B6B' : '#263D33');assert.equal(cards[index].background, leader ? '#F7F7F7' : '#FFFBEF');assert.equal(body.options.height, undefined);assert.equal(body.page, cards[index].page);assert.ok(cards[index].height > 24);assert.ok(cards[index].y + cards[index].height <= cards[index].bottom + 0.1);const label = items.slice(0, position).findLast(item => item.value === block.name);assert.equal(label.size, leader ? 11 : 11.5);assert.equal(label.color, leader ? '#6B6B6B' : '#7C633D'); });
   cards.forEach((card, index) => { if (index && card.page === cards[index - 1].page) assert.ok(card.y - cards[index - 1].y - cards[index - 1].height >= 9.9); });
-  assert.ok(items.some(item => item.value === '다음 주제의 원문도 그대로 이어진다.'));assert.match(pdf.toString('latin1'), /\/MediaBox \[0 0 595\.28 841\.89\]/);assert.equal(JSON.stringify(source), before);
+  assert.ok(items.findIndex(item => item.value === blocks.at(-1).body) < contentHeading, 'every sharing card precedes the second flow');assert.match(pdf.toString('latin1'), /\/MediaBox \[0 0 595\.28 841\.89\]/);assert.equal(JSON.stringify(source), before);
 });
 
 test('an unusually long sharing block flows in full without a fixed card or forced blank page', async () => {
@@ -451,6 +459,7 @@ test('an unusually long sharing block flows in full without a fixed card or forc
   PDFDocument.prototype.roundedRect = function(...args) { boxes.push(this);return originalBox.apply(this, args); };
   let pdf;try { pdf = await createMeetingRecordPdf(source); } finally { PDFDocument.prototype.text = originalText;PDFDocument.prototype.roundedRect = originalBox; }
   const successful = drawn.findLast(item => item.value === 'GROWELL  |  모임별 기록').document, items = drawn.filter(item => item.document === successful);
+  assert.equal(items.filter(item => item.value === '책 나눔').length, 1);assert.equal(items.some(item => item.value === '책 내용 및 생각 질문'), false, 'one sharing section does not manufacture an empty second flow');
   assert.equal(boxes.filter(document => document === successful).length, 0);const full = items.find(item => item.value === body);assert.ok(full);assert.equal(full.size, 10.5);assert.equal(full.options.height, undefined);assert.ok((pdf.toString('latin1').match(/\/Type \/Page\b/g) || []).length > 5);assert.equal(JSON.stringify(source), before);
 });
 
@@ -462,5 +471,5 @@ test('ordinary or incompletely labelled details keep their entire original parag
   PDFDocument.prototype.text = function(value, ...args) { if (typeof value === 'string') drawn.push(value);return originalText.call(this, value, ...args); };
   PDFDocument.prototype.roundedRect = function(...args) { boxes++;return originalBox.apply(this, args); };
   try { await createMeetingRecordPdf(source); } finally { PDFDocument.prototype.text = originalText;PDFDocument.prototype.roundedRect = originalBox; }
-  assert.ok(drawn.includes(body));assert.equal(boxes, 0);assert.equal(JSON.stringify(source), before);
+  assert.ok(drawn.includes(body));assert.ok(drawn.includes('모임 내용'));assert.ok(drawn.includes('1. '+source.record.sections[0].summary));assert.equal(drawn.includes('책 나눔'), false);assert.equal(drawn.includes('책 내용 및 생각 질문'), false);assert.equal(boxes, 0);assert.equal(JSON.stringify(source), before);
 });

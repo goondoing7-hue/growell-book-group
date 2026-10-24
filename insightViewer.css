@@ -1,0 +1,28 @@
+.insight-viewer-dialog{box-sizing:border-box;width:min(800px,calc(100% - 24px));max-width:none;max-height:90vh;max-height:90dvh;margin:auto;padding:0;border:1px solid var(--line,#dce1db);border-radius:20px;background:var(--surface,#fff);color:var(--ink,#20332b);font:400 15px/1.75 var(--font-body,Pretendard,sans-serif);overflow:hidden;box-shadow:0 20px 70px #14231c38}
+.insight-viewer-dialog[open]{display:flex;flex-direction:column}
+.insight-viewer-dialog::backdrop{background:#13271b66;backdrop-filter:blur(3px)}
+.insight-viewer-dialog,.insight-viewer-dialog *{box-sizing:border-box}
+.insight-viewer-dialog .iv-header{flex:none;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:20px 24px 15px;border-bottom:1px solid var(--line,#dce1db)}
+.insight-viewer-dialog .iv-heading{min-width:0}
+.insight-viewer-dialog .iv-eyebrow{display:block;margin-bottom:4px;color:var(--ink-soft,#56645b);font-size:12px}
+.insight-viewer-dialog .iv-heading h2{margin:0;font-size:22px;line-height:1.4;overflow-wrap:anywhere}
+.insight-viewer-dialog .iv-close{display:flex;align-items:center;justify-content:center;flex:none;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink-soft,#56645b);font:400 32px/1 var(--font-body,Pretendard,sans-serif);cursor:pointer}
+.insight-viewer-dialog .iv-close:hover{background:var(--surface-2,#f2f3f0)}
+.insight-viewer-dialog .iv-author{display:flex;align-items:center;gap:10px;flex:none;padding:15px 24px 12px}
+.insight-viewer-dialog .iv-avatar{display:flex;align-items:center;justify-content:center;flex:none;width:38px;height:38px;border-radius:50%;overflow:hidden;background:var(--brand-soft,#edf2e8);color:var(--brand-green,#3c634d);font-size:14px;font-weight:600}
+.insight-viewer-dialog .iv-avatar img{display:block;width:100%;height:100%;object-fit:cover}
+.insight-viewer-dialog .iv-author strong{display:block;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.insight-viewer-dialog .iv-author time{display:block;color:var(--ink-soft,#56645b);font-size:11px;line-height:1.6}
+.insight-viewer-dialog .iv-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:0 24px 24px;scrollbar-gutter:stable;touch-action:pan-y}
+.insight-viewer-dialog .iv-body :is(.post-media,.post-media-text,.post-title-cover,.post-text,.insight-body,.insight-qa-text){height:auto;max-height:none;min-height:0;-webkit-line-clamp:unset;line-clamp:unset;overflow:visible;text-overflow:clip}
+.insight-viewer-dialog .iv-body .post-media{aspect-ratio:auto}
+.insight-viewer-dialog .iv-body :is(.post-text,.insight-qa-text){display:block;overflow-wrap:anywhere}
+.insight-viewer-dialog .iv-body .post-media img{display:block;max-width:100%;height:auto;max-height:none;object-fit:contain}
+.insight-viewer-dialog .iv-body .insight-body{width:100%;margin:0}
+.insight-viewer-dialog .iv-navigation{display:flex;align-items:center;justify-content:space-between;gap:14px;flex:none;padding:13px 24px;border-top:1px solid var(--line,#dce1db);background:var(--surface,#fff)}
+.insight-viewer-dialog .iv-navigation button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:82px;min-height:42px;padding:8px 13px;border:1px solid var(--line,#dce1db);border-radius:10px;background:var(--surface,#fff);color:var(--brand-green,#3c634d);font:600 14px/1.5 var(--font-body,Pretendard,sans-serif);cursor:pointer}
+.insight-viewer-dialog .iv-navigation button:disabled{color:var(--ink-faint,#8a948d);opacity:.5;cursor:default}
+.insight-viewer-dialog .iv-position{color:var(--ink-soft,#56645b);font-size:12px;white-space:nowrap}
+.insight-viewer-dialog :is(button,[tabindex]):focus-visible{outline:2px solid var(--brand-green,#3c634d);outline-offset:3px}
+@media(max-width:600px){.insight-viewer-dialog{width:calc(100% - 16px);max-height:94vh;max-height:94dvh;border-radius:16px}.insight-viewer-dialog .iv-header{padding:16px 17px 12px}.insight-viewer-dialog .iv-heading h2{font-size:19px}.insight-viewer-dialog .iv-author{padding:12px 17px}.insight-viewer-dialog .iv-body{padding:0 17px 20px}.insight-viewer-dialog .iv-navigation{padding:11px 17px max(11px,env(safe-area-inset-bottom))}}
+@media(prefers-reduced-motion:reduce){.insight-viewer-dialog *{scroll-behavior:auto!important}}

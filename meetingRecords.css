@@ -64,6 +64,8 @@
 .meeting-records-dialog .mr-sharing-card h4{margin:0 0 7px;font-size:14px;font-weight:650;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-sharing-card:not(.mr-sharing-card-leader) h4{color:#7c633d}
 .meeting-records-dialog .mr-summary{font-size:15px;line-height:1.95}
+.meeting-records-dialog .mr-question-jump{padding:0;border:0;background:transparent;color:var(--ink);font:inherit;line-height:1.7;text-align:left;cursor:pointer;text-underline-offset:4px;overflow-wrap:anywhere}
+.meeting-records-dialog .mr-question-jump:hover,.meeting-records-dialog .mr-question-jump:focus-visible{text-decoration:underline;color:var(--accent,#3c6552)}
 .meeting-records-dialog .mr-sharing-card-leader{background:#f7f7f7;border-color:#eaeaea;color:#6b6b6b}
 .meeting-records-dialog .mr-sharing-card-leader h4{font-size:13px;font-weight:600;color:inherit}
 .meeting-records-dialog .mr-sharing-card-leader .mr-summary{font-size:14px;line-height:1.85;color:inherit}

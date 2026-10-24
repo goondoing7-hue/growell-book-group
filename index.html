@@ -1093,6 +1093,7 @@
 <link rel="stylesheet" href="home.css">
 <link rel="stylesheet" href="community.css">
 <link rel="stylesheet" href="insightRounds.css">
+<link rel="stylesheet" href="insightViewer.css">
 <link rel="stylesheet" href="privateCategories.css">
 <link rel="stylesheet" href="archive.css">
 <link rel="stylesheet" href="archiveCalendar.css">
@@ -1129,6 +1130,7 @@
 <script src="communityDomain.js"></script>
 <script src="communityFeatures.js"></script>
 <script src="insightRounds.js"></script>
+<script src="insightViewer.js"></script>
 <link rel="stylesheet" href="meetingRecords.css">
 <script src="meetingRecordsDomain.js"></script>
 <script src="meetingRecordsBridge.js"></script>
@@ -2381,6 +2383,7 @@ function clearMemberSession(){
   editingAnnouncement=false;
   announcementEditDraft=null;
   if(typeof GrowellCommunityFeatures!=='undefined')GrowellCommunityFeatures.reset();
+  if(typeof GrowellInsightViewer!=='undefined')GrowellInsightViewer.reset();
   if(typeof GrowellMeetingRecords!=='undefined')GrowellMeetingRecords.reset();
   if(typeof meetingRecordsBridge!=='undefined')meetingRecordsBridge.reset();
   if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
@@ -8472,6 +8475,7 @@ function render(){
   enhanceLinkPreviews();
   if(typeof bindMaterialVideos==='function')bindMaterialVideos(route);
   captureComposerDraft();
+  if(typeof GrowellInsightViewer!=='undefined')GrowellInsightViewer.reconcile();
   bindMemberPushPromptLifecycle();
   var openingGoogleTransfer=openPendingGoogleLoginTransfer();
   if(!openingGoogleTransfer&&!openMeetingRecordRoute(route))maybePromptMemberForPush();
@@ -9286,6 +9290,14 @@ document.addEventListener('click', function(e){
   if(toggle) toggle.setAttribute('aria-expanded', 'false');
 });
 
+
+document.addEventListener('click',function(event){
+  var link=event.target&&event.target.closest&&event.target.closest('[data-insight-open]');
+  if(!link||event.defaultPrevented||event.button>0||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||typeof GrowellInsightViewer==='undefined')return;
+  event.preventDefault();
+  GrowellInsightViewer.open(link.getAttribute('data-insight-book'),link.getAttribute('data-insight-open'),{source:'share',trigger:link});
+});
+
 /* Capture edits and selections immediately; private text never goes to sessionStorage. */
 ['input','change','click'].forEach(function(eventName){
   document.addEventListener(eventName,function(e){
@@ -9612,6 +9624,19 @@ var meetingRecordsBridge=GrowellMeetingRecordsBridge({
     location.hash='#/book/'+encodeURIComponent(item.bookId)+'/'+(kind==='post'?'share':'materials')+'/post/'+encodeURIComponent(item.id);
   }
 });
+
+if(typeof GrowellInsightViewer!=='undefined')GrowellInsightViewer.configure({
+  sessionUserId:function(){return SESSION&&SESSION.userId;},sessionEpoch:function(){return saveSessionEpoch;},
+  canReadBook:meetingMemberCanRead,
+  getPosts:function(bookId,source){
+    var rows=source==='meeting'?meetingRecordsBridge.getInsightPosts(bookId):Object.values(STATE.posts);
+    return rows.filter(function(p){var author=STATE.users[p.userId];return p.bookId===bookId&&p.noteType==='insight'&&author&&!author.isDeleted&&author.approvalStatus==='approved';});
+  },
+  getAuthor:function(p){var author=STATE.users[p.userId]||{};return {name:author.name||p.userName||'회원',avatar:safePhotoUrl(author.avatar)};},
+  renderPostHtml:function(p){var view=noteBodyHtml(p);return view.isInsight?view.bodyHtml:view.mediaHtml+(view.bodyHtml?'<div class="post-body">'+view.bodyHtml+'</div>':'');},
+  dateText:fmtDate,showToast:showToast
+});
+
 GrowellMeetingRecords.configure({
   sessionUserId:function(){return SESSION&&SESSION.userId;},
   sessionEpoch:function(){return saveSessionEpoch;},
@@ -9620,6 +9645,7 @@ GrowellMeetingRecords.configure({
   loadRecords:meetingRecordsBridge.loadRecords,saveRecord:meetingRecordsBridge.saveRecord,
   deleteRecord:meetingRecordsBridge.deleteRecord,getInsights:meetingRecordsBridge.getInsights,
   getMaterials:meetingRecordsBridge.getMaterials,openPost:meetingRecordsBridge.openPost,
+  openInsight:function(id,bookId,options){if(!meetingMemberCanRead(bookId)||typeof GrowellInsightViewer==='undefined')return;GrowellInsightViewer.open(bookId,id,Object.assign({},options,{source:'meeting'}));},
   openMaterial:meetingRecordsBridge.openMaterial,showToast:showToast,avatarHtml:avatarHtml
 });
 

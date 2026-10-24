@@ -62,6 +62,8 @@ test('print keeps all sharing cards in source order with only leader explanation
   const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),cards=walk(sheet).filter(item=>(item.className||'').split(' ').includes('mr-print-sharing-card'));
   assert.equal(cards.length,4);assert.deepEqual(cards.map(card=>({name:card.children[0].textContent,body:card.children[1].textContent})),parts);
   assert.deepEqual(cards.map(card=>card.className),['mr-print-sharing-card','mr-print-sharing-card mr-print-sharing-card-leader','mr-print-sharing-card','mr-print-sharing-card mr-print-sharing-card-leader']);
+  assert.ok(walk(sheet).some(item=>item.tagName==='H2'&&item.textContent==='책 나눔'));assert.equal(walk(sheet).some(item=>item.tagName==='H2'&&item.textContent==='책 내용 및 생각 질문'),false);
+  assert.equal(walk(sheet).some(item=>item.tagName==='H3'&&item.textContent==='1. '+row.sections[0].summary),false);
   assert.equal(walk(sheet).some(item=>item.tagName==='SCRIPT'),false);assert.equal(JSON.stringify(row),before);
   const css=require('node:fs').readFileSync(require('node:path').join(__dirname,'../meetingRecordsPrint.css'),'utf8');
   assert.match(css,/\.mr-print-sharing-card\{[^}]*break-inside:auto;page-break-inside:auto/);assert.match(css,/\.mr-print-sharing-card\+\.mr-print-sharing-card\{margin-top:9pt/);
@@ -71,10 +73,31 @@ test('print keeps all sharing cards in source order with only leader explanation
   assert.match(css,/\.mr-print-sharing-card-leader \.mr-print-text\{font-size:9\.8pt;line-height:1\.5;color:inherit\}/);
 });
 
+test('authored book sharing prints two ordered flows for future rounds while preserving all eight outline items and original topic numbers',()=>{
+  const b=browser(),row=record();row.round=7;
+  const parts=[{name:'가람',body:'첫 소감의 원문이다.'},{name:'리더 나눔',body:'리더 설명을 원래 순서대로 보존한다.'},{name:'다온',body:'둘째 소감의 원문이다.'}];
+  row.sections=[{id:'sharing',summary:'책 나눔: 가람 · 다온',detail:parts.map(part=>part.name+'\n'+part.body).join('\n\n')},...Array.from({length:7},(_,index)=>({id:'topic-'+index,summary:'책 내용 '+(index+1),detail:'생각 질문: '+(index+1)+'번째 질문인가?\n\n'+(index+1)+'번째 본문의 원문이다.'}))];
+  const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),nodes=walk(sheet),outline=nodes.find(item=>item.className==='mr-print-outline');
+  assert.deepEqual(outline.children.map(item=>item.textContent),row.sections.map(item=>item.summary));
+  const flows=sheet.children.filter(item=>item.className==='mr-print-section'&&['책 나눔','책 내용 및 생각 질문'].includes(item.children[0].textContent));
+  assert.deepEqual(flows.map(item=>item.children[0].textContent),['책 나눔','책 내용 및 생각 질문']);
+  assert.equal(nodes.some(item=>item.tagName==='H2'&&item.textContent==='모임 내용'),false);
+  assert.equal(flows[0].children.length,2);assert.equal(flows[0].children[1].children.length,3);
+  assert.deepEqual(flows[0].children[1].children.map(card=>({name:card.children[0].textContent,body:card.children[1].textContent})),parts);
+  assert.equal(flows[1].children.length,8);
+  flows[1].children.slice(1).forEach((story,index)=>{
+    assert.equal(story.children[0].textContent,(index+2)+'. '+row.sections[index+1].summary);
+    assert.equal(story.children[1].textContent,'생각 질문: '+(index+1)+'번째 질문인가?');
+    assert.equal(story.children[2].textContent,(index+1)+'번째 본문의 원문이다.');
+  });
+  assert.equal(JSON.stringify(row),before);
+});
+
 test('print preserves the whole original sharing body when participant labels do not form a complete structure',()=>{
   const b=browser(),row=record(),detail='가람\n원문\n\n알 수 없는 사람\n<img> 설명';row.sections=[{id:'sharing',summary:'책 나눔: 가람 · 다온',detail}];
   const before=JSON.stringify(row),sheet=api.buildPrintSheet(b.document,row),nodes=walk(sheet);
   assert.equal(nodes.some(item=>item.className==='mr-print-sharing-card'),false);assert.ok(nodes.some(item=>item.className==='mr-print-text'&&item.textContent===detail));
+  assert.ok(nodes.some(item=>item.tagName==='H2'&&item.textContent==='모임 내용'));assert.ok(nodes.some(item=>item.tagName==='H3'&&item.textContent==='1. '+row.sections[0].summary));assert.equal(nodes.some(item=>item.tagName==='H2'&&['책 나눔','책 내용 및 생각 질문'].includes(item.textContent)),false);
   assert.equal(nodes.some(item=>item.tagName==='IMG'),false);assert.equal(JSON.stringify(row),before);
 });
 

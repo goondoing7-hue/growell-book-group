@@ -44,7 +44,7 @@
       var search=[post.q1,post.q2,post.q3,post.title,post.userName,post.meetingNo,round,label,'통찰 정리'].map(text).join(' ');
       return '<article class="insight-round-row'+(post.id===opts.selectedId?' is-selected':'')+'" data-insight-row="'+esc(post.id)+'" data-insight-search="'+esc(search)+'"'+(post.id===opts.selectedId?' data-insight-selected="true"':'')+'>'+
         '<div class="insight-round-author">'+author+'<span class="insight-round-date">'+esc(date)+'</span></div>'+
-        '<a class="insight-round-answer" href="'+esc(href)+'" aria-label="'+esc(name+'님의 '+label+' 통찰 정리 답변 전체 보기')+'">'+
+        '<a class="insight-round-answer" data-insight-open="'+esc(post.id)+'" data-insight-book="'+esc(book.id)+'" aria-haspopup="dialog" href="'+esc(href)+'" aria-label="'+esc(name+'님의 '+label+' 통찰 정리 답변 전체 보기')+'">'+
         '<span class="insight-round-answer-label">'+esc(answer.label)+'</span><p class="insight-round-answer-text">'+esc(answer.answer)+'</p>'+
         '<span class="insight-round-row-footer"><span>댓글 '+count+'</span><span class="insight-round-read">답변 전체 보기 <span aria-hidden="true">→</span></span></span></a></article>';
     });

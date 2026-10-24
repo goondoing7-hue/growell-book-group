@@ -69,7 +69,7 @@
     if(!item){a.showToast('글을 찾을 수 없어요. 모임 기록을 다시 열어주세요.',true);return;}
     a.openSource(item,kind);
   }
-  return {loadRecords:loadRecords,saveRecord:saveRecord,deleteRecord:deleteRecord,getInsights:getInsights,getMaterials:getMaterials,
+  return {loadRecords:loadRecords,saveRecord:saveRecord,deleteRecord:deleteRecord,getInsights:getInsights,getMaterials:getMaterials,getInsightPosts:function(bookId){return content(bookId,'posts').filter(function(p){return p.bookId===bookId&&p.noteType==='insight';});},
     openPost:function(id,bookId){openSource(id,bookId,'post');},openMaterial:function(id,bookId){openSource(id,bookId,'material');},
     reset:function(){sequence++;books=Object.create(null);loads=Object.create(null);}};
 }));
