@@ -6378,10 +6378,11 @@ function sharePostTileHtml(book, p){
   var searchText = (p.title+' '+plain+' '+p.userName).toLowerCase();
   var commentCount = commentsForPost(p.id).length;
   var href='#/book/'+book.id+'/share/post/'+p.id;
+  var openAttrs=sharePostPopupAttrs(book,p);
   return '<article class="card feed-tile" data-search-text="'+esc(searchText)+'">' +
     '<div class="feed-tile-head">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="space-post-date" title="'+esc(fmtDate(p.createdAt))+'">'+esc(fmtPostDate(p.createdAt))+'</span>'+spaceNoteTypeHtml(p)+'</div>' +
-    spaceStoryHtml(p,href) +
-    '<div class="feed-tile-foot"><span class="feed-tile-count">'+svgIcon(I_COMMENT)+' 댓글 '+commentCount+'</span><a class="space-read-more" href="'+esc(href)+'" aria-label="'+esc(p.title||'나눔 글')+' 더 읽기">더 읽기 →</a></div>' +
+    spaceStoryHtml(p,href,openAttrs) +
+    '<div class="feed-tile-foot"><span class="feed-tile-count">'+svgIcon(I_COMMENT)+' 댓글 '+commentCount+'</span><a class="space-read-more" href="'+esc(href)+'"'+openAttrs+' aria-label="'+esc(p.title||'나눔 글')+' 더 읽기">더 읽기 →</a></div>' +
   '</article>';
 }
 /* Studio rows only use display data. Private rows are filled after owner-guarded decryption. */
@@ -6419,12 +6420,34 @@ function spaceShareRowHtml(book,p,selectedId){
   var plain=insight?INSIGHT_QUESTIONS.map(function(q){return p[q.key]||'';}).join(' '):spaceSharePreviewText(p);
   var nt=insight?NOTE_TYPE_INSIGHT:noteTypeOf(p.noteType);
   var href='#/book/'+book.id+'/share/post/'+p.id;
+  var openAttrs=sharePostPopupAttrs(book,p);
   var label=insight?'통찰 정리 답변 전체 보기':(String(p.title||'').trim()||'나눔 글')+' 더 읽기';
   var search=[p.title||'',plain,p.userName||'',p.meetingNo||''].join(' ').toLowerCase();
   return '<article class="card feed-tile space-list-item share-preview-item'+(p.id===selectedId?' is-selected':'')+'" data-search-text="'+esc(search)+'">'+
-    '<a class="space-list-link share-preview-link" href="'+esc(href)+'" aria-label="'+esc(label)+'"'+(p.id===selectedId?' aria-current="true"':'')+'><div class="share-preview-meta"><span>'+esc(nt?nt.label:'기록')+' · '+esc(fmtPostDate(p.createdAt))+'</span>'+
+    '<a class="space-list-link share-preview-link" href="'+esc(href)+'"'+openAttrs+' aria-label="'+esc(label)+'"'+(p.id===selectedId?' aria-current="true"':'')+'><div class="share-preview-meta"><span>'+esc(nt?nt.label:'기록')+' · '+esc(fmtPostDate(p.createdAt))+'</span>'+
     (insight&&p.meetingNo?'<span class="share-preview-meeting">'+esc(p.meetingNo)+'번째 모임</span>':'')+'</div>'+spaceSharePreviewHtml(p)+'</a>'+
-    '<div class="space-list-footer share-preview-footer">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="share-preview-comments">· 댓글 '+commentsForPost(p.id).length+'</span><a class="share-preview-read" href="'+esc(href)+'" aria-label="'+esc(label)+'">'+(insight?'답변 전체 보기':'더 읽기')+' →</a></div></article>';
+    '<div class="space-list-footer share-preview-footer">'+publicAuthorHtml(p.userId,p.userName,book.accent)+'<span class="share-preview-comments">· 댓글 '+commentsForPost(p.id).length+'</span><a class="share-preview-read" href="'+esc(href)+'"'+openAttrs+' aria-label="'+esc(label)+'">'+(insight?'답변 전체 보기':'더 읽기')+' →</a></div></article>';
+}
+function sharePostPopupAttrs(book,post){
+  return ['quote','thought','question'].indexOf(post.noteType)>=0?' data-share-post-open="'+esc(post.id)+'" data-share-post-book="'+esc(book.id)+'"':'';
+}
+function sharePostPopupIds(bookId,trigger){
+  var grid=document.getElementById('share-grid-'+bookId),ids=[];
+  if(!grid||!grid.contains(trigger)||grid.hidden||grid.style.display==='none')return ids;
+  grid.querySelectorAll('[data-share-post-open]').forEach(function(link){
+    var row=link.closest('.feed-tile'),id=link.getAttribute('data-share-post-open');
+    if(row&&!row.hidden&&row.style.display!=='none'&&link.getAttribute('data-share-post-book')===bookId&&ids.indexOf(id)<0)ids.push(id);
+  });return ids;
+}
+function openSharedPostPopup(event){
+  var link=event.target&&event.target.closest&&event.target.closest('[data-share-post-open]');
+  if(!link||event.defaultPrevented||event.button>0||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||typeof GrowellInsightViewer==='undefined')return;
+  if(typeof window.matchMedia!=='function'||!window.matchMedia('(min-width:761px)').matches||typeof GrowellGuideRouting!=='undefined'&&GrowellGuideRouting.isMobileDevice(navigator))return;
+  var bookId=link.getAttribute('data-share-post-book'),id=link.getAttribute('data-share-post-open'),route=currentRoute();
+  if(route.view!=='book'||route.bookId!==bookId||route.tab!=='share')return;
+  var ids=sharePostPopupIds(bookId,link);if(ids.indexOf(id)<0)return;
+  var filter=shareFeedFilter[bookId]||'all',types=['quote','thought','question'];if(types.indexOf(filter)>=0)types=[filter];
+  if(GrowellInsightViewer.open(bookId,id,{source:'share',mode:'post',noteTypes:types,postIds:ids,trigger:link}))event.preventDefault();
 }
 function spaceWorkspaceHtml(list,detail,postId,writing,type){
   return '<div class="space-workspace'+(postId?' is-detail':'')+(writing?' is-writing':'')+(type==='share'?' space-share-workspace':'')+'"><aside class="space-workspace-list" aria-label="글 목록">'+list+'</aside><section class="space-workspace-detail" aria-label="선택한 글">'+detail+'</section></div>';
@@ -6436,14 +6459,14 @@ function spaceNoteTypeHtml(payload){
   var nt=payload.noteType==='insight'?NOTE_TYPE_INSIGHT:noteTypeOf(payload.noteType);
   return nt?'<span class="space-note-type">'+esc(nt.label)+'</span>':'';
 }
-function spaceStoryHtml(payload,href){
+function spaceStoryHtml(payload,href,openAttrs){
   var title=String(payload.title||'').trim()||(payload.noteType==='insight'?'함께 읽으며 정리한 통찰':'마음에 남은 기록');
   var body=payload.html!=null?sanitizeHtml(payload.html):nlToBr(payload.text||'');
   if(payload.noteType==='insight')body=INSIGHT_QUESTIONS.map(function(q,i){return payload[q.key]?'<div class="space-insight-row"><small>'+['느낀 점','통찰','적용'][i]+'</small><span>'+nlToBr(payload[q.key])+'</span></div>':'';}).join('');
   var photo=safePhotoUrl(payload.photo && payload.photo.dataUrl),hasPhoto=!!photo;
   var background=BG_COLORS.some(function(c){return c.key&&c.key===payload.bgColor;})?payload.bgColor:'';
   var style=background&&!hasPhoto?' style="background:'+esc(background)+';color:#262319"':'';
-  return '<div class="space-story">'+(hasPhoto?'<div class="space-photo"><img src="'+esc(photo)+'" alt="'+esc(title)+' 첨부 사진" loading="lazy"><a class="space-photo-link" href="'+esc(href)+'">사진 크게 보기</a></div>':'')+'<div class="space-story-copy"'+style+'><h3>'+esc(title)+'</h3><div class="space-story-preview rich-content">'+body+'</div></div></div>';
+  return '<div class="space-story">'+(hasPhoto?'<div class="space-photo"><img src="'+esc(photo)+'" alt="'+esc(title)+' 첨부 사진" loading="lazy"><a class="space-photo-link" href="'+esc(href)+'"'+(openAttrs||'')+'>사진 크게 보기</a></div>':'')+'<div class="space-story-copy"'+style+'><h3>'+esc(title)+'</h3><div class="space-story-preview rich-content">'+body+'</div></div></div>';
 }
 function spaceHeadingHtml(book,type){
   var privateSpace=type==='mine';
@@ -9492,6 +9515,7 @@ document.addEventListener('click',function(event){
   event.preventDefault();
   GrowellInsightViewer.open(link.getAttribute('data-insight-book'),link.getAttribute('data-insight-open'),{source:'share',trigger:link});
 });
+document.addEventListener('click',openSharedPostPopup);
 
 /* Capture edits and selections immediately; private text never goes to sessionStorage. */
 ['input','change','click'].forEach(function(eventName){
@@ -9823,12 +9847,18 @@ var meetingRecordsBridge=GrowellMeetingRecordsBridge({
 if(typeof GrowellInsightViewer!=='undefined')GrowellInsightViewer.configure({
   sessionUserId:function(){return SESSION&&SESSION.userId;},sessionEpoch:function(){return saveSessionEpoch;},
   canReadBook:meetingMemberCanRead,
-  getPosts:function(bookId,source){
+  getPosts:function(bookId,source,mode){
+    if(mode==='post'&&source!=='share')return [];
     var rows=source==='meeting'?meetingRecordsBridge.getInsightPosts(bookId):Object.values(STATE.posts);
-    return rows.filter(function(p){var author=STATE.users[p.userId];return p.bookId===bookId&&p.noteType==='insight'&&author&&!author.isDeleted&&author.approvalStatus==='approved';});
+    return rows.filter(function(p){var author=STATE.users[p.userId];return p.bookId===bookId&&(mode==='post'?['quote','thought','question'].indexOf(p.noteType)>=0:p.noteType==='insight')&&author&&!author.isDeleted&&author.approvalStatus==='approved';});
   },
   getAuthor:function(p){var author=STATE.users[p.userId]||{};return {name:author.name||p.userName||'회원',avatar:safePhotoUrl(author.avatar)};},
   renderPostHtml:function(p){var view=noteBodyHtml(p);return view.isInsight?view.bodyHtml:view.mediaHtml+(view.bodyHtml?'<div class="post-body">'+view.bodyHtml+'</div>':'');},
+  getPostLinks:function(p){
+    var href='#/book/'+encodeURIComponent(p.bookId)+'/share/post/'+encodeURIComponent(p.id),count=commentsForPost(p.id).length;
+    var links=[{label:'댓글'+(count?' '+count+'개':'')+' 보기',href:href}];
+    if(SESSION&&(SESSION.userId===p.userId||isAdmin()))links.push({label:'글 관리',href:href});return links;
+  },
   dateText:fmtDate,showToast:showToast
 });
 

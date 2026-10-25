@@ -23,6 +23,10 @@
 .insight-viewer-dialog .iv-navigation button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:82px;min-height:42px;padding:8px 13px;border:1px solid var(--line,#dce1db);border-radius:10px;background:var(--surface,#fff);color:var(--brand-green,#3c634d);font:600 14px/1.5 var(--font-body,Pretendard,sans-serif);cursor:pointer}
 .insight-viewer-dialog .iv-navigation button:disabled{color:var(--ink-faint,#8a948d);opacity:.5;cursor:default}
 .insight-viewer-dialog .iv-position{color:var(--ink-soft,#56645b);font-size:12px;white-space:nowrap}
+.insight-viewer-dialog .iv-links{display:flex;flex-wrap:wrap;gap:10px 18px;flex:none;padding:10px 24px;border-top:1px solid var(--line,#dce1db)}
+.insight-viewer-dialog .iv-links[hidden]{display:none}
+.insight-viewer-dialog .iv-detail-link{color:var(--brand-green,#3c634d);font-size:13px;text-underline-offset:3px;line-height:1.7}
+.insight-viewer-dialog.is-share-post .iv-body :is(.post-media-text.has-title .post-text,.post-body .post-title-cover){display:block}
 .insight-viewer-dialog :is(button,[tabindex]):focus-visible{outline:2px solid var(--brand-green,#3c634d);outline-offset:3px}
 @media(max-width:600px){.insight-viewer-dialog{width:calc(100% - 16px);max-height:94vh;max-height:94dvh;border-radius:16px}.insight-viewer-dialog .iv-header{padding:16px 17px 12px}.insight-viewer-dialog .iv-heading h2{font-size:19px}.insight-viewer-dialog .iv-author{padding:12px 17px}.insight-viewer-dialog .iv-body{padding:0 17px 20px}.insight-viewer-dialog .iv-navigation{padding:11px 17px max(11px,env(safe-area-inset-bottom))}}
 @media(prefers-reduced-motion:reduce){.insight-viewer-dialog *{scroll-behavior:auto!important}}

@@ -73,7 +73,7 @@ test('print keeps all sharing cards in source order with only leader explanation
   assert.match(css,/\.mr-print-sharing-card-leader \.mr-print-text\{font-size:9\.8pt;line-height:1\.5;color:inherit\}/);
 });
 
-test('authored book sharing prints two ordered flows for future rounds while preserving all eight outline items and original topic numbers',()=>{
+test('authored book sharing prints one heading and participant line, restarting seven body topics while preserving all eight outline items',()=>{
   const b=browser(),row=record();row.round=7;
   const parts=[{name:'가람',body:'첫 소감의 원문이다.'},{name:'리더 나눔',body:'리더 설명을 원래 순서대로 보존한다.'},{name:'다온',body:'둘째 소감의 원문이다.'}];
   row.sections=[{id:'sharing',summary:'책 나눔: 가람 · 다온',detail:parts.map(part=>part.name+'\n'+part.body).join('\n\n')},...Array.from({length:7},(_,index)=>({id:'topic-'+index,summary:'책 내용 '+(index+1),detail:'생각 질문: '+(index+1)+'번째 질문인가?\n\n'+(index+1)+'번째 본문의 원문이다.'}))];
@@ -82,15 +82,17 @@ test('authored book sharing prints two ordered flows for future rounds while pre
   const flows=sheet.children.filter(item=>item.className==='mr-print-section'&&['책 나눔','책 내용 및 생각 질문'].includes(item.children[0].textContent));
   assert.deepEqual(flows.map(item=>item.children[0].textContent),['책 나눔','책 내용 및 생각 질문']);
   assert.equal(nodes.some(item=>item.tagName==='H2'&&item.textContent==='모임 내용'),false);
-  assert.equal(flows[0].children.length,2);assert.equal(flows[0].children[1].children.length,3);
-  assert.deepEqual(flows[0].children[1].children.map(card=>({name:card.children[0].textContent,body:card.children[1].textContent})),parts);
+  assert.equal(flows[0].children.length,2);assert.equal(flows[0].children[1].children.length,4);
+  assert.equal(flows[0].children[1].children[0].className,'mr-print-sharing-names');assert.equal(flows[0].children[1].children[0].textContent,'가람 · 다온');assert.equal(walk(flows[0]).some(item=>item.tagName==='H3'),false);
+  assert.deepEqual(flows[0].children[1].children.slice(1).map(card=>({name:card.children[0].textContent,body:card.children[1].textContent})),parts);
   assert.equal(flows[1].children.length,8);
   flows[1].children.slice(1).forEach((story,index)=>{
-    assert.equal(story.children[0].textContent,(index+2)+'. '+row.sections[index+1].summary);
+    assert.equal(story.children[0].textContent,(index+1)+'. '+row.sections[index+1].summary);
     assert.equal(story.children[1].textContent,'생각 질문: '+(index+1)+'번째 질문인가?');
     assert.equal(story.children[2].textContent,(index+1)+'번째 본문의 원문이다.');
   });
   assert.equal(JSON.stringify(row),before);
+  const css=require('node:fs').readFileSync(require('node:path').join(__dirname,'../meetingRecordsPrint.css'),'utf8');assert.match(css,/\.mr-print-sheet h1[^}]*word-break:normal;overflow-wrap:anywhere/);
 });
 
 test('print preserves the whole original sharing body when participant labels do not form a complete structure',()=>{

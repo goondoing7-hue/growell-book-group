@@ -122,13 +122,18 @@ test('book sharing and chapter questions retain separate body headings and all q
     {id:'chapter-two',summary:'둘째 책 주제',detail:'생각 질문: 둘째 질문?\n\n둘째 내용 전문'}];
   const selected=record(2,{userId:'reader',sections,thoughtQuestions:[{id:'one',text:'첫 질문?'},{id:'two',text:'둘째 질문?'},{id:'unmapped',text:'아직 연결하지 않은 질문?'}]}),snapshot=JSON.stringify(selected);
   const h=harness(t,{session:{admin:true},rows:[selected]});h.api.openRound('emotion',2);await tick();
-  const html=h.html();assert.match(html,/<h2>책 나눔<\/h2>/);assert.match(html,/<h2>책 내용 및 생각 질문<\/h2>/);assert.doesNotMatch(html,/<h2>모임 내용<\/h2>/);
+  const html=h.html();assert.match(html,/<h2 id="mr-book-sharing-heading">책 나눔<\/h2>/);assert.match(html,/<h2>책 내용 및 생각 질문<\/h2>/);assert.doesNotMatch(html,/<h2>모임 내용<\/h2>/);
+  assert.match(html,/<p class="mr-sharing-names">가 · 나<\/p>/);assert.doesNotMatch(html,/id="mr-story-heading-sharing-part"|<h3[^>]*>책 나눔<\/h3>/);
+  assert.match(html,/data-mr-story="sharing-part" tabindex="-1" aria-labelledby="mr-book-sharing-heading"/);
+  assert.match(html,/id="mr-story-heading-chapter-one"><span class="mr-number">1\.<\/span><span>첫 책 주제<\/span>/);assert.match(html,/id="mr-story-heading-chapter-two"><span class="mr-number">2\.<\/span><span>둘째 책 주제<\/span>/);
   assert.ok(html.indexOf('data-mr-book-sharing')<html.indexOf('첫 소감'));assert.ok(html.indexOf('첫 소감')<html.indexOf('data-mr-book-questions'));assert.ok(html.indexOf('data-mr-book-questions')<html.indexOf('첫 내용 전문'));
   assert.equal((html.match(/class="mr-core-jump"/g)||[]).length,3);assert.equal((html.match(/data-mr-question-target=/g)||[]).length,2);
   const target=h.current().querySelectorAll('[data-mr-story]').find(node=>node.getAttribute('data-mr-story')==='chapter-two');
   h.current().querySelector('[data-mr-question-target="chapter-two"]').click();assert.equal(target.focusCount,1,'question must focus its own body topic');
   assert.match(html,/<p>아직 연결하지 않은 질문\?<\/p>/,'unmapped questions never link to a guessed topic');
-  h.click('edit');assert.match(h.html(),/<h2>책 나눔<\/h2>/);assert.match(h.html(),/<h2>책 내용 및 생각 질문<\/h2>/);h.click('preview-mode');assert.match(h.html(),/data-mr-question-target="chapter-one"/);
+  h.click('edit');assert.match(h.html(),/<h2>책 나눔<\/h2>/);assert.match(h.html(),/<h2>책 내용 및 생각 질문<\/h2>/);
+  assert.match(h.html(),/<span><span data-mr-heading="sharing-part" data-mr-sharing-heading>가 · 나<\/span><\/span>/);assert.match(h.html(),/<span class="mr-number">1\.<\/span><span data-mr-heading="chapter-one">/);
+  h.click('preview-mode');assert.match(h.html(),/data-mr-question-target="chapter-one"/);assert.match(h.html(),/<p class="mr-sharing-names">가 · 나<\/p>/);
   assert.equal(JSON.stringify(selected),snapshot);
 });
 
@@ -220,6 +225,7 @@ test('invalid or missing rounds do not open a dialog or request records',async t
 test('core-summary buttons focus and scroll the matching content without navigation or writes',async t=>{
   const row=record(1,{sections:[{id:'first',summary:'첫 주제',detail:'첫 원문'},{id:'second',summary:'다음 주제',detail:'다음 원문'}]});
   const before=JSON.stringify(row),h=harness(t,{rows:[row]});h.api.openRound('emotion',1);await tick();
+  assert.match(h.html(),/id="mr-story-heading-first"><span class="mr-number">1\.<\/span><span>첫 주제<\/span>/);assert.match(h.html(),/id="mr-story-heading-second"><span class="mr-number">2\.<\/span><span>다음 주제<\/span>/);assert.doesNotMatch(h.html(),/mr-sharing-names|mr-book-sharing-heading/);
   const body=h.current().querySelector('.mr-body'),target=h.current().querySelectorAll('[data-mr-story]').find(node=>node.getAttribute('data-mr-story')==='second');
   body.scrollTop=60;body.getBoundingClientRect=()=>({top:40});target.getBoundingClientRect=()=>({top:420});
   assert.match(h.html(),/aria-controls="mr-story-second"/);h.click('jump-section','second');
@@ -247,6 +253,7 @@ test('book sharing keeps participant cards primary and gives only intervening le
   function verify(){
     const html=h.html(),core=html.slice(html.indexOf('mr-core-list'),html.indexOf('함께 살펴본 개념'));
     assert.match(core,/책 나눔: 가람 · 다온 · 라온 · 마루 · 바다/);assert.doesNotMatch(core,/소감|설명|리더 나눔/);
+    assert.equal((html.match(/<h2 id="mr-book-sharing-heading">책 나눔<\/h2>/g)||[]).length,1);assert.match(html,/<p class="mr-sharing-names">가람 · 다온 · 라온 · 마루 · 바다<\/p>/);assert.doesNotMatch(html,/id="mr-story-heading-sharing"/);
     assert.equal((html.match(/class="mr-sharing-card(?: mr-sharing-card-leader)?"/g)||[]).length,9);
     assert.equal((html.match(/class="mr-sharing-card mr-sharing-card-leader"><h4>리더 나눔<\/h4>/g)||[]).length,4);
     assert.equal((html.match(/class="mr-sharing-card"><h4>/g)||[]).length,5,'participant cards retain the original main style');
@@ -256,6 +263,7 @@ test('book sharing keeps participant cards primary and gives only intervening le
   verify();h.click('edit');assert.doesNotMatch(h.html(),/class="mr-sharing-card"/);assert.match(h.html(),/가람\n  가람 소감/);
   h.click('preview-mode');verify();assert.equal(JSON.stringify(selected),snapshot);assert.deepEqual(h.calls.writes,[]);
   const css=fs.readFileSync(path.join(__dirname,'../meetingRecords.css'),'utf8');
+  assert.match(css,/:is\(\.mr-title,\.mr-topic,\.mr-section-head h2,\.mr-story h3,\.mr-detail-field>span\)\{word-break:normal;overflow-wrap:anywhere\}/);assert.match(css,/\.mr-sharing-names\{[^}]*white-space:nowrap;overflow-x:auto/);
   assert.match(css,/\.mr-sharing-cards\{display:grid;gap:14px\}/);
   assert.match(css,/\.mr-sharing-card\{[^}]*border:1px solid #f2e8ce[^}]*background:#fffbef/);
   assert.match(css,/\.mr-sharing-card:not\(\.mr-sharing-card-leader\) h4\{color:#7c633d\}/);

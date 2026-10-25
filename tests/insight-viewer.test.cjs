@@ -92,10 +92,10 @@ function harness(t,options={}){
   const f=browserFixture(),posts=options.posts||Array.from({length:5},(_,index)=>post(index+1)),calls={posts:[],render:[],authors:[],toasts:[],parentClosed:0};
   const session={userId:'reader',epoch:1,readable:true},adapter={sessionUserId:()=>session.userId,sessionEpoch:()=>session.epoch,
     canReadBook:bookId=>!!session.userId&&session.readable&&['emotion','thought'].includes(bookId),
-    getPosts(bookId,source){calls.posts.push({bookId,source});return options.getPosts?options.getPosts(bookId,source):posts;},
+    getPosts(bookId,source,mode){calls.posts.push({bookId,source,mode});return options.getPosts?options.getPosts(bookId,source,mode):posts;},
     getAuthor(row){calls.authors.push(row.id);return options.author||{name:row.userName,avatar:''};},
     renderPostHtml(row){calls.render.push(row.id);return options.renderPostHtml?options.renderPostHtml(row):'<div data-public-post="'+escape(row.id)+'"><strong data-host-legacy>'+escape(row.title||'원래 제목')+'</strong><p>'+escape(row.q1)+'</p><p>'+escape(row.q2)+'</p><p>'+escape(row.q3)+'</p></div>';},
-    dateText:value=>'날짜 '+value,showToast:(...args)=>calls.toasts.push(args)};
+    getPostLinks:options.getPostLinks||(()=>[]),dateText:value=>'날짜 '+value,showToast:(...args)=>calls.toasts.push(args)};
   const context=f.browser;vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../insightViewer.js'),'utf8'),context,{filename:'insightViewer.js'});
   const api=context.GrowellInsightViewer;assert.ok(api,'browser export must exist');if(options.configure!==false)api.configure(adapter);
   const trigger=f.document.createElement('button');trigger.textContent='원래 통찰 원본 보기';f.document.body.appendChild(trigger);trigger.focus();
@@ -228,4 +228,90 @@ test('unavailable or asynchronous source lists fail closed without exposing raw 
 test('route changes and reset close the viewer without undoing the new destination or reusing retired content',t=>{
   const h=harness(t);h.open('public-2');h.navigate('#/book/thought/share');h.api.reconcile();assert.equal(h.current(),null);assert.equal(h.browser.location.hash,'#/book/thought/share');assert.equal(h.pending.length,0);
   h.navigate('#/book/emotion/share');h.open();h.api.reset();assert.equal(h.current(),null);h.back();h.forward();assert.equal(h.current(),null);
+});
+
+test('ordinary shared posts use the same read-only viewer across three types without mixing insight rounds or altering originals',t=>{
+  const rows=[post(1,{noteType:'quote',meetingNo:'1',html:'<p>원래 문장</p>',photo:{dataUrl:'https://example.invalid/original.jpg'}}),post(2,{noteType:'thought',meetingNo:'3'}),post(3,{noteType:'question',meetingNo:''}),post(4),post(5,{noteType:'summary'}),post(6,{noteType:'quote',bookId:'thought'})],before=JSON.stringify(rows);
+  const h=harness(t,{posts:rows,renderPostHtml:row=>'<div data-public-post="'+row.id+'"><h3>'+escape(row.title||'원래 제목')+'</h3>'+row.html+'<img src="'+escape(row.photo?.dataUrl||'https://example.invalid/other.jpg')+'"></div>'});
+  assert.equal(h.open('public-1',{mode:'post'}),true);assert.match(h.q('[data-iv-title]').textContent,/님의 나눔/);assert.match(h.q('[data-iv-body]').innerHTML,/원래 문장|original.jpg/);
+  h.click('next');assert.equal(h.selected(),'public-2');h.click('next');assert.equal(h.selected(),'public-3');assert.equal(h.q('[data-iv-next]').disabled,true);assert.match(h.q('[data-iv-position]').textContent,/3\s*\/\s*3/);
+  assert.ok(h.calls.posts.every(call=>call.source==='share'&&call.mode==='post'));assert.equal(JSON.stringify(rows),before);
+  assert.equal(h.open('public-4',{mode:'post'}),false);assert.equal(h.open('public-1'),false);
+});
+
+test('ordinary posts retain the captured visible order and type filter, close when selection is withdrawn and exclude new arrivals',t=>{
+  const rows=[post(1,{noteType:'quote'}),post(2,{noteType:'thought'}),post(3,{noteType:'quote'}),post(4,{noteType:'question'})],h=harness(t,{posts:rows});
+  assert.equal(h.open('public-3',{mode:'post',postIds:['public-3','public-1'],noteTypes:['quote']}),true);h.click('next');assert.equal(h.selected(),'public-1');assert.equal(h.q('[data-iv-next]').disabled,true);
+  rows.push(post(5,{noteType:'quote'}));h.api.reconcile();assert.match(h.q('[data-iv-position]').textContent,/2\s*\/\s*2/);
+  rows[0].noteType='thought';h.api.reconcile();assert.equal(h.current(),null);
+  assert.equal(h.open('public-3',{mode:'post',postIds:['public-3']}),true);rows[2].visibility='private';h.api.reconcile();assert.equal(h.current(),null);
+});
+
+test('ordinary post mode rejects meeting, private, unsupported mode/type scopes and duplicate captured identifiers',t=>{
+  const h=harness(t,{posts:[post(1,{noteType:'quote'}),post(2,{noteType:'thought',isPrivate:true})]});
+  for(const extra of [{mode:'post',source:'meeting'},{mode:'private'},{mode:'post',noteTypes:['insight']},{mode:'post',noteTypes:['summary']},{mode:'post',noteTypes:[]},{mode:'post',noteTypes:['quote','quote']},{mode:'post',postIds:['public-1','public-1']},{mode:'insight',noteTypes:['quote']}])assert.equal(h.open('public-1',extra),false);
+  assert.equal(h.open('public-2',{mode:'post'}),false);assert.equal(h.current(),null);
+});
+
+test('ordinary posts provide literal real detail links for comments or management and never duplicate inactive write controls',t=>{
+  const target='#/book/emotion/share/post/public-1',h=harness(t,{posts:[post(1,{noteType:'thought'})],getPostLinks:()=>[{label:'댓글 2개 보기',href:target},{label:'글 관리',href:target},{label:'잘못된 외부 대상',href:'javascript:alert(1)'},{label:'다른 글',href:'#/book/emotion/share/post/other'}]});
+  assert.equal(h.open('public-1',{mode:'post'}),true);const links=h.q('[data-iv-links]').querySelectorAll('a');assert.equal(links.length,2);assert.ok(links.every(link=>link.getAttribute('href')===target));assert.deepEqual(links.map(link=>link.textContent),['댓글 2개 보기','글 관리']);
+  assert.equal(h.current().querySelectorAll('[data-comment-submit],[data-edit-post],[data-del-post]').length,0);h.navigate(target);assert.equal(h.current(),null);assert.equal(h.browser.location.hash,target);
+});
+test('plain detail links reveal an already selected detail without a hash event and preserve modifier or middle-click behavior',t=>{
+  const target='#/book/emotion/share/post/public-1',h=harness(t,{posts:[post(1,{noteType:'thought'})],getPostLinks:()=>[{label:'댓글 보기',href:target},{label:'글 관리',href:target}]});h.navigate(target);
+  assert.equal(h.open('public-1',{mode:'post'}),true);const before=h.history.length;
+  for(const extra of [{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true},{button:1}]){
+    const native=h.q('[data-iv-links]').querySelector('a').dispatchEvent({type:'click',...extra});assert.equal(native,true);assert.ok(h.current());assert.equal(h.browser.location.hash,target);
+  }
+  const native=h.q('[data-iv-links]').querySelectorAll('a')[1].dispatchEvent({type:'click'});assert.equal(native,false);assert.equal(h.current(),null);assert.equal(h.browser.location.hash,target);assert.equal(h.pending.length,0);assert.equal(h.history.length,before);assert.equal(h.document.activeElement,h.trigger);
+});
+test('different detail links retain native routing while stale permission blocks navigation and closes the popup',t=>{
+  const target='#/book/emotion/share/post/public-1',h=harness(t,{posts:[post(1,{noteType:'question'})],getPostLinks:()=>[{label:'댓글 보기',href:target}]});
+  h.open('public-1',{mode:'post'});const native=h.q('[data-iv-links]').querySelector('a').dispatchEvent({type:'click'});assert.equal(native,true);assert.ok(h.current(),'a distinct href keeps its native default navigation');h.navigate(target);assert.equal(h.current(),null);assert.equal(h.browser.location.hash,target);assert.equal(h.pending.length,0);
+  h.navigate('#/book/emotion/share');h.open('public-1',{mode:'post'});h.session.readable=false;const staleNative=h.q('[data-iv-links]').querySelector('a').dispatchEvent({type:'click'});assert.equal(staleNative,false);assert.equal(h.current(),null);assert.equal(h.browser.location.hash,'#/book/emotion/share');
+});
+
+test('ordinary post navigation adds one popup history entry and native Back restores the originating list focus',t=>{
+  const h=harness(t,{posts:[post(1,{noteType:'quote'}),post(2,{noteType:'thought'}),post(3,{noteType:'question'})]}),before=h.history.length,hash=h.browser.location.hash;
+  h.open('public-1',{mode:'post'});h.click('next');h.click('next');h.click('prev');assert.equal(h.history.length,before+1);assert.equal(h.browser.location.hash,hash);h.back();assert.equal(h.current(),null);assert.equal(h.document.activeElement,h.trigger);
+});
+
+const appSource=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
+function appSection(start,end){const a=appSource.indexOf(start),b=appSource.indexOf(end,a);assert.ok(a>=0&&b>a);return appSource.slice(a,b);}
+function desktopPostFixture(){
+  const f=browserFixture(),calls=[];let wide=true,mobile=false,opened=true,route={view:'book',bookId:'emotion',tab:'share'};
+  Object.assign(f.browser,{shareFeedFilter:{emotion:'all'},esc:escape,navigator:{userAgent:'Windows'},matchMedia:()=>({matches:wide}),GrowellGuideRouting:{isMobileDevice:()=>mobile},currentRoute:()=>route,
+    GrowellInsightViewer:{open:(...args)=>{calls.push(args);return opened;}}});
+  vm.runInNewContext(appSection('function sharePostPopupAttrs(','function spaceWorkspaceHtml('),f.browser);
+  const grid=f.document.createElement('div');grid.id='share-grid-emotion';f.document.body.appendChild(grid);
+  function add(id,hidden=false,book='emotion'){
+    const row=f.document.createElement('article');row.className='feed-tile';row.style.display=hidden?'none':'';grid.appendChild(row);
+    function link(){const a=f.document.createElement('a');a.setAttribute('href','#/book/'+book+'/share/post/'+id);a.setAttribute('data-share-post-open',id);a.setAttribute('data-share-post-book',book);row.appendChild(a);return a;}
+    const anchor=link();link();return {row,anchor};
+  }
+  function click(target,extra={}){const event={target,button:0,defaultPrevented:false,preventDefault(){this.defaultPrevented=true;},...extra};f.browser.openSharedPostPopup(event);return event;}
+  return {...f,calls,grid,add,click,wide:value=>wide=value,mobile:value=>mobile=value,opened:value=>opened=value,route:value=>route=value};
+}
+
+test('desktop share-list clicks capture only displayed ordinary post identifiers in current DOM order and filter',()=>{
+  const h=desktopPostFixture(),one=h.add('one'),hidden=h.add('hidden',true),two=h.add('two'),foreign=h.add('foreign',false,'thought');
+  assert.equal(h.click(two.anchor).defaultPrevented,true);assert.equal(h.calls.length,1);const [book,id,scope]=h.calls[0];assert.equal(book,'emotion');assert.equal(id,'two');assert.equal(scope.mode,'post');assert.equal(scope.source,'share');assert.deepEqual(Array.from(scope.postIds),['one','two']);assert.deepEqual(Array.from(scope.noteTypes),['quote','thought','question']);
+  h.browser.shareFeedFilter.emotion='thought';h.click(one.anchor);assert.deepEqual(Array.from(h.calls[1][2].noteTypes),['thought']);assert.equal(hidden.row.style.display,'none');assert.equal(foreign.row.parentNode,h.grid);
+});
+
+test('mobile and narrow layouts, modified clicks, hidden targets, other routes and failed opens preserve native links',()=>{
+  const h=desktopPostFixture(),one=h.add('one'),hidden=h.add('hidden',true);
+  h.wide(false);assert.equal(h.click(one.anchor).defaultPrevented,false);h.wide(true);h.mobile(true);assert.equal(h.click(one.anchor).defaultPrevented,false);h.mobile(false);
+  for(const extra of [{ctrlKey:true},{metaKey:true},{shiftKey:true},{altKey:true},{button:1},{defaultPrevented:true}])h.click(one.anchor,extra);assert.equal(h.calls.length,0);
+  assert.equal(h.click(hidden.anchor).defaultPrevented,false);h.route({view:'book',bookId:'emotion',tab:'mine'});assert.equal(h.click(one.anchor).defaultPrevented,false);h.route({view:'book',bookId:'emotion',tab:'share'});h.opened(false);assert.equal(h.click(one.anchor).defaultPrevented,false);assert.equal(one.anchor.getAttribute('href'),'#/book/emotion/share/post/one');
+});
+
+test('only quote, thought and question get popup markers; host adapter reads approved public posts and preserves comment-management permission rules',()=>{
+  const f=desktopPostFixture();for(const kind of ['quote','thought','question'])assert.match(f.browser.sharePostPopupAttrs({id:'emotion'},{id:'p',noteType:kind}),/data-share-post-open/);for(const kind of ['insight','summary','private',''])assert.equal(f.browser.sharePostPopupAttrs({id:'emotion'},{id:'p',noteType:kind}),'');
+  let adapter,admin=false;const c={GrowellInsightViewer:{configure:value=>adapter=value},SESSION:{userId:'self'},saveSessionEpoch:1,STATE:{users:{self:{name:'본인',approvalStatus:'approved'},other:{name:'다른회원',approvalStatus:'approved'},pending:{approvalStatus:'pending'},deleted:{approvalStatus:'approved',isDeleted:true}},posts:{},privateEntries:{secret:{id:'private-secret',bookId:'emotion',noteType:'quote'}},materialNotes:{secret:{id:'material-secret',bookId:'emotion',noteType:'quote'}}},meetingMemberCanRead:()=>true,meetingRecordsBridge:{getInsightPosts:()=>[post(9)]},safePhotoUrl:value=>value,noteBodyHtml:()=>({mediaHtml:'원문',bodyHtml:''}),fmtDate:()=>'',showToast(){},isAdmin:()=>admin,commentsForPost:()=>[{}]};
+  for(const row of [post(1,{noteType:'quote',userId:'self'}),post(2,{noteType:'thought',userId:'other'}),post(3,{noteType:'question',userId:'other'}),post(4,{userId:'other'}),post(5,{noteType:'summary',userId:'other'}),post(6,{noteType:'quote',userId:'pending'}),post(7,{noteType:'quote',userId:'deleted'})])c.STATE.posts[row.id]=row;
+  vm.runInNewContext(appSection("if(typeof GrowellInsightViewer!=='undefined')GrowellInsightViewer.configure({",'GrowellMeetingRecords.configure({'),c);
+  assert.deepEqual(Array.from(adapter.getPosts('emotion','share','post'),row=>row.id),['public-1','public-2','public-3']);assert.deepEqual(Array.from(adapter.getPosts('emotion','share'),row=>row.id),['public-4']);assert.equal(adapter.getPosts('emotion','meeting','post').length,0);
+  assert.equal(adapter.getPostLinks(c.STATE.posts['public-1']).length,2);assert.equal(adapter.getPostLinks(c.STATE.posts['public-2']).length,1);admin=true;assert.equal(adapter.getPostLinks(c.STATE.posts['public-2']).length,2);assert.match(adapter.getPostLinks(c.STATE.posts['public-2'])[0].label,/댓글 1개 보기/);
 });

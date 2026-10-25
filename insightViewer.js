@@ -40,11 +40,11 @@
   }
   function group(snapshot){
     if(!sameIdentity(snapshot))throw new Error('stale-viewer');
-    var posts=app.getPosts(snapshot.bookId,snapshot.source);
+    var posts=app.getPosts(snapshot.bookId,snapshot.source,snapshot.mode);
     if(!Array.isArray(posts)||!sameIdentity(snapshot))throw new Error('unavailable-posts');
     var byId=new Map(),ordered=[];
     posts.forEach(function(post){
-      if(!post||typeof post.id!=='string'||post.bookId!==snapshot.bookId||post.noteType!=='insight'
+      if(!post||typeof post.id!=='string'||post.bookId!==snapshot.bookId||(snapshot.mode==='post'?snapshot.noteTypes.indexOf(post.noteType)<0:post.noteType!=='insight')
           ||post.private===true||post.isPrivate===true||post.is_private===true||post.visible===false
           ||post.isDeleted===true||post.is_deleted===true||post.deletedAt!=null||post.deleted_at!=null
           ||(typeof post.visibility==='string'&&post.visibility!=='public'))return;
@@ -52,10 +52,10 @@
       byId.set(post.id,post);ordered.push(post.id);
     });
     var current=byId.get(snapshot.postId);
-    if(!current||(snapshot.round!==undefined&&round(current.meetingNo)!==snapshot.round))throw new Error('missing-post');
+    if(!current||(snapshot.mode!=='post'&&snapshot.round!==undefined&&round(current.meetingNo)!==snapshot.round))throw new Error('missing-post');
     var selectedRound=snapshot.round===undefined?round(current.meetingNo):snapshot.round;
     var ids=snapshot.postIds||ordered;
-    var result=ids.map(function(id){return byId.get(id);}).filter(function(post){return post&&round(post.meetingNo)===selectedRound;});
+    var result=ids.map(function(id){return byId.get(id);}).filter(function(post){return post&&(snapshot.mode==='post'||round(post.meetingNo)===selectedRound);});
     if(!result.some(function(post){return post.id===snapshot.postId;}))throw new Error('missing-selected-post');
     return result;
   }
@@ -85,7 +85,7 @@
     if(!post)throw new Error('missing-post');
     var author=app.getAuthor(post)||{},name=text(author.name)||text(post.userName)||'회원',html=app.renderPostHtml(post);
     if(typeof html!=='string'||!sameIdentity(snapshot)||dialog!==node||view!==snapshot)throw new Error('invalid-content');
-    node.querySelector('[data-iv-title]').textContent=name+'님의 통찰';
+    node.querySelector('[data-iv-title]').textContent=name+(snapshot.mode==='post'?'님의 나눔':'님의 통찰');
     node.querySelector('[data-iv-name]').textContent=name;
     node.querySelector('[data-iv-date]').textContent=String(app.dateText(post.createdAt)||'');
     var avatar=node.querySelector('[data-iv-avatar]'),image=safeAvatar(author.avatar);
@@ -98,6 +98,18 @@
     // The host supplies the existing sanitized, read-only full-post renderer.
     // Do not rebuild, truncate, persist, or interpret individual member fields.
     if(snapshot.renderedHtml!==html){body.innerHTML=html;snapshot.renderedHtml=html;}
+    if(snapshot.mode==='post'){
+      var links=typeof app.getPostLinks==='function'?app.getPostLinks(post):[],detailHref='#/book/'+encodeURIComponent(snapshot.bookId)+'/share/post/'+encodeURIComponent(post.id);
+      if(!Array.isArray(links)||!sameIdentity(snapshot))throw new Error('invalid-post-links');
+      var target=node.querySelector('[data-iv-links]'),signature=JSON.stringify(links);
+      if(snapshot.renderedLinks!==signature){
+        target.replaceChildren();links.forEach(function(item){
+          if(!item||typeof item.label!=='string'||!item.label||item.href!==detailHref)return;
+          var link=document.createElement('a');link.className='iv-detail-link';link.setAttribute('href',detailHref);link.textContent=item.label;target.appendChild(link);
+        });snapshot.renderedLinks=signature;
+      }
+      target.hidden=!target.children.length;
+    }
     if(resetScroll)body.scrollTop=0;
     node.querySelector('[data-iv-prev]').disabled=index===0;
     node.querySelector('[data-iv-next]').disabled=index===posts.length-1;
@@ -107,7 +119,7 @@
     if(!dialog||!view)return false;
     if(dialog.isConnected===false||!dialog.open||!sameIdentity(view)){close(false);return false;}
     try{render(group(view),false);return true;}
-    catch(_){close(false);notice('지금 볼 수 있는 통찰을 다시 확인해주세요.');return false;}
+    catch(_){var label=view&&view.mode==='post'?'나눔 글':'통찰';close(false);notice('지금 볼 수 있는 '+label+'을 다시 확인해주세요.');return false;}
   }
   function move(direction){
     if(!dialog||!view)return false;
@@ -115,33 +127,55 @@
       var posts=group(view),index=posts.findIndex(function(post){return post.id===view.postId;}),next=index+direction;
       if(next<0||next>=posts.length){render(posts,false);return false;}
       view.postId=posts[next].id;render(posts,true);return true;
-    }catch(_){close(false);notice('지금 볼 수 있는 통찰을 다시 확인해주세요.');return false;}
+    }catch(_){var label=view&&view.mode==='post'?'나눔 글':'통찰';close(false);notice('지금 볼 수 있는 '+label+'을 다시 확인해주세요.');return false;}
   }
   function open(bookId,postId,options){
     options=options||{};close(false);
     if(!app||!document||typeof bookId!=='string'||typeof postId!=='string'||!postId)return false;
     var source=options.source===undefined?'share':options.source;
     if(source!=='share'&&source!=='meeting')return false;
+    var mode=options.mode===undefined?'insight':options.mode;
+    if(mode!=='insight'&&mode!=='post'||mode==='post'&&source!=='share')return false;
+    var noteTypes=['quote','thought','question'];
+    if(options.noteTypes!==undefined){
+      if(mode!=='post'||!Array.isArray(options.noteTypes)||!options.noteTypes.length||options.noteTypes.some(function(kind){return noteTypes.indexOf(kind)<0;})||new Set(options.noteTypes).size!==options.noteTypes.length)return false;
+      noteTypes=options.noteTypes.slice();
+    }
     var ids=null;
     if(options.postIds!==undefined){
       if(!Array.isArray(options.postIds)||options.postIds.some(function(id){return typeof id!=='string'||!id;})||new Set(options.postIds).size!==options.postIds.length)return false;
       ids=options.postIds.slice();
     }
-    var snapshot={owner:app.sessionUserId(),epoch:app.sessionEpoch(),url:href(),bookId:bookId,postId:postId,source:source,parent:options.parent||null,postIds:ids};
+    var snapshot={owner:app.sessionUserId(),epoch:app.sessionEpoch(),url:href(),bookId:bookId,postId:postId,source:source,mode:mode,noteTypes:noteTypes,parent:options.parent||null,postIds:ids};
     if(!sameIdentity(snapshot))return false;
     var posts;
-    try{posts=group(snapshot);snapshot.round=round(posts.find(function(post){return post.id===postId;}).meetingNo);snapshot.postIds=posts.map(function(post){return post.id;});}
-    catch(_){notice('통찰을 찾을 수 없어요. 목록을 다시 확인해주세요.');return false;}
+    try{posts=group(snapshot);if(mode==='insight')snapshot.round=round(posts.find(function(post){return post.id===postId;}).meetingNo);snapshot.postIds=posts.map(function(post){return post.id;});}
+    catch(_){notice((mode==='post'?'나눔 글':'통찰')+'을 찾을 수 없어요. 목록을 다시 확인해주세요.');return false;}
     var node=document.createElement('dialog');dialog=node;view=snapshot;returnFocus=options.trigger||document.activeElement;
-    node.className='insight-viewer-dialog';node.setAttribute('aria-labelledby','insight-viewer-title');
-    node.innerHTML='<header class="iv-header"><div class="iv-heading"><span class="iv-eyebrow">함께 나눈 통찰</span><h2 id="insight-viewer-title" data-iv-title></h2></div><button type="button" class="iv-close" data-iv-close aria-label="통찰 닫기">×</button></header>'+
+    var postMode=mode==='post';node.className='insight-viewer-dialog'+(postMode?' is-share-post':'');node.setAttribute('aria-labelledby','insight-viewer-title');
+    node.innerHTML='<header class="iv-header"><div class="iv-heading"><span class="iv-eyebrow">'+(postMode?'함께 나눈 글':'함께 나눈 통찰')+'</span><h2 id="insight-viewer-title" data-iv-title></h2></div><button type="button" class="iv-close" data-iv-close aria-label="'+(postMode?'나눔 글':'통찰')+' 닫기">×</button></header>'+
       '<div class="iv-author"><span class="iv-avatar" data-iv-avatar></span><div><strong data-iv-name></strong><time data-iv-date></time></div></div>'+
-      '<div class="iv-body" data-iv-body tabindex="0" aria-label="통찰 원문"></div>'+
-      '<nav class="iv-navigation" aria-label="모임원의 통찰 넘기기"><button type="button" data-iv-prev aria-label="이전 사람의 통찰">‹ <span>이전</span></button><span class="iv-position" data-iv-position role="status" aria-live="polite" aria-atomic="true"></span><button type="button" data-iv-next aria-label="다음 사람의 통찰"><span>다음</span> ›</button></nav>';
+      '<div class="iv-body" data-iv-body tabindex="0" aria-label="'+(postMode?'나눔 글':'통찰')+' 원문"></div>'+(postMode?'<div class="iv-links" data-iv-links hidden></div>':'')+
+      '<nav class="iv-navigation" aria-label="'+(postMode?'나눔 글 넘기기':'모임원의 통찰 넘기기')+'"><button type="button" data-iv-prev aria-label="'+(postMode?'이전 나눔 글':'이전 사람의 통찰')+'">‹ <span>이전</span></button><span class="iv-position" data-iv-position role="status" aria-live="polite" aria-atomic="true"></span><button type="button" data-iv-next aria-label="'+(postMode?'다음 나눔 글':'다음 사람의 통찰')+'"><span>다음</span> ›</button></nav>';
     document.body.appendChild(node);
     on(node.querySelector('[data-iv-close]'),'click',function(){close();});
     on(node.querySelector('[data-iv-prev]'),'click',function(){move(-1);});
     on(node.querySelector('[data-iv-next]'),'click',function(){move(1);});
+    if(postMode)on(node.querySelector('[data-iv-links]'),'click',function(event){
+      var link=event.target&&event.target.closest&&event.target.closest('.iv-detail-link');
+      if(!link||event.defaultPrevented||event.button>0||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey)return;
+      if(dialog!==node||view!==snapshot)return;
+      try{
+        group(snapshot);
+        var destination=link.getAttribute('href'),expected='#/book/'+encodeURIComponent(snapshot.bookId)+'/share/post/'+encodeURIComponent(snapshot.postId);
+        if(destination!==expected)throw new Error('invalid-post-link');
+        // The selected detail may already be behind this popup. In that case
+        // native navigation emits no hashchange, so reveal it directly.
+        if(root.location&&root.location.hash===destination){event.preventDefault();close();}
+        // Different destinations retain native link/history behavior; the
+        // existing route listener retires this popup after navigation.
+      }catch(_){event.preventDefault();close(false);notice('지금 볼 수 있는 나눔 글을 다시 확인해주세요.');}
+    });
     on(node,'cancel',function(event){event.preventDefault();close();});
     on(node,'close',function(){if(dialog===node)close();});
     on(node,'click',function(event){
@@ -177,7 +211,7 @@
       render(posts,true);node.showModal();
       if(root.GrowellPopupHistory)root.GrowellPopupHistory.open(historyKey,{close:function(){if(dialog===node)close();}});
       return true;
-    }catch(_){close(false);notice('통찰을 열지 못했어요. 다시 시도해주세요.');return false;}
+    }catch(_){close(false);notice((postMode?'나눔 글':'통찰')+'을 열지 못했어요. 다시 시도해주세요.');return false;}
   }
   return Object.freeze({configure:configure,open:open,close:close,reset:reset,reconcile:reconcile});
 });

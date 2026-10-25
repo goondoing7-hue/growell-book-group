@@ -83,6 +83,7 @@ test('a second meeting overview with seven summaries, three concepts and five qu
   assert.equal(items.find(item=>item.value==='생각 질문').page,overview);
   source.record.thoughtQuestions.forEach((item,i)=>assert.equal(items.find(value=>value.value===(i+1)+'. '+item.text).page,overview));
   source.record.sections.forEach(item=>assert.equal(items.find(value=>value.value===item.detail).page,details));
+  source.record.sections.forEach((item,index)=>assert.equal(items.filter(value=>value.value===(index+1)+'. '+item.summary).length,2,'legacy outline and body retain the same original numbering'));assert.equal(items.some(value=>value.value==='책 나눔'),false);
   assert.equal(JSON.stringify(source),before);
 });
 
@@ -438,10 +439,12 @@ test('authored book sharing keeps five participant and four interleaved leader b
   assert.equal(cards.length, 9);assert.equal(items.filter(item => item.value === '리더 나눔').length, 4);
   const sharingHeading = items.findIndex(item => item.value === '책 나눔'), contentHeading = items.findIndex(item => item.value === '책 내용 및 생각 질문');
   assert.ok(sharingHeading >= 0 && contentHeading > sharingHeading);assert.equal(items.some(item => item.value === '모임 내용'), false);
+  const participantLine=items.findIndex(item=>item.value===names.join(' · '));assert.ok(participantLine>sharingHeading&&participantLine<items.findIndex(item=>item.value===blocks[0].body));assert.equal(items.filter(item=>item.value===names.join(' · ')).length,1);
   assert.equal(items.filter(item => item.value === `1. ${source.record.sections[0].summary}`).length, 1, 'the nickname list belongs only in the unchanged core outline');
   source.record.sections.slice(1).forEach((item, index) => {
-    const title = `${index + 2}. ${item.summary}`, occurrences = items.map((entry, position) => entry.value === title ? position : -1).filter(position => position >= 0);
-    assert.equal(occurrences.length, 2, 'the original outline numbering and full topic heading both remain');assert.ok(occurrences[1] > contentHeading);
+    const outlineTitle = `${index + 2}. ${item.summary}`, bodyTitle = `${index + 1}. ${item.summary}`;
+    const outlinePositions = items.map((entry, position) => entry.value === outlineTitle ? position : -1).filter(position => position >= 0),bodyPositions=items.map((entry,position)=>entry.value===bodyTitle?position:-1).filter(position=>position>=0);
+    assert.equal(outlinePositions.length,1,'core numbering remains unchanged');assert.ok(outlinePositions[0]<sharingHeading);assert.equal(bodyPositions.length,1,'body topic numbers restart from one');assert.ok(bodyPositions[0]>contentHeading);
     assert.ok(items.some(entry => entry.value === item.detail));
   });
   let last = -1;

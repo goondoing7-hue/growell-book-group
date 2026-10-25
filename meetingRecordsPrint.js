@@ -54,7 +54,8 @@
     record.sections.forEach(function(item,index){
       if(groupedSharing&&index===1)details=section(document,sheet,'책 내용 및 생각 질문');
       var story=node(document,'article','mr-print-story');
-      if(!groupedSharing||index!==0)story.appendChild(node(document,'h3','',(index+1)+'. '+item.summary));
+      if(groupedSharing&&index===0)paragraph(document,story,firstSharing.filter(function(part,position){return part.name!=='리더 나눔'&&firstSharing.findIndex(function(candidate){return candidate.name===part.name;})===position;}).map(function(part){return part.name;}).join(' · '),'mr-print-sharing-names');
+      else story.appendChild(node(document,'h3','',(groupedSharing?index:index+1)+'. '+item.summary));
       var parts=domain&&typeof domain.detailParts==='function'?domain.detailParts(item.detail):{question:'',body:item.detail};
       var sharing=index===0?firstSharing:(domain&&typeof domain.sharingParts==='function'?domain.sharingParts(item.summary,item.detail):null);
       if(sharing)sharing.forEach(function(part){

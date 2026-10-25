@@ -58,6 +58,8 @@
 .meeting-records-dialog .mr-story{margin-top:21px}
 .meeting-records-dialog .mr-story h3{display:flex;align-items:flex-start;gap:11px;font-size:16px;font-weight:650;line-height:1.7;margin-bottom:10px}
 .meeting-records-dialog .mr-story h3>span:last-child{min-width:0}
+.meeting-records-dialog :is(.mr-title,.mr-topic,.mr-section-head h2,.mr-story h3,.mr-detail-field>span){word-break:normal;overflow-wrap:anywhere}
+.meeting-records-dialog .mr-sharing-names{margin:0 0 15px;color:var(--ink-soft);font-size:13px;line-height:1.7;white-space:nowrap;overflow-x:auto;word-break:normal;overflow-wrap:normal}
 .meeting-records-dialog .mr-topic-question{font-size:13px;line-height:1.7;color:var(--ink-soft);margin:0 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
 .meeting-records-dialog .mr-sharing-cards{display:grid;gap:14px}
 .meeting-records-dialog .mr-sharing-card{min-width:0;padding:16px 18px;border:1px solid #f2e8ce;border-radius:10px;background:#fffbef}

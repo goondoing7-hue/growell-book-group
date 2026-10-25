@@ -353,14 +353,16 @@ async function renderMeetingRecordPdf(content, layout, check) {
   const firstSharing = content.sections.length ? sharingParts(content.sections[0].summary, content.sections[0].detail) : null;
   const groupedSharing = Boolean(firstSharing);
   heading(groupedSharing ? '책 나눔' : '모임 내용');
+  if (firstSharing) paragraph(firstSharing.filter((part, index) => part.name !== '리더 나눔' && firstSharing.findIndex(item => item.name === part.name) === index).map(part => part.name).join(' · '), { size: 9.5, color: COLOR.muted, gap: 10 });
   if (content.sections.length) {
     content.sections.forEach((item, index) => {
       const parts = detailParts(item.detail);
       const sharing = index === 0 ? firstSharing : sharingParts(item.summary, item.detail);
       const omitSummaryHeading = groupedSharing && index === 0;
+      const topicTitle = `${groupedSharing ? index : index + 1}. ${item.summary}`;
       if (groupedSharing && index === 1) {
         const groupHeight = textHeight('책 내용 및 생각 질문', 'PretendardBold', 14) + layout.sectionBefore + 9 * layout.scale;
-        const topicHeight = textHeight(`${index + 1}. ${item.summary}`, 'PretendardBold', 11.5) + layout.topicBefore + 5 * layout.scale;
+        const topicHeight = textHeight(topicTitle, 'PretendardBold', 11.5) + layout.topicBefore + 5 * layout.scale;
         const following = parts.question ? `생각 질문: ${parts.question}` : parts.body;
         const beginning = groupHeight + topicHeight + Math.min(textHeight(following, 'Pretendard', 10.5), bodyLinesHeight(2));
         if (beginning <= doc.page.height - doc.page.margins.top - doc.page.margins.bottom) reserve(beginning);
@@ -368,10 +370,10 @@ async function renderMeetingRecordPdf(content, layout, check) {
       }
       const boxes = sharing && sharing.map(sharingBox);
       if (!omitSummaryHeading && boxes && boxes.length) {
-        const first = boxes[0].height, headingHeight = textHeight(`${index + 1}. ${item.summary}`, 'PretendardBold', 11.5) + layout.topicBefore + 5 * layout.scale;
+        const first = boxes[0].height, headingHeight = textHeight(topicTitle, 'PretendardBold', 11.5) + layout.topicBefore + 5 * layout.scale;
         if (first + headingHeight <= doc.page.height - doc.page.margins.top - doc.page.margins.bottom) reserve(first + headingHeight);
       }
-      if (!omitSummaryHeading) heading(`${index + 1}. ${item.summary}`, 3, parts.question ? `생각 질문: ${parts.question}` : parts.body);
+      if (!omitSummaryHeading) heading(topicTitle, 3, parts.question ? `생각 질문: ${parts.question}` : parts.body);
       if (parts.question) paragraph(`생각 질문: ${parts.question}`, { size: 9.5, color: COLOR.muted, gap: 6 });
       if (sharing) sharing.forEach((block, blockIndex) => sharingBlock(block, boxes[blockIndex]));
       else paragraph(parts.body);
