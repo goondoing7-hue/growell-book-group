@@ -263,7 +263,7 @@ test('book sharing keeps participant cards primary and gives only intervening le
   verify();h.click('edit');assert.doesNotMatch(h.html(),/class="mr-sharing-card"/);assert.match(h.html(),/가람\n  가람 소감/);
   h.click('preview-mode');verify();assert.equal(JSON.stringify(selected),snapshot);assert.deepEqual(h.calls.writes,[]);
   const css=fs.readFileSync(path.join(__dirname,'../meetingRecords.css'),'utf8');
-  assert.match(css,/:is\(\.mr-title,\.mr-topic,\.mr-section-head h2,\.mr-story h3,\.mr-detail-field>span\)\{word-break:normal;overflow-wrap:anywhere\}/);assert.match(css,/\.mr-sharing-names\{[^}]*white-space:nowrap;overflow-x:auto/);
+  assert.match(css,/:is\(\.mr-title,\.mr-topic,\.mr-section-head h2,\.mr-story h3,\.mr-detail-field>span\)\{word-break:normal;overflow-wrap:anywhere;text-wrap:wrap\}/);assert.match(css,/\.mr-sharing-names\{[^}]*white-space:nowrap;overflow-x:auto/);
   assert.match(css,/\.mr-sharing-cards\{display:grid;gap:14px\}/);
   assert.match(css,/\.mr-sharing-card\{[^}]*border:1px solid #f2e8ce[^}]*background:#fffbef/);
   assert.match(css,/\.mr-sharing-card:not\(\.mr-sharing-card-leader\) h4\{color:#7c633d\}/);
