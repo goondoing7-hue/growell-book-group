@@ -56,8 +56,8 @@
 .meeting-records-dialog .mr-keyword:hover,.meeting-records-dialog .mr-keyword[aria-pressed=true]{background:var(--mr-soft);border-color:var(--mr-green)}
 .meeting-records-dialog .mr-keyword[aria-pressed=true]{font-weight:650}
 .meeting-records-dialog .mr-story{margin-top:21px}
-.meeting-records-dialog .mr-story h3{display:flex;align-items:flex-start;gap:11px;font-size:16px;font-weight:650;line-height:1.7;margin-bottom:10px}
-.meeting-records-dialog .mr-story h3>span:last-child{min-width:0}
+.meeting-records-dialog .mr-story h3{display:block;font-size:16px;font-weight:650;line-height:1.7;margin-bottom:10px}
+.meeting-records-dialog .mr-story h3>.mr-number{min-width:0;margin-right:6px;line-height:inherit}
 .meeting-records-dialog :is(.mr-title,.mr-topic,.mr-section-head h2,.mr-story h3,.mr-detail-field>span){word-break:normal;overflow-wrap:anywhere;text-wrap:wrap}
 .meeting-records-dialog .mr-sharing-names{margin:0 0 15px;color:var(--ink-soft);font-size:13px;line-height:1.7;white-space:nowrap;overflow-x:auto;word-break:normal;overflow-wrap:normal}
 .meeting-records-dialog .mr-topic-question{font-size:13px;line-height:1.7;color:var(--ink-soft);margin:0 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -191,7 +191,7 @@
  .meeting-records-dialog .mr-core{padding:18px}
  .meeting-records-dialog .mr-core-list{gap:6px}
  .meeting-records-dialog .mr-core-list li{font-size:14px;gap:8px}
- .meeting-records-dialog .mr-story h3{font-size:15px;gap:8px}
+ .meeting-records-dialog .mr-story h3{font-size:15px}
  .meeting-records-dialog .mr-preparation-row{grid-template-columns:60px minmax(0,1fr);gap:10px;padding:13px 14px}
  .meeting-records-dialog .mr-outline-row{grid-template-columns:18px minmax(0,1fr) 35px;gap:6px}
  .meeting-records-dialog .mr-keyword-editor{padding:15px}
