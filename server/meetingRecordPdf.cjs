@@ -262,9 +262,11 @@ async function renderMeetingRecordPdf(content, layout, check) {
     style('PretendardBold', fontSize, COLOR.green);
     const before = doc.y > doc.page.margins.top ? (level === 2 ? layout.sectionBefore : layout.topicBefore) : 0;
     const height = doc.heightOfString(value, { width, lineGap: layout.lineGap });
-    // Reserve the actual short answer, or two lines of a longer body. A last
-    // one-line topic should not fail merely because a second line is absent.
-    const minimumBody = following === undefined ? bodyLinesHeight(2) : Math.min(textHeight(following, 'Pretendard', currentGroup === 'insights' ? layout.insightSize : 10.5), bodyLinesHeight(2));
+    // Keep a short paragraph (up to three lines) with its heading. Longer
+    // bodies reserve two lines and continue naturally on subsequent pages.
+    const followingHeight = following === undefined ? null : textHeight(following, 'Pretendard', currentGroup === 'insights' ? layout.insightSize : 10.5);
+    // textHeight includes the paragraph's trailing gap as well as its lines.
+    const minimumBody = followingHeight === null || followingHeight > bodyLinesHeight(3) + 1.5 * layout.scale ? bodyLinesHeight(2) : followingHeight;
     reserve(before + height + 5 * layout.scale + minimumBody + (level === 2 ? 4 * layout.scale : 0));
     doc.y += before;
     write(value, { lineGap: layout.lineGap });

@@ -155,6 +155,18 @@ test('a traced deployment without any implicit standard-font module still render
   assert.equal(result.rendered, true); assert.ok(result.bytes > 100); assert.equal(result.blocked, 0);
 });
 
+test('a short automatically wrapped three-line paragraph stays with its title instead of leaving a last word on the next page', async () => {
+  const source=fixture(),drawn=[],originalText=PDFDocument.prototype.text;
+  source.record.topic='짧은 문단의 페이지 경계';source.record.concepts=[];source.insights=[];
+  source.record.sections=[{summary:'앞에서 살펴본 내용',detail:Array(4).fill('앞서 살펴본 원문이다.').join('\n')},...Array.from({length:19},(_,index)=>({summary:'본문 주제 '+(index+1),detail:(index+1)+'번째 원문이다. '+'개인의 감정과 생각을 구체적으로 살피며 관계에서 반복되는 반응을 이해한다. '.repeat(3)}))];
+  const before=JSON.stringify(source);
+  PDFDocument.prototype.text=function(value,...args){const page=this.page,result=originalText.call(this,value,...args);if(typeof value==='string')drawn.push({value,document:this,page,endPage:this.page,options:args.at(-1),size:this._fontSize});return result;};
+  let pdf;try{pdf=await createMeetingRecordPdf(source);}finally{PDFDocument.prototype.text=originalText;}
+  const successful=drawn.findLast(item=>item.value==='GROWELL  |  모임별 기록').document,items=drawn.filter(item=>item.document===successful);
+  source.record.sections.slice(1).forEach((section,index)=>{const heading=items.findLast(item=>item.value===(index+2)+'. '+section.summary),body=items.find(item=>item.value===section.detail);assert.ok(heading&&body);assert.equal(body.page,heading.page);assert.equal(body.endPage,body.page,'the whole short paragraph remains together');assert.equal(body.options.height,undefined);assert.equal(body.size,10.5);});
+  assert.ok((pdf.toString('latin1').match(/\/Type \/Page\b/g)||[]).length>5,'valid long lists still use natural pages');assert.equal(JSON.stringify(source),before);
+});
+
 test('long valid groups gain natural A4 pages with complete readable text and unchanged source fields', async () => {
   for (const group of ['overview', 'details', 'insights', 'preparation']) {
     const source = fixture(), documents = new Set(), drawn = [];
@@ -166,8 +178,8 @@ test('long valid groups gain natural A4 pages with complete readable text and un
     const before = JSON.stringify(source), originalText = PDFDocument.prototype.text;
     PDFDocument.prototype.text = function(value, ...args) {
       documents.add(this);
-      if (typeof value === 'string') drawn.push({ value, document: this, size: this._fontSize, options: args.at(-1) });
-      return originalText.call(this, value, ...args);
+      const entry=typeof value==='string'?{ value, document: this, page:this.page, size: this._fontSize, options: args.at(-1) }:null;
+      if(entry)drawn.push(entry);const result=originalText.call(this,value,...args);if(entry)entry.endPage=this.page;return result;
     };
     let pdf;
     try { pdf = await createMeetingRecordPdf(source); }
@@ -177,6 +189,7 @@ test('long valid groups gain natural A4 pages with complete readable text and un
     const body = drawn.find(item => item.document === successful && item.value === expected);
     assert.ok(body, `${group} source reaches the writer in full`);
     assert.equal(body.size, 10.5);assert.equal(body.options.height, undefined, 'flowing body text has no clipping box');
+    if(group==='details')assert.notEqual(body.endPage,body.page,'a long body keeps its natural multi-page flow');
     assert.equal(JSON.stringify(source), before);
     assert.ok(documents.size >= 2 && documents.size <= 4, 'fixed fit attempts and one natural fallback are bounded');
     assert.ok([...documents].filter(document => document !== successful).every(document => document.destroyed), 'every rejected private stream is closed');
