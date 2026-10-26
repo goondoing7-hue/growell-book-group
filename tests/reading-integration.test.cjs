@@ -29,6 +29,7 @@ function historyDialogHarness(){
         fire:(name,event)=>handlers[name](event),body,count};
     }},saveState(mutate,options){mutate(c.STATE);options.onSuccess();return Promise.resolve(true);}};
   vm.createContext(c);
+  vm.runInContext(section('function sharedReadingView(', '/* 총 페이지'),c);
   vm.runInContext(section('function myReadingLogs(bookId){','function saveCurrentPage('),c);
   vm.runInContext(section('function deleteReadingLog(','function readingTimerElapsedMs('),c);
   vm.runInContext(section('function readingHistoryHtml(','function readingCardHtml('),c);
@@ -45,6 +46,15 @@ test('reading history icon opens an owner-only popup and Back restores the same 
   popups.get('reading-history').close();
   assert.equal(node.open,false);assert.equal(node.removed,true);assert.equal(c.location.hash,'#/book/emotion/mine');
   assert.equal(focus.length,1);assert.equal(focus[0].preventScroll,true);
+});
+
+test('ebook history preserves percent units and adds elapsed time beside unchanged paper logs',()=>{
+  const {c,book,nodes}=historyDialogHarness();
+  const ebook={id:'ebook-history',unit:'percent',seconds:90,startPercent:20,endPercent:32.5,sectionTitle:'선택한 소제목',progressKind:'estimated',createdAt:3};
+  c.sharedReadingFormats={view:()=>({status:'ready',settings:{format:'ebook',ebook:{}},sessions:[ebook]})};
+  const before=JSON.stringify(c.STATE);c.openReadingHistoryDialog(book.id);
+  assert.match(nodes[0].body.innerHTML,/20 → 32.5%/);assert.match(nodes[0].body.innerHTML,/선택한 소제목/);assert.match(nodes[0].body.innerHTML,/예상 진도/);assert.match(nodes[0].body.innerHTML,/p10-p20/);
+  assert.equal(nodes[0].count.textContent,'2회 · 총 150초');assert.equal(JSON.stringify(c.STATE),before);
 });
 
 test('deleting history preserves the popup scroll and saved page, and cannot delete another reader log',async()=>{
@@ -165,6 +175,7 @@ function harness({now=10000,owner='reader',memory=new Map(),server={logs:{},meta
     }}
   };
   vm.createContext(c);
+  vm.runInContext(section('function sharedReadingView(', '/* 총 페이지'),c);
   vm.runInContext(section('function readingMetaKey(', 'function mapProfileRow('),c);
   vm.runInContext(section('function mapReadingMetaRow(', 'function mapBookLockRow('),c);
   vm.runInContext(section('function mapHabitRow(', '\nvar STATE ='),c);

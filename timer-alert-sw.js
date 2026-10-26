@@ -3,7 +3,7 @@
 self.addEventListener('install',function(event){event.waitUntil(self.skipWaiting());});
 self.addEventListener('activate',function(event){event.waitUntil(self.clients.claim());});
 function growellPush(value){
-  if(!value||typeof value!=='object'||Array.isArray(value)||value.version!==1||['post','material','meeting','verse','test'].indexOf(value.type)<0)return null;
+  if(!value||typeof value!=='object'||Array.isArray(value)||value.version!==1||['post','material','meeting','verse','habit','test'].indexOf(value.type)<0)return null;
   var tag=typeof value.tag==='string'&&/^[A-Za-z0-9:_-]{1,160}$/.test(value.tag)?value.tag:'';
   if(!tag)return null;
   var data={kind:'growell-push',type:value.type},title='GROWELL',body='';
@@ -18,6 +18,10 @@ function growellPush(value){
     if(['emotion','thought','body','action'].indexOf(value.bookId)<0||typeof value.meetingId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.meetingId)||!Number.isInteger(value.round)||value.round<1||value.round>9999)return null;
     var meetingBooks={emotion:'감정을 마주하면 길이 보인다',thought:'생각이 너무 많은 어른들을 위한 심리학',body:'몸이 나를 위로한다',action:'습관이 영성이다'};
     data.bookId=value.bookId;data.meetingId=value.meetingId.toLowerCase();data.round=value.round;title=value.round+'번째 모임 기록이 올라왔어요';body='『'+meetingBooks[value.bookId]+'』 모임에서 함께 나눈 내용을 확인해보세요.';
+  }else if(value.type==='habit'){
+    var currentDay=new Date(Date.now()+9*3600000).toISOString().slice(0,10);
+    if(typeof value.day!=='string'||value.day!==currentDay)return null;
+    data.day=value.day;title='오늘의 습관 체크';body='아직 체크하지 않은 오늘의 습관이 있어요. 하루를 마무리하며 확인해주세요.';
   }else if(value.type==='verse'){
     if(typeof value.body!=='string'||!value.body.trim()||value.body.length>800)return null;
     title='오늘의 말씀';body=value.body.trim();

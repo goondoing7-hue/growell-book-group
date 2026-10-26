@@ -74,7 +74,7 @@ function harness(initialRows=[]){
   const body=new Node('body'),events={},toasts=[],saved=[],history=[],reads=[],timers=[];
   let session={userId:'owner'},rows=clone(initialRows),failure=null,serial=0,loadStatus='ready',customRead=null,catalog=[],fetcher=async()=>({ok:true,json:async()=>({items:[],hasMore:false})});
   const doc={body,createElement:tag=>new Node(tag),querySelector:s=>body.querySelector(s),querySelectorAll:s=>body.querySelectorAll(s),getElementById:id=>body.querySelector('#'+id)};
-  const c={URL,Date,Promise,Set,AbortController,setTimeout,clearTimeout,FormData:FormDataFixture,document:doc,GrowellArchiveDomain:Domain,
+  const c={URL,Date,Promise,Set,AbortController,setTimeout,clearTimeout,FormData:FormDataFixture,document:doc,GrowellArchiveDomain:Domain,GrowellReadingFormatDomain:typeof require==='function'?require('../readingFormatDomain.js'):undefined,GrowellBookDetails:typeof require==='function'?require('../bookDetails.js'):undefined,
     crypto:{randomUUID:()=> 'fixture-'+(++serial)},confirm:()=>true,fetch:(...args)=>fetcher(...args),
     GrowellPopupHistory:{open:(key,options)=>history.push({key,options}),closed:key=>history.push({closed:key})},
     addEventListener:(name,fn)=>{events[name]=fn;},
@@ -589,4 +589,54 @@ test('collection book picker groups four covers per horizontal page and every bo
   await collection.querySelector('[data-collection-genre="인문"]').click();assert.deepEqual(pageNodes().map(page=>page.querySelectorAll('[data-collection-book]').length),[4,1]);assert.match(count(),/1\s*\/\s*2/);assert.equal(collection.querySelectorAll('.archive-collection-list [data-archive-read-note]').length,5);
   track().clientWidth=360;await collection.querySelector('[data-collection-page-next]').click();assert.match(count(),/2\s*\/\s*2/);input.value='책 번호 9';collectionEvent(input,'input',{isComposing:false});assert.equal(collection.querySelector('[data-collection-search]'),input);assert.deepEqual(pageNodes().map(page=>page.querySelectorAll('[data-collection-book]').length),[1]);assert.match(count(),/1\s*\/\s*1/);assert.equal(collection.querySelector('.archive-book-picker-nav').hidden,true);
   await collection.querySelector('[data-collection-genre=""]').click();await collection.querySelector('[data-collection-reset]').click();assert.deepEqual(pageNodes().map(page=>page.querySelectorAll('[data-collection-book]').length),[4,4,1]);assert.equal(h.saved.length,0);
+});
+
+
+test('ebook registration has one icon format choice, hides page fields and saves original page metadata unchanged',async()=>{
+  const h=harness();await h.mount();await h.body.querySelector('[data-archive-add]').click();const form=h.body.querySelector('#archive-form');form.elements.title.value='새 전자책';form.elements.totalPages.value='200';form.elements.tableOfContents.value='첫 부분 · 1\n두 번째 부분 · 101';
+  await form.querySelector('[data-archive-reading-format="ebook"]').click();assert.equal(form.querySelector('.archive-page-fields').hidden,true);const pick=form.querySelector('[data-book-ebook-section]');assert.ok(pick);await pick.click();
+  await form.onsubmit({preventDefault(){}});assert.equal(h.saved.length,1);assert.equal(h.saved[0].book.readingSettings.format,'ebook');assert.equal(h.saved[0].book.readingSettings.ebook.progressPercent,25);assert.equal(h.saved[0].book.currentPage,0);
+});
+test('replacing a new-book search draft clears another book position while exact ISBN or provider identity retains it',async(t)=>{
+  const cases=[
+    {name:'same title with a different ISBN',next:{id:'second',isbn:'9788936433598'},keep:false},
+    {name:'conflicting ISBN despite the same provider ID',next:{isbn:'9788936433598'},keep:false},
+    {name:'no explicit identity despite the same title',first:{id:'',isbn:''},next:{id:'',isbn:''},keep:false},
+    {name:'same normalized ISBN with revised title',next:{id:'second',isbn:'978-8936434120',title:'다르게 표시한 같은 책'},keep:true},
+    {name:'same provider ID without ISBN',first:{isbn:''},next:{isbn:'',title:'같은 공급자 ID의 책'},keep:true}
+  ];
+  for(const item of cases)await t.test(item.name,async()=>{
+    const untouched=makeRow('untouched',{notes:[{id:'kept',text:'기존 개인 원문',createdAt:100}]}),h=harness([untouched]);
+    const first=yes24Book({genres:['인문'],tableOfContents:'A 첫 목차 · 1\nA 다음 목차 · 101',pageCount:200,...item.first});
+    const next={...first,tableOfContents:'B 첫 목차 · 1\nB 다음 목차 · 101',...item.next};
+    let result=first;h.setFetch(async()=>searchResponse([result]));
+    const dialog=await openAdd(h);await submitSearch(dialog,'검색 책');await dialog.querySelector('[data-search-result="0"]').click();
+    const form=dialog.querySelector('#archive-form');form.elements.review.value='아직 저장하지 않은 감상';
+    await form.querySelector('[data-archive-reading-format="ebook"]').click();await form.querySelector('[data-book-ebook-section]').click();
+    result=next;await submitSearch(dialog,'검색 책');await dialog.querySelector('[data-search-result="0"]').click();
+    assert.equal(form.querySelector('[data-archive-reading-format="ebook"]').getAttribute('aria-pressed'),'true');
+    assert.equal(form.querySelector('.archive-page-fields').hidden,true);await form.onsubmit({preventDefault(){}});
+    assert.equal(h.saved.length,1);const saved=h.saved[0].book;
+    assert.equal(saved.readingSettings.format,'ebook');assert.equal(saved.review,'아직 저장하지 않은 감상');
+    if(item.keep){assert.equal(saved.readingSettings.ebook.progressPercent,25);assert.match(saved.readingSettings.ebook.sectionTitle,/A 첫 목차/);}
+    else {assert.equal(saved.readingSettings.ebook.progressPercent,null);assert.equal(saved.readingSettings.ebook.sectionTitle,'');assert.equal(saved.readingSettings.ebook.sectionId,'');}
+    assert.deepEqual(h.rows().find(row=>row.entry.id===untouched.entry.id),untouched);
+  });
+});
+
+test('book details target carries exact archive ID and fresh settings save preserves new notes while refusing stale reading state',async()=>{
+  const row=makeRow('format',{notes:[{id:'n',text:'original',createdAt:100}]});const h=harness([row]);let opened;
+  h.c.GrowellBookDetails={...require('../bookDetails.js'),openArchive:(book)=>{opened=book;}};
+  const detail=await h.open('format');await detail.querySelector('[data-archive-book-info]').click();assert.equal(opened.archiveEntryId,row.entry.id);
+  const latest=clone(row);latest.book.notes.push({id:'remote',text:'new remote note',createdAt:200});h.setRows([latest]);await h.api.saveReadingSettings(row.entry.id,{format:'ebook'});assert.equal(h.rows()[0].book.notes.length,2);assert.equal(h.rows()[0].book.currentPage,25);assert.equal(h.rows()[0].book.readingSettings.format,'ebook');
+  const conflict=clone(h.rows()[0]);conflict.book.readingSettings.ebook={sectionId:'changed',sectionTitle:'다른 화면',progressPercent:50,progressKind:'estimated',estimateBasis:'equal-sections',updatedAt:300};h.setRows([conflict]);await assert.rejects(h.api.saveReadingSettings(row.entry.id,{format:'paper'}),/다른 화면/);assert.equal(h.rows()[0].book.readingSettings.ebook.sectionId,'changed');
+});
+
+
+test('noncanonical linked archive keeps ebook settings and percent history on the exact original record',async()=>{
+  const row=makeRow('isbn_alias',{linkedBookId:'emotion',notes:[{id:'kept',text:'same private note',createdAt:100}]}),h=harness([row]);let settingsDelegations=0,sessionDelegations=0;
+  h.adapter.saveSharedReadingSettings=async()=>{settingsDelegations++;};h.adapter.saveLinkedSession=async()=>{sessionDelegations++;};
+  const detail=await h.open('isbn_alias');await h.api.saveReadingSettings(row.entry.id,{format:'ebook'});assert.equal(settingsDelegations,0);assert.equal(h.rows().length,1);assert.equal(h.rows()[0].entry.id,row.entry.id);assert.equal(h.rows()[0].book.readingSettings.format,'ebook');assert.equal(h.rows()[0].book.notes[0].id,'kept');
+  await detail.querySelector('[data-archive-timer]').click();const timer=h.timers.at(-1);assert.equal(timer.book.readingSettings.format,'ebook');await timer.adapter.saveSession(row.entry.id,{id:'alias-percent',unit:'percent',startPercent:null,endPercent:50,sectionId:'leaf',sectionTitle:'원본 목차',progressKind:'estimated',estimateBasis:'equal-sections',seconds:20,createdAt:300},{complete:false});
+  assert.equal(sessionDelegations,0);assert.equal(h.rows().length,1);assert.equal(h.rows()[0].entry.id,row.entry.id);assert.equal(h.rows()[0].book.currentPage,25);assert.equal(h.rows()[0].book.readingSessions[0].unit,'percent');assert.equal(h.rows()[0].book.notes[0].text,'same private note');
 });

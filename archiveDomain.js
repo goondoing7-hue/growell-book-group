@@ -1,8 +1,9 @@
 (function(root, factory){
-  var api = factory();
+  var readingFormat=typeof module==='object'&&module.exports?require('./readingFormatDomain.js'):root.GrowellReadingFormatDomain;
+  var api = factory(readingFormat);
   if(typeof module === 'object' && module.exports) module.exports = api;
   else root.GrowellArchiveDomain = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function(){
+})(typeof globalThis !== 'undefined' ? globalThis : this, function(ReadingFormat){
   'use strict';
 
   var FORMAT = 'growell-book-archive-v1';
@@ -126,8 +127,23 @@
     return value;
   }
   function timestamp(value,label){return integer(value,1,8640000000000000,label);}
+  function readingSettings(value){
+    if(value!==undefined&&(!value||typeof value!=='object'||Array.isArray(value)||['paper','ebook'].indexOf(value.format)<0))throw new TypeError('읽는 방식을 확인해주세요.');
+    if(ReadingFormat)return ReadingFormat.normalizeSettings(value);
+    if(value!==undefined)throw new Error('읽는 방식 설정을 다시 불러와 주세요.');
+    return {format:'paper',ebook:{sectionId:'',sectionTitle:'',progressPercent:null,progressKind:'',estimateBasis:'',updatedAt:0}};
+  }
+  function percent(value,label){if(value===null||value===undefined)return null;if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>100)throw new RangeError(label+'을(를) 확인해주세요.');return Math.round(value*10)/10;}
   function prepareReadingSession(value){
     if(!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('독서 시간 기록이 올바르지 않아요.');
+    if(value.unit==='percent'){
+      var first=percent(value.startPercent,'시작 진행률'),last=percent(value.endPercent,'마지막 진행률');
+      if(value.startPage!==undefined||value.endPage!==undefined)throw new TypeError('전자책 기록에 쪽수를 함께 저장할 수 없어요.');
+      var kind=last===null?'':choice(value.progressKind,['estimated'],'진행률 종류'),basis=choice(value.estimateBasis,['paper-toc','equal-sections'],'진행률 기준');
+      if(last!==null&&(!kind||!basis))throw new TypeError('전자책 진행률 기준을 확인해주세요.');
+      return {id:itemId(value.id),unit:'percent',startPercent:first,endPercent:last,sectionId:text(value.sectionId,200,'목차 식별자'),sectionTitle:text(value.sectionTitle,2000,'선택한 목차'),progressKind:kind,estimateBasis:basis,seconds:integer(value.seconds,0,31536000,'읽은 시간'),createdAt:timestamp(value.createdAt,'기록 시각')};
+    }
+    if(value.unit!==undefined&&value.unit!=='page')throw new TypeError('독서 기록 단위를 확인해주세요.');
     var start = integer(value.startPage == null ? 0 : value.startPage,0,100000,'시작 쪽수');
     var end = integer(value.endPage == null ? start : value.endPage,0,100000,'마지막 쪽수');
     if(end < start) throw new RangeError('마지막 쪽수는 시작 쪽수보다 작을 수 없어요.');
@@ -181,8 +197,9 @@
     if(totalPages === '' || totalPages === null) totalPages = null;
     else totalPages = integer(totalPages,1,100000,'전체 쪽수');
     var currentPage = integer(value.currentPage == null || value.currentPage === '' ? 0 : value.currentPage,0,100000,'읽은 쪽수');
-    if(status === 'unread') currentPage = 0;
-    if(status === 'completed' && totalPages !== null) currentPage = totalPages;
+    var settings=readingSettings(value.readingSettings);
+    if(settings.format==='paper' && status === 'unread') currentPage = 0;
+    if(settings.format==='paper' && status === 'completed' && totalPages !== null) currentPage = totalPages;
     if(totalPages !== null && currentPage > totalPages) throw new RangeError('읽은 쪽수는 전체 쪽수보다 클 수 없어요.');
     if(value.deleted !== undefined && typeof value.deleted !== 'boolean') throw new TypeError('아카이브 상태가 올바르지 않아요.');
     return {
@@ -206,6 +223,7 @@
       status:status,
       currentPage:currentPage,
       totalPages:totalPages,
+      readingSettings:settings,
       readingSessions:prepareItems(value.readingSessions,10000,prepareReadingSession,'독서 시간'),
       linkedSessionIds:labels(value.linkedSessionIds,10000,160,'연결된 독서 기록').map(itemId),
       notes:prepareItems(value.notes,500,prepareNote,'독서 노트'),
@@ -231,11 +249,20 @@
   }
   function progress(book){
     var item = prepare(book);
+    if(item.readingSettings.format==='ebook')return {unit:'percent',percent:item.readingSettings.ebook.progressPercent,sectionTitle:item.readingSettings.ebook.sectionTitle,estimated:true};
     return {currentPage:item.currentPage,totalPages:item.totalPages,
       percent:item.totalPages === null ? null : Math.round(item.currentPage/item.totalPages*100)};
   }
   function totalReadingSeconds(book){
     return prepare(book).readingSessions.reduce(function(total,session){return total + session.seconds;},0);
+  }
+  function setReadingSettings(book,next){
+    var item=prepare(book),settings=readingSettings(next);
+    if(item.readingSettings.format!==settings.format||(settings.format==='ebook'&&JSON.stringify(item.readingSettings.ebook)!==JSON.stringify(settings.ebook))){
+      if(settings.format==='ebook')item.status=settings.ebook.progressPercent===100?'completed':settings.ebook.progressPercent>0||item.readingSessions.some(function(session){return session.unit==='percent';})?'reading':'unread';
+      else item.status=item.totalPages!==null&&item.currentPage===item.totalPages?'completed':item.currentPage>0||item.readingSessions.some(function(session){return session.unit!=='percent';})?'reading':'unread';
+    }
+    item.readingSettings=settings;return prepare(item);
   }
   function addReadingSession(book,value,options){
     var item = prepare(book),session = prepareReadingSession(value);
@@ -244,14 +271,19 @@
       if(JSON.stringify(existing) !== JSON.stringify(session)) throw new Error('같은 독서 기록이 다른 내용으로 저장되어 있어요.');
       return item;
     }
-    if(item.totalPages !== null && session.endPage > item.totalPages) throw new RangeError('읽은 쪽수는 전체 쪽수보다 클 수 없어요.');
-    var latestAt = item.readingSessions.reduce(function(latest,saved){return Math.max(latest,saved.createdAt);},0);
+    if(session.unit!=='percent' && item.totalPages !== null && session.endPage > item.totalPages) throw new RangeError('읽은 쪽수는 전체 쪽수보다 클 수 없어요.');
+    var latestAt = item.readingSessions.filter(function(saved){return (saved.unit==='percent')===(session.unit==='percent');}).reduce(function(latest,saved){return Math.max(latest,saved.createdAt);},session.unit==='percent'?item.readingSettings.ebook.updatedAt:0);
     item.readingSessions.push(session);
     // Late recovery of an older timer adds its elapsed time without replacing
     // the reading position of a later saved session. A newer re-read may go back.
     if(session.createdAt >= latestAt){
-      item.currentPage = session.endPage;
-      item.status = options && options.complete === true || item.totalPages !== null && item.currentPage === item.totalPages ? 'completed' : 'reading';
+      if(session.unit==='percent'){
+        item.readingSettings.ebook={sectionId:session.sectionId,sectionTitle:session.sectionTitle,progressPercent:session.endPercent,progressKind:session.progressKind,estimateBasis:session.estimateBasis,updatedAt:session.createdAt};
+        if(item.readingSettings.format==='ebook')item.status=options&&options.complete===true||session.endPercent===100?'completed':'reading';
+      }else{
+        item.currentPage = session.endPage;
+        if(item.readingSettings.format==='paper')item.status = options && options.complete === true || item.totalPages !== null && item.currentPage === item.totalPages ? 'completed' : 'reading';
+      }
     }
     return prepare(item);
   }
@@ -295,6 +327,7 @@
     return JSON.stringify(left.authors.map(normalizedName).sort())===JSON.stringify(right.authors.map(normalizedName).sort());
   }
   function mergedLinkedBook(book,progressFields){
+    if(book.readingSettings.format==='ebook')progressFields=Object.assign({},progressFields,{status:book.status});
     // Only replace sessions previously identified as shared snapshots. Older
     // independent archive sessions remain private history after a link is added.
     var previous=book.readingSessions.filter(function(session){return book.linkedSessionIds.indexOf(session.id)<0;});
@@ -366,6 +399,6 @@
 
   return {FORMAT:FORMAT,STORAGE_BOOK_ID:STORAGE_BOOK_ID,recordId:recordId,archiveId:archiveId,
     isArchiveEntry:isArchiveEntry,safeCoverUrl:safeCoverUrl,themeBadgesHtml:themeBadgesHtml,prepare:prepare,encode:encode,decode:decode,summary:summary,
-    progress:progress,totalReadingSeconds:totalReadingSeconds,addReadingSession:addReadingSession,
+    progress:progress,totalReadingSeconds:totalReadingSeconds,setReadingSettings:setReadingSettings,addReadingSession:addReadingSession,
     upsertNote:upsertNote,removeNote:removeNote,mergeLinkedRows:mergeLinkedRows};
 });

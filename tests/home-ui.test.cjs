@@ -12,6 +12,7 @@ const GrowellHabitSuggestions=require('../habitSuggestions.js');
 const GrowellMeetingCalendar=require('../meetingCalendar.js');
 const source=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const homeSource=source.slice(source.indexOf('function homeUnlockedIds(){'),source.indexOf('function welcomeHomeHtml(){'));
+const readingFormatSource=source.slice(source.indexOf('function sharedReadingView('),source.indexOf('/* 총 페이지',source.indexOf('function sharedReadingView(')));
 const announcementSource=source.slice(source.indexOf('function canEditAnnouncement(){'),source.indexOf('function announceEditHtml(){'));
 const authorSource=source.slice(source.indexOf('function publicAuthorHtml('),source.indexOf('/* 헤더 프로필 버튼용',source.indexOf('function publicAuthorHtml(')));
 const escSource=source.slice(source.indexOf('function esc(s){'),source.indexOf('function nlToBr('));
@@ -90,7 +91,7 @@ function harness(){
     totalReadSeconds:bookId=>c.myReadingLogs(bookId).reduce((sum,log)=>sum+log.seconds,0),
     svgIcon:()=>'',avatarHtml:()=>'',I_LOCK:'',I_BOOKMARK:'',I_TIMER:'',isAdmin:()=>false,editingAnnouncement:false,announcementSaveBusy:false,announcementEditDraft:null,
     loginGateHtml:message=>message,sharePostCardHtml:()=>'<article>shared</article>'};
-  vm.createContext(c);vm.runInContext(escSource+habitValueBadgeSource+authorSource+timerSource+closeNoteSource+timerNotificationSource+timerEventsSource+announcementSource+homeSource,c);
+  vm.createContext(c);vm.runInContext(readingFormatSource+escSource+habitValueBadgeSource+authorSource+timerSource+closeNoteSource+timerNotificationSource+timerEventsSource+announcementSource+homeSource,c);
   return {c,controls,queued,opened,renders,createdElements,toasts,storage};
 }
 
@@ -378,4 +379,32 @@ test('guests can retry a failed public post load without a login session',async(
   await c.refreshHomePosts();
   assert.equal(reads,1);assert.equal(c.sharedPostsLoadState,'ready');
   assert.equal(c.STATE.posts.retried.title,'다시 불러온 공개 글');
+});
+
+test('ebook home uses the selected section and estimated percent without a fabricated paper page',()=>{
+  const {c}=harness();
+  c.sharedReadingFormats={view:id=>id==='emotion'?{status:'ready',settings:{format:'ebook',ebook:{sectionId:'chapter-one-section-two',sectionTitle:'선택한 세부 목차',progressPercent:32.5,progressKind:'estimated',updatedAt:9}},book:{},sessions:[{id:'ebook-session',unit:'percent',seconds:90,createdAt:10}]}:{status:'ready',settings:{format:'paper',ebook:{}},book:null,sessions:[]}};
+  c.STATE.readingMeta.emotion_me={bookId:'emotion',userId:'me',currentPage:80,updatedAt:1};
+  const markup=c.memberHomeHtml(),card=markup.slice(markup.indexOf('class="home-reading-book"'),markup.indexOf('나의 독서 기록'));
+  assert.match(card,/전자책 · 약 32.5%/);assert.match(card,/선택한 세부 목차/);assert.doesNotMatch(card,/80 \/ 200쪽|81쪽부터/);
+  assert.equal(c.STATE.readingMeta.emotion_me.currentPage,80);
+});
+
+test('ebook home start opens its captured archive timer and never creates a paper session',async()=>{
+  const {c}=harness(),opened=[];
+  c.sharedReadingFormats={view:()=>({status:'ready',settings:{format:'ebook',ebook:{}},sessions:[]})};
+  c.GrowellArchive={openSharedReadingTimer:(id,trigger)=>{opened.push({id,trigger});return Promise.resolve(true);}};
+  c.startReading('emotion');await Promise.resolve();
+  assert.equal(opened.length,1);assert.equal(opened[0].id,'emotion');assert.equal(c.readingTimer,null);assert.deepEqual(Object.keys(c.STATE.readingLogs),[]);
+});
+
+test('an active ebook takes precedence over a parked paper book on home without changing paper history',()=>{
+  const {c}=harness();
+  c.readingTimer=GrowellReadingTimer.pause(GrowellReadingTimer.create({id:'parked-paper',userId:'me',bookId:'emotion',startPage:50},1000),2000);
+  const timer=GrowellReadingTimer.pause(GrowellReadingTimer.create({id:'ebook-active',userId:'me',bookId:'private-entry',startPage:0},1000),91000);
+  c.GrowellArchiveReadingNotification={active:owner=>owner==='me'?{bookId:'thought',entryId:'private-entry',timer}:null};
+  assert.equal(c.homeReadingBook().id,'thought');
+  const summary=c.readingTimerSummaryHtml(c.bookById('thought'));
+  assert.match(summary,/data-ebook-elapsed="thought"/);assert.match(summary,/00:01:30/);
+  assert.equal(c.readingTimer.startPage,50);assert.equal(c.readingTimer.id,'parked-paper');
 });

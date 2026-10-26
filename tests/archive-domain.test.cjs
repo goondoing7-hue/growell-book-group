@@ -186,6 +186,7 @@ test('archive review and reading dates use existing owner-bound private encrypti
 
 test('browser module exposes archive helpers without requiring Node',()=>{
   const browser={URL};vm.createContext(browser);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,'../readingFormatDomain.js'),'utf8'),browser);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../archiveDomain.js'),'utf8'),browser);
   assert.deepEqual(Object.keys(browser.GrowellArchiveDomain).sort(),Object.keys(archive).sort());
   assert.equal(browser.GrowellArchiveDomain.encode(sample()),archive.encode(sample()));
@@ -480,4 +481,31 @@ test('legacy shared snapshot metadata compatibility never accepts conflicting pa
   const merged=archive.mergeLinkedRows([row],[sharedSnapshot({readingSessions:[distinct]})],'owner-a')[0];
   assert.deepEqual(merged.book.readingSessions,[shared,distinct],'different session identities remain separate records');
   assert.equal(archive.totalReadingSeconds(merged.book),shared.seconds*2);
+});
+
+
+test('ebook archive sessions retain percent and exact section separately from original paper pages and notes',()=>{
+  const F=require('../readingFormatDomain.js'),settings=F.normalizeSettings({format:'ebook'}),book=sample({status:'reading',currentPage:44,totalPages:300,readingSettings:settings,notes:[{id:'old-note',text:'original note',page:14,createdAt:100}]});
+  const old=JSON.parse(JSON.stringify(book)),session={id:'ebook-one',unit:'percent',startPercent:null,endPercent:37.5,sectionId:'leaf-one',sectionTitle:'1장 · 본문 제목',progressKind:'estimated',estimateBasis:'equal-sections',seconds:73,createdAt:200};
+  const saved=archive.addReadingSession(book,session),restored=archive.decode(archive.encode(saved));
+  assert.equal(restored.currentPage,44);assert.equal(restored.totalPages,300);assert.deepEqual(restored.notes,archive.prepare(book).notes);assert.deepEqual(restored.readingSessions,[session]);assert.equal(restored.readingSettings.ebook.progressPercent,37.5);assert.equal(archive.totalReadingSeconds(restored),73);
+  assert.equal(archive.addReadingSession(restored,session).readingSessions.length,1);assert.deepEqual(book,old);
+  assert.throws(()=>archive.addReadingSession(restored,{...session,endPercent:40}),/다른 내용/);assert.throws(()=>archive.addReadingSession(book,{...session,startPage:0}),/쪽수/);assert.throws(()=>archive.addReadingSession(book,{...session,endPercent:101}),/진행률/);
+});
+test('late ebook retries and paper snapshots cannot roll back newer chosen sections or erase either unit history',()=>{
+  const F=require('../readingFormatDomain.js'),settings=F.normalizeSettings({format:'ebook',ebook:{sectionId:'new',sectionTitle:'새 위치',progressPercent:80,estimateBasis:'paper-toc',updatedAt:900}});
+  const paper={id:'paper-old',seconds:20,startPage:0,endPage:17,createdAt:100},book=sample({linkedBookId:'emotion',currentPage:17,totalPages:300,status:'reading',readingSettings:settings,readingSessions:[paper]});
+  const percent={id:'ebook-recovered',unit:'percent',startPercent:10,endPercent:25,sectionId:'old',sectionTitle:'이전 위치',progressKind:'estimated',estimateBasis:'equal-sections',seconds:30,createdAt:500};
+  const saved=archive.addReadingSession(book,percent),row={entry:{id:archive.recordId('owner','arc_shared_emotion'),userId:'owner',bookId:'emotion'},book:saved};
+  assert.equal(saved.readingSettings.ebook.sectionId,'new');assert.equal(saved.currentPage,17);
+  const rows=archive.mergeLinkedRows([row],[{bookId:'emotion',book:{title:book.title},currentPage:35,totalPages:300,readingSessions:[],active:true}], 'owner');
+  assert.equal(rows[0].book.readingSettings.ebook.sectionId,'new');assert.equal(rows[0].book.readingSettings.ebook.progressPercent,80);assert.deepEqual(rows[0].book.readingSessions,[paper,percent]);
+});
+
+
+test('changing reading format preserves former paper position even after explicit ebook completion',()=>{
+  const original=sample({status:'reading',currentPage:44,totalPages:300,readingSessions:[{id:'p-old',startPage:0,endPage:44,seconds:50,createdAt:100}]}),ebook=archive.setReadingSettings(original,{format:'ebook'});
+  const completed=archive.addReadingSession(ebook,{id:'e-done',unit:'percent',startPercent:null,endPercent:100,sectionId:'last',sectionTitle:'마지막 내용',progressKind:'estimated',estimateBasis:'equal-sections',seconds:60,createdAt:200},{complete:true});
+  assert.equal(completed.status,'completed');assert.equal(completed.currentPage,44);const switched=archive.setReadingSettings(completed,{...completed.readingSettings,format:'paper'});
+  assert.equal(switched.currentPage,44);assert.equal(switched.status,'reading');assert.equal(switched.readingSettings.ebook.progressPercent,100);assert.deepEqual(switched.readingSessions,completed.readingSessions);
 });

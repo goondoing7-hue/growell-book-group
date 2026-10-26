@@ -94,6 +94,7 @@ function appHarness(options={}){
       return result;
     }};
   vm.createContext(c);
+  vm.runInContext(section('function sharedReadingView(', '/* 총 페이지'),c);
   vm.runInContext(section('function captureReadingTimerState(){','function prepareReadingTimerAlerts(){'),c);
   vm.runInContext(section('function readingSessionNotificationSettingsHtml(){','function readingCountdownRingHtml(){'),c);
   vm.runInContext(section('function startReading(bookId){','function todayReadSeconds('),c);
@@ -153,7 +154,7 @@ test('switching A to B and back preserves parked clocks and creates no stuck wor
 });
 
 test('a resumed archive timer blocks independent shared resume and note/save attempts also block all timer actions',async()=>{
-  const h=appHarness();await h.arm();h.setNow(10000);assert.equal(await h.c.pauseSharedReadingForArchive('PRIVATE_MEMBER'),true);assert.equal(h.record().blocked,'archive');
+  const h=appHarness();await h.arm();h.setNow(10000);assert.equal(await h.c.pauseSharedReadingForArchive('PRIVATE_MEMBER'),true);assert.equal(h.record().revoked,true);
   assert.equal(State.transition(h.record(),{type:'action',identity:State.head(h.record()),action:'resume'},20000).result.ok,false);
   await h.c.withReadingNotificationMutation(()=>{const next=h.c.captureReadingTimerState();next.noteReturn={timerId:next.timer.id,userId:'PRIVATE_MEMBER',bookId:'emotion',type:'mine',wasRunning:true};next.notificationArchiveBlocked=false;return h.c.commitReadingTimerState(next);});
   assert.equal(h.record().blocked,'note');assert.equal(State.transition(h.record(),{type:'action',identity:State.head(h.record()),action:'finish'},20000).result.ok,false);
@@ -223,4 +224,44 @@ test('restoring an obsolete notification chooser keeps paused time, pages and re
   const before=clone(stored),restored=h.c.restoreReadingTimerState(stored,'PRIVATE_MEMBER',false);assert.equal(restored.timer.elapsedMs,10000);assert.equal(restored.timer.running,false);assert.equal(restored.endPage,9);assert.equal(restored.notificationNoteChoice,undefined);assert.deepEqual(stored,before);
   const writing=Domain.beginNote(h.c.readingTimer,'mine',10000);stored.timer=writing.timer;stored.noteReturn=writing.handoff;
   const app=h.c.restoreReadingTimerState(stored,'PRIVATE_MEMBER',false);assert.deepEqual(clone(app.noteReturn),writing.handoff);assert.equal(app.timer.elapsedMs,10000);
+});
+
+test('paper start waits for the ebook worker clock to be reconciled and paused',async()=>{
+  const h=appHarness();let finish,paused=false;
+  h.c.GrowellArchiveReadingNotification={hasStored:()=>!paused,pauseStored:()=>new Promise(resolve=>{finish=()=>{paused=true;resolve(true);};})};
+  const starting=h.c.startReading('thought');await flush();
+  assert.equal(h.c.readingTimer.bookId,'emotion');assert.equal(h.calls.requests.length,0);
+  finish();await starting;
+  assert.equal(h.c.readingTimer.bookId,'thought');assert.equal(h.c.readingTimer.running,true);
+  assert.equal(h.c.readingParkedSessions.emotion.timer.id,'rl-synthetic');
+});
+
+test('an ebook reconciliation failure leaves the existing paper session and clocks untouched',async()=>{
+  const h=appHarness(),before=h.values.get('timer:PRIVATE_MEMBER');
+  h.c.GrowellArchiveReadingNotification={hasStored:()=>true,pauseStored:async()=>false};
+  await h.c.startReading('thought');
+  assert.equal(h.c.readingTimer.bookId,'emotion');assert.equal(h.values.get('timer:PRIVATE_MEMBER'),before);assert.equal(h.calls.requests.length,0);
+});
+
+test('an archive handoff blocks automatic paper republishing and closing of the shared notification tag',async()=>{
+  const h=appHarness();await h.arm();await h.c.pauseSharedReadingForArchive('PRIVATE_MEMBER');
+  const count=h.calls.requests.length;let closes=0;h.c.GrowellTimerAlerts.closeSession=async()=>{closes++;return true;};
+  h.c.readingNotificationLast='old-paper';h.c.syncReadingSessionNotification();await h.c.consumeReadingSessionNotificationAction();
+  assert.equal(h.calls.requests.length,count);assert.equal(closes,0);
+  const arms=h.calls.requests.filter(request=>request.type==='arm').length;
+  await h.c.withReadingNotificationMutation(()=>{const next=h.c.captureReadingTimerState();next.timer=Domain.setCountdown(next.timer,60000,12000);return h.c.commitReadingTimerState(next);});
+  assert.equal(h.calls.requests.filter(request=>request.type==='arm').length,arms,'editing the parked paper countdown must not replace the ebook notification');
+  assert.equal(h.record().revoked,true);
+});
+
+test('ebook notification actions are routed to their journal and boot reconciliation runs once per session epoch',async()=>{
+  const h=appHarness(),seen=[];let listener;
+  h.c.readingNotificationArchiveBlocked=true;h.c.memberLoadState={privateEntries:'ready'};h.c.archiveReadingNotificationBoot=null;
+  h.c.navigator.serviceWorker.addEventListener=(type,fn)=>{assert.equal(type,'message');listener=fn;};
+  h.c.GrowellArchiveReadingNotification={owns:identity=>identity&&identity.timerId==='ebook-timer',syncStored:async(owner,storage,options)=>{seen.push({owner,options});return true;}};
+  h.c.bindReadingSessionNotifications();h.c.bindReadingSessionNotifications();await flush();
+  assert.equal(seen.length,1);assert.equal(seen[0].owner,'PRIVATE_MEMBER');assert.equal(seen[0].options.current(),true);
+  listener({data:{type:'growell-reading-changed',identity:{timerId:'ebook-timer'}},source:{scriptURL:'https://growell-book.vercel.app/timer-alert-sw.js'}});await flush();
+  assert.equal(seen.length,2);assert.equal(seen[1].options.identity.timerId,'ebook-timer');assert.equal(h.calls.requests.length,0);
+  h.c.saveSessionEpoch++;assert.equal(seen[0].options.current(),false);h.c.bindReadingSessionNotifications();await flush();assert.equal(seen.length,3);
 });

@@ -59,11 +59,11 @@ function statusResult(config,value){
   // booleans alone must never expose an inactive subscription.
   const ownedInactive=value?.connected===false&&UUID.test(value.deviceId||'')&&typeof value.newPosts==='boolean'&&typeof value.dailyVerse==='boolean';
   if(!value||(value.connected!==true&&!ownedInactive))return {configured:config.configured,subscription:null};
-  return{configured:config.configured,subscription:{active:value.connected===true,preferences:{posts:value.newPosts===true,dailyVerse:value.dailyVerse===true},lastSentAt:typeof value.lastSentAt==='string'&&Number.isFinite(Date.parse(value.lastSentAt))?value.lastSentAt:null,lastError:value.lastError?safeError({code:value.lastError}):null}};
+  return{configured:config.configured,subscription:{active:value.connected===true,preferences:{posts:value.newPosts===true,dailyVerse:value.dailyVerse===true,...(typeof value.habitCheck==='boolean'?{habitCheck:value.habitCheck}:{})},lastSentAt:typeof value.lastSentAt==='string'&&Number.isFinite(Date.parse(value.lastSentAt))?value.lastSentAt:null,lastError:value.lastError?safeError({code:value.lastError}):null}};
 }
 function preferences(value){
-  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).length!==2||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean')throw new D.BackupError('invalid-request',400);
-  return{new_posts:value.posts,daily_verse:value.dailyVerse};
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(key=>!['posts','dailyVerse','habitCheck'].includes(key))||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean'||Object.hasOwn(value,'habitCheck')&&typeof value.habitCheck!=='boolean')throw new D.BackupError('invalid-request',400);
+  return{new_posts:value.posts,daily_verse:value.dailyVerse,...(Object.hasOwn(value,'habitCheck')?{habit_check:value.habitCheck}:{})};
 }
 function payloadFor(job,now,jobId){
   if(job.kind==='post'){
@@ -84,6 +84,11 @@ function payloadFor(job,now,jobId){
     const body=verse.text+'\n'+verse.reference;
     if(Array.from(body).length>400)throw new D.BackupError('push-unavailable');
     return{version:1,type:'verse',tag:'growell-verse-'+verse.dateKey,body};
+  }
+  if(job.kind==='habit'){
+    const current=new Date(now+9*3600000).toISOString().slice(0,10);
+    if(typeof job.habit_day!=='string'||job.habit_day!==current)throw new D.BackupError('push-unavailable');
+    return{version:1,type:'habit',day:current,tag:'growell-habit-check-'+current,body:'아직 체크하지 않은 오늘의 습관이 있어요. 하루를 마무리하며 확인해주세요.'};
   }
   if(job.kind==='test'){
     if(!UUID.test(jobId||''))throw new D.BackupError('push-unavailable');

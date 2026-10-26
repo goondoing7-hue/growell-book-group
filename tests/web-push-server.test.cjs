@@ -63,6 +63,21 @@ test('status, preference update, test and disconnect are fenced by verified prof
   assert.equal(f.state.stored,null);
 });
 
+test('nightly habit preference is optional for old clients and only accepts an explicit boolean',()=>{
+  assert.deepEqual(S.preferences({posts:false,dailyVerse:true}),{new_posts:false,daily_verse:true});
+  assert.deepEqual(S.preferences({posts:false,dailyVerse:true,habitCheck:false}),{new_posts:false,daily_verse:true,habit_check:false});
+  for(const habitCheck of [null,undefined,1,'true',{},[]])assert.throws(()=>S.preferences({posts:true,dailyVerse:true,habitCheck}),e=>e.code==='invalid-request');
+  const status=S.statusResult(CONFIG,{connected:true,newPosts:false,dailyVerse:true,habitCheck:false});
+  assert.deepEqual(status.subscription.preferences,{posts:false,dailyVerse:true,habitCheck:false});
+});
+
+test('nightly habit delivery rechecks its live lease and day before the provider without copying habits',async()=>{
+  const at=Date.parse('2026-10-26T23:00:00+09:00'),f=fixture({now:()=>at});queue(f,'habit',{habit_day:'2026-10-26',expires_at:new Date(at+1800000).toISOString(),habit_name:'PRIVATE HABIT NAME',checked_dates:['PRIVATE CHECK HISTORY']});
+  await f.service.run();assert.equal(f.state.sends.length,1);assert.equal(f.state.sends[0][1].type,'habit');assert.equal(f.state.sends[0][2],1800);assert.doesNotMatch(JSON.stringify(f.state.sends),/PRIVATE HABIT|PRIVATE CHECK/);
+  const completed=fixture({now:()=>at,guardFalse:'prepare'});queue(completed,'habit',{habit_day:'2026-10-26',expires_at:new Date(at+1800000).toISOString()});await completed.service.run();assert.equal(completed.state.sends.length,0);
+  const stale=fixture({now:()=>at});queue(stale,'habit',{habit_day:'2026-10-25',expires_at:new Date(at+1800000).toISOString()});await stale.service.run();assert.equal(stale.state.sends.length,0);
+});
+
 test('an expired owned device returns inactive status and confirmed preferences without exposing its identity or subscription',async()=>{
   for(const preferences of [{posts:false,dailyVerse:true},{posts:true,dailyVerse:false},{posts:false,dailyVerse:false}]){
     const f=fixture();

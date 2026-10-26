@@ -18,10 +18,10 @@ const DEPLOY_FILES = Object.freeze([
   'driveBackup.js', 'driveBackup.css',
   'meetingCalendar.js', 'meetingCalendar.css', 'meetingRecordsPrint.js', 'meetingRecordsPrint.css',
   'googleConnection.js', 'googleConnection.css', 'googleLoginTransfer.js', 'googleRecordAccess.js',
-  'archive.js', 'archiveTimer.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
+  'archive.js', 'archiveTimer.js', 'archiveReadingNotification.js', 'archiveDomain.js', 'archive.css', 'archiveCalendar.js', 'archiveCalendar.css', 'archiveStats.js',
   'materialsMedia.js', 'materialsVideo.js', 'materialsVideo.css', 'materialTranscript.js', 'materialTranscript.css', ...require('../vendor/pdfjs/manifest.json').files,
   'readingNotificationState.js', 'timerAlerts.js', 'timer-alert-sw.js', 'navigation.css', 'habitReminder.js', 'habitReminder.css',
-  'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css',
+  'dailyVerses.js', 'memberAccess.js', 'passwordHint.js', 'bookDetails.js', 'bookDetails.css', 'readingFormatDomain.js', 'sharedReadingFormat.js',
   'dailyVerseDomain.js', 'popupHistory.js',
   'index.html', 'privacy.html', 'guide.html', 'guide-pc.html', 'guideRouting.js', 'covers/guide-og.png', 'covers/guide-og.svg', 'privateCrypto.js', 'privateCategories.js', 'privateCategories.css', 'homeDomain.js', 'home.css', 'community.css', 'communityDomain.js', 'communityFeatures.js',
   'habitDomain.js', 'habitDayClock.js', 'habitSuggestions.js', 'habitGuide.js', 'habitGuide.css', 'habitOverview.css', 'habitCarousel.js', 'habitCarousel.css', 'readingHabit.js', 'habits.css', 'profile.js', 'profile.css', 'oauthDomain.js', 'readingTimerDomain.js', 'readingTimer.css', 'manifest.json', 'brand.css',
@@ -41,6 +41,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/reading-format-domain.test.cjs', 'tests/shared-reading-format.test.cjs', 'tests/archive-reading-notification.test.cjs', 'tests/web-push-habits-sql.test.cjs', 'tests/web-push-habits-integration.test.cjs',
   'tests/book-photo-ocr.test.cjs', 'tests/book-photo-ocr-assets.test.cjs', 'tests/reading-notification.test.cjs', 'tests/save-diagnostics.test.cjs',
   'tests/photo-editor.test.cjs', 'tests/photo-editor-text.test.cjs', 'tests/photo-sources.test.cjs', 'tests/photo-editor-integration.test.cjs', 'tests/archive-photo-tools.test.cjs', 'tests/reading-notification-background.test.cjs', 'tests/reading-notification-reconciliation.test.cjs',
   'tests/auth-profile-diagnostics.test.cjs',
@@ -74,6 +75,7 @@ const TEST_FILES = Object.freeze([
 ]);
 
 const PUBLISH_FILES = Object.freeze([
+  'server/web-push-habits.sql', 'server/web-push-habits-verification.sql',
   'api/web-push.js', 'server/webPushService.cjs', 'server/webPushProvider.cjs', 'server/web-push.sql', 'server/web-push-schedule.sql', 'server/web-push-materials.sql', 'server/web-push-materials-verification.sql', 'server/web-push-meetings.sql', 'server/web-push-meetings-verification.sql', 'server/WEB_PUSH_SETUP.md',
   'api/meeting-record-pdf.js', 'server/meetingRecordDownloadService.cjs',
   'api/meeting-share.js', 'server/meetingShareService.cjs',

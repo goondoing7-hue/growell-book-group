@@ -5,6 +5,10 @@
   'use strict';
   var epoch=0,views=new Set(),localSequence=0,actions=['config','status','subscribe','preferences','unsubscribe','test'];
   var CHOICE_PREFIX='growell_push_choice_v1:',OWNER_KEY='growell_push_owner_v1',DEVICE_LOCK='growell-web-push-device-v1';
+  function habitPreference(value){return value&&typeof value.habitCheck==='boolean'?{habitCheck:value.habitCheck}:{};}
+  function validPreferences(value){return !!value&&typeof value.posts==='boolean'&&typeof value.dailyVerse==='boolean'&&(!Object.prototype.hasOwnProperty.call(value,'habitCheck')||typeof value.habitCheck==='boolean');}
+  function intersectPreferences(a,b){var result={posts:a.posts&&b.posts,dailyVerse:a.dailyVerse&&b.dailyVerse};if(typeof a.habitCheck==='boolean'||typeof b.habitCheck==='boolean')result.habitCheck=a.habitCheck!==false&&b.habitCheck!==false;return result;}
+  function lostOff(desired,actual){return !desired.posts&&actual.posts||!desired.dailyVerse&&actual.dailyVerse||desired.habitCheck===false&&actual.habitCheck!==false;}
   function ownerStamp(){try{return root.localStorage.getItem(OWNER_KEY);}catch(error){return undefined;}}
   function hasDeviceLock(){return !!(root.navigator&&root.navigator.locks&&typeof root.navigator.locks.request==='function');}
   function deviceTransaction(operation,isCurrent){
@@ -21,14 +25,14 @@
   function choice(member){
     var hash=memberHash(member);if(!hash)return null;
     try{var raw=root.localStorage.getItem(CHOICE_PREFIX+hash);if(!raw||raw.length>180)return null;var value=JSON.parse(raw);
-      if(!value||Object.keys(value).length!==4||typeof value.enabled!=='boolean'||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean'||typeof value.revision!=='string'||!/^[a-f0-9]{32}$/.test(value.revision))return null;
-      return {enabled:value.enabled,posts:value.posts,dailyVerse:value.dailyVerse,owned:root.localStorage.getItem(OWNER_KEY)===hash,raw:raw};
+      if(!value||Object.keys(value).some(function(k){return ['enabled','posts','dailyVerse','habitCheck','revision'].indexOf(k)<0;})||!validPreferences(value)||typeof value.enabled!=='boolean'||typeof value.revision!=='string'||!/^[a-f0-9]{32}$/.test(value.revision))return null;
+      return Object.assign({enabled:value.enabled,posts:value.posts,dailyVerse:value.dailyVerse,owned:root.localStorage.getItem(OWNER_KEY)===hash,raw:raw},habitPreference(value));
     }catch(error){return null;}
   }
   function rememberChoice(member,enabled,preferences,onlyIfMissing){
     var hash=memberHash(member);if(!hash)return false;
     try{var storage=root.localStorage,name=CHOICE_PREFIX+hash,prior=storage.getItem(name);if(onlyIfMissing&&prior!==null)return false;
-      var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);var raw=JSON.stringify({enabled:enabled,posts:preferences.posts,dailyVerse:preferences.dailyVerse,revision:Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join('')});
+      var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);var raw=JSON.stringify(Object.assign({enabled:enabled,posts:preferences.posts,dailyVerse:preferences.dailyVerse,revision:Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join('')},habitPreference(preferences)));
       storage.setItem(name,raw);if(storage.getItem(name)!==raw)return false;storage.setItem(OWNER_KEY,hash);return storage.getItem(OWNER_KEY)===hash;
     }catch(error){return false;}
   }
@@ -91,9 +95,9 @@
   }
   function subscriptionStatus(raw){
     if(!raw||typeof raw.configured!=='boolean')throw fail('unavailable');
-    if(raw.subscription!=null&&(!raw.subscription||typeof raw.subscription.active!=='boolean'||!raw.subscription.preferences||typeof raw.subscription.preferences.posts!=='boolean'||typeof raw.subscription.preferences.dailyVerse!=='boolean'))throw fail('unavailable');
+    if(raw.subscription!=null&&(!raw.subscription||typeof raw.subscription.active!=='boolean'||!validPreferences(raw.subscription.preferences)))throw fail('unavailable');
     var stamp=raw.subscription&&typeof raw.subscription.lastSentAt==='string'?Date.parse(raw.subscription.lastSentAt):NaN;
-    return {configured:raw.configured,subscribed:!!(raw.subscription&&raw.subscription.active),inactive:!!raw.subscription&&!raw.subscription.active,expired:!!raw.subscription&&raw.subscription.lastError==='subscription-expired',hasPreferences:!!raw.subscription,lastSentAt:Number.isFinite(stamp)?new Date(stamp).toISOString():'',preferences:raw.subscription?{posts:raw.subscription.preferences.posts,dailyVerse:raw.subscription.preferences.dailyVerse}:{posts:true,dailyVerse:true}};
+    return {configured:raw.configured,subscribed:!!(raw.subscription&&raw.subscription.active),inactive:!!raw.subscription&&!raw.subscription.active,expired:!!raw.subscription&&raw.subscription.lastError==='subscription-expired',hasPreferences:!!raw.subscription,lastSentAt:Number.isFinite(stamp)?new Date(stamp).toISOString():'',preferences:raw.subscription?Object.assign({posts:raw.subscription.preferences.posts,dailyVerse:raw.subscription.preferences.dailyVerse},habitPreference(raw.subscription.preferences)):{posts:true,dailyVerse:true}};
   }
   function createController(options){
     options=options||{};var ownEpoch=epoch,disposed=false,key='',subscription=null,inactiveEndpoint='',pendingSeen=[],pendingInvalid=false;
@@ -108,18 +112,18 @@
     function pendingPrefix(){var hash=memberHash(options.memberKey);return hash?'growell_push_repair_v1:'+hash+':':'';}
     function pendingPreferences(){
       var prefix=pendingPrefix(),result={posts:true,dailyVerse:true};pendingInvalid=false;if(!prefix)return null;var found=false;pendingSeen=[];
-      try{var storage=root.localStorage;for(var i=0;i<storage.length;i++){var name=storage.key(i);if(typeof name!=='string'||name.indexOf(prefix)!==0)continue;var raw=storage.getItem(name);if(typeof raw!=='string'||raw.length>80){pendingInvalid=true;continue;}var value;try{value=JSON.parse(raw);}catch(error){pendingInvalid=true;continue;}if(!value||Object.keys(value).length!==2||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean'){pendingInvalid=true;continue;}
-        result.posts=result.posts&&value.posts;result.dailyVerse=result.dailyVerse&&value.dailyVerse;found=true;pendingSeen.push({key:name,raw:raw});}
+      try{var storage=root.localStorage;for(var i=0;i<storage.length;i++){var name=storage.key(i);if(typeof name!=='string'||name.indexOf(prefix)!==0)continue;var raw=storage.getItem(name);if(typeof raw!=='string'||raw.length>110){pendingInvalid=true;continue;}var value;try{value=JSON.parse(raw);}catch(error){pendingInvalid=true;continue;}if(!validPreferences(value)||Object.keys(value).some(function(k){return ['posts','dailyVerse','habitCheck'].indexOf(k)<0;})){pendingInvalid=true;continue;}
+        result=intersectPreferences(result,value);found=true;pendingSeen.push({key:name,raw:raw});}
       }catch(error){pendingInvalid=true;return null;}return found?result:null;
     }
     function preservePreferences(value){
       var prefix=pendingPrefix();if(!prefix)throw fail('reconnect_failed');
-      try{var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);var name=prefix+Date.now()+'-'+Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join(''),raw=JSON.stringify({posts:value.posts,dailyVerse:value.dailyVerse}),storage=root.localStorage;
+      try{var bytes=new Uint8Array(16);root.crypto.getRandomValues(bytes);var name=prefix+Date.now()+'-'+Array.from(bytes).map(function(n){return n.toString(16).padStart(2,'0');}).join(''),raw=JSON.stringify(Object.assign({posts:value.posts,dailyVerse:value.dailyVerse},habitPreference(value))),storage=root.localStorage;
         if(storage.getItem(name)!==null)throw fail('reconnect_failed');storage.setItem(name,raw);if(storage.getItem(name)!==raw)throw fail('reconnect_failed');pendingSeen.push({key:name,raw:raw});
       }catch(error){throw fail('reconnect_failed');}
     }
     function clearPending(items){if(!current())return;try{items.forEach(function(item){if(root.localStorage.getItem(item.key)===item.raw)root.localStorage.removeItem(item.key);});}catch(error){}}
-    function apply(raw){var parsed=subscriptionStatus(raw),pending=pendingPreferences(),conflict=!!pending&&parsed.subscribed&&(!pending.posts&&parsed.preferences.posts||!pending.dailyVerse&&parsed.preferences.dailyVerse);state.configured=parsed.configured;state.inactive=parsed.inactive;state.expired=parsed.expired||expired(subscription);state.reconnectRequired=parsed.inactive||state.expired||!!pending||pendingInvalid;state.subscribed=parsed.subscribed&&!state.expired&&!conflict;state.preferences=parsed.hasPreferences?parsed.preferences:state.preferences;if(pending)state.preferences={posts:state.preferences.posts&&pending.posts,dailyVerse:state.preferences.dailyVerse&&pending.dailyVerse};state.lastSentAt=parsed.lastSentAt;inactiveEndpoint=parsed.inactive&&subscription?subscription.endpoint:'';}
+    function apply(raw){var parsed=subscriptionStatus(raw),pending=pendingPreferences(),conflict=!!pending&&parsed.subscribed&&lostOff(pending,parsed.preferences);state.configured=parsed.configured;state.inactive=parsed.inactive;state.expired=parsed.expired||expired(subscription);state.reconnectRequired=parsed.inactive||state.expired||!!pending||pendingInvalid;state.subscribed=parsed.subscribed&&!state.expired&&!conflict;state.preferences=parsed.hasPreferences?parsed.preferences:state.preferences;if(pending)state.preferences=intersectPreferences(state.preferences,pending);state.lastSentAt=parsed.lastSentAt;inactiveEndpoint=parsed.inactive&&subscription?subscription.endpoint:'';}
     function exactRegistration(reg){var base=root.location&&root.location.origin,scope,script;
       try{scope=new URL(reg.scope);script=new URL(reg.active.scriptURL);}catch(error){throw fail('worker_unavailable');}
       if(!base||scope.origin!==base||scope.pathname!=='/'||scope.search||scope.hash||script.origin!==base||script.pathname!=='/timer-alert-sw.js'||script.search||script.hash||reg.active.state!=='activated'||!reg.pushManager||typeof reg.showNotification!=='function')throw fail('worker_unavailable');
@@ -149,7 +153,7 @@
         return device().then(function(value){guard();subscription=value;return client.request('status',value?{endpoint:value.endpoint}:{});}).then(function(value){apply(value);state.loaded=true;
           // Adopt an existing confirmed connection once; an explicit OFF choice is never overwritten by a refresh.
           if(state.subscribed&&state.permission==='granted'&&priorOwner===ownerStamp())rememberChoice(options.memberKey,true,state.preferences,true);
-          var saved=choice(options.memberKey);if(!state.subscribed&&saved)state.preferences={posts:saved.posts&&state.preferences.posts,dailyVerse:saved.dailyVerse&&state.preferences.dailyVerse};
+          var saved=choice(options.memberKey);if(!state.subscribed&&saved)state.preferences=intersectPreferences(state.preferences,saved);
         });
       });
     });}
@@ -159,7 +163,7 @@
       // Permission granted to the origin is not consent for another member. Automatic restoration is allowed only for this device's remembered owner.
       if(automatic&&(!hasDeviceLock()||!remembered||!remembered.enabled||!remembered.owned||support().permission!=='granted'))return Promise.resolve(false);
       Object.assign(state,support());var permission,expectedEndpoint=subscription?subscription.endpoint:null,desired=Object.assign({},state.preferences),renewed=state.reconnectRequired,regForEnable,createdForEnable=null,pendingForEnable=[];
-      if(automatic){desired.posts=remembered.posts&&desired.posts;desired.dailyVerse=remembered.dailyVerse&&desired.dailyVerse;}
+      if(automatic){desired=intersectPreferences(desired,remembered);}
       function unchangedChoice(){if(!automatic)return;var latest=choice(options.memberKey);if(!latest||latest.raw!==remembered.raw||!latest.owned||!latest.enabled){state.subscribed=false;state.reconnectRequired=true;throw fail('device_changed');}if(support().permission!=='granted')throw fail('permission_denied');}
       function abandonUnconfirmed(error){
         if(!automatic||!createdForEnable||!regForEnable)return Promise.reject(error);
@@ -184,7 +188,7 @@
         guard();return (typeof reg.update==='function'?bounded(reg.update(),15000):Promise.resolve()).then(function(){guard();return activated(reg);});
       }).then(function(reg){guard();exactRegistration(reg);regForEnable=reg;return bounded(reg.pushManager.getSubscription(),12000).then(function(existing){
         guard();unchangedChoice();if((existing?existing.endpoint:null)!==expectedEndpoint)throw fail('device_changed');
-        var pending=pendingPreferences();if(pendingInvalid)throw fail('reconnect_failed');if(pending){desired.posts=desired.posts&&pending.posts;desired.dailyVerse=desired.dailyVerse&&pending.dailyVerse;}
+        var pending=pendingPreferences();if(pendingInvalid)throw fail('reconnect_failed');if(pending){desired=intersectPreferences(desired,pending);}
         var repair=!!existing&&(existing.endpoint===inactiveEndpoint||expired(existing));
         function subscribe(){guard();unchangedChoice();return bounded(reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKey(key)}),15000).then(function(value){createdForEnable=value;return value;});}
         if(!existing){if(state.reconnectRequired||pending)preservePreferences(desired);return subscribe();}
@@ -195,13 +199,13 @@
         .then(function(value){guard();unchangedChoice();if(!value||expired(value))throw fail('reconnect_failed');subscription=value;return bounded(regForEnable.pushManager.getSubscription(),12000).then(function(actual){guard();unchangedChoice();if(!actual||actual.endpoint!==value.endpoint)throw fail('device_changed');pendingForEnable=pendingSeen.slice();return client.request('subscribe',{subscription:value.toJSON(),preferences:desired});});})
         .then(function(){guard();return client.request('status',{endpoint:subscription.endpoint});}).then(function(raw){
           apply(raw);var confirmed=subscriptionStatus(raw);if(!confirmed.subscribed||expired(subscription))throw fail('reconnect_failed');
-          if(!desired.posts&&confirmed.preferences.posts||!desired.dailyVerse&&confirmed.preferences.dailyVerse)return client.request('preferences',{endpoint:subscription.endpoint,preferences:desired}).then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(function(value){apply(value);var checked=subscriptionStatus(value);if(!state.subscribed||!desired.posts&&checked.preferences.posts||!desired.dailyVerse&&checked.preferences.dailyVerse)throw fail('reconnect_failed');});
+          if(lostOff(desired,confirmed.preferences))return client.request('preferences',{endpoint:subscription.endpoint,preferences:desired}).then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(function(value){apply(value);var checked=subscriptionStatus(value);if(!state.subscribed||lostOff(desired,checked.preferences))throw fail('reconnect_failed');});
         }).then(function(){guard();unchangedChoice();if(!state.subscribed)throw fail('reconnect_failed');return bounded(regForEnable.pushManager.getSubscription(),12000);}).then(function(actual){guard();unchangedChoice();if(!actual||!subscription||actual.endpoint!==subscription.endpoint){state.subscribed=false;state.reconnectRequired=true;throw fail('device_changed');}clearPending(pendingForEnable);rememberChoice(options.memberKey,true,state.preferences,false);state.reconnectRequired=false;state.inactive=false;state.expired=false;state.notice=renewed?'이 기기의 알림을 다시 연결했어요. 수신 설정은 그대로 유지했어요.':'이 기기에서 알림을 받을 수 있어요.';}).catch(abandonUnconfirmed);},true);
     }
     function preferences(value){return run(function(){
       if(!state.subscribed||!subscription)throw fail('subscription_required');
-      if(!value||typeof value.posts!=='boolean'||typeof value.dailyVerse!=='boolean')throw fail('invalid_settings');
-      return device().then(function(actual){guard();if(!actual||actual.endpoint!==subscription.endpoint)throw fail('device_changed');return client.request('preferences',{endpoint:subscription.endpoint,preferences:{posts:value.posts,dailyVerse:value.dailyVerse}});})
+      if(!validPreferences(value))throw fail('invalid_settings');
+      return device().then(function(actual){guard();if(!actual||actual.endpoint!==subscription.endpoint)throw fail('device_changed');return client.request('preferences',{endpoint:subscription.endpoint,preferences:Object.assign({posts:value.posts,dailyVerse:value.dailyVerse},habitPreference(value))});})
         .then(function(){return client.request('status',{endpoint:subscription.endpoint});}).then(function(raw){apply(raw);guard();var saved=choice(options.memberKey);if(state.subscribed)rememberChoice(options.memberKey,saved?saved.enabled:true,state.preferences,false);});
     },true);}
     function testingRegistration(local){
@@ -252,6 +256,7 @@
     container.innerHTML='<label class="web-push-toggle"><span>이 기기 알림</span><input type="checkbox" role="switch" data-push-device aria-label="이 기기 알림"></label>'+
       '<label class="web-push-toggle"><span>새 나눔·자료 알림</span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔·자료 알림"></label>'+
       '<label class="web-push-toggle"><span>매일 오전 9시 말씀</span><input type="checkbox" role="switch" data-push-verse aria-label="매일 오전 9시 말씀"></label>'+
+      '<label class="web-push-toggle" data-push-habit-row hidden><span>오후 11시 습관 체크</span><input type="checkbox" role="switch" data-push-habit aria-label="오후 11시 습관 체크"></label>'+
       '<p data-push-status class="web-push-status" role="status" aria-live="polite" hidden></p>';
     function q(selector){return container.querySelector(selector);}
     var controller=createController({memberKey:options.memberKey,getAccessToken:options.getAccessToken,isCurrent:options.isCurrent,fetch:options.fetch,onChange:function(state){
@@ -262,6 +267,8 @@
       q('[data-push-verse]').checked=!!connected&&state.preferences.dailyVerse;
       q('[data-push-posts]').disabled=state.busy||!connected;
       q('[data-push-verse]').disabled=state.busy||!connected;
+      q('[data-push-habit-row]').hidden=typeof state.preferences.habitCheck!=='boolean';
+      q('[data-push-habit]').checked=!!connected&&state.preferences.habitCheck===true;q('[data-push-habit]').disabled=state.busy||!connected;
       var reason=!state.supported?'unsupported':state.iosNeedsInstall?'install_required':state.permission==='denied'?'permission_denied':state.errorCode;
       if(!reason&&state.loaded&&state.configured===false)reason='not_configured';
       var status=q('[data-push-status]');status.textContent=reason?compactMessage(reason):'';status.hidden=!reason;status.classList.toggle('is-error',!!reason);
@@ -272,8 +279,8 @@
       // not lose user activation. The controller publishes only confirmed state.
       return q('[data-push-device]').checked?controller.enable():controller.disable();
     };
-    function change(){return controller.preferences({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked});}
-    q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;
+    function change(){return controller.preferences(Object.assign({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked},typeof controller.snapshot().preferences.habitCheck==='boolean'?{habitCheck:q('[data-push-habit]').checked}:{}));}
+    q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;q('[data-push-habit]').onchange=change;
     var view={refresh:controller.refresh,destroy:function(){controller.destroy();views.delete(view);}};views.add(view);controller.refresh();return view;
   }
   function mount(container,options){
@@ -286,6 +293,7 @@
       '<button type="button" class="web-push-primary" data-push-enable>이 기기에서 알림 받기</button>'+
       '<div data-push-settings hidden><label class="web-push-toggle"><span>새 나눔·자료 알림<small>나눔과 자료실의 새 글을 받아요. 내가 쓴 글과 글 수정은 제외해요.</small></span><input type="checkbox" role="switch" data-push-posts aria-label="새 나눔·자료 알림"></label>'+
       '<label class="web-push-toggle"><span>매일 오전 9시 말씀<small>한국 시간 오전 9시에 발송해요.</small></span><input type="checkbox" role="switch" data-push-verse aria-label="매일 오전 9시 말씀"></label>'+
+      '<label class="web-push-toggle" data-push-habit-row hidden><span>오후 11시 습관 체크</span><input type="checkbox" role="switch" data-push-habit aria-label="오후 11시 습관 체크"></label>'+
       (diagnostics?'<button type="button" class="web-push-secondary" data-push-local>기기 알림 표시 확인</button>':'')+'<button type="button" class="web-push-secondary" data-push-test>테스트 알림 보내기</button>'+(diagnostics?'<button type="button" class="web-push-secondary" data-push-delayed>1분 뒤 알림 확인</button><p class="web-push-note" data-push-last>최근 전체 알림 발송: 아직 없어요. 기기 수신 확인과는 달라요.</p>':'')+'<button type="button" class="web-push-text" data-push-disable>이 기기 알림 끄기</button></div>'+
       '<button type="button" class="web-push-text" data-push-refresh>상태 새로고침</button><p class="web-push-note">인터넷 연결·집중 모드·기기 설정에 따라 알림이 늦거나 표시되지 않을 수 있어요.</p>';
     function q(selector){return container.querySelector(selector);}
@@ -298,12 +306,13 @@
       q('[data-push-reconnect]').textContent=state.expired?'이 기기의 알림 연결이 만료됐어요. 다시 연결하기를 눌러주세요. 기존 수신 설정은 유지해요.':'이 기기의 알림 연결을 다시 확인해야 해요. 다시 연결하기를 눌러주세요. 기존 수신 설정은 유지해요.';
       q('[data-push-enable]').disabled=state.busy||!state.loaded||!state.configured||state.permission==='denied';
       q('[data-push-settings]').hidden=!state.subscribed;q('[data-push-posts]').checked=state.preferences.posts;q('[data-push-verse]').checked=state.preferences.dailyVerse;
+      q('[data-push-habit-row]').hidden=typeof state.preferences.habitCheck!=='boolean';q('[data-push-habit]').checked=state.preferences.habitCheck===true;
       if(diagnostics)q('[data-push-last]').textContent='최근 전체 알림 발송: '+(state.lastSentAt?new Date(state.lastSentAt).toLocaleString('ko-KR',{hour12:false,timeZone:'Asia/Seoul'}):'아직 없어요')+' · 기기 수신 확인과는 달라요.';
-      container.setAttribute('aria-busy',String(state.busy));container.querySelectorAll('[data-push-posts],[data-push-verse],[data-push-test],[data-push-local],[data-push-delayed],[data-push-disable],[data-push-refresh]').forEach(function(control){control.disabled=state.busy;});
+      container.setAttribute('aria-busy',String(state.busy));container.querySelectorAll('[data-push-posts],[data-push-verse],[data-push-habit],[data-push-test],[data-push-local],[data-push-delayed],[data-push-disable],[data-push-refresh]').forEach(function(control){control.disabled=state.busy;});
     }});
     q('[data-push-enable]').onclick=controller.enable;q('[data-push-test]').onclick=controller.test;if(diagnostics){q('[data-push-local]').onclick=controller.localTest;q('[data-push-delayed]').onclick=controller.testDelayed;}q('[data-push-disable]').onclick=controller.disable;q('[data-push-refresh]').onclick=controller.refresh;
-    function change(){controller.preferences({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked});}
-    q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;
+    function change(){controller.preferences(Object.assign({posts:q('[data-push-posts]').checked,dailyVerse:q('[data-push-verse]').checked},typeof controller.snapshot().preferences.habitCheck==='boolean'?{habitCheck:q('[data-push-habit]').checked}:{}));}
+    q('[data-push-posts]').onchange=change;q('[data-push-verse]').onchange=change;q('[data-push-habit]').onchange=change;
     var view={refresh:controller.refresh,destroy:function(){controller.destroy();views.delete(view);}};views.add(view);controller.refresh();return view;
   }
   function reset(){epoch++;views.forEach(function(view){view.destroy();});views.clear();}

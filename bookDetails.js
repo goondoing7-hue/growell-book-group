@@ -1,9 +1,10 @@
 (function(root,factory){
   'use strict';
-  var api=factory(root);
+  var formatDomain=typeof module==='object'&&module.exports?require('./readingFormatDomain.js'):root.GrowellReadingFormatDomain;
+  var api=factory(root,formatDomain);
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.GrowellBookDetails=api;
-})(typeof window!=='undefined'?window:globalThis,function(root){
+})(typeof window!=='undefined'?window:globalThis,function(root,F){
   'use strict';
   // Edition: ISBN 9791193388266 (2025, 364 pages). Page numbers are the
   // first body pages printed in the publisher-supplied paper-book preview,
@@ -95,7 +96,7 @@
     previewUrl:'https://www.aladin.co.kr/shop/book/wletslookviewer.aspx?ItemId=379213370',
     infoUrl:'https://m.yes24.com/goods/detail/167543321'
   };
-  var catalog={emotion:emotion},app=null,dialog=null,returnFocus=null,owner=null;
+  var catalog={emotion:emotion},app=null,dialog=null,returnFocus=null,owner=null,dialogContext=null,saving=false;
   function escape(value){return String(value==null?'':value).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function details(bookId){return Object.prototype.hasOwnProperty.call(catalog,bookId)?catalog[bookId]:null;}
   function currentSection(bookId,page){
@@ -111,8 +112,16 @@
     return null;
   }
   function hintHtml(bookId,page){
+    if(app&&typeof app.readingSettings==='function'){
+      if(!app.sessionUserId())return '';
+      var settings=settingsFor({id:bookId},false);if(settings===null)return '';
+      if(settings.format==='ebook')return ebookHintHtml(settings,false);
+    }
     var section=currentSection(bookId,page);
     return section?'<span class="book-reading-section"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+(section.label?escape(section.label)+' · ':'')+escape(section.title)+'</span></span>':'';
+  }
+  function ebookHintHtml(settings,archive){
+    return '<span class="book-reading-section'+(archive?' book-archive-reading-section':'')+'"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+escape(settings.ebook.sectionTitle||'읽고 있는 목차를 선택해주세요.')+'</span></span>';
   }
   function coverHtml(book,imageClass){
     if(!book)return '';
@@ -122,7 +131,7 @@
   }
   function close(restore){
     if(!dialog)return;
-    var node=dialog,target=returnFocus;dialog=null;returnFocus=null;
+    var node=dialog,target=returnFocus;dialog=null;returnFocus=null;dialogContext=null;saving=false;
     if(node.open)node.close();node.remove();
     if(root.GrowellPopupHistory)root.GrowellPopupHistory.closed('book-details');
     if(restore!==false&&target&&target.isConnected)target.focus({preventScroll:true});
@@ -131,8 +140,53 @@
     if(!adapter||typeof adapter.bookById!=='function'||typeof adapter.currentPage!=='function'||typeof adapter.sessionUserId!=='function')throw new Error('Missing book details adapter');
     close(false);app=adapter;owner=app.sessionUserId();
   }
-  function bodyHtml(book,page){
-    var info=details(book.id),section=currentSection(book.id,page),part=0;
+  function formatSelectorHtml(format,attributeName){
+    var attr=/^data-[a-z-]+$/.test(attributeName||'')?attributeName:'data-book-reading-format',selected=F.normalizeFormat(format);
+    var bookIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 5c-3-2-6-2-10-1v15c4-1 7-1 10 1m0-15c3-2 6-2 10-1v15c-4-1-7-1-10 1V5Z"/></svg>';
+    var tabletIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 6h6M9 9h6M9 12h4M11 18h2"/></svg>';
+    return '<div class="book-format-selector" role="group" aria-label="읽는 방식">'+[['paper','종이책',bookIcon],['ebook','전자책',tabletIcon]].map(function(choice){return '<button type="button" '+attr+'="'+choice[0]+'" aria-pressed="'+(selected===choice[0]?'true':'false')+'">'+choice[2]+'<span>'+choice[1]+'</span></button>';}).join('')+'</div>';
+  }
+  function readingRows(bookOrId){
+    var id=typeof bookOrId==='string'?bookOrId:bookOrId&&bookOrId.id,info=details(id),book=typeof bookOrId==='object'?bookOrId:null;
+    if(!info&&book){var edition=archiveEdition(book);if(edition)info=details(edition);}
+    if(info)return {rows:info.chapters,totalPages:info.totalPages};
+    var rows=archiveToc(book),groups=[],current=null;
+    rows.forEach(function(row){
+      if(row.heading){current=Object.assign({},row,{sections:[]});groups.push(current);}
+      else if(current)current.sections.push(row);
+      else groups.push(row);
+    });
+    return {rows:groups,totalPages:Number(book&&book.totalPages)||null};
+  }
+  function readingEntries(bookOrId){var source=readingRows(bookOrId);return F.tocEntries(source.rows,source.totalPages);}
+  function readingChoice(bookOrId,sectionId,settings,now){return F.selectSection(settings,readingEntries(bookOrId),sectionId,now);}
+  function readingPickerHtml(bookOrId,settings){
+    var selected=F.normalizeSettings(settings),entries=readingEntries(bookOrId),groups=[];
+    entries.forEach(function(entry){var last=groups[groups.length-1];if(!last||last.id!==entry.chapterId){last={id:entry.chapterId,title:entry.chapterTitle,label:entry.label,entries:[]};groups.push(last);}last.entries.push(entry);});
+    if(!entries.length)return '<p class="book-toc-note book-ebook-empty">등록된 목차가 없어요. 책 정보에 목차를 추가해주세요.</p>';
+    return '<div class="book-ebook-picker" aria-label="읽고 있는 세부 목차">'+groups.map(function(group){
+      var selectedGroup=group.entries.some(function(entry){return entry.id===selected.ebook.sectionId;}),buttons=group.entries.map(function(entry){
+        var active=entry.id===selected.ebook.sectionId,estimate=F.estimateSelection(entries,entry.id);
+        return '<button class="book-ebook-section'+(active?' is-current':'')+'" type="button" data-book-ebook-section="'+escape(entry.id)+'" aria-pressed="'+active+'"><span>'+escape(entry.title)+'</span><span class="book-ebook-estimate">약 '+estimate.progressPercent+'%</span></button>';
+      }).join('');
+      if(group.entries.length===1&&group.entries[0].id===group.id)return '<div class="book-ebook-standalone">'+buttons+'</div>';
+      return '<details class="book-ebook-chapter"'+(selectedGroup?' open':'')+'><summary>'+(group.label?'<span class="book-toc-label">'+escape(group.label)+'</span>':'')+'<span>'+escape(group.title)+'</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div>'+buttons+'</div></details>';
+    }).join('')+'</div>';
+  }
+  function settingsFor(book,archive,explicit){
+    if(explicit!==undefined)return explicit===null?null:F.normalizeSettings(explicit);
+    var getter=app&&(archive?app.archiveReadingSettings:app.readingSettings);
+    if(typeof getter==='function'){var value=getter(archive?book:book.id);return value===null?null:F.normalizeSettings(value);}
+    return F.normalizeSettings(archive?book&&book.readingSettings:null);
+  }
+  function controlsEnabled(archive){return !!(app&&app.sessionUserId()&&typeof(archive?app.saveArchiveReadingSettings:app.saveReadingSettings)==='function');}
+  function formatControls(settings,enabled){
+    if(!enabled)return '';
+    var selector=formatSelectorHtml(settings&&settings.format);if(settings===null)selector=selector.replace(/<button /g,'<button disabled ');
+    return '<section class="book-reading-format"><h3>읽는 방식</h3>'+selector+(settings===null?'<p class="book-format-status" role="status">독서 정보를 불러오는 중이에요.</p>':'<p class="book-format-status" role="status"></p>')+'</section>';
+  }
+  function bodyHtml(book,page,explicitSettings,archiveContext){
+    var info=details(book.id),settings=settingsFor(archiveContext||book,!!archiveContext,explicitSettings),ebook=settings&&settings.format==='ebook',section=currentSection(book.id,page),part=0,enabled=controlsEnabled(!!archiveContext);
     function rowHtml(row,tag,className){
       var selected=section&&section.id===row.id;
       return '<'+tag+' class="book-toc-row'+(className?' '+className:'')+(selected?' is-current':'')+'"'+(selected?' aria-current="location"':'')+'><div>'+(row.label?'<span class="book-toc-label">'+escape(row.label)+'</span>':'')+'<span class="book-toc-title">'+escape(row.title)+'</span>'+(selected?'<span class="book-toc-current">읽는 중</span>':'')+'</div><span class="book-toc-page">'+row.page+'쪽</span></'+tag+'>';
@@ -144,10 +198,10 @@
       return heading+'<li class="book-toc-chapter">'+rowHtml(chapter,'div','book-toc-chapter-heading')+children+'</li>';
     }).join('');
     return '<header class="book-details-header"><h2 id="book-details-title">책 소개와 목차</h2><button class="icon-btn" type="button" data-book-details-close aria-label="책 소개 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>'+
-      '<div class="book-details-body"><div class="book-details-book"><img src="'+escape(book.cover)+'" alt=""><div><h3>'+escape(book.title)+'</h3><p>'+escape(book.author)+' · '+escape(book.publisher)+'<br>'+info.totalPages+'쪽</p></div></div>'+
+      '<div class="book-details-body"><div class="book-details-book"><img src="'+escape(book.cover)+'" alt=""><div><h3>'+escape(book.title)+'</h3><p>'+escape(book.author)+' · '+escape(book.publisher)+(ebook?'':'<br>'+info.totalPages+'쪽')+'</p></div></div>'+formatControls(settings,enabled)+
       '<section class="book-details-overview"><h3>어떤 책인가요?</h3><p>'+escape(info.overview)+'</p><h3>저자 소개</h3><p>'+escape(info.authorIntro)+'</p></section>'+
-      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">읽고 있는 부분은 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.</p><ol class="book-toc">'+toc+'</ol></section>'+
-      '<footer class="book-details-sources"><span>종이책 기준 · ISBN '+info.isbn+'</span><a href="'+info.previewUrl+'" target="_blank" rel="noopener noreferrer">원래 목차 보기 ↗</a><a href="'+info.infoUrl+'" target="_blank" rel="noopener noreferrer">도서 정보 출처 ↗</a></footer></div>';
+      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(ebook?(settings.ebook.progressPercent!==null?'<span>약 '+settings.ebook.progressPercent+'% · 추정</span>':''):section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">'+(ebook?'읽는 세부 목차를 선택하면 해당 구간의 중간값으로 진행률을 추정해요.':'읽고 있는 부분은 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.')+'</p>'+(ebook?readingPickerHtml(book,settings):'<ol class="book-toc">'+toc+'</ol>')+'</section>'+
+      '<footer class="book-details-sources"><span>'+(ebook?'':'종이책 기준 · ')+'ISBN '+info.isbn+'</span><a href="'+info.previewUrl+'" target="_blank" rel="noopener noreferrer">원래 목차 보기 ↗</a><a href="'+info.infoUrl+'" target="_blank" rel="noopener noreferrer">도서 정보 출처 ↗</a></footer></div>';
   }
   function archiveEdition(book){
     if(!book)return null;
@@ -203,6 +257,8 @@
     return '일부 목차의 쪽수가 없어 현재 읽는 항목을 정확히 표시할 수 없어요.';
   }
   function hintArchiveHtml(book,page){
+    var settings=settingsFor(book,true);if(settings===null)return '';
+    if(settings.format==='ebook')return ebookHintHtml(settings,true);
     var current=archivePage(book,page);if(current===null)return '';
     var section=currentArchiveSection(book,current),title=section?((section.label?section.label+' · ':'')+section.title):current+'쪽';
     return '<span class="book-reading-section book-archive-reading-section"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+escape(title)+'</span>'+(!section?'<span class="book-reading-unavailable">'+archivePositionNote(book,current)+'</span>':'')+'</span>';
@@ -216,47 +272,86 @@
     var href=archiveSafeUrl(book.sourceUrl,false);if(!href||book.source!=='yes24')return href;
     try{var url=new URL(href),match=url.pathname.match(/^\/(?:Product\/Goods|goods(?:\/detail)?)\/(\d+)\/?$/i);return /^(?:www\.|m\.)?yes24\.com$/i.test(url.hostname)&&match?'https://www.yes24.com/Product/Goods/'+match[1]:'';}catch(e){return '';}
   }
-  function archiveBodyHtml(book,page){
-    book=book||{};var edition=archiveEdition(book),current=archivePage(book,page);
+  function archiveBodyHtml(book,page,explicitSettings){
+    book=book||{};var edition=archiveEdition(book),current=archivePage(book,page),settings=settingsFor(book,true,explicitSettings),ebook=settings&&settings.format==='ebook';
     if(edition){
       var original=app&&app.bookById(edition),known=original||{id:edition,title:book.title,author:Array.isArray(book.authors)?book.authors.join(' · '):'',publisher:book.publisher,cover:archiveSafeUrl(book.coverUrl,true)};
-      return bodyHtml(known,current);
+      return bodyHtml(known,current,settings,book);
     }
     var rows=archiveToc(book),section=currentArchiveSection(book,page),cover=archiveSafeUrl(book.coverUrl,true),source=archiveSourceUrl(book);
     var authors=Array.isArray(book.authors)?book.authors.join(' · '):String(book.authors||''),total=Number(book.totalPages),pageKnown=rows.some(function(row){return row.page!==null;});
     var toc=rows.map(function(row){var selected=section&&section.id===row.id;return '<li class="book-toc-row'+(row.heading?' book-toc-chapter-heading':'')+(selected?' is-current':'')+'"'+(selected?' aria-current="location"':'')+'><div><span class="book-toc-title">'+escape(row.title)+'</span>'+(selected?'<span class="book-toc-current">읽는 중</span>':'')+'</div>'+(row.page!==null?'<span class="book-toc-page">'+row.page+'쪽</span>':'')+'</li>';}).join('');
     return '<header class="book-details-header"><h2 id="book-details-title">책 소개와 목차</h2><button class="icon-btn" type="button" data-book-details-close aria-label="책 소개 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>'+
-      '<div class="book-details-body"><div class="book-details-book">'+(cover?'<img src="'+escape(cover)+'" alt="" referrerpolicy="no-referrer">':'')+'<div><h3>'+escape(book.title||'나의 책')+'</h3><p>'+escape([authors,book.publisher].filter(Boolean).join(' · '))+(Number.isInteger(total)&&total>0?'<br>'+total+'쪽':'')+'</p></div></div>'+
+      '<div class="book-details-body"><div class="book-details-book">'+(cover?'<img src="'+escape(cover)+'" alt="" referrerpolicy="no-referrer">':'')+'<div><h3>'+escape(book.title||'나의 책')+'</h3><p>'+escape([authors,book.publisher].filter(Boolean).join(' · '))+(!ebook&&Number.isInteger(total)&&total>0?'<br>'+total+'쪽':'')+'</p></div></div>'+formatControls(settings,controlsEnabled(true))+
       '<section class="book-details-overview book-archive-overview"><h3>어떤 책인가요?</h3><p>'+escape(book.description||'등록된 책 소개가 없습니다.')+'</p><h3>저자 소개</h3><p>'+escape(book.authorIntro||(authors?authors+' · 별도의 저자 소개 정보가 없습니다.':'등록된 저자 소개가 없습니다.'))+'</p></section>'+
-      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(current!==null?'<span>현재 '+current+'쪽</span>':'')+'</div><p class="book-toc-note">'+(current!==null&&!section?archivePositionNote(book,current):pageKnown?'읽고 있는 부분은 제공된 목차의 시작 쪽수를 기준으로 표시해요.':rows.length?'목차 쪽수 정보가 없어 읽는 항목은 표시하지 않아요.':'등록된 목차 정보가 없습니다.')+'</p>'+(toc?'<ol class="book-toc book-archive-toc">'+toc+'</ol>':'')+'</section>'+
+      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(ebook?(settings.ebook.progressPercent!==null?'<span>약 '+settings.ebook.progressPercent+'% · 추정</span>':''):current!==null?'<span>현재 '+current+'쪽</span>':'')+'</div><p class="book-toc-note">'+(ebook?'읽는 세부 목차를 선택하면 해당 구간의 중간값으로 진행률을 추정해요.':current!==null&&!section?archivePositionNote(book,current):pageKnown?'읽고 있는 부분은 제공된 목차의 시작 쪽수를 기준으로 표시해요.':rows.length?'목차 쪽수 정보가 없어 읽는 항목은 표시하지 않아요.':'등록된 목차 정보가 없습니다.')+'</p>'+(ebook?readingPickerHtml(book,settings):toc?'<ol class="book-toc book-archive-toc">'+toc+'</ol>':'')+'</section>'+
       '<footer class="book-details-sources">'+(book.isbn?'<span>ISBN '+escape(book.isbn)+'</span>':'')+(source?'<a href="'+escape(source)+'" target="_blank" rel="noopener noreferrer">'+(book.source==='yes24'?'도서 정보: YES24':'도서 정보 출처')+' ↗</a>':'')+'</footer></div>';
   }
-  function showDialog(html,trigger){
+  function bindDialogButtons(node){
+    node.querySelector('[data-book-details-close]').onclick=function(){close();};
+  }
+  function currentContext(context,node){return app&&dialog===node&&dialogContext===context&&app.sessionUserId()===context.owner;}
+  function refreshContext(context,node,next){
+    if(!currentContext(context,node))return;
+    var body=node.querySelector('.book-details-body'),scroll=body&&body.scrollTop||0;
+    context.settings=next;
+    if(context.archive)context.book=Object.assign({},context.book,{readingSettings:next});
+    node.innerHTML=context.archive?archiveBodyHtml(context.book,context.page,next):bodyHtml(context.book,context.page,next);
+    bindDialogButtons(node);var after=node.querySelector('.book-details-body');if(after)after.scrollTop=scroll;
+  }
+  function setBusy(node,value,message){
+    if(node.querySelectorAll)node.querySelectorAll('[data-book-reading-format],[data-book-ebook-section]').forEach(function(button){button.disabled=value;});
+    var status=node.querySelector('.book-format-status');if(status)status.textContent=message||'';
+  }
+  async function changeReadingChoice(node,button){
+    var context=dialogContext;if(context&&dialog===node&&app&&app.sessionUserId()!==context.owner){close(false);return;}
+    if(!context||!currentContext(context,node)||saving||context.settings===null)return;
+    var format=button.getAttribute('data-book-reading-format'),sectionId=button.getAttribute('data-book-ebook-section'),next;
+    if(format!==null){if(format!=='paper'&&format!=='ebook')return;next=F.changeFormat(context.settings,format);if(next.format===context.settings.format)return;}
+    else {next=readingChoice(context.archive?context.book:context.book.id,sectionId,context.settings,Date.now());if(!next)return;}
+    var callback=context.archive?app.saveArchiveReadingSettings:app.saveReadingSettings;if(typeof callback!=='function')return;
+    saving=true;setBusy(node,true,'저장 중이에요.');
+    try{
+      var saved=await callback(context.archive?context.book:context.book.id,next);if(saved===false)throw new Error('독서 정보를 저장하지 못했어요. 다시 눌러주세요.');
+      if(!currentContext(context,node))return;
+      var confirmed=saved&&typeof saved==='object'&&['paper','ebook'].indexOf(saved.format)>=0?F.normalizeSettings(saved):next;
+      refreshContext(context,node,confirmed);setBusy(node,false,sectionId!==null?'선택한 목차로 진행률을 저장했어요.':'');
+      if(node.querySelectorAll){var focus=node.querySelectorAll(sectionId!==null?'[data-book-ebook-section]':'[data-book-reading-format]');for(var i=0;i<focus.length;i++)if(focus[i].getAttribute(sectionId!==null?'data-book-ebook-section':'data-book-reading-format')===(sectionId!==null?sectionId:format)&&typeof focus[i].focus==='function'){focus[i].focus({preventScroll:true});break;}}
+    }catch(error){if(currentContext(context,node))setBusy(node,false,error&&error.message||'독서 정보를 저장하지 못했어요. 다시 눌러주세요.');}
+    finally{if(currentContext(context,node))saving=false;}
+  }
+  function showDialog(html,trigger,context){
     close(false);returnFocus=trigger||root.document.activeElement;
     var node=root.document.createElement('dialog');dialog=node;
+    dialogContext=context||null;
     node.className='book-details-dialog';node.setAttribute('aria-labelledby','book-details-title');
     node.innerHTML=html;root.document.body.appendChild(node);
-    node.querySelector('[data-book-details-close]').onclick=function(){close();};
+    bindDialogButtons(node);
     node.addEventListener('cancel',function(event){event.preventDefault();close();});
     node.addEventListener('click',function(event){if(event.target!==node)return;var rect=node.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)close();});
+    node.addEventListener('click',function(event){var target=event.target&&typeof event.target.closest==='function'?event.target.closest('[data-book-reading-format],[data-book-ebook-section]'):null;if(!target||target.disabled)return;event.preventDefault();return changeReadingChoice(node,target);});
     node.showModal();
     if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('book-details',{close:function(){if(dialog===node)close();}});
   }
   function openArchive(book,page,trigger){
     if(!app||!app.sessionUserId()||!book)return;
-    owner=app.sessionUserId();showDialog(archiveBodyHtml(book,page),trigger);
+    owner=app.sessionUserId();var settings=settingsFor(book,true);showDialog(archiveBodyHtml(book,page,settings),trigger,{archive:true,book:book,page:page,settings:settings,owner:owner});
   }
   function open(bookId,trigger){
     if(!app||!details(bookId))return;
     var book=app.bookById(bookId);if(!book)return;
-    showDialog(bodyHtml(book,app.currentPage(bookId)),trigger);
+    var settings=settingsFor(book,false),page=app.currentPage(bookId);showDialog(bodyHtml(book,page,settings),trigger,{archive:false,book:book,page:page,settings:settings,owner:app.sessionUserId()});
   }
   function bind(){
     if(!app)return;
     if(owner!==app.sessionUserId()){owner=app.sessionUserId();close(false);}
+    if(dialog&&dialogContext&&!saving&&dialogContext.settings===null&&currentContext(dialogContext,dialog)){
+      var loaded=settingsFor(dialogContext.book,dialogContext.archive);if(loaded!==null)refreshContext(dialogContext,dialog,loaded);
+    }
     root.document.querySelectorAll('[data-book-details]').forEach(function(button){button.onclick=function(event){event.preventDefault();event.stopPropagation();open(button.getAttribute('data-book-details'),button);};});
   }
   function reset(){close(false);owner=null;}
   if(root.addEventListener)root.addEventListener('hashchange',function(){close(false);});
-  return {configure:configure,bind:bind,reset:reset,open:open,close:close,coverHtml:coverHtml,hintHtml:hintHtml,currentSection:currentSection,details:details,bodyHtml:bodyHtml,openArchive:openArchive,hintArchiveHtml:hintArchiveHtml,currentArchiveSection:currentArchiveSection,archiveBodyHtml:archiveBodyHtml,archiveToc:archiveToc};
+  return {configure:configure,bind:bind,reset:reset,open:open,close:close,coverHtml:coverHtml,hintHtml:hintHtml,currentSection:currentSection,details:details,bodyHtml:bodyHtml,openArchive:openArchive,hintArchiveHtml:hintArchiveHtml,currentArchiveSection:currentArchiveSection,archiveBodyHtml:archiveBodyHtml,archiveToc:archiveToc,
+    readingEntries:readingEntries,readingChoice:readingChoice,readingPickerHtml:readingPickerHtml,formatSelectorHtml:formatSelectorHtml};
 });

@@ -18,6 +18,30 @@
 .book-details-book>img{display:block;flex:none;width:84px;height:126px;object-fit:contain;border-radius:3px;box-shadow:0 4px 10px #14231c12}
 .book-details-book h3{font-size:23px;font-weight:750;line-height:1.5;margin:0 0 8px;letter-spacing:-.035em}
 .book-details-book p{font-size:13px;color:var(--ink-soft);margin:0}
+.book-reading-format{margin:-7px 0 22px}
+.book-reading-format h3{margin:0 0 9px;font-size:13px;color:var(--ink-soft);font-weight:600}
+.book-format-selector{display:flex;gap:9px;flex-wrap:wrap}
+.book-format-selector button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 17px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink-soft);font:inherit;font-size:13px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.book-format-selector button svg{width:22px;height:22px;flex:none}
+.book-format-selector button[aria-pressed="true"]{border-color:var(--primary);background:var(--primary-soft);color:var(--primary);font-weight:700}
+.book-format-selector button:focus-visible,.book-ebook-section:focus-visible,.book-ebook-chapter summary:focus-visible{outline:3px solid var(--primary);outline-offset:3px}
+.book-format-selector button:disabled,.book-ebook-section:disabled{opacity:.55;cursor:wait}
+.book-format-status{min-height:0;margin:5px 0 0;color:var(--ink-soft);font-size:12px}
+.book-format-status:empty{display:none}
+.book-ebook-picker{display:grid;gap:8px}
+.book-ebook-chapter{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.book-ebook-chapter summary{display:flex;align-items:center;gap:8px;padding:13px 12px;cursor:pointer;list-style:none;font-size:14px;font-weight:650;line-height:1.6}
+.book-ebook-chapter summary::-webkit-details-marker{display:none}
+.book-ebook-chapter summary>span:not(.book-toc-label){flex:1;min-width:0}
+.book-ebook-chapter summary svg{width:20px;height:20px;flex:none;transition:transform .15s}
+.book-ebook-chapter[open] summary svg{transform:rotate(180deg)}
+.book-ebook-chapter>div{display:grid;padding:0 7px 7px;gap:3px}
+.book-ebook-section{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:44px;margin:0;padding:11px 10px;border:0;border-radius:7px;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:1.65;text-align:left;cursor:pointer;word-break:normal;overflow-wrap:anywhere}
+.book-ebook-section>span:first-child{flex:1;min-width:0}
+.book-ebook-section:hover{background:var(--surface-alt,var(--primary-soft))}
+.book-ebook-section.is-current{background:var(--primary-soft);color:var(--primary);font-weight:650}
+.book-ebook-estimate{flex:none;color:var(--ink-soft);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.book-ebook-standalone{border-bottom:1px solid var(--line)}
 .book-details-overview h3,.book-toc-heading h3{font-size:15px;margin:0 0 7px;font-weight:750}
 .book-details-overview p{font-size:14px;color:var(--ink-soft);margin:0 0 21px}
 .book-toc-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:27px}

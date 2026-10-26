@@ -1120,6 +1120,7 @@
 <script src="profile.js"></script>
 <script src="passwordHint.js"></script>
 <script src="memberAccess.js"></script>
+<script src="readingFormatDomain.js"></script>
 <script src="bookDetails.js"></script>
 <link rel="stylesheet" href="bookDetails.css">
 <script src="oauthDomain.js"></script>
@@ -1181,8 +1182,10 @@
 <script src="privateCrypto.js"></script>
 <script src="privateCategories.js"></script>
 <script src="archiveDomain.js"></script>
+<script src="sharedReadingFormat.js"></script>
 <script src="archiveStats.js"></script>
 <script src="archiveCalendar.js"></script>
+<script src="archiveReadingNotification.js"></script>
 <script src="archiveTimer.js"></script>
 <script src="archive.js"></script>
 <script src="dailyVerses.js"></script>
@@ -2265,6 +2268,7 @@ var readingNotificationDialogRoute = null;
 var readingNotificationBusy = false;
 var readingNotificationPending = null;
 var readingNotificationBound = false;
+var archiveReadingNotificationBoot = null;
 var readingNotificationLast = '';
 var readingNotificationCheckpoint = null;
 var readingNotificationArchiveBlocked = false;
@@ -2411,6 +2415,7 @@ function clearMemberSession(){
   if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
   if(typeof GrowellBookDetails!=='undefined')GrowellBookDetails.reset();
   if(typeof GrowellArchive!=='undefined')GrowellArchive.reset();
+  if(typeof sharedReadingFormats!=='undefined'&&sharedReadingFormats)sharedReadingFormats.reset();
   if(typeof closeReadingHistoryDialog==='function')closeReadingHistoryDialog();
   if(typeof closeHabitComposer==='function')closeHabitComposer(false);
   if(typeof closeHabitValueSummary==='function')closeHabitValueSummary(false);
@@ -3643,6 +3648,18 @@ function myReadingMeta(bookId){
   if(!SESSION) return null;
   return STATE.readingMeta[readingMetaKey(bookId, SESSION.userId)] || null;
 }
+function sharedReadingView(bookId){
+  return typeof sharedReadingFormats!=='undefined'&&sharedReadingFormats?sharedReadingFormats.view(bookId):{status:'ready',book:null,settings:{format:'paper',ebook:{}},sessions:[]};
+}
+function sharedEbookSessions(bookId){return sharedReadingView(bookId).sessions||[];}
+function sharedEbookPending(bookId){
+  return !!(SESSION&&typeof GrowellArchiveTimer!=='undefined'&&GrowellArchiveTimer.pendingBookTimer&&GrowellArchiveTimer.pendingBookTimer(SESSION.userId,GrowellArchiveDomain.recordId(SESSION.userId,'arc_shared_'+bookId)));
+}
+function sharedEbookActive(bookId){
+  if(!SESSION||typeof GrowellArchiveReadingNotification==='undefined')return null;
+  var active=GrowellArchiveReadingNotification.active(SESSION.userId,localStorage);
+  return active&&(!bookId||active.bookId===bookId)?active:null;
+}
 /* 총 페이지는 더 이상 사용자가 입력하는 값이 아니라 책마다 고정된 값(book.totalPages) —
    나의 공간에서는 이 값과 현재 페이지(사용자별 readingMeta)로 진행률(%)을 계산한다. */
 function myCurrentPage(bookId){
@@ -3652,6 +3669,8 @@ function myCurrentPage(bookId){
 /* 읽는 중/완독은 더 이상 사용자가 직접 고르는 값이 아니라 현재 페이지 vs 고정된 총 페이지로
    자동 계산되는 "상태 표시"일 뿐이다 — 총 페이지를 다 읽었다고 기록하면 자동으로 완독. */
 function readingStatusKey(book){
+  var reading=sharedReadingView(book.id);
+  if(reading.settings&&reading.settings.format==='ebook')return reading.settings.ebook.progressPercent>=100?'done':'reading';
   var current = myCurrentPage(book.id);
   return (book.totalPages>0 && current>=book.totalPages) ? 'done' : 'reading';
 }
@@ -3662,7 +3681,7 @@ function myReadingLogs(bookId){
 }
 /* 그 책을 읽느라 쓴 총 시간 — 지금까지 저장된 모든 독서 세션(readingLogs)의 시간을 더한 값 */
 function totalReadSeconds(bookId){
-  return myReadingLogs(bookId).reduce(function(sum, l){ var seconds=Number(l.seconds); return sum + (Number.isFinite(seconds)&&seconds>0?seconds:0); }, 0);
+  return myReadingLogs(bookId).concat(sharedEbookSessions(bookId)).reduce(function(sum, l){ var seconds=Number(l.seconds); return sum + (Number.isFinite(seconds)&&seconds>0?seconds:0); }, 0);
 }
 /* 각 독서 기록을 "이전에 읽은 위치 ~ 이번에 읽은 위치" 범위로 보여주기 위해 시작 페이지를
    계산한다. 이번 라운드부터 저장되는 기록은 submitReadingLog에서 startPage를 함께 저장하지만,
@@ -3839,6 +3858,15 @@ function commitReadingTimerState(next,parked){
   if(SESSION&&SESSION.userId===owner&&readingTimerStorageSnapshot===snapshot){applyReadingTimerState(before);readingParkedSessions=oldParked;}
   readingTimerMemoryWarning=true;return false;
 }
+function withArchiveReadingPaused(work){
+  if(!SESSION||typeof GrowellArchiveReadingNotification==='undefined'||!GrowellArchiveReadingNotification.hasStored(SESSION.userId,localStorage))return work();
+  var session=SESSION,epoch=saveSessionEpoch;
+  return GrowellArchiveReadingNotification.pauseStored(session.userId,localStorage,{current:function(){return SESSION===session&&saveSessionEpoch===epoch;}}).then(function(ok){
+    if(SESSION!==session||saveSessionEpoch!==epoch)return false;
+    if(ok)return work();
+    showToast('다른 책의 읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);return false;
+  }).catch(function(){showToast('읽은 시간을 확인하지 못했어요. 다시 시도해주세요.',true);return false;});
+}
 function pauseArchiveReadingBeforeSharedStart(){
   if(typeof GrowellArchiveTimer==='undefined'||typeof GrowellArchiveTimer.pauseOthers!=='function')return true;
   try{if(GrowellArchiveTimer.pauseOthers(SESSION.userId)===true)return true;}catch(e){}
@@ -3987,9 +4015,17 @@ function showReadingHomeDialog(){
   if(notice && notice.open){notice.close();notice.showModal();}
 }
 function startReading(bookId){
+  if(SESSION&&bookById(bookId)&&!isBookLocked(bookById(bookId))&&!(readingTimer&&readingTimer.bookId===bookId)&&!readingParkedSessions[bookId]){
+    var reading=sharedReadingView(bookId);
+    if(reading.status!=='ready'){showToast('책의 읽기 설정을 불러온 뒤 다시 시작해주세요.',true);return;}
+    if(reading.settings.format==='ebook'||sharedEbookPending(bookId)){
+      if(typeof GrowellArchive!=='undefined'&&GrowellArchive.openSharedReadingTimer)Promise.resolve(GrowellArchive.openSharedReadingTimer(bookId,document.activeElement)).catch(function(err){showToast(err.message||'독서 타이머를 열지 못했어요.',true);});
+      return;
+    }
+  }
   if(!readingNotificationGuard){
     if(typeof GrowellTimerAlerts!=='undefined'){var status=GrowellTimerAlerts.notificationStatus();if(SESSION&&!readingSaveBusy&&bookById(bookId)&&!isBookLocked(bookById(bookId))&&readingDataReady()&&(!readingTimer||readingTimer.bookId!==bookId&&!readingParkedSessions[bookId])&&status.supported&&status.permission==='default')GrowellTimerAlerts.enableNotifications().then(function(){readingNotificationLast='';syncReadingSessionNotification();});}
-    return withReadingNotificationMutation(function(){return startReading(bookId);});
+    return withArchiveReadingPaused(function(){return withReadingNotificationMutation(function(){return startReading(bookId);});});
   }
   if(!SESSION){location.hash='#/login';return;}
   if(readingSaveBusy){showToast('읽은 기록을 저장한 뒤 다른 책을 시작해주세요.',true);return;}
@@ -4026,14 +4062,21 @@ function startReading(bookId){
 }
 function todayReadSeconds(bookId){
   var today=ymd(new Date());
-  return myReadingLogs(bookId).reduce(function(total,log){var seconds=Number(log.seconds);return total+(ymd(new Date(log.createdAt))===today && Number.isFinite(seconds) && seconds>0?seconds:0);},0);
+  return myReadingLogs(bookId).concat(sharedEbookSessions(bookId)).reduce(function(total,log){var seconds=Number(log.seconds);return total+(ymd(new Date(log.createdAt))===today && Number.isFinite(seconds) && seconds>0?seconds:0);},0);
 }
 function readingTimerSummaryHtml(book){
+  var ebook=sharedEbookActive(book.id);
   var active=readingTimer && SESSION && readingTimer.userId===SESSION.userId && readingTimer.bookId===book.id;
   return '<div class="reading-home-stats"><span>오늘 <strong>'+fmtDurationHuman(todayReadSeconds(book.id))+'</strong></span><span>누적 <strong>'+fmtDurationHuman(totalReadSeconds(book.id))+'</strong></span></div>'+
-    (active?'<p class="reading-home-active">'+svgIcon(I_TIMER)+'<span>'+(readingSavePanelOpen?'저장할 독서 기록':readingTimer.running?'지금 읽는 중':'잠시 멈춤')+'</span><strong class="mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong></p>':'');
+    (ebook?'<p class="reading-home-active">'+svgIcon(I_TIMER)+'<span>'+(ebook.timer.phase==='save'?'저장할 독서 기록':ebook.timer.running?'지금 읽는 중':'잠시 멈춤')+'</span><strong class="mono" data-ebook-elapsed="'+esc(book.id)+'">'+fmtElapsed(GrowellReadingTimer.elapsed(ebook.timer,Date.now()))+'</strong></p>':
+    (active?'<p class="reading-home-active">'+svgIcon(I_TIMER)+'<span>'+(readingSavePanelOpen?'저장할 독서 기록':readingTimer.running?'지금 읽는 중':'잠시 멈춤')+'</span><strong class="mono" data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong></p>':''));
 }
 function activeReadingStripHtml(route){
+  var ebook=sharedEbookActive();
+  if(ebook&&route.view!=='home'){
+    var ebookBook=bookById(ebook.bookId);if(!ebookBook||isBookLocked(ebookBook))return '';
+    return '<aside class="reading-active-strip wrap" aria-label="진행 중인 독서"><div class="reading-active-info">'+svgIcon(I_TIMER)+'<div><span class="reading-active-title">'+esc(ebookBook.title)+'</span><span class="reading-active-status">'+(ebook.timer.phase==='save'?'독서 기록 저장 중':ebook.timer.running?'책 읽는 중':'잠시 멈춤')+'</span></div></div><strong class="reading-active-elapsed mono" data-ebook-elapsed="'+esc(ebook.bookId)+'">'+fmtElapsed(GrowellReadingTimer.elapsed(ebook.timer,Date.now()))+'</strong><button class="btn btn-sm" type="button" data-reading-start="'+esc(ebook.bookId)+'">타이머로 돌아가기</button></aside>';
+  }
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || route.view==='home' || (route.view==='book' && route.bookId===readingTimer.bookId && route.tab==='mine' && !route.postId)) return '';
   var book=bookById(readingTimer.bookId);if(!book)return '';
   var status=readingNoteReturn?'기록 중 · 잠시 멈춤':readingSavePanelOpen?'독서 기록 저장 중':readingTimer.running?'책 읽는 중':'잠시 멈춤';
@@ -4141,6 +4184,13 @@ async function publishReadingNotification(previous){
   var view=readingNotificationView();if(!view){
     if(previous&&previous.state)await readingNotificationRequest({type:'revoke',identity:previous.state});return true;
   }
+  if(readingNotificationArchiveBlocked){
+    var old=previous&&previous.state,protocol=GrowellReadingNotificationState;
+    if(!old)return true;
+    if(!protocol.valid(old)||old.ownerKey!==view.data.ownerKey||old.timerId!==view.data.timerId||old.bookId!==view.data.bookId)return false;
+    var revoked=await readingNotificationRequest({type:'revoke',identity:old,expected:protocol.head(old)});
+    return !!(revoked.ok&&protocol.valid(revoked.state)&&protocol.same(old,revoked.state)&&revoked.state.revoked);
+  }
   var session=SESSION,epoch=saveSessionEpoch,id=readingTimer.id;
   if(GrowellTimerAlerts.notificationStatus().permission!=='granted')return true;
   var current=await readingNotificationRequest({type:'read',identity:view.data});if(!readingNotificationSessionCurrent(session,epoch,id)||!current.ok)return false;
@@ -4183,6 +4233,7 @@ function withReadingNotificationMutation(callback){
   return readingNotificationTask;
 }
 function syncReadingSessionNotification(){
+  if(readingNotificationArchiveBlocked)return;
   if(!readingNotificationAvailable()||GrowellTimerAlerts.notificationStatus().permission!=='granted')return;
   var view=readingNotificationView();if(!view){if(readingNotificationLast){GrowellTimerAlerts.closeSession();readingNotificationLast='';}return;}
   if(!readingNotificationSessionCurrent(SESSION,saveSessionEpoch,readingTimer.id))return;
@@ -4192,17 +4243,26 @@ function syncReadingSessionNotification(){
 }
 function openReadingNotificationDialog(){readingNotificationDialogRoute=location.hash||'#/';readingHomeDialogFor=readingTimer.id;render();}
 function consumeReadingSessionNotificationAction(){
+  if(readingNotificationArchiveBlocked)return Promise.resolve(false);
   if(readingNotificationPending)return readingNotificationPending;
   readingNotificationPending=Promise.resolve(withReadingNotificationMutation(null)).then(function(ok){if(ok&&SESSION&&readingTimer){render();return true;}return false;}).finally(function(){readingNotificationPending=null;});return readingNotificationPending;
+}
+function syncArchiveReadingSessionNotification(identity){
+  if(!SESSION||typeof GrowellArchiveReadingNotification==='undefined'||memberLoadState.privateEntries!=='ready')return Promise.resolve(false);
+  var session=SESSION,epoch=saveSessionEpoch;
+  function current(){return SESSION===session&&saveSessionEpoch===epoch&&memberLoadState.privateEntries==='ready';}
+  return GrowellArchiveReadingNotification.syncStored(session.userId,localStorage,{identity:identity,current:current,changed:function(){if(current())render();},open:function(bookId){var book=bookById(bookId);if(current()&&book&&!isBookLocked(book)&&typeof GrowellArchive!=='undefined')return GrowellArchive.openSharedReadingTimer(bookId,document.activeElement);}}).catch(function(){return false;});
 }
 function bindReadingSessionNotifications(){
   if(!readingNotificationBound&&typeof navigator!=='undefined'&&navigator.serviceWorker){readingNotificationBound=true;navigator.serviceWorker.addEventListener('message',function(event){
     if(!event.data||['growell-reading-changed','growell-reading-open'].indexOf(event.data.type)<0)return;
     try{var source=new URL(event.source.scriptURL);if(source.origin!==location.origin||source.pathname!=='/timer-alert-sw.js'||source.search||source.hash)return;}catch(error){return;}
+    if(SESSION&&typeof GrowellArchiveReadingNotification!=='undefined'&&GrowellArchiveReadingNotification.owns(event.data.identity,SESSION.userId,localStorage)){syncArchiveReadingSessionNotification(event.data.identity);return;}
     readingNotificationLast='';consumeReadingSessionNotificationAction();
   });}
   syncReadingSessionNotification();
-  if(!readingNotificationLast&&readingNotificationCheckpoint)consumeReadingSessionNotificationAction();
+  if(!readingNotificationArchiveBlocked&&!readingNotificationLast&&readingNotificationCheckpoint)consumeReadingSessionNotificationAction();
+  if(SESSION&&typeof GrowellArchiveReadingNotification!=='undefined'&&memberLoadState.privateEntries==='ready'&&(!archiveReadingNotificationBoot||archiveReadingNotificationBoot.session!==SESSION||archiveReadingNotificationBoot.epoch!==saveSessionEpoch)){archiveReadingNotificationBoot={session:SESSION,epoch:saveSessionEpoch};syncArchiveReadingSessionNotification();}
 }
 function readingCountdownRingHtml(){
   var ratio=GrowellReadingTimer.countdownRatio(readingTimer,Date.now());
@@ -4239,27 +4299,31 @@ function openReadingNote(type){
     var editor=document.getElementById('note-editor');if(editor){editor.scrollIntoView({block:'center'});editor.focus();}
   }).then(function(){
     if(!opened && SESSION && SESSION.userId===owner && readingTimer && readingTimer.id===timerId){
+      return withArchiveReadingPaused(function(){
+      if(!SESSION||SESSION.userId!==owner||!readingTimer||readingTimer.id!==timerId)return false;
       if(refreshReadingTimerFromStorage()){render();return;}
       var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());
       if(resumed&&resumed.running&&!pauseArchiveReadingBeforeSharedStart()){render();return;}
-      var next=captureReadingTimerState();if(resumed)next.timer=resumed;next.noteReturn=null;
+      var next=captureReadingTimerState();if(resumed)next.timer=resumed;next.noteReturn=null;next.notificationArchiveBlocked=false;
       commitReadingTimerState(next);render();
+      });
     }
   });
 }
 /* Call after a confirmed note save and draft completion, never when a save failed. */
 function completeReadingNote(type,bookId){
+  if(!readingNotificationGuard&&SESSION&&typeof GrowellArchiveReadingNotification!=='undefined'&&GrowellArchiveReadingNotification.hasStored(SESSION.userId,localStorage))return withArchiveReadingPaused(function(){return withReadingNotificationMutation(function(){return completeReadingNote(type,bookId);});});
   if(refreshReadingTimerFromStorage()){render();return false;}
   if(!SESSION || !readingTimer || readingTimer.userId!==SESSION.userId || !readingNoteReturn || readingNoteReturn.type!==type || readingNoteReturn.bookId!==bookId)return false;
   var resumed=GrowellReadingTimer.finishNote(readingTimer,readingNoteReturn,Date.now());
   if(!resumed)return false;
   if(resumed.running&&!pauseArchiveReadingBeforeSharedStart())return false;
-  var next=captureReadingTimerState();next.timer=resumed;next.noteReturn=null;
+  var next=captureReadingTimerState();next.timer=resumed;next.noteReturn=null;next.notificationArchiveBlocked=false;
   if(!commitReadingTimerState(next)){showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);return false;}
   if(typeof GrowellPopupHistory!=='undefined')GrowellPopupHistory.closed('space-composer');
   readingHomeDialogFor=readingTimer.id;location.hash=readingHomeReturn?'#/':'#/book/'+bookId+'/mine';return true;
 }
-function returnToReadingTimer(){return withReadingNotificationMutation(returnToReadingTimerNow);}
+function returnToReadingTimer(){return withArchiveReadingPaused(function(){return withReadingNotificationMutation(returnToReadingTimerNow);});}
 function returnToReadingTimerNow(){
   if(!readingNoteReturn)return;
   var type=readingNoteReturn.type,bookId=readingNoteReturn.bookId;
@@ -4267,10 +4331,11 @@ function returnToReadingTimerNow(){
   if(completeReadingNote(type,bookId)){if(type==='mine')resetMineComposer();else resetShareComposer();render();}
 }
 function tickReadingTimer(){
+  document.querySelectorAll('[data-ebook-elapsed]').forEach(function(el){var active=sharedEbookActive(el.getAttribute('data-ebook-elapsed'));if(active)el.textContent=fmtElapsed(GrowellReadingTimer.elapsed(active.timer,Date.now()));});
   if(!readingTimer || !SESSION) return;
   var running=readingTimer.running;
   if(readingNotificationCheckpoint&&!readingNotificationGuard&&readingNotificationAvailable()){
-    if(readingTimer.targetMs!==null&&!readingTimer.goalReached&&GrowellReadingTimer.remaining(readingTimer,Date.now())===0&&!readingNotificationTask)withReadingNotificationMutation(function(){syncReadingTimer();render();});
+    if(!readingNotificationArchiveBlocked&&readingTimer.targetMs!==null&&!readingTimer.goalReached&&GrowellReadingTimer.remaining(readingTimer,Date.now())===0&&!readingNotificationTask)withReadingNotificationMutation(function(){syncReadingTimer();render();});
   }else syncReadingTimer();
   if(!readingTimer)return;
   syncReadingSessionNotification();
@@ -4336,7 +4401,7 @@ function cancelCurrentReadingTimer(){
 // active timer, another parked book, a saved log or an uncertain save attempt.
 // The backup key is retained after recovery so the source remains recoverable.
 function restoreCancelledReadingTimer(backupKey){
-  if(!readingNotificationGuard)return withReadingNotificationMutation(function(){return restoreCancelledReadingTimer(backupKey);});
+  if(!readingNotificationGuard)return withArchiveReadingPaused(function(){return withReadingNotificationMutation(function(){return restoreCancelledReadingTimer(backupKey);});});
   if(refreshReadingTimerFromStorage()||!SESSION||readingTimer||readingSaveBusy||readingSaveAttempt||!readingDataReady())return false;
   if(typeof backupKey!=='string'||backupKey.indexOf('growell_reading_timer_cancelled_v1:'+encodeURIComponent(SESSION.userId)+':')!==0)return false;
   try{
@@ -4353,7 +4418,7 @@ function restoreCancelledReadingTimer(backupKey){
 if(typeof window!=='undefined')window.GrowellReadingTimerRecovery=Object.freeze({restoreCancelled:restoreCancelledReadingTimer});
 function bindReadingTimerEvents(){
   var app=document.getElementById('app');
-  function on(id,fn){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){if((id==='btn-reading-toggle-pause'&&readingTimer&&!readingTimer.running||id==='btn-reading-save-back')&&typeof GrowellTimerAlerts!=='undefined'&&GrowellTimerAlerts.notificationStatus().permission==='default')GrowellTimerAlerts.enableNotifications().then(function(){readingNotificationLast='';syncReadingSessionNotification();});withReadingNotificationMutation(function(){if(refreshReadingTimerFromStorage()){render();return;}return fn(e);});});}
+  function on(id,fn){var el=document.getElementById(id);if(el)el.addEventListener('click',function(e){var resumes=id==='btn-reading-toggle-pause'&&readingTimer&&!readingTimer.running||id==='btn-reading-save-back';if(resumes&&typeof GrowellTimerAlerts!=='undefined'&&GrowellTimerAlerts.notificationStatus().permission==='default')GrowellTimerAlerts.enableNotifications().then(function(){readingNotificationLast='';syncReadingSessionNotification();});var run=function(){return withReadingNotificationMutation(function(){if(refreshReadingTimerFromStorage()){render();return;}return fn(e);});};if(resumes)return withArchiveReadingPaused(run);return run();});}
   app.querySelectorAll('[data-reading-start]').forEach(function(b){b.addEventListener('click',function(){startReading(b.getAttribute('data-reading-start'));});});
   on('btn-reading-toggle-pause',function(){
     if(!readingTimer || readingSaveBusy)return;
@@ -4372,7 +4437,7 @@ function bindReadingTimerEvents(){
   on('btn-reading-save-back',function(){
     if(!readingTimer || readingSaveAttempt||readingSaveBusy)return;
     if(!pauseArchiveReadingBeforeSharedStart())return;
-    prepareReadingTimerAlerts();var next=captureReadingTimerState();next.timer=GrowellReadingTimer.resume(readingTimer,Date.now());
+    prepareReadingTimerAlerts();var next=captureReadingTimerState();next.timer=GrowellReadingTimer.resume(readingTimer,Date.now());next.notificationArchiveBlocked=false;
     if(!commitReadingTimerState(next))showToast('읽은 시간을 보관하지 못했어요. 다시 시도해주세요.',true);render();
   });
   on('btn-reading-countdown',function(){readingCountdownOpen=!readingCountdownOpen;render();});
@@ -4427,12 +4492,12 @@ function bindReadingTimerEvents(){
   showReadingHomeDialog();
   bindReadingSessionNotifications();
   if(readingTimerIntervalId)clearInterval(readingTimerIntervalId);
-  readingTimerIntervalId=readingTimer?setInterval(tickReadingTimer,250):null;
+  readingTimerIntervalId=readingTimer||sharedEbookActive()?setInterval(tickReadingTimer,250):null;
   if(!document._readingLifecycleBound){
     document._readingLifecycleBound=true;
-    document.addEventListener('visibilitychange',function(){if(!readingNotificationAvailable()){if(document.hidden)persistReadingTimer();else if(refreshReadingTimerFromStorage())render();else tickReadingTimer();return;}if(!document.hidden){readingNotificationLast='';consumeReadingSessionNotificationAction();}});
+    document.addEventListener('visibilitychange',function(){if(!document.hidden)syncArchiveReadingSessionNotification();if(!readingNotificationAvailable()){if(document.hidden)persistReadingTimer();else if(refreshReadingTimerFromStorage())render();else tickReadingTimer();return;}if(!document.hidden){readingNotificationLast='';consumeReadingSessionNotificationAction();}});
     window.addEventListener('pagehide',function(){if(!readingNotificationAvailable())persistReadingTimer();else refreshReadingTimerFromStorage();});
-    window.addEventListener('pageshow',function(){readingNotificationLast='';consumeReadingSessionNotificationAction();});
+    window.addEventListener('pageshow',function(){syncArchiveReadingSessionNotification();readingNotificationLast='';consumeReadingSessionNotificationAction();});
     window.addEventListener('storage',function(e){
       if(!SESSION||readingSaveBusy||e.key!==readingTimerStorageKey(SESSION.userId))return;
       readingTimerRestoreOwner=null;syncReadingTimer();render();
@@ -4729,8 +4794,11 @@ function bindHomeDailyVerse(){
   document._homeDailyVerseTimer=setTimeout(bindHomeDailyVerse,delay);
 }
 function homeReadingBook(){
+  var ebook=sharedEbookActive();if(ebook){var ebookBook=bookById(ebook.bookId);if(ebookBook&&!isBookLocked(ebookBook))return ebookBook;}
   if(SESSION && typeof readingTimer!=='undefined' && readingTimer && readingTimer.userId===SESSION.userId){var activeBook=bookById(readingTimer.bookId);if(activeBook && !isBookLocked(activeBook))return activeBook;}
-  return GrowellHome.selectReadingBook(BOOKS, STATE.readingMeta, SESSION && SESSION.userId,
+  var readingChoices=Object.values(STATE.readingMeta);
+  if(SESSION)BOOKS.forEach(function(book){var view=sharedReadingView(book.id);if(view.settings&&view.settings.format==='ebook'&&view.book){var at=Number(view.settings.ebook.updatedAt)||0;view.sessions.forEach(function(log){at=Math.max(at,Number(log.createdAt)||0);});if(at)readingChoices.push({bookId:book.id,userId:SESSION.userId,updatedAt:at});}});
+  return GrowellHome.selectReadingBook(BOOKS, readingChoices, SESSION && SESSION.userId,
     STATE.announcement.reading.bookId, homeUnlockedIds());
 }
 function homeHabits(){
@@ -4844,6 +4912,7 @@ function memberHomeHtml(){
     '<div class="home-reading-meta">함께 읽는 책 · '+book.totalPages+'쪽</div>' +
     '<p class="home-guest-hint">로그인하면 읽던 쪽부터 이어갈 수 있어요.</p></div></div>' +
     '<a class="home-primary" href="#/login">로그인하고 이어 읽기</a>';
+  if(user&&book){var formatView=sharedReadingView(book.id);if(formatView.status!=='ready')reading='<p class="home-guest-hint">책의 읽기 설정을 불러오는 중이에요.</p>';else if(formatView.settings.format==='ebook'){var ebook=formatView.settings.ebook,ebookKnown=Number.isFinite(ebook.progressPercent),ebookPercent=ebookKnown?ebook.progressPercent:0;reading='<div class="home-reading-book">'+cover+'<div class="home-reading-copy"><h2 class="home-book-title">'+esc(book.title)+'</h2><div class="home-reading-meta">전자책 · '+(ebookKnown?(ebook.progressKind==='estimated'?'약 ':'')+ebookPercent+'%':'진도 미입력')+'</div><div class="home-progress"'+(ebookKnown?' role="progressbar" aria-label="예상 독서 진도" aria-valuenow="'+ebookPercent+'" aria-valuemin="0" aria-valuemax="100"':'')+'><span style="width:'+ebookPercent+'%"></span></div><p class="home-next-page">'+esc(ebook.sectionTitle||'책 표지에서 읽고 있는 세부 목차를 선택해주세요.')+'</p></div></div>'+readingTimerSummaryHtml(book)+'<button class="home-primary" type="button" data-reading-start="'+book.id+'"'+(!readingDataReady()?' disabled':'')+'>'+svgIcon(I_TIMER)+(sharedEbookPending(book.id)?'타이머로 돌아가기':'타이머로 읽기 시작')+'</button><a class="home-link reading-home-record-link" href="#/book/'+book.id+'/mine">나의 독서 기록 →</a>';}}
   if(user && !readingDataReady()) reading=memberDataStatusHtml('readingMeta')+memberDataStatusHtml('readingLogs')+'<p class="home-guest-hint">독서 진도를 불러오면 타이머로 바로 읽을 수 있어요.</p>';
   var habitBooks=Array.from(new Set(habits.map(function(h){return h.bookId;})));
   if(!habitBooks.length && book) habitBooks.push(book.id);
@@ -6540,11 +6609,14 @@ function readingChevronHtml(open){
 }
 function readingHistoryHtml(book){
   var items = myReadingLogsWithRange(book.id);
+  var ebookRows=sharedEbookSessions(book.id).map(function(log){return {log:log,ebook:true};});
+  items=items.concat(ebookRows).sort(function(a,b){return b.log.createdAt-a.log.createdAt;});
   if(!items.length) return '<div class="empty" style="padding:14px 0">아직 읽은 기록이 없어요.</div>';
   /* 이전에 읽은 위치부터 이번에 읽은 위치까지 범위 + 그 사이 읽은 페이지 수를 함께 보여준다.
      예) p50-p100 (50페이지 읽음). 시작=도착이면(변화 없음) 범위 없이 페이지만 표시. */
   var rows = items.map(function(item){
     var l = item.log, sp = item.startPage;
+    if(item.ebook)return '<div class="reading-log-row"><div class="reading-log-main"><span class="reading-log-date mono">'+fmtDate(l.createdAt)+'</span><span class="reading-log-page">전자책 · '+(l.endPercent==null?'진도 미입력':esc(String(l.startPercent==null?'—':l.startPercent))+' → '+esc(String(l.endPercent))+'%')+(l.sectionTitle?' · '+esc(l.sectionTitle):'')+(l.progressKind==='estimated'?' <small>예상 진도</small>':'')+'</span></div><div class="reading-log-side"><span class="reading-log-dur mono">'+fmtElapsed(l.seconds*1000)+'</span></div></div>';
     var delta = Math.abs(l.page - sp);
     var rangeText = sp===l.page
       ? ('p.'+esc(String(l.page)))
@@ -6573,7 +6645,7 @@ function refreshReadingHistoryDialog(){
   var book=bookById(state.bookId);if(!book || isBookLocked(book)){closeReadingHistoryDialog();return;}
   var body=state.node.querySelector('[data-reading-history-body]'),position=body.scrollTop;
   body.innerHTML=readingHistoryHtml(book);body.scrollTop=position;
-  state.node.querySelector('[data-reading-history-count]').textContent=myReadingLogs(book.id).length+'회 · 총 '+fmtDurationHuman(totalReadSeconds(book.id));
+  state.node.querySelector('[data-reading-history-count]').textContent=(myReadingLogs(book.id).length+sharedEbookSessions(book.id).length)+'회 · 총 '+fmtDurationHuman(totalReadSeconds(book.id));
 }
 function openReadingHistoryDialog(bookId,trigger){
   var book=bookById(bookId);
@@ -6597,7 +6669,7 @@ function openReadingHistoryDialog(bookId,trigger){
 }
 /* 상태와 누적 시간은 그대로 두고, 기록 목록은 아이콘으로 별도 팝업에서 연다. */
 function readingHistoryButtonHtml(book){
-  var logs=myReadingLogs(book.id);
+  var logs=myReadingLogs(book.id).concat(sharedEbookSessions(book.id));
   return '<button type="button" class="icon-btn reading-history-button" id="btn-reading-history-toggle" data-book="'+book.id+'" aria-haspopup="dialog" aria-label="읽은 기록 보기'+(logs.length?' ('+logs.length+'회)':'')+'" title="읽은 기록 보기">'+svgIcon(I_DOC)+(logs.length?'<span class="reading-history-count" aria-hidden="true">'+logs.length+'</span>':'')+'</button>';
 }
 function readingStatusPanelHtml(book,includeHistory){
@@ -6621,6 +6693,9 @@ function readingCardHtml(book,inDialog){
   if(!readingDataReady()) return '<div class="card reading-card">'+memberDataStatusHtml('readingMeta')+memberDataStatusHtml('readingLogs')+'</div>';
   var total = book.totalPages || 0;
   var current = myCurrentPage(book.id);
+  var reading=sharedReadingView(book.id);
+  if(!inDialog&&reading.status!=='ready')return '<div class="card reading-card"><p class="hint">책의 읽기 설정을 불러오는 중이에요.</p></div>';
+  if(!inDialog&&reading.settings&&reading.settings.format==='ebook')return sharedEbookCardHtml(book,reading);
 
   if(inDialog && readingNoteReturn && readingTimer && readingTimer.bookId===book.id && mineComposerOpenFor===book.id){
     return '<div class="card reading-note-paused"><span>'+svgIcon(I_TIMER)+' 기록 중에는 타이머가 잠시 멈춰요.</span><strong data-reading-elapsed>'+fmtElapsed(readingTimerElapsedMs())+'</strong><button type="button" class="btn btn-sm" data-reading-return>타이머로 돌아가기</button></div>';
@@ -6685,6 +6760,10 @@ function readingCardHtml(book,inDialog){
           readingHistoryButtonHtml(book)+
       '</div></div><div class="reading-split-right">'+readingStatusPanelHtml(book,false)+
         '<button type="button" class="icon-btn reading-edit-btn js-reading-edit-open" id="btn-reading-edit-open" data-book="'+book.id+'" aria-label="현재 페이지 수정" title="현재 페이지 수정">'+svgIcon(I_EDIT)+'</button></div></div>';
+}
+function sharedEbookCardHtml(book,reading){
+  var progress=reading.settings.ebook,percent=progress.progressPercent,known=Number.isFinite(percent),label=known?(progress.progressKind==='estimated'?'약 ':'')+percent+'%':'진도 미입력';
+  return '<div class="card reading-card reading-split-card reading-compact-card"><div class="reading-book-summary"><div class="reading-cover">'+GrowellBookDetails.coverHtml(book)+'</div><div class="reading-info"><div class="reading-title">'+esc(book.title)+'</div><span class="hint">전자책</span>'+(progress.sectionTitle?'<p class="book-reading-label">'+esc(progress.sectionTitle)+'</p>':'')+'</div></div><div class="reading-progress-actions"><div class="reading-progress-summary"><div class="reading-pages mono">'+label+' <span class="reading-pct">· 예상 진도</span></div><div class="reading-bar"'+(known?' role="progressbar" aria-label="예상 독서 진도" aria-valuemin="0" aria-valuemax="100" aria-valuenow="'+percent+'"':'')+'><div class="reading-bar-fill" style="width:'+(known?percent:0)+'%"></div></div></div><div class="reading-card-actions"><button type="button" class="icon-btn reading-play-btn" data-reading-start="'+book.id+'" aria-haspopup="dialog" aria-label="독서 타이머">'+svgIcon(I_TIMER)+'</button>'+readingHistoryButtonHtml(book)+'</div></div><div class="reading-split-right">'+readingStatusPanelHtml(book,false)+'<button type="button" class="icon-btn" data-book-details="'+book.id+'" aria-haspopup="dialog" aria-label="읽고 있는 목차 선택">'+svgIcon(I_EDIT)+'</button></div></div>';
 }
 /* ---------------- 습관 만들기(전용 탭) ----------------
    28~29번 라운드까지는 나의 공간 안의 월간 달력형이었지만, 30번 라운드에서 요청에 따라
@@ -9625,7 +9704,11 @@ document.addEventListener('click', function(e){
 
 GrowellBookDetails.configure({
   bookById:bookById,currentPage:function(id){return SESSION&&readingDataReady()?myCurrentPage(id):null;},
-  sessionUserId:function(){return SESSION&&SESSION.userId;}
+  sessionUserId:function(){return SESSION&&SESSION.userId;},
+  readingSettings:function(id){var view=sharedReadingView(id);return SESSION&&view.status==='ready'?view.settings:null;},
+  saveReadingSettings:function(id,next){return saveSharedReadingSettings(id,next);},
+  archiveReadingSettings:function(book){return GrowellReadingFormatDomain.normalizeSettings(book.readingSettings);},
+  saveArchiveReadingSettings:function(book,next){return GrowellArchive.saveReadingSettings(book.archiveEntryId,next);}
 });
 var archiveSharedNoteCache=null;
 var archiveSharedNoteRequest=0;
@@ -9727,12 +9810,14 @@ function archiveSharedSnapshots(){
 function archiveLinkedSignature(){
   return JSON.stringify({owner:SESSION&&SESSION.userId,logs:memberLoadState.readingLogs,meta:memberLoadState.readingMeta,books:archiveSharedSnapshots()});
 }
-GrowellArchive.configure({
+var archiveAppAdapter={
   session:function(){return SESSION;},status:function(){return memberLoadState.privateEntries;},
   statusHtml:function(){return memberDataStatusHtml('privateEntries');},entries:ownPrivateEntries,
   render:render,toast:showToast,reload:function(){loadMemberData().then(render);render();},
   beforeTimerStart:function(ownerId){return Promise.resolve(pauseSharedReadingForArchive(ownerId)).then(function(paused){if(paused)render();return paused;});},
   catalog:archiveSharedCatalog,linkedSignature:archiveLinkedSignature,
+  saveSharedReadingSettings:function(bookId,next){return saveSharedReadingSettings(bookId,next);},
+  ensureSharedReadingBook:function(bookId){return sharedReadingFormats.ensure(bookId);},
   sharedNotes:function(){return archiveSharedNotes();},openSharedNote:function(id,bookId,trigger){return openArchiveSharedNote(id,bookId,trigger);},
   editorHtml:function(html){return rtToolbarHtml('archive')+'<div class="note-editor" contenteditable="true" role="textbox" aria-label="노트 내용" aria-multiline="true" data-placeholder="마음에 남은 문장과 생각을 적어주세요.">'+sanitizeHtml(html||'')+'</div>';},
   bindEditor:function(container,onChange){return bindRichTextToolbar(container.querySelector('[contenteditable="true"]'),{controls:container.querySelector('.rt-controls'),onChange:onChange,isolated:true});},
@@ -9747,6 +9832,7 @@ GrowellArchive.configure({
     guard();return GrowellArchiveDomain.mergeLinkedRows(result,archiveSharedSnapshots(),session.userId);
   },
   saveLinkedSession:async function(bookId,sessionRecord){
+    if(sessionRecord&&sessionRecord.unit==='percent'){await sharedReadingFormats.saveSession(bookId,sessionRecord,arguments[2]);return true;}
     var session=SESSION,epoch=saveSessionEpoch,material=session&&session.keyB64,book=bookById(bookId);
     function guard(){if(!session||SESSION!==session||SESSION.keyB64!==material||epoch!==saveSessionEpoch||memberLoadState.privateEntries!=='ready'||!readingDataReady()||!book||isBookLocked(book))throw new Error('로그인과 책의 연결 상태를 확인해주세요.');}
     guard();
@@ -9804,7 +9890,21 @@ GrowellArchive.configure({
     if(!ok)throw new Error(saveError&&saveError.message==='private-record-conflict'?'다른 기기에서 수정된 기록이에요. 다시 불러온 뒤 수정해주세요.':'저장하지 못했어요. 입력한 내용은 그대로 있으니 연결을 확인하고 다시 시도해주세요.');
     return {entry:STATE.privateEntries[id],book:GrowellArchiveDomain.prepare(book)};
   }
+};
+GrowellArchive.configure(archiveAppAdapter);
+var sharedReadingFormats=typeof GrowellSharedReadingFormat==='undefined'?null:GrowellSharedReadingFormat.create({
+  session:function(){return SESSION;},epoch:function(){return saveSessionEpoch;},status:function(){return memberLoadState.privateEntries;},
+  allowed:function(id){var book=bookById(id);return !!(book&&!isBookLocked(book));},
+  catalog:function(id){return archiveSharedCatalog().find(function(book){return book.bookId===id;});},
+  entry:function(id){return STATE.privateEntries[id]||null;},
+  read:async function(entry){var key=await ensureKey();if(!key)throw new Error('개인 기록을 열지 못했어요.');return {entry:entry,book:GrowellArchiveDomain.decode(await decryptPrivateRecord(entry,key))};},
+  save:function(row,book,createId){return archiveAppAdapter.save(row,book,createId);},changed:render
 });
+function saveSharedReadingSettings(bookId,next){
+  var view=sharedReadingView(bookId);
+  if(view.settings&&view.settings.format!==next.format&&((readingTimer&&readingTimer.bookId===bookId)||readingParkedSessions[bookId]))return Promise.reject(new Error('진행 중인 독서 기록을 마친 뒤 읽는 방식을 바꿔주세요.'));
+  return sharedReadingFormats.saveSettings(bookId,next);
+}
 /* ---------------- member access adapter ---------------- */
 GrowellMemberAccess.configure({
   get SESSION(){return SESSION;},get saveSessionEpoch(){return saveSessionEpoch;},

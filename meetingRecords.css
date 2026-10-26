@@ -61,6 +61,9 @@
 .meeting-records-dialog :is(.mr-title,.mr-topic,.mr-section-head h2,.mr-story h3,.mr-detail-field>span){word-break:normal;overflow-wrap:anywhere;text-wrap:wrap}
 .meeting-records-dialog .mr-sharing-names{margin:0 0 15px;color:var(--ink-soft);font-size:13px;line-height:1.7;white-space:nowrap;overflow-x:auto;word-break:normal;overflow-wrap:normal}
 .meeting-records-dialog .mr-topic-question{font-size:13px;line-height:1.7;color:var(--ink-soft);margin:0 0 10px;white-space:pre-wrap;overflow-wrap:anywhere}
+.meeting-records-dialog [data-mr-book-questions] .mr-topic-question{width:fit-content;max-width:100%;padding:5px 9px;border-radius:5px;background:#edf5df;color:#304c32;font-weight:550}
+:root[data-theme="dark"] .meeting-records-dialog [data-mr-book-questions] .mr-topic-question{background:#35442b;color:#e2f0d6}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) .meeting-records-dialog [data-mr-book-questions] .mr-topic-question{background:#35442b;color:#e2f0d6}}
 .meeting-records-dialog .mr-sharing-cards{display:grid;gap:14px}
 .meeting-records-dialog .mr-sharing-card{min-width:0;padding:16px 18px;border:1px solid #f2e8ce;border-radius:10px;background:#fffbef}
 .meeting-records-dialog .mr-sharing-card h4{margin:0 0 7px;font-size:14px;font-weight:650;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}

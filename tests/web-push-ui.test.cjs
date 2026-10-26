@@ -11,7 +11,7 @@ const repairEntries=memory=>[...memory].filter(([name])=>name.startsWith('growel
 function createLocks(){let tail=Promise.resolve();const calls=[];return {calls,request(name,settings,callback){calls.push(name);const task=tail.then(()=>{if(settings.signal.aborted){const error=Error('cancelled');error.name='AbortError';throw error;}return callback({name});});tail=task.catch(()=>{});return task;}};}
 function harness(options={}){
   const calls={prompts:0,registrations:[],requests:[],subscriptions:0,unsubscribe:0,tokens:0,changes:[],localNotifications:[]};
-  let current=true;const backend=options.backend||{active:!!options.subscribed,prefs:{posts:options.posts!==false,dailyVerse:options.dailyVerse!==false},endpoint:'https://push.example.test/private-endpoint'};
+  let current=true;const backend=options.backend||{active:!!options.subscribed,prefs:{posts:options.posts!==false,dailyVerse:options.dailyVerse!==false,...(typeof options.habitCheck==='boolean'?{habitCheck:options.habitCheck}:{})},endpoint:'https://push.example.test/private-endpoint'};
   const notification={permission:options.permission||'default',requestPermission(){calls.prompts++;notification.permission=options.answer||'granted';return Promise.resolve(notification.permission);}};
   const native=options.native||{};function createSubscription(endpoint,expirationTime=null){return {endpoint,expirationTime,toJSON(){return {endpoint:this.endpoint,expirationTime:this.expirationTime,keys:{p256dh:'PRIVATE_KEY',auth:'PRIVATE_AUTH'}};},unsubscribe(){calls.unsubscribe++;if(options.unsubscribeError)return Promise.reject(Error('device error'));if(options.unsubscribeFalse)return Promise.resolve(false);if(!options.keepNative)native.value=null;if(options.onUnsubscribe)options.onUnsubscribe();return Promise.resolve(true);}};}
   const subscription=createSubscription('https://push.example.test/private-endpoint',options.expirationTime??null);
@@ -93,6 +93,25 @@ test('a failed preference save retains confirmed choices and never exposes serve
   assert.equal(await h.controller.preferences({posts:false,dailyVerse:false}),false);
   assert.deepEqual(json(h.controller.snapshot().preferences),{posts:true,dailyVerse:true});
   assert.doesNotMatch(h.api.message({code:h.controller.snapshot().errorCode}),/PRIVATE/);
+});
+
+test('the nightly habit preference is independent, confirmed by the server, and omitted for legacy schema responses',async()=>{
+  const h=harness({subscribed:true,permission:'granted',habitCheck:true});await h.controller.refresh();
+  assert.equal(h.controller.snapshot().preferences.habitCheck,true);
+  assert.equal(await h.controller.preferences({posts:true,dailyVerse:true,habitCheck:false}),true);
+  assert.deepEqual(json(h.controller.snapshot().preferences),{posts:true,dailyVerse:true,habitCheck:false});
+  assert.deepEqual(h.calls.requests.find(r=>r.body.action==='preferences').body.preferences,{posts:true,dailyVerse:true,habitCheck:false});
+  const legacy=harness({subscribed:true,permission:'granted'});await legacy.controller.refresh();assert.equal('habitCheck' in legacy.controller.snapshot().preferences,false);
+  assert.equal(await h.controller.preferences({posts:true,dailyVerse:true,habitCheck:'false'}),false);assert.equal(h.controller.snapshot().preferences.habitCheck,false);
+});
+
+test('nightly habit OFF survives automatic renewal with a replacement endpoint and a new controller',async()=>{
+  const h=harness({subscribed:true,permission:'granted',habitCheck:false,posts:false});await h.controller.refresh();
+  assert.equal(await h.controller.preferences({posts:false,dailyVerse:true,habitCheck:false}),true);
+  const next=harness({permission:'granted',inactive:true,habitCheck:false,posts:false,memory:h.memory,serverPrefs:{posts:false,dailyVerse:true,habitCheck:false},freshEndpoint:'https://push.example.test/replacement-endpoint'});
+  await next.controller.refresh();assert.equal(await next.controller.restore(),true);
+  assert.deepEqual(json(next.controller.snapshot().preferences),{posts:false,dailyVerse:true,habitCheck:false});
+  assert.deepEqual(next.calls.requests.find(r=>r.body.action==='subscribe').body.preferences,{posts:false,dailyVerse:true,habitCheck:false});
 });
 test('testing is authenticated and enabled only for the current device subscription',async()=>{
   const missing=harness();await missing.controller.refresh();await missing.controller.test();assert.equal(missing.calls.requests.some(r=>r.body.action==='test'),false);
@@ -213,7 +232,7 @@ test('a stalled session check and unavailable browser storage leave settings ret
 });
 function mountHarness(options={},mode={}){
   const h=harness(options),nodes=new Map();
-  const container={classList:{add(){}},setAttribute(){},set innerHTML(value){this.markup=value;for(const match of value.matchAll(/data-push-[a-z]+/g)){
+  const container={classList:{add(){}},setAttribute(){},set innerHTML(value){this.markup=value;for(const match of value.matchAll(/data-push-[a-z-]+/g)){
     if(!nodes.has(match[0]))nodes.set(match[0],{hidden:false,disabled:false,checked:false,textContent:'',classList:{toggle(){}}});
   }},querySelector(selector){return nodes.get(selector.slice(1,-1));},querySelectorAll(selectors){return selectors.split(',').map(selector=>this.querySelector(selector)).filter(Boolean);}};
   const view=h.api.mount(container,Object.assign({},h.adapter,mode));return {h,nodes,container,view};
@@ -236,16 +255,25 @@ test('ordinary member settings retain one test and recovery controls while omitt
     assert.equal(await nodes.get('data-push-test').onclick(),true);assert.equal(h.calls.requests.at(-1).body.action,'test');assert.equal(typeof nodes.get('data-push-disable').onclick,'function');view.destroy();
   }
 });
-test('compact settings expose only three notification switches for members and administrators',async()=>{
+test('compact settings keep simple switches and hide the optional habit setting until the schema supports it',async()=>{
   for(const isAdmin of [false,true]){
     const {h,nodes,container,view}=mountHarness({subscribed:true,permission:'granted',posts:false},{compact:true,isAdmin});await new Promise(setImmediate);
-    assert.equal((container.markup.match(/role="switch"/g)||[]).length,3);
+    assert.equal((container.markup.match(/role="switch"/g)||[]).length,4);assert.equal(nodes.get('data-push-habit-row').hidden,true);
     assert.match(container.markup,/이 기기 알림/);assert.match(container.markup,/새 나눔·자료 알림/);assert.match(container.markup,/매일 오전 9시 말씀/);
     assert.doesNotMatch(container.markup,/<button|<h3|<small|설명|받아요|확인하고|테스트|새로고침|data-push-(?:enable|disable|refresh|test|local|delayed|last|install|reconnect)/);
     assert.equal(nodes.get('data-push-device').checked,true);assert.equal(nodes.get('data-push-posts').checked,false);assert.equal(nodes.get('data-push-verse').checked,true);
     assert.equal(nodes.get('data-push-status').hidden,true);assert.equal(nodes.get('data-push-status').textContent,'');
     assert.equal(h.calls.prompts,0);assert.equal(h.calls.subscriptions,0);view.destroy();
   }
+});
+
+test('compact nightly habit switch changes only its preference and restores confirmed OFF on failure',async()=>{
+  const {h,nodes,view}=mountHarness({subscribed:true,permission:'granted',habitCheck:true},{compact:true});await new Promise(setImmediate);
+  assert.equal(nodes.get('data-push-habit-row').hidden,false);assert.equal(nodes.get('data-push-habit').checked,true);
+  nodes.get('data-push-habit').checked=false;assert.equal(await nodes.get('data-push-habit').onchange(),true);
+  assert.deepEqual(h.calls.requests.find(r=>r.body.action==='preferences').body.preferences,{posts:true,dailyVerse:true,habitCheck:false});
+  assert.equal(nodes.get('data-push-posts').checked,true);assert.equal(nodes.get('data-push-verse').checked,true);
+  h.options.failure='preferences';nodes.get('data-push-habit').checked=true;assert.equal(await nodes.get('data-push-habit').onchange(),false);assert.equal(nodes.get('data-push-habit').checked,false);view.destroy();
 });
 test('compact device ON requests permission in the original gesture and waits for confirmed subscription',async()=>{
   const {h,nodes,view}=mountHarness({}, {compact:true});await new Promise(setImmediate);

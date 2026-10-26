@@ -343,3 +343,32 @@ test('failed or stale async coordination leaves the archive clock paused without
     finish(outcome!=='reject');await new Promise(resolve=>setImmediate(resolve));assert.equal(timer.state().timer.running,false);assert.equal(f.saves.length,0);
   }
 });
+
+
+function ebookFixture(){
+  const F=require('../readingFormatDomain.js'),entries=F.tocEntries([{id:'one',title:'첫 내용',page:1},{id:'two',title:'둘째 내용',page:51}],100),settings=F.selectSection({format:'ebook'},entries,'one',100);
+  const f=fixture({book:{id:'arc_book',title:'전자책',currentPage:15,pageCount:100,readingSettings:settings},readingEntries:entries});return {...f,entries};
+}
+test('ebook timer captures mode, estimates selected contents, restores frozen retry and never fabricates page fields',async()=>{
+  const f=ebookFixture(),timer=f.create();assert.equal(timer.state().reading.startPercent,25);assert.equal(timer.setPage(30),false);
+  f.clock(5000);timer.done();assert.equal(timer.setSection('two'),true);assert.equal(timer.state().reading.ebook.progressPercent,75);
+  f.options.adapter.saveSession=async(id,session,meta)=>{f.saves.push({id,session,meta});throw Error('lost response');};assert.equal(await timer.save(),false);
+  const frozen=timer.state().attempt;f.options.book.readingSettings={format:'paper'};f.clock(95000);const restored=f.create();assert.equal(restored.state().reading.ebook.sectionId,'two');assert.equal(restored.setSection('one'),false);
+  f.options.adapter.saveSession=async(id,session,meta)=>f.saves.push({id,session,meta});assert.ok(await restored.save());assert.deepEqual(f.saves[0],f.saves[1]);assert.equal(f.saves[1].session.unit,'percent');assert.equal(f.saves[1].session.startPage,undefined);assert.equal(f.saves[1].session.endPage,undefined);assert.equal(f.saves[1].session.seconds,4);assert.equal(frozen.endPercent,75);
+});
+test('ebook cancel recovery preserves exact section, mode and frozen elapsed time',async()=>{
+  const f=ebookFixture(),timer=f.create();f.clock(6000);timer.done();timer.setSection('two');const id=timer.state().timer.id,reading=timer.state().reading;assert.equal(timer.discard(),true);
+  const backup=f.storage.getItem(ArchiveTimer.cancelledStorageKey('member','arc_book',id,6000));assert.deepEqual(JSON.parse(JSON.parse(backup).recoveryRaw).reading,reading);
+  f.clock(100000);const recovered=await ArchiveTimer.restoreCancelled({...f.options,isCurrent:()=>true,adapter:{...f.options.adapter,canRestoreSession:async()=>true}},ArchiveTimer.cancelledStorageKey('member','arc_book',id,6000));assert.equal(recovered.ok,true);const restored=f.create();assert.equal(restored.elapsed(),5000);assert.deepEqual(restored.state().reading,reading);
+  assert.equal(ArchiveTimer.pendingBookTimer('member','arc_book',f.storage),true);assert.equal(ArchiveTimer.pendingBookTimer('other','arc_book',f.storage),false);
+});
+test('explicit ebook completion saves 100 percent and a running paper draft stays paper after format change',async()=>{
+  const f=ebookFixture(),timer=f.create();f.clock(6000);timer.done();timer.setComplete(true);assert.ok(await timer.save());assert.equal(f.saves[0].session.endPercent,100);assert.equal(f.saves[0].meta.complete,true);
+  const paper=fixture(),before=paper.create();paper.options.book.readingSettings={format:'ebook'};paper.clock(5000);before.done();assert.equal(paper.create().state().reading,null);assert.ok(await paper.create().save());assert.equal(paper.saves[0].session.unit,undefined);assert.equal(paper.saves[0].session.startPage,15);
+});
+
+
+test('reversing ebook completion after reload restores the exact chosen section estimate',async()=>{
+  const f=ebookFixture(),timer=f.create();f.clock(6000);timer.done();timer.setSection('two');const selected=timer.state().reading.ebook;timer.setComplete(true);assert.equal(timer.state().reading.ebook.progressPercent,100);
+  const restored=f.create();assert.equal(restored.state().complete,true);restored.setComplete(false);assert.deepEqual(restored.state().reading.ebook,selected);assert.equal(restored.state().complete,false);assert.ok(await restored.save());assert.equal(f.saves[0].session.endPercent,75);assert.equal(f.saves[0].meta.complete,false);
+});
