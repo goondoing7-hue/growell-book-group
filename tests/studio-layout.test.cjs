@@ -14,7 +14,7 @@ const book={id:'emotion',accent:'emotion',checkin:{type:'weather'}};
 function harness(){
   const scheduled=[],decrypted=[],renders=[];
   const c={URL,Promise,Array,Object,JSON,String,esc,stripHtml:value=>String(value).replace(/<[^>]*>/g,''),sanitizeHtml:value=>String(value??''),
-    fmtPostDate:()=> '오늘',fmtDate:()=> '2026. 9. 23.',svgIcon:()=>'',I_BACK:'',I_LOCK:'',I_EDIT:'',I_SETTINGS:'',I_TRASH:'',I_COMMENT:'',
+    fmtPostDate:()=> '오늘',fmtDate:()=> '2026. 9. 23.',svgIcon:()=>'',I_BACK:'',I_LOCK:'',I_EDIT:'',I_SHARE:'',I_SETTINGS:'',I_TRASH:'',I_COMMENT:'',
     NOTE_TYPE_INSIGHT:{key:'insight',label:'통찰 정리'},NOTE_TYPES:[],INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],
     noteTypeOf:key=>key==='thought'?{key,label:'내 생각'}:null,
     publicAuthorHtml:(id,name)=>'<button type="button" data-community-author="'+esc(id)+'">'+esc(name)+'</button>',
@@ -304,9 +304,10 @@ test('personal workspace renders and schedules decryption only for the signed-in
   scheduled.forEach(run=>run());assert.deepEqual(decrypted.map(e=>e.id),['mine']);
   const opened=c.mineTabHtml(book,'mine');
   assert.match(opened,/space-list-item is-selected/);assert.match(opened,/aria-current="true"/);
+  assert.match(opened,/data-private-share="mine"/);
   for(const id of ['foreign-owner','foreign-book','missing']){
     const missing=c.mineTabHtml(book,id);
-    assert.ok(missing.includes('기록을 찾을 수 없어요.'));assert.doesNotMatch(missing,/data-mine-entry=/);
+    assert.ok(missing.includes('기록을 찾을 수 없어요.'));assert.doesNotMatch(missing,/data-mine-entry=|data-private-share=/);
   }
 });
 

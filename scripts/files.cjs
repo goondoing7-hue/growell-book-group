@@ -3,6 +3,7 @@
 // Public deployment and Git publishing both use explicit paths. Adding a file
 // to the directory alone must never publish a recovery file, secret, or fixture.
 const DEPLOY_FILES = Object.freeze([
+  'privateShare.js', 'privateShareDomain.js', 'privateShare.css',
   'photoEditor.js', 'photoEditor.css', 'photoSources.js', 'photoSources.css', 'bookPhotoOcr.js', 'bookPhotoOcr.css', 'vendor/tesseract/manifest.json',
   ...require('../vendor/tesseract/manifest.json').files.map(function(file){
     if(!file || typeof file.path!=='string' || !/^[A-Za-z0-9][A-Za-z0-9_./-]*$/.test(file.path) || file.path.split('/').some(function(part){return !part || part==='.' || part==='..';})) throw new Error('Invalid OCR asset path');
@@ -41,6 +42,7 @@ const DEPLOY_FILES = Object.freeze([
 ]);
 
 const TEST_FILES = Object.freeze([
+  'tests/private-share-domain.test.cjs', 'tests/private-share-ui.test.cjs', 'tests/private-share-integration.test.cjs',
   'tests/reading-format-domain.test.cjs', 'tests/shared-reading-format.test.cjs', 'tests/archive-reading-notification.test.cjs', 'tests/web-push-habits-sql.test.cjs', 'tests/web-push-habits-integration.test.cjs',
   'tests/book-photo-ocr.test.cjs', 'tests/book-photo-ocr-assets.test.cjs', 'tests/reading-notification.test.cjs', 'tests/save-diagnostics.test.cjs',
   'tests/photo-editor.test.cjs', 'tests/photo-editor-text.test.cjs', 'tests/photo-sources.test.cjs', 'tests/photo-editor-integration.test.cjs', 'tests/archive-photo-tools.test.cjs', 'tests/reading-notification-background.test.cjs', 'tests/reading-notification-reconciliation.test.cjs',

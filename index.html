@@ -614,10 +614,12 @@
   }
   .post-badges{display:flex; gap:6px; flex-wrap:nowrap;}
   .post-text{font-size:14.5px; line-height:1.75; white-space:pre-wrap; overflow-wrap:break-word; word-break:break-word;}
-  .post-del,.post-edit{font-size:11.5px; color:var(--ink-faint); background:none; border:none; padding:2px; display:flex; align-items:center;}
-  .post-del svg,.post-edit svg{width:15px; height:15px;}
+  .post-del,.post-edit,.post-share{font-size:11.5px; color:var(--ink-faint); background:none; border:none; padding:2px; display:flex; align-items:center;}
+  .post-del svg,.post-edit svg,.post-share svg{width:15px; height:15px;}
   .post-del:hover{color:var(--danger);}
   .post-edit:hover{color:var(--primary);}
+  .post-share{min-width:32px;min-height:32px;justify-content:center;cursor:pointer}
+  .post-share:hover{color:var(--primary)}
   /* 38번 라운드: 통찰 정리 카드를 그라데이션 배경(선택 가능)을 감싼 카드 형태로 "세련되게"
      다시 꾸몄다 — 둥근 모서리 + 여유 있는 안쪽 여백을 주고, 제목은 사이트 헤딩에 쓰는
      세리프(--font-display, Hahmlet)로 크게 얹어서 일반 텍스트 글과는 다른 느낌을 준다. */
@@ -1096,6 +1098,7 @@
 <link rel="stylesheet" href="insightViewer.css">
 <link rel="stylesheet" href="privateCategories.css">
 <link rel="stylesheet" href="archive.css">
+<link rel="stylesheet" href="privateShare.css">
 <link rel="stylesheet" href="archiveCalendar.css">
 <link rel="stylesheet" href="habits.css">
 <link rel="stylesheet" href="habitGuide.css">
@@ -1188,6 +1191,8 @@
 <script src="archiveReadingNotification.js"></script>
 <script src="archiveTimer.js"></script>
 <script src="archive.js"></script>
+<script src="privateShareDomain.js"></script>
+<script src="privateShare.js"></script>
 <script src="dailyVerses.js"></script>
 <script id="app-script">
 (function(){
@@ -1389,6 +1394,7 @@ var I_PAUSE='<path d="M7 5.5h3.4v13H7ZM13.6 5.5H17v13h-3.4Z" stroke-linejoin="ro
 var I_TIMER='<circle cx="12" cy="14" r="8"/><path d="M9 2h6M12 2v4M18 6l2-2M12 10v5" stroke-linecap="round"/>';
 var I_CHECK='<path d="M5 12.5l4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round"/>';
 var I_EDIT='<path d="M14.7 4.6 19.4 9.3 8.2 20.5H3.5v-4.7Z" stroke-linejoin="round"/><path d="M12.6 6.7l4.7 4.7" stroke-linecap="round"/>';
+var I_SHARE='<path d="M12 16V3m-5 5 5-5 5 5M5 13v7h14v-7" stroke-linecap="round" stroke-linejoin="round"/>';
 var I_SETTINGS='<path d="m9.5 3-.5 2.2-1.8 1-2.2-.6-2.5 4.3L4.2 11v2L2.5 14.1 5 18.4l2.2-.6 1.8 1 .5 2.2h5l.5-2.2 1.8-1 2.2.6 2.5-4.3-1.7-1.1v-2l1.7-1.1L19 5.6l-2.2.6-1.8-1-.5-2.2Z" stroke-linejoin="round"/><circle cx="12" cy="12" r="3"/>';
 var I_SPARK='<path d="M12 3.2c.45 2.75 1.15 4.6 2.35 5.8 1.2 1.2 3.05 1.9 5.8 2.35-2.75.45-4.6 1.15-5.8 2.35-1.2 1.2-1.9 3.05-2.35 5.8-.45-2.75-1.15-4.6-2.35-5.8-1.2-1.2-3.05-1.9-5.8-2.35 2.75-.45 4.6-1.15 5.8-2.35 1.2-1.2 1.9-3.05 2.35-5.8Z" stroke-linejoin="round"/>';
 var NOTE_TYPES = [
@@ -2415,6 +2421,7 @@ function clearMemberSession(){
   if(typeof GrowellMemberAccess!=='undefined')GrowellMemberAccess.reset();
   if(typeof GrowellBookDetails!=='undefined')GrowellBookDetails.reset();
   if(typeof GrowellArchive!=='undefined')GrowellArchive.reset();
+  if(typeof GrowellPrivateShare!=='undefined')GrowellPrivateShare.reset();
   if(typeof sharedReadingFormats!=='undefined'&&sharedReadingFormats)sharedReadingFormats.reset();
   if(typeof closeReadingHistoryDialog==='function')closeReadingHistoryDialog();
   if(typeof closeHabitComposer==='function')closeHabitComposer(false);
@@ -2525,18 +2532,18 @@ function diffDict(prevDict, nextDict){
 /* payload.photo.dataUrl이 아직 base64(data:...)면 Storage에 올리고 공개 URL로 바꿔치기한다.
    이미 URL(수정 화면에서 사진을 안 바꾼 경우)이면 그대로 둔다 — 렌더 코드는 이 자리가
    base64든 URL이든 <img src="...">로 똑같이 쓰므로 신경 쓸 필요가 없다. */
-function uploadPhotoIfNeeded(bucket, ownerId, id, photo, recordTable){
-  if(!photo || !photo.dataUrl || !/^data:/.test(photo.dataUrl)) return Promise.resolve(photo);
+function uploadPhotoIfNeeded(bucket, ownerId, id, photo, recordTable, fixedTimestamp){
+  if(!photo || !photo.dataUrl || !/^data:/i.test(photo.dataUrl)) return Promise.resolve(photo);
   var commaIdx = photo.dataUrl.indexOf(',');
   var meta = photo.dataUrl.slice(0, commaIdx);
   var b64 = photo.dataUrl.slice(commaIdx+1);
-  var mimeMatch = /data:(.*?);base64/.exec(meta);
-  var mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  var mimeMatch = /data:(.*?);base64/i.exec(meta);
+  var mime = mimeMatch ? mimeMatch[1].toLowerCase() : 'image/jpeg';
   var ext = (mime.split('/')[1]||'jpg').replace(/[^a-z0-9]/gi,'') || 'jpg';
   var bin = atob(b64);
   var bytes = new Uint8Array(bin.length);
   for(var i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
-  var path = ownerId+'/'+id+'-'+Date.now()+'.'+ext;
+  var path = ownerId+'/'+id+'-'+(Number.isSafeInteger(fixedTimestamp)&&fixedTimestamp>=0?fixedTimestamp:Date.now())+'.'+ext;
   return checkedRecordSaveRequest(sb.storage.from(bucket).upload(path, bytes, {contentType:mime, upsert:true}),recordTable,'upload').then(function(res){
     if(res.error) throw res.error;
     var pub = sb.storage.from(bucket).getPublicUrl(path);
@@ -2661,7 +2668,7 @@ function ensureReadingSaveSession(job,forceRefresh){
 }
 function performSave(job){
   var opts = job.opts;
-  function guard(){ if(!saveSessionMatches(job)) throw new Error('save-session-changed'); }
+  function guard(){ if(!saveSessionMatches(job)) throw new Error('save-session-changed');if(opts.privateShareGuard)opts.privateShareGuard(); }
   guard();
   var previous = JSON.parse(JSON.stringify(STATE));
   var next = JSON.parse(JSON.stringify(previous));
@@ -2699,7 +2706,7 @@ function performSave(job){
              그대로 써서 모든 사진 첨부가 RLS에 막혀 조용히 실패했었다(사진 없이도 글쓰기 자체는
              되니 눈치채기 어려웠음). */
           var ownerAuthId = (STATE.users[row.userId] && STATE.users[row.userId].authUserId) || row.userId;
-          return uploadPhotoIfNeeded(spec.bucket, ownerAuthId, id, row[spec.photoField],spec.table).then(function(photo){
+          return uploadPhotoIfNeeded(spec.bucket, ownerAuthId, id, row[spec.photoField],spec.table,opts.privateSharePostId===id?row.createdAt:undefined).then(function(photo){
             row[spec.photoField] = photo;
           });
         }
@@ -2708,6 +2715,7 @@ function performSave(job){
         if(isNew){
           if(spec.noInsert) return;
           if(key==='readingLogs') return insertReadingLogOnce(spec.toRow(row),guard);
+          if(key==='posts'&&opts.privateSharePostId===id)return insertPrivateSharePostOnce(spec.toRow(row),guard);
           return checkedRecordSaveRequest(sb.from(spec.table).insert(spec.toRow(row)),spec.table,'insert').then(function(res){ if(res.error) throw res.error; });
         }
         if(spec.noUpdate) return;
@@ -3294,6 +3302,107 @@ async function doForgotPassword(id, hint, pw, pw2, btn){
     doForgotPassword.busy=false;
     if(btn){btn.disabled=false;btn.textContent='비밀번호 바꾸기';}
   }
+}
+
+/* Private-to-community copies keep their own encrypted draft and publication ID. */
+var privateShareDraftTasks=Object.create(null);
+function privateShareFields(payload,allowEmpty){
+  return GrowellPrivateShareDomain.fields(payload,{sanitizeHtml:sanitizeHtml,plainTextHtml:nlToBr,safePhotoUrl:safePhotoUrl,allowEmpty:allowEmpty===true});
+}
+function privateShareIdentityCurrent(source){
+  var member=SESSION&&STATE.users[SESSION.userId],book=source&&bookById(source.bookId);
+  return !!(source&&SESSION&&SESSION.userId===source.userId&&SESSION.keyB64===source.keyB64&&source.keyB64&&saveSessionEpoch===source.epoch&&member&&member.authUserId===source.authUserId&&member.approvalStatus==='approved'&&!member.isDeleted&&book&&!isBookLocked(book));
+}
+function privateShareCurrent(source){
+  var entry=source&&STATE.privateEntries[source.entryId];
+  return !!(privateShareIdentityCurrent(source)&&location.hash===source.route&&memberLoadState.privateEntries==='ready'&&entry&&entry.userId===source.userId&&entry.bookId===source.bookId&&entry.iv===source.iv&&entry.data===source.data&&!GrowellPrivateCategories.isSettingsEntry(entry)&&!GrowellArchiveDomain.isArchiveEntry(entry));
+}
+function privateShareGuard(source,identityOnly){
+  if(!(identityOnly?privateShareIdentityCurrent(source):privateShareCurrent(source)))throw new Error('계정이나 원문이 바뀌었어요. 글을 다시 열어주세요.');
+}
+async function loadPrivateShare(entryId){
+  if(anyComposerOpen())throw new Error('작성 중인 글을 저장하거나 닫은 뒤 공유해주세요.');
+  var session=SESSION,epoch=saveSessionEpoch,route=location.hash,entry=STATE.privateEntries[entryId],member=currentUser();
+  if(!session||!entry||entry.userId!==session.userId||!member||member.approvalStatus!=='approved'||member.isDeleted||memberLoadState.privateEntries!=='ready'||GrowellPrivateCategories.isSettingsEntry(entry)||GrowellArchiveDomain.isArchiveEntry(entry))throw new Error('내가 작성한 글을 먼저 열어주세요.');
+  var iv=entry.iv,data=entry.data,key=await ensureKey();
+  if(!key||SESSION!==session||saveSessionEpoch!==epoch||location.hash!==route)throw new Error('글을 다시 열어주세요.');
+  var source={userId:session.userId,keyB64:session.keyB64,authUserId:member.authUserId,epoch:epoch,route:route,entryId:entry.id,bookId:entry.bookId,iv:iv,data:data};
+  privateShareGuard(source);
+  var raw=await decryptPrivateRecord(entry,key);privateShareGuard(source);
+  var payload;try{payload=JSON.parse(raw);}catch(error){payload={text:raw};}
+  if(!payload||typeof payload!=='object'||Array.isArray(payload))payload={text:raw};
+  return {source:source,fields:privateShareFields(payload,false),notice:GrowellPrivateShareDomain.message(payload.noteType)};
+}
+function privateShareDraftKey(source){return 'growell_private_share_v1:'+JSON.stringify([source.userId,source.entryId]);}
+function privateShareDraftValue(source,state){
+  var operation=state&&state.operation;
+  if(!state||state.v!==1||!operation||typeof operation.postId!=='string'||!/^p_[A-Za-z0-9_-]{8,100}$/.test(operation.postId)||!Number.isSafeInteger(operation.createdAt)||operation.createdAt<=0||operation.createdAt>Date.now()+60000||typeof state.attempted!=='boolean')throw new Error('공유 초안을 확인하지 못했어요.');
+  return {v:1,fields:privateShareFields(state.fields,true),operation:{postId:operation.postId,createdAt:operation.createdAt},attempted:state.attempted};
+}
+async function readPrivateShareDraft(source){
+  privateShareGuard(source,true);
+  var raw=localStorage.getItem(privateShareDraftKey(source));source.draftRaw=raw;source.draftRead=true;source.draftPlain=null;
+  if(raw===null)return null;
+  if(raw.length>12*1024*1024)throw new Error('공유 초안이 너무 커요.');
+  var box=JSON.parse(raw),key=await keyFromB64(source.keyB64);privateShareGuard(source,true);
+  if(!box||box.v!==1||typeof box.iv!=='string'||typeof box.data!=='string')throw new Error('공유 초안을 열지 못했어요.');
+  var text=await decryptText(key,box.iv,box.data);privateShareGuard(source,true);
+  if(localStorage.getItem(privateShareDraftKey(source))!==raw)throw new Error('다른 창의 공유 초안이 바뀌었어요.');
+  var value=JSON.parse(text);
+  if(value.userId!==source.userId||value.entryId!==source.entryId||value.bookId!==source.bookId)throw new Error('공유 초안의 계정을 확인해주세요.');
+  var state=privateShareDraftValue(source,value.state);source.draftPlain=JSON.stringify(state);return state;
+}
+function writePrivateShareDraft(source,state){
+  var keyName=privateShareDraftKey(source),previous=privateShareDraftTasks[keyName]||Promise.resolve();
+  var task=previous.catch(function(){}).then(async function(){
+    privateShareGuard(source,true);if(!source.draftRead)await readPrivateShareDraft(source);
+    var value=privateShareDraftValue(source,state),plain=JSON.stringify(value),text=JSON.stringify({userId:source.userId,bookId:source.bookId,entryId:source.entryId,state:value});
+    if(text.length>8*1024*1024)throw new Error('공유 초안이 너무 커요.');
+    var key=await keyFromB64(source.keyB64),box=await encryptText(key,text);privateShareGuard(source,true);
+    if(localStorage.getItem(keyName)!==source.draftRaw)throw new Error('다른 창의 공유 초안이 바뀌었어요.');
+    var raw=JSON.stringify({v:1,iv:box.iv,data:box.data});localStorage.setItem(keyName,raw);
+    if(localStorage.getItem(keyName)!==raw)throw new Error('공유 초안을 보관하지 못했어요.');
+    source.draftRaw=raw;source.draftPlain=plain;
+  });
+  privateShareDraftTasks[keyName]=task;return task;
+}
+async function clearPrivateShareDraft(source,state){
+  var keyName=privateShareDraftKey(source),pending=privateShareDraftTasks[keyName];if(pending)await pending;
+  privateShareGuard(source,true);
+  if(source.draftPlain!==JSON.stringify(privateShareDraftValue(source,state))||localStorage.getItem(keyName)!==source.draftRaw)throw new Error('새 공유 초안은 보존했어요.');
+  localStorage.removeItem(keyName);if(localStorage.getItem(keyName)!==null)throw new Error('공유 초안을 정리하지 못했어요.');
+  source.draftRaw=null;source.draftPlain=null;
+}
+function privateSharePublishedPhoto(source,photo,operation){
+  if(!photo||!/^data:/i.test(photo.dataUrl))return photo;
+  var mime=/^data:(image\/(?:jpeg|png|webp|gif));base64,/i.exec(photo.dataUrl)[1].toLowerCase(),ext=mime.split('/')[1].replace(/[^a-z0-9]/gi,'')||'jpg';
+  var path=source.authUserId+'/'+operation.postId+'-'+operation.createdAt+'.'+ext;
+  var result=sb.storage.from('post-photos').getPublicUrl(path),url=result&&result.data&&result.data.publicUrl;
+  if(!safePhotoUrl(url))throw new Error('나눔 사진 주소를 준비하지 못했어요.');
+  return {dataUrl:url,mimeType:mime};
+}
+async function insertPrivateSharePostOnce(row,guard){
+  try{guard();var result=await checkedRecordSaveRequest(sb.from('posts').insert(row),'posts','insert');if(!result||result.error)throw result&&result.error||new Error('post-copy-insert');}
+  catch(error){guard();var found=await sb.from('posts').select('*').eq('id',row.id).eq('user_id',row.user_id).maybeSingle();guard();if(!found||found.error||!GrowellPrivateShareDomain.matchingRow(found.data,row))throw error;}
+}
+async function publishPrivateShare(source,payload,operation){
+  privateShareGuard(source,true);
+  var prepared=privateShareDraftValue(source,{v:1,fields:payload,operation:operation,attempted:true}),fields=privateShareFields(prepared.fields,false),postId=operation.postId;
+  var post=Object.assign({id:postId,userId:source.userId,userName:(STATE.users[source.userId]||{}).name||'',bookId:source.bookId,createdAt:operation.createdAt},fields);
+  var expected=GENERIC_COLLECTIONS.posts.toRow(Object.assign({},post,{photo:privateSharePublishedPhoto(source,post.photo,operation)}));
+  var found=await sb.from('posts').select('*').eq('id',postId).eq('user_id',source.userId).maybeSingle();privateShareGuard(source,true);
+  if(!found||found.error)throw new Error('나눔 결과를 확인하지 못했어요. 다시 시도해주세요.');
+  if(found.data){
+    if(!GrowellPrivateShareDomain.matchingRow(found.data,expected))throw new Error('이미 저장된 나눔이 달라요. 원문과 초안을 보존했어요.');
+    STATE.posts[postId]=mapPostRow(found.data,STATE.users);return {postId:postId,bookId:source.bookId};
+  }
+  privateShareGuard(source);
+  var ok=await saveState(function(next){
+    privateShareGuard(source);if(next.posts[postId])throw new Error('기존 나눔의 저장 결과를 다시 확인해주세요.');
+    next.posts[postId]=post;
+  },{render:false,privateSharePostId:postId,privateShareGuard:function(){privateShareGuard(source);}});
+  privateShareGuard(source,true);if(!ok)throw new Error('나눔 결과를 다시 확인해주세요.');
+  return {postId:postId,bookId:source.bookId};
 }
 
 /* ---------------- content actions ---------------- */
@@ -6594,6 +6703,7 @@ function mineEntryDetailHtml(book, e){
   return '<div class="card post" data-mine-entry="'+e.id+'">' +
     '<div class="post-head"><div class="post-time mono">'+fmtDate(e.createdAt)+'</div>' +
     '<div class="post-head-side"><span data-mine-badges="'+e.id+'"></span>' +
+    '<button class="post-share" data-private-share="'+esc(e.id)+'" type="button" aria-label="나눔으로 공유" title="나눔으로 공유" aria-haspopup="dialog">'+svgIcon(I_SHARE)+'</button>' +
     '<button class="post-edit" data-edit-mine="'+e.id+'" type="button" title="수정">'+svgIcon(I_EDIT)+'</button>' +
     '<button class="post-del" data-del-mine="'+e.id+'" type="button" title="삭제">'+svgIcon(I_TRASH)+'</button></div></div>' +
     '<div data-mine-body="'+e.id+'"><div class="post-text" style="color:var(--ink-faint)">불러오는 중…</div></div>' +
@@ -8817,6 +8927,7 @@ function bindEvents(route){
   GrowellMemberAccess.bind();
   GrowellBookDetails.bind();
   GrowellArchive.bind();
+  if(typeof GrowellPrivateShare!=='undefined')GrowellPrivateShare.bind();
   app.querySelectorAll('[data-retry-community]').forEach(function(button){button.addEventListener('click',function(){sharedPostsLoadState='idle';render();});});
 
   var themeBtn = document.getElementById('btn-theme');
@@ -9702,6 +9813,15 @@ document.addEventListener('click', function(e){
   }catch(err){ /* 설치 배너는 부가 기능 — 실패해도 앱 부팅 자체는 계속 진행 */ }
 })();
 
+GrowellPrivateShare.configure({
+  load:loadPrivateShare,current:privateShareCurrent,draftCurrent:privateShareIdentityCurrent,publish:publishPrivateShare,
+  newOperation:function(){return {postId:uid('p'),createdAt:Date.now()};},
+  readDraft:readPrivateShareDraft,writeDraft:writePrivateShareDraft,clearDraft:clearPrivateShareDraft,
+  sanitizeHtml:sanitizeHtml,validateFields:function(fields){return privateShareFields(fields,false);},toolbarHtml:rtToolbarHtml,
+  bindEditor:function(container,onChange){return bindRichTextToolbar(container.querySelector('[data-ps-editor]'),{controls:container.querySelector('.rt-controls'),onChange:onChange,isolated:true});},
+  previewHtml:function(fields){var body=noteBodyHtml(fields);return body.mediaHtml+(body.bodyHtml?'<div class="post-body">'+body.bodyHtml+'</div>':'');},
+  toast:showToast,done:function(result){location.hash='#/book/'+result.bookId+'/share/post/'+result.postId;render();}
+});
 GrowellBookDetails.configure({
   bookById:bookById,currentPage:function(id){return SESSION&&readingDataReady()?myCurrentPage(id):null;},
   sessionUserId:function(){return SESSION&&SESSION.userId;},
