@@ -298,7 +298,7 @@ function timerView(book){
   function node(){return dialog={open:false,innerHTML:'',setAttribute(){},
     querySelectorAll(selector){return selector==='[data-at-done]'?[{addEventListener(_name,handler){done=handler;}}]:[];},
     querySelector(){return null;},showModal(){this.open=true;},close(){this.open=false;},remove(){}};}
-  const browser={URL,GrowellReadingTimer:Domain,GrowellArchiveDomain:ArchiveDomain,localStorage:f.storage,Date:Clock,
+  const browser={URL,GrowellReadingTimer:Domain,GrowellArchiveDomain:ArchiveDomain,GrowellReadingFormatDomain:require('../readingFormatDomain.js'),GrowellBookDetails:require('../bookDetails.js'),localStorage:f.storage,Date:Clock,
     document:{createElement:node,body:{appendChild(){}}},setInterval:()=>1,clearInterval(){}};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../archiveTimer.js'),'utf8'),browser);
   assert.equal(browser.GrowellArchiveTimer.open({...f.options,book:{...f.options.book,...book}}),true);
@@ -350,11 +350,18 @@ function ebookFixture(){
   const f=fixture({book:{id:'arc_book',title:'전자책',currentPage:15,pageCount:100,readingSettings:settings},readingEntries:entries});return {...f,entries};
 }
 test('ebook timer captures mode, estimates selected contents, restores frozen retry and never fabricates page fields',async()=>{
-  const f=ebookFixture(),timer=f.create();assert.equal(timer.state().reading.startPercent,25);assert.equal(timer.setPage(30),false);
+  const f=ebookFixture(),timer=f.create();assert.equal(timer.state().reading.startPercent,25);assert.equal(timer.setPage(30),false);assert.equal(timer.setSection('two'),false);assert.equal(timer.setComplete(true),false);assert.equal(timer.state().reading.ebook.progressPercent,25);
   f.clock(5000);timer.done();assert.equal(timer.setSection('two'),true);assert.equal(timer.state().reading.ebook.progressPercent,75);
   f.options.adapter.saveSession=async(id,session,meta)=>{f.saves.push({id,session,meta});throw Error('lost response');};assert.equal(await timer.save(),false);
   const frozen=timer.state().attempt;f.options.book.readingSettings={format:'paper'};f.clock(95000);const restored=f.create();assert.equal(restored.state().reading.ebook.sectionId,'two');assert.equal(restored.setSection('one'),false);
   f.options.adapter.saveSession=async(id,session,meta)=>f.saves.push({id,session,meta});assert.ok(await restored.save());assert.deepEqual(f.saves[0],f.saves[1]);assert.equal(f.saves[1].session.unit,'percent');assert.equal(f.saves[1].session.startPage,undefined);assert.equal(f.saves[1].session.endPage,undefined);assert.equal(f.saves[1].session.seconds,4);assert.equal(frozen.endPercent,75);
+});
+test('ebook timer displays whole percents without changing stored fractional progress and only offers a section picker after ending',()=>{
+  const book={readingSettings:{format:'ebook',ebook:{sectionId:'first',sectionTitle:'첫 부분',progressPercent:32.5,progressKind:'estimated',estimateBasis:'paper-toc',updatedAt:1000}},tableOfContents:'첫 부분 · 1\n두 번째 부분 · 51',totalPages:100};
+  const before=JSON.stringify(book),views=timerView(book);
+  assert.match(views.timerHtml,/33%부터/);assert.doesNotMatch(views.timerHtml,/약 |32\.5%|data-book-ebook-section/);
+  assert.match(views.saveHtml,/33% · 추정/);assert.match(views.saveHtml,/data-book-ebook-section/);assert.doesNotMatch(views.saveHtml,/약 |32\.5%/);
+  assert.equal(JSON.stringify(book),before);
 });
 test('ebook cancel recovery preserves exact section, mode and frozen elapsed time',async()=>{
   const f=ebookFixture(),timer=f.create();f.clock(6000);timer.done();timer.setSection('two');const id=timer.state().timer.id,reading=timer.state().reading;assert.equal(timer.discard(),true);

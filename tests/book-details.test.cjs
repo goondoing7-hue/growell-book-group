@@ -103,18 +103,20 @@ test('Back, close, and Escape return to the opening cover without navigating awa
 });
 
 function choiceButton(attribute,value){return {disabled:false,getAttribute(name){return name===attribute?value:null;},closest(){return this;}};}
-test('book details saves mode once, selects an estimated real subsection, and never changes paper progress',async()=>{
-  let settings={format:'paper'},calls=[];
+test('book details changes format but only displays the saved ebook section and integer progress',async()=>{
+  let settings={format:'paper',ebook:{sectionId:'chapter-2-section-1',sectionTitle:'2장 · 나의 핵심 감정은?',progressPercent:37.5,progressKind:'estimated',estimateBasis:'paper-toc',updatedAt:100}},calls=[];
   const h=harness({readingSettings(){return settings;},async saveReadingSettings(id,next){calls.push({id,next});settings=next;}});h.click();
   let node=h.nodes[0];assert.match(node.innerHTML,/data-book-reading-format="paper" aria-pressed="true"/);
   await node.events.click({target:choiceButton('data-book-reading-format','ebook'),preventDefault(){}});
   assert.equal(calls.length,1);assert.equal(calls[0].id,'emotion');assert.equal(settings.format,'ebook');assert.doesNotMatch(node.innerHTML,/364쪽|현재 90쪽/);
-  await node.events.click({target:choiceButton('data-book-ebook-section','chapter-2-section-1'),preventDefault(){}});
-  assert.equal(calls.length,2);assert.equal(settings.ebook.sectionTitle,'2장 · 나의 핵심 감정은?');assert.equal(settings.ebook.progressKind,'estimated');
+  const before=JSON.stringify(settings);
+  await node.events.click({target:choiceButton('data-book-ebook-section','chapter-2-section-2'),preventDefault(){}});
+  assert.equal(calls.length,1);assert.equal(JSON.stringify(settings),before);assert.equal(settings.ebook.progressPercent,37.5);
+  assert.match(node.innerHTML,/38%/);assert.match(node.innerHTML,/aria-current="location"/);assert.doesNotMatch(node.innerHTML,/data-book-ebook-section|약 |37\.5%/);
   assert.match(h.api.hintHtml('emotion',90),/나의 핵심 감정은\?/);assert.doesNotMatch(h.api.hintHtml('emotion',90),/90쪽|이유 없는 분노/);
-  assert.match(node.status.textContent,/진행률을 저장/);
+  assert.equal(node.status.textContent,'');
   await node.events.click({target:choiceButton('data-book-reading-format','paper'),preventDefault(){}});
-  assert.equal(settings.ebook.sectionId,'chapter-2-section-1');assert.match(node.innerHTML,/현재 90쪽/);assert.equal(calls.length,3);
+  assert.equal(settings.ebook.sectionId,'chapter-2-section-1');assert.match(node.innerHTML,/현재 90쪽/);assert.equal(calls.length,2);
 });
 
 test('loading and changed-owner dialogs cannot save, failed saves retain the selected book and prior format',async()=>{
@@ -134,19 +136,19 @@ test('loading and changed-owner dialogs cannot save, failed saves retain the sel
 
 test('archive format saves retain exact source entry identity and selected subsection',async()=>{
   const calls=[],h=harness({archiveReadingSettings(b){return b.readingSettings;},async saveArchiveReadingSettings(book,next){calls.push({book,next});}});
-  const archive={id:'arc_sample',archiveEntryId:'encrypted-owned-entry',title:'아카이브 책',currentPage:40,totalPages:200,tableOfContents:'1장 처음\n첫 세부 목차\n2장 다음\n다음 세부 목차',readingSettings:{format:'paper'}};
+  const archive={id:'arc_sample',archiveEntryId:'encrypted-owned-entry',title:'아카이브 책',currentPage:40,totalPages:200,tableOfContents:'1장 처음\n첫 세부 목차\n2장 다음\n다음 세부 목차',readingSettings:{format:'paper',ebook:{sectionId:'archive-toc-3',sectionTitle:'2장 · 다음 세부 목차',progressPercent:75.5,estimateBasis:'equal-sections',updatedAt:100}}};
   h.api.openArchive(archive,40,h.trigger);const node=h.nodes[0];
   await node.events.click({target:choiceButton('data-book-reading-format','ebook'),preventDefault(){}});
-  await node.events.click({target:choiceButton('data-book-ebook-section','archive-toc-3'),preventDefault(){}});
-  assert.equal(calls.length,2);assert.equal(calls[0].book.archiveEntryId,'encrypted-owned-entry');assert.equal(calls[1].book.currentPage,40);
-  assert.equal(calls[1].next.ebook.progressPercent,75);assert.doesNotMatch(node.innerHTML,/40쪽|200쪽/);
-  const hint=h.api.hintArchiveHtml({...archive,readingSettings:calls[1].next},40);assert.match(hint,/다음 세부 목차/);assert.doesNotMatch(hint,/40쪽|첫 세부 목차/);
+  await node.events.click({target:choiceButton('data-book-ebook-section','archive-toc-1'),preventDefault(){}});
+  assert.equal(calls.length,1);assert.equal(calls[0].book.archiveEntryId,'encrypted-owned-entry');assert.equal(calls[0].book.currentPage,40);
+  assert.equal(calls[0].next.ebook.progressPercent,75.5);assert.doesNotMatch(node.innerHTML,/40쪽|200쪽|data-book-ebook-section|약 |75\.5%/);assert.match(node.innerHTML,/76%/);
+  const hint=h.api.hintArchiveHtml({...archive,readingSettings:calls[0].next},40);assert.match(hint,/다음 세부 목차/);assert.doesNotMatch(hint,/40쪽|첫 세부 목차/);
 });
 
 test('book details renders the confirmed fresh settings returned by durable saves',async()=>{
   const h=harness({readingSettings(){return {format:'paper'};},async saveReadingSettings(){return {format:'ebook',ebook:{sectionId:'chapter-2-section-1',sectionTitle:'다른 기기에서 선택한 최신 목차',progressPercent:30,estimateBasis:'paper-toc',updatedAt:5000}};}});h.click();
   await h.nodes[0].events.click({target:choiceButton('data-book-reading-format','ebook'),preventDefault(){}});
-  assert.match(h.nodes[0].innerHTML,/약 30% · 추정/);assert.match(h.api.hintHtml('emotion',90),/읽는 부분/);
+  assert.match(h.nodes[0].innerHTML,/<span>30%<\/span>/);assert.doesNotMatch(h.nodes[0].innerHTML,/약 |data-book-ebook-section/);assert.match(h.api.hintHtml('emotion',90),/읽는 부분/);
 });
 
 test('route and account changes close private reading-position context; stale callbacks do not close a replacement',()=>{

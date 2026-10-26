@@ -9,6 +9,10 @@
   function clean(value,limit){return typeof value==='string'?Array.from(value.trim()).slice(0,limit).join(''):'';}
   function normalizeFormat(value){return value==='ebook'?'ebook':'paper';}
   function percent(value){return typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=100?Math.round(value*10)/10:null;}
+  function displayPercent(value){
+    if(typeof value!=='number'||!Number.isFinite(value)||value<0||value>100)return null;
+    return Math.min(value<100?99:100,Math.round(value));
+  }
   function normalizeSettings(value){
     var source=object(value)?value:{},raw=object(source.ebook)?source.ebook:{},progress=percent(raw.progressPercent);
     return {format:normalizeFormat(source.format),ebook:{sectionId:clean(raw.sectionId,200),sectionTitle:clean(raw.sectionTitle,2000),
@@ -60,6 +64,6 @@
     var selection=estimateSelection(entries,id);if(!selection)return null;
     var next=normalizeSettings(settings);next.format='ebook';next.ebook=Object.assign(selection,{updatedAt:Number.isSafeInteger(now)&&now>=0?now:0});return next;
   }
-  return {normalizeFormat:normalizeFormat,normalizeSettings:normalizeSettings,settingsFromBook:settingsFromBook,changeFormat:changeFormat,
+  return {normalizeFormat:normalizeFormat,normalizeSettings:normalizeSettings,settingsFromBook:settingsFromBook,changeFormat:changeFormat,displayPercent:displayPercent,
     tocEntries:tocEntries,estimateSelection:estimateSelection,selectSection:selectSection};
 });

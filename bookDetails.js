@@ -121,7 +121,7 @@
     return section?'<span class="book-reading-section"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+(section.label?escape(section.label)+' · ':'')+escape(section.title)+'</span></span>':'';
   }
   function ebookHintHtml(settings,archive){
-    return '<span class="book-reading-section'+(archive?' book-archive-reading-section':'')+'"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+escape(settings.ebook.sectionTitle||'읽고 있는 목차를 선택해주세요.')+'</span></span>';
+    return '<span class="book-reading-section'+(archive?' book-archive-reading-section':'')+'"><span class="book-reading-marker" aria-hidden="true">·</span> <span class="book-reading-label">읽는 부분:</span> <span class="book-reading-title">'+escape(settings.ebook.sectionTitle||'읽기를 마친 뒤 진도를 기록해주세요.')+'</span></span>';
   }
   function coverHtml(book,imageClass){
     if(!book)return '';
@@ -160,14 +160,15 @@
   }
   function readingEntries(bookOrId){var source=readingRows(bookOrId);return F.tocEntries(source.rows,source.totalPages);}
   function readingChoice(bookOrId,sectionId,settings,now){return F.selectSection(settings,readingEntries(bookOrId),sectionId,now);}
-  function readingPickerHtml(bookOrId,settings){
+  function readingPickerHtml(bookOrId,settings,readOnly){
     var selected=F.normalizeSettings(settings),entries=readingEntries(bookOrId),groups=[];
     entries.forEach(function(entry){var last=groups[groups.length-1];if(!last||last.id!==entry.chapterId){last={id:entry.chapterId,title:entry.chapterTitle,label:entry.label,entries:[]};groups.push(last);}last.entries.push(entry);});
     if(!entries.length)return '<p class="book-toc-note book-ebook-empty">등록된 목차가 없어요. 책 정보에 목차를 추가해주세요.</p>';
-    return '<div class="book-ebook-picker" aria-label="읽고 있는 세부 목차">'+groups.map(function(group){
+    return '<div class="book-ebook-picker'+(readOnly?' book-ebook-readonly':'')+'" aria-label="'+(readOnly?'책 목차':'읽고 있는 세부 목차')+'">'+groups.map(function(group){
       var selectedGroup=group.entries.some(function(entry){return entry.id===selected.ebook.sectionId;}),buttons=group.entries.map(function(entry){
         var active=entry.id===selected.ebook.sectionId,estimate=F.estimateSelection(entries,entry.id);
-        return '<button class="book-ebook-section'+(active?' is-current':'')+'" type="button" data-book-ebook-section="'+escape(entry.id)+'" aria-pressed="'+active+'"><span>'+escape(entry.title)+'</span><span class="book-ebook-estimate">약 '+estimate.progressPercent+'%</span></button>';
+        if(readOnly)return '<div class="book-ebook-section'+(active?' is-current':'')+'"'+(active?' aria-current="location"':'')+'><span>'+escape(entry.title)+'</span>'+(active?'<span class="book-toc-current">읽는 중</span>':'')+'</div>';
+        return '<button class="book-ebook-section'+(active?' is-current':'')+'" type="button" data-book-ebook-section="'+escape(entry.id)+'" aria-pressed="'+active+'"><span>'+escape(entry.title)+'</span><span class="book-ebook-estimate">'+F.displayPercent(estimate.progressPercent)+'%</span></button>';
       }).join('');
       if(group.entries.length===1&&group.entries[0].id===group.id)return '<div class="book-ebook-standalone">'+buttons+'</div>';
       return '<details class="book-ebook-chapter"'+(selectedGroup?' open':'')+'><summary>'+(group.label?'<span class="book-toc-label">'+escape(group.label)+'</span>':'')+'<span>'+escape(group.title)+'</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div>'+buttons+'</div></details>';
@@ -200,7 +201,7 @@
     return '<header class="book-details-header"><h2 id="book-details-title">책 소개와 목차</h2><button class="icon-btn" type="button" data-book-details-close aria-label="책 소개 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>'+
       '<div class="book-details-body"><div class="book-details-book"><img src="'+escape(book.cover)+'" alt=""><div><h3>'+escape(book.title)+'</h3><p>'+escape(book.author)+' · '+escape(book.publisher)+(ebook?'':'<br>'+info.totalPages+'쪽')+'</p></div></div>'+formatControls(settings,enabled)+
       '<section class="book-details-overview"><h3>어떤 책인가요?</h3><p>'+escape(info.overview)+'</p><h3>저자 소개</h3><p>'+escape(info.authorIntro)+'</p></section>'+
-      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(ebook?(settings.ebook.progressPercent!==null?'<span>약 '+settings.ebook.progressPercent+'% · 추정</span>':''):section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">'+(ebook?'읽는 세부 목차를 선택하면 해당 구간의 중간값으로 진행률을 추정해요.':'읽고 있는 부분은 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.')+'</p>'+(ebook?readingPickerHtml(book,settings):'<ol class="book-toc">'+toc+'</ol>')+'</section>'+
+      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(ebook?(settings.ebook.progressPercent!==null?'<span>'+F.displayPercent(settings.ebook.progressPercent)+'%</span>':''):section?'<span>현재 '+Number(page)+'쪽</span>':'')+'</div><p class="book-toc-note">'+(ebook?'읽기를 마친 뒤 기록 저장 화면에서 진도를 설정할 수 있어요.':'읽고 있는 부분은 종이책 목차의 첫 본문 쪽수를 기준으로 표시해요.')+'</p>'+(ebook?readingPickerHtml(book,settings,true):'<ol class="book-toc">'+toc+'</ol>')+'</section>'+
       '<footer class="book-details-sources"><span>'+(ebook?'':'종이책 기준 · ')+'ISBN '+info.isbn+'</span><a href="'+info.previewUrl+'" target="_blank" rel="noopener noreferrer">원래 목차 보기 ↗</a><a href="'+info.infoUrl+'" target="_blank" rel="noopener noreferrer">도서 정보 출처 ↗</a></footer></div>';
   }
   function archiveEdition(book){
@@ -284,7 +285,7 @@
     return '<header class="book-details-header"><h2 id="book-details-title">책 소개와 목차</h2><button class="icon-btn" type="button" data-book-details-close aria-label="책 소개 닫기"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header>'+
       '<div class="book-details-body"><div class="book-details-book">'+(cover?'<img src="'+escape(cover)+'" alt="" referrerpolicy="no-referrer">':'')+'<div><h3>'+escape(book.title||'나의 책')+'</h3><p>'+escape([authors,book.publisher].filter(Boolean).join(' · '))+(!ebook&&Number.isInteger(total)&&total>0?'<br>'+total+'쪽':'')+'</p></div></div>'+formatControls(settings,controlsEnabled(true))+
       '<section class="book-details-overview book-archive-overview"><h3>어떤 책인가요?</h3><p>'+escape(book.description||'등록된 책 소개가 없습니다.')+'</p><h3>저자 소개</h3><p>'+escape(book.authorIntro||(authors?authors+' · 별도의 저자 소개 정보가 없습니다.':'등록된 저자 소개가 없습니다.'))+'</p></section>'+
-      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(ebook?(settings.ebook.progressPercent!==null?'<span>약 '+settings.ebook.progressPercent+'% · 추정</span>':''):current!==null?'<span>현재 '+current+'쪽</span>':'')+'</div><p class="book-toc-note">'+(ebook?'읽는 세부 목차를 선택하면 해당 구간의 중간값으로 진행률을 추정해요.':current!==null&&!section?archivePositionNote(book,current):pageKnown?'읽고 있는 부분은 제공된 목차의 시작 쪽수를 기준으로 표시해요.':rows.length?'목차 쪽수 정보가 없어 읽는 항목은 표시하지 않아요.':'등록된 목차 정보가 없습니다.')+'</p>'+(ebook?readingPickerHtml(book,settings):toc?'<ol class="book-toc book-archive-toc">'+toc+'</ol>':'')+'</section>'+
+      '<section class="book-details-contents"><div class="book-toc-heading"><h3>목차</h3>'+(ebook?(settings.ebook.progressPercent!==null?'<span>'+F.displayPercent(settings.ebook.progressPercent)+'%</span>':''):current!==null?'<span>현재 '+current+'쪽</span>':'')+'</div><p class="book-toc-note">'+(ebook?'읽기를 마친 뒤 기록 저장 화면에서 진도를 설정할 수 있어요.':current!==null&&!section?archivePositionNote(book,current):pageKnown?'읽고 있는 부분은 제공된 목차의 시작 쪽수를 기준으로 표시해요.':rows.length?'목차 쪽수 정보가 없어 읽는 항목은 표시하지 않아요.':'등록된 목차 정보가 없습니다.')+'</p>'+(ebook?readingPickerHtml(book,settings,true):toc?'<ol class="book-toc book-archive-toc">'+toc+'</ol>':'')+'</section>'+
       '<footer class="book-details-sources">'+(book.isbn?'<span>ISBN '+escape(book.isbn)+'</span>':'')+(source?'<a href="'+escape(source)+'" target="_blank" rel="noopener noreferrer">'+(book.source==='yes24'?'도서 정보: YES24':'도서 정보 출처')+' ↗</a>':'')+'</footer></div>';
   }
   function bindDialogButtons(node){
@@ -300,23 +301,23 @@
     bindDialogButtons(node);var after=node.querySelector('.book-details-body');if(after)after.scrollTop=scroll;
   }
   function setBusy(node,value,message){
-    if(node.querySelectorAll)node.querySelectorAll('[data-book-reading-format],[data-book-ebook-section]').forEach(function(button){button.disabled=value;});
+    if(node.querySelectorAll)node.querySelectorAll('[data-book-reading-format]').forEach(function(button){button.disabled=value;});
     var status=node.querySelector('.book-format-status');if(status)status.textContent=message||'';
   }
   async function changeReadingChoice(node,button){
     var context=dialogContext;if(context&&dialog===node&&app&&app.sessionUserId()!==context.owner){close(false);return;}
     if(!context||!currentContext(context,node)||saving||context.settings===null)return;
-    var format=button.getAttribute('data-book-reading-format'),sectionId=button.getAttribute('data-book-ebook-section'),next;
-    if(format!==null){if(format!=='paper'&&format!=='ebook')return;next=F.changeFormat(context.settings,format);if(next.format===context.settings.format)return;}
-    else {next=readingChoice(context.archive?context.book:context.book.id,sectionId,context.settings,Date.now());if(!next)return;}
+    var format=button.getAttribute('data-book-reading-format');
+    if(format!=='paper'&&format!=='ebook')return;
+    var next=F.changeFormat(context.settings,format);if(next.format===context.settings.format)return;
     var callback=context.archive?app.saveArchiveReadingSettings:app.saveReadingSettings;if(typeof callback!=='function')return;
     saving=true;setBusy(node,true,'저장 중이에요.');
     try{
       var saved=await callback(context.archive?context.book:context.book.id,next);if(saved===false)throw new Error('독서 정보를 저장하지 못했어요. 다시 눌러주세요.');
       if(!currentContext(context,node))return;
       var confirmed=saved&&typeof saved==='object'&&['paper','ebook'].indexOf(saved.format)>=0?F.normalizeSettings(saved):next;
-      refreshContext(context,node,confirmed);setBusy(node,false,sectionId!==null?'선택한 목차로 진행률을 저장했어요.':'');
-      if(node.querySelectorAll){var focus=node.querySelectorAll(sectionId!==null?'[data-book-ebook-section]':'[data-book-reading-format]');for(var i=0;i<focus.length;i++)if(focus[i].getAttribute(sectionId!==null?'data-book-ebook-section':'data-book-reading-format')===(sectionId!==null?sectionId:format)&&typeof focus[i].focus==='function'){focus[i].focus({preventScroll:true});break;}}
+      refreshContext(context,node,confirmed);setBusy(node,false,'');
+      if(node.querySelectorAll){var focus=node.querySelectorAll('[data-book-reading-format]');for(var i=0;i<focus.length;i++)if(focus[i].getAttribute('data-book-reading-format')===format&&typeof focus[i].focus==='function'){focus[i].focus({preventScroll:true});break;}}
     }catch(error){if(currentContext(context,node))setBusy(node,false,error&&error.message||'독서 정보를 저장하지 못했어요. 다시 눌러주세요.');}
     finally{if(currentContext(context,node))saving=false;}
   }
@@ -329,7 +330,7 @@
     bindDialogButtons(node);
     node.addEventListener('cancel',function(event){event.preventDefault();close();});
     node.addEventListener('click',function(event){if(event.target!==node)return;var rect=node.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)close();});
-    node.addEventListener('click',function(event){var target=event.target&&typeof event.target.closest==='function'?event.target.closest('[data-book-reading-format],[data-book-ebook-section]'):null;if(!target||target.disabled)return;event.preventDefault();return changeReadingChoice(node,target);});
+    node.addEventListener('click',function(event){var target=event.target&&typeof event.target.closest==='function'?event.target.closest('[data-book-reading-format]'):null;if(!target||target.disabled)return;event.preventDefault();return changeReadingChoice(node,target);});
     node.showModal();
     if(root.GrowellPopupHistory)root.GrowellPopupHistory.open('book-details',{close:function(){if(dialog===node)close();}});
   }

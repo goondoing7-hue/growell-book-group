@@ -594,10 +594,10 @@ test('collection book picker groups four covers per horizontal page and every bo
 
 test('ebook registration has one icon format choice, hides page fields and saves original page metadata unchanged',async()=>{
   const h=harness();await h.mount();await h.body.querySelector('[data-archive-add]').click();const form=h.body.querySelector('#archive-form');form.elements.title.value='새 전자책';form.elements.totalPages.value='200';form.elements.tableOfContents.value='첫 부분 · 1\n두 번째 부분 · 101';
-  await form.querySelector('[data-archive-reading-format="ebook"]').click();assert.equal(form.querySelector('.archive-page-fields').hidden,true);const pick=form.querySelector('[data-book-ebook-section]');assert.ok(pick);await pick.click();
-  await form.onsubmit({preventDefault(){}});assert.equal(h.saved.length,1);assert.equal(h.saved[0].book.readingSettings.format,'ebook');assert.equal(h.saved[0].book.readingSettings.ebook.progressPercent,25);assert.equal(h.saved[0].book.currentPage,0);
+  await form.querySelector('[data-archive-reading-format="ebook"]').click();assert.equal(form.querySelector('.archive-page-fields').hidden,true);assert.equal(form.querySelector('[data-book-ebook-section]'),null);
+  await form.onsubmit({preventDefault(){}});assert.equal(h.saved.length,1);assert.equal(h.saved[0].book.readingSettings.format,'ebook');assert.equal(h.saved[0].book.readingSettings.ebook.progressPercent,null);assert.equal(h.saved[0].book.currentPage,0);
 });
-test('replacing a new-book search draft clears another book position while exact ISBN or provider identity retains it',async(t)=>{
+test('replacing a new-book draft retains the reading medium without assigning progress from its table of contents',async(t)=>{
   const cases=[
     {name:'same title with a different ISBN',next:{id:'second',isbn:'9788936433598'},keep:false},
     {name:'conflicting ISBN despite the same provider ID',next:{isbn:'9788936433598'},keep:false},
@@ -606,22 +606,33 @@ test('replacing a new-book search draft clears another book position while exact
     {name:'same provider ID without ISBN',first:{isbn:''},next:{isbn:'',title:'같은 공급자 ID의 책'},keep:true}
   ];
   for(const item of cases)await t.test(item.name,async()=>{
-    const untouched=makeRow('untouched',{notes:[{id:'kept',text:'기존 개인 원문',createdAt:100}]}),h=harness([untouched]);
     const first=yes24Book({genres:['인문'],tableOfContents:'A 첫 목차 · 1\nA 다음 목차 · 101',pageCount:200,...item.first});
     const next={...first,tableOfContents:'B 첫 목차 · 1\nB 다음 목차 · 101',...item.next};
+    const untouched=makeRow('untouched',{notes:[{id:'kept',text:'기존 개인 원문',createdAt:100}]}),h=harness([untouched]);
     let result=first;h.setFetch(async()=>searchResponse([result]));
     const dialog=await openAdd(h);await submitSearch(dialog,'검색 책');await dialog.querySelector('[data-search-result="0"]').click();
     const form=dialog.querySelector('#archive-form');form.elements.review.value='아직 저장하지 않은 감상';
-    await form.querySelector('[data-archive-reading-format="ebook"]').click();await form.querySelector('[data-book-ebook-section]').click();
+    await form.querySelector('[data-archive-reading-format="ebook"]').click();assert.equal(form.querySelector('[data-book-ebook-section]'),null);
     result=next;await submitSearch(dialog,'검색 책');await dialog.querySelector('[data-search-result="0"]').click();
     assert.equal(form.querySelector('[data-archive-reading-format="ebook"]').getAttribute('aria-pressed'),'true');
     assert.equal(form.querySelector('.archive-page-fields').hidden,true);await form.onsubmit({preventDefault(){}});
     assert.equal(h.saved.length,1);const saved=h.saved[0].book;
     assert.equal(saved.readingSettings.format,'ebook');assert.equal(saved.review,'아직 저장하지 않은 감상');
-    if(item.keep){assert.equal(saved.readingSettings.ebook.progressPercent,25);assert.match(saved.readingSettings.ebook.sectionTitle,/A 첫 목차/);}
-    else {assert.equal(saved.readingSettings.ebook.progressPercent,null);assert.equal(saved.readingSettings.ebook.sectionTitle,'');assert.equal(saved.readingSettings.ebook.sectionId,'');}
+    assert.equal(saved.readingSettings.ebook.progressPercent,null);assert.equal(saved.readingSettings.ebook.sectionTitle,'');assert.equal(saved.readingSettings.ebook.sectionId,'');
     assert.deepEqual(h.rows().find(row=>row.entry.id===untouched.entry.id),untouched);
   });
+});
+
+test('ebook cards and history show integer percents while an ordinary book edit preserves the exact saved position',async()=>{
+  const readingSettings={format:'ebook',ebook:{sectionId:'first',sectionTitle:'첫 부분',progressPercent:32.5,progressKind:'estimated',estimateBasis:'paper-toc',updatedAt:1000}};
+  const sessions=[{id:'read',unit:'percent',startPercent:19.8,endPercent:32.5,sectionId:'first',sectionTitle:'첫 부분',progressKind:'estimated',estimateBasis:'paper-toc',seconds:120,createdAt:1000}];
+  const original=makeRow('integer-display',{readingSettings,readingSessions:sessions,notes:[{id:'keep',text:'그대로 둘 노트',createdAt:1000}]}),h=harness([original]),dialog=await h.open('integer-display');
+  assert.match(dialog.querySelector('.archive-progress').textContent,/33%/);assert.doesNotMatch(dialog.querySelector('.archive-progress').textContent,/약 |32\.5%/);
+  assert.equal(dialog.querySelector('.archive-progress [role="progressbar"]').getAttribute('aria-valuenow'),'33');
+  await dialog.querySelector('[data-archive-history]').click();const history=h.body.querySelector('.archive-sessions-dialog');assert.match(history.textContent,/20% → 33%/);assert.doesNotMatch(history.textContent,/약 |19\.8%|32\.5%/);
+  await history.querySelector('[data-sessions-close]').click();await dialog.querySelector('[data-archive-edit]').click();const form=dialog.querySelector('#archive-form');
+  assert.equal(form.querySelector('[data-book-ebook-section]'),null);form.elements.review.value='감상만 추가';await form.onsubmit({preventDefault(){}});
+  assert.deepEqual(h.saved[0].book.readingSettings,original.book.readingSettings);assert.deepEqual(h.saved[0].book.readingSessions,original.book.readingSessions);assert.deepEqual(h.saved[0].book.notes,original.book.notes);
 });
 
 test('book details target carries exact archive ID and fresh settings save preserves new notes while refusing stale reading state',async()=>{

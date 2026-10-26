@@ -2,6 +2,14 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const F=require('../readingFormatDomain.js'),Book=require('../bookDetails.js');
 
+test('integer percent labels preserve stored precision and reserve 100 for actual completion',()=>{
+  for(const [value,expected] of [[0,0],[12.4,12],[12.5,13],[37.5,38],[99.9,99],[100,100]])assert.equal(F.displayPercent(value),expected);
+  for(const value of [null,undefined,'25',NaN,Infinity,-1,101])assert.equal(F.displayPercent(value),null);
+  const source={format:'ebook',ebook:{progressPercent:37.5}},before=JSON.stringify(source);
+  assert.equal(F.displayPercent(source.ebook.progressPercent),38);assert.equal(JSON.stringify(source),before);
+  assert.equal(F.normalizeSettings(source).ebook.progressPercent,37.5);
+});
+
 test('changing reading format keeps ebook position separate from existing paper pages and leaves source intact',()=>{
   const book={currentPage:81,totalPages:200,notes:[{id:'note-1',text:'남겨 둔 문장'}],readingSettings:{format:'paper',ebook:{sectionId:'s2',sectionTitle:'둘째 제목',progressPercent:37.5,estimateBasis:'equal-sections',updatedAt:100}}};
   const before=JSON.stringify(book),ebook=F.changeFormat(F.settingsFromBook(book),'ebook'),paper=F.changeFormat(ebook,'paper');
@@ -37,15 +45,16 @@ test('unpaged and non-increasing contents use explicit equal-section estimates r
   assert.equal(F.estimateSelection(last,'s2').progressPercent,99.9,'a rounded midpoint is never mistaken for completing the book');
 });
 
-test('official ebook contents use the real verified subsections and display estimates without page numbers',()=>{
+test('official ebook contents only mark the saved position while the finish picker remains selectable',()=>{
   const book={id:'emotion',title:'책',author:'저자',publisher:'출판사',cover:'covers/emotion.jpg'},entries=Book.readingEntries('emotion');
   assert.ok(entries.length>55);assert.equal(new Set(entries.map(row=>row.id)).size,entries.length);
   assert.equal(entries.find(row=>row.id==='chapter-1-section-1').title,'왜 그렇게 상대의 비위를 맞춰?');
   assert.equal(entries.filter(row=>row.id==='chapter-1').length,0);assert.ok(entries.find(row=>row.id==='chapter-2'));
   const selected=Book.readingChoice(book,'chapter-2-section-1',{format:'paper'},100),html=Book.bodyHtml(book,81,selected);
-  assert.match(html,/약 [\d.]+% · 추정/);assert.match(html,/해당 구간의 중간값/);assert.match(html,/<details class="book-ebook-chapter" open>/);
-  assert.match(html,/data-book-ebook-section="chapter-2-section-1" aria-pressed="true"/);
-  assert.doesNotMatch(html,/\d+쪽|class="book-toc-page"|종이책 기준/);
+  assert.match(html,/<span>\d+%<\/span>/);assert.match(html,/기록 저장 화면에서 진도를 설정/);assert.match(html,/<details class="book-ebook-chapter" open>/);
+  assert.equal((html.match(/aria-current="location"/g)||[]).length,1);
+  assert.doesNotMatch(html,/\d+쪽|class="book-toc-page"|종이책 기준|data-book-ebook-section|약 |\d+\.\d+%/);
+  const picker=Book.readingPickerHtml(book,selected);assert.match(picker,/data-book-ebook-section="chapter-2-section-1" aria-pressed="true"/);assert.doesNotMatch(picker,/약 |\d+\.\d+%/);
 });
 
 test('archive ebook contents retain supplied hierarchy, escape titles and estimate unpaged sections',()=>{

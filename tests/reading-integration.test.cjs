@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const vm=require('node:vm');
 const domain=require('../readingTimerDomain.js');
+const GrowellReadingFormatDomain=require('../readingFormatDomain.js');
 const createPopupHistory=require('../popupHistory.js');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 const clone=value=>JSON.parse(JSON.stringify(value));
@@ -17,7 +18,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function historyDialogHarness(){
   const nodes=[],popups=new Map(),focus=[];
   const book={id:'emotion',title:'테스트 <책>',totalPages:200,accent:'primary'};
-  const c={SESSION:{userId:'reader'},STATE:{readingLogs:{own:{id:'own',bookId:'emotion',userId:'reader',seconds:60,startPage:10,page:20,createdAt:1},other:{id:'other',bookId:'emotion',userId:'other',seconds:900,page:100,createdAt:2}},readingMeta:{emotion_reader:{currentPage:20}}},
+  const c={GrowellReadingFormatDomain,SESSION:{userId:'reader'},STATE:{readingLogs:{own:{id:'own',bookId:'emotion',userId:'reader',seconds:60,startPage:10,page:20,createdAt:1},other:{id:'other',bookId:'emotion',userId:'other',seconds:900,page:100,createdAt:2}},readingMeta:{emotion_reader:{currentPage:20}}},
     location:{hash:'#/book/emotion/mine'},bookById:id=>id===book.id?book:null,isBookLocked:()=>false,readingDataReady:()=>true,
     esc:value=>String(value).replaceAll('<','&lt;').replaceAll('>','&gt;'),fmtDate:()=> '2026.09.28',fmtElapsed:ms=>ms/1000+'초',fmtDurationHuman:seconds=>seconds+'초',
     svgIcon:value=>'<svg>'+value+'</svg>',I_CLOSE:'close',I_TRASH:'trash',I_DOC:'history',I_CHECK:'check',confirm:()=>true,
@@ -53,8 +54,8 @@ test('ebook history preserves percent units and adds elapsed time beside unchang
   const ebook={id:'ebook-history',unit:'percent',seconds:90,startPercent:20,endPercent:32.5,sectionTitle:'선택한 소제목',progressKind:'estimated',createdAt:3};
   c.sharedReadingFormats={view:()=>({status:'ready',settings:{format:'ebook',ebook:{}},sessions:[ebook]})};
   const before=JSON.stringify(c.STATE);c.openReadingHistoryDialog(book.id);
-  assert.match(nodes[0].body.innerHTML,/20 → 32.5%/);assert.match(nodes[0].body.innerHTML,/선택한 소제목/);assert.match(nodes[0].body.innerHTML,/예상 진도/);assert.match(nodes[0].body.innerHTML,/p10-p20/);
-  assert.equal(nodes[0].count.textContent,'2회 · 총 150초');assert.equal(JSON.stringify(c.STATE),before);
+  assert.match(nodes[0].body.innerHTML,/20 → 33%/);assert.doesNotMatch(nodes[0].body.innerHTML,/약 |32\.5%/);assert.match(nodes[0].body.innerHTML,/선택한 소제목/);assert.match(nodes[0].body.innerHTML,/예상 진도/);assert.match(nodes[0].body.innerHTML,/p10-p20/);
+  assert.equal(nodes[0].count.textContent,'2회 · 총 150초');assert.equal(JSON.stringify(c.STATE),before);assert.equal(ebook.endPercent,32.5);
 });
 
 test('deleting history preserves the popup scroll and saved page, and cannot delete another reader log',async()=>{

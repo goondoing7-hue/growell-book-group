@@ -40,6 +40,8 @@
 .book-ebook-section>span:first-child{flex:1;min-width:0}
 .book-ebook-section:hover{background:var(--surface-alt,var(--primary-soft))}
 .book-ebook-section.is-current{background:var(--primary-soft);color:var(--primary);font-weight:650}
+.book-ebook-readonly .book-ebook-section{cursor:default}
+.book-ebook-readonly .book-ebook-section:not(.is-current):hover{background:transparent}
 .book-ebook-estimate{flex:none;color:var(--ink-soft);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .book-ebook-standalone{border-bottom:1px solid var(--line)}
 .book-details-overview h3,.book-toc-heading h3{font-size:15px;margin:0 0 7px;font-weight:750}

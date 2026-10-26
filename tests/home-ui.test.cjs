@@ -6,6 +6,7 @@ const vm=require('node:vm');
 const GrowellHome=require('../homeDomain.js');
 const GrowellHabits=require('../habitDomain.js');
 const GrowellReadingTimer=require('../readingTimerDomain.js');
+const GrowellReadingFormatDomain=require('../readingFormatDomain.js');
 const GrowellDailyVerse=require('../dailyVerseDomain.js');
 const GrowellBookDetails=require('../bookDetails.js');
 const GrowellHabitSuggestions=require('../habitSuggestions.js');
@@ -47,7 +48,7 @@ function control(attrs){
 function harness(){
   const controls={},queued=[],opened=[],renders=[],createdElements=[],toasts=[],storage=new Map();
   const books=[{id:'emotion',title:'감정의 책',totalPages:200},{id:'thought',title:'생각의 책',totalPages:250},{id:'locked',title:'잠긴 책',locked:true}];
-  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellDailyVerse,GrowellBookDetails,GrowellHabitSuggestions,GrowellMeetingCalendar,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
+  const c={GrowellHome,GrowellHabits,GrowellReadingTimer,GrowellReadingFormatDomain,GrowellDailyVerse,GrowellBookDetails,GrowellHabitSuggestions,GrowellMeetingCalendar,GrowellDailyVerses:[{reference:'검증 출처',text:'검증용 말씀 <본문>'}],Promise,Date,JSON,Array,Set,Map,encodeURIComponent,
     BOOKS:books,SESSION:{userId:'me',keyB64:'my-key'},saveSessionEpoch:1,
     STATE:{posts:{},privateEntries:{},worksheets:{},habits:{},users:{me:{id:'me',name:'회원'}},readingMeta:{},readingLogs:{},announcement:{reading:{bookId:'emotion'},next:{}}},
     INSIGHT_QUESTIONS:[{key:'q1'},{key:'q2'},{key:'q3'}],
@@ -386,7 +387,7 @@ test('ebook home uses the selected section and estimated percent without a fabri
   c.sharedReadingFormats={view:id=>id==='emotion'?{status:'ready',settings:{format:'ebook',ebook:{sectionId:'chapter-one-section-two',sectionTitle:'선택한 세부 목차',progressPercent:32.5,progressKind:'estimated',updatedAt:9}},book:{},sessions:[{id:'ebook-session',unit:'percent',seconds:90,createdAt:10}]}:{status:'ready',settings:{format:'paper',ebook:{}},book:null,sessions:[]}};
   c.STATE.readingMeta.emotion_me={bookId:'emotion',userId:'me',currentPage:80,updatedAt:1};
   const markup=c.memberHomeHtml(),card=markup.slice(markup.indexOf('class="home-reading-book"'),markup.indexOf('나의 독서 기록'));
-  assert.match(card,/전자책 · 약 32.5%/);assert.match(card,/선택한 세부 목차/);assert.doesNotMatch(card,/80 \/ 200쪽|81쪽부터/);
+  assert.match(card,/전자책 · 33%/);assert.match(card,/선택한 세부 목차/);assert.doesNotMatch(card,/약 |32\.5%|80 \/ 200쪽|81쪽부터/);
   assert.equal(c.STATE.readingMeta.emotion_me.currentPage,80);
 });
 
